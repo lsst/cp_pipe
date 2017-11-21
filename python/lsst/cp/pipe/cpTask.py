@@ -40,8 +40,8 @@ import os
 import glob
 
 
-class CppTaskConfig(pexConfig.Config):
-    """Config class for the calibration products production (CPP) task."""
+class CpTaskConfig(pexConfig.Config):
+    """Config class for the calibration products production (CP) task."""
 
     fe55 = pexConfig.ConfigurableField(
         target=sensorTest.Fe55Task,
@@ -162,9 +162,9 @@ class CppTaskConfig(pexConfig.Config):
         override the validate() method here, and use it to set the output directory for each of the tasks
         based on the legal pexConfig parameter for the main task.
         """
-        log = lsstLog.Log.getLogger("ip.cpp.cppTaskConfig")
+        log = lsstLog.Log.getLogger("cp.pipe.cpTaskConfig")
         if not self.eotestOutputPath:
-            raise RuntimeError("Must supply an output path for eotest data."
+            raise RuntimeError("Must supply an output path for eotest data. "
                                "Please set config.eotestOutputPath.")
 
         taskList = ['fe55', 'brightPixels', 'darkPixels', 'readNoise', 'traps', 'cte', 'flatPair', 'ptc']
@@ -179,9 +179,9 @@ class CppTaskConfig(pexConfig.Config):
             getattr(self, task).output_dir = self.eotestOutputPath
 
 
-class CppTask(pipeBase.CmdLineTask):
+class CpTask(pipeBase.CmdLineTask):
     """
-    Calibration Products Production (CPP) task.
+    Calibration Products Production (CP) task.
 
     This task is used to produce the calibration products required to calibrate cameras.
     Examples of such operations are as follows:
@@ -194,7 +194,7 @@ class CppTask(pipeBase.CmdLineTask):
     Given a set of bias frames, calculate the read noise of the system in e-.
     Given a set of pocket-pumping exposures, find charge-traps in the silicon.
 
-    The CppTask.runEotestDirect() is only applicable to LSST sensors, and only for a specific type of dataset
+    The CpTask.runEotestDirect() is only applicable to LSST sensors, and only for a specific type of dataset
     This method takes a dafPersistance.Butler corresponding to a repository in which a full eotest run has
     been taken and ingested, and runs each of the tasks in eotest directly, allowing for bitwise comparison
     with results given by the camera team.
@@ -203,12 +203,12 @@ class CppTask(pipeBase.CmdLineTask):
     regarding the inputs and outputs.
     """
 
-    ConfigClass = CppTaskConfig
-    _DefaultName = "cpp"
+    ConfigClass = CpTaskConfig
+    _DefaultName = "cp"
 
     def __init__(self, *args, **kwargs):
         """
-        Constructor for CppTask.
+        Constructor for CpTask.
 
         Calls the lsst.pipe.base.task.Task.__init__() method, then sets up the
         various subTasks for calibration products production task.
@@ -239,7 +239,7 @@ class CppTask(pipeBase.CmdLineTask):
         self.makeSubtask("ptc")
 
         # Do we want to switch to the better-named logger below or use the one we get from cmdLineTask?
-        # e.g. using self.log = lsstLog.Log.getLogger("ip.cpp.cppTask")?
+        # e.g. using self.log = lsstLog.Log.getLogger("cp.pipe.cpTask")?
 
     def _getMaskFiles(self, path, ccd):
         """Get all available eotest mask files for a given ccd.

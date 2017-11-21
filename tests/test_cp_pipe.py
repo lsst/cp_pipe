@@ -51,8 +51,9 @@ class CpPipeTestCase(lsst.utils.tests.TestCase):
 
     @unittest.skipIf(noEotest, noEotestMsg)
     def testClassInstantiation(self):
-        from lsst.cp.pipe import CppTask
+        from lsst.cp.pipe import CpTask
         cpConfig = CpTask.ConfigClass()
+        cpConfig.eotestOutputPath='/some/test/path'  # must not be empty for validate() to pass
         cpTask = CpTask(config=cpConfig)
 
 
