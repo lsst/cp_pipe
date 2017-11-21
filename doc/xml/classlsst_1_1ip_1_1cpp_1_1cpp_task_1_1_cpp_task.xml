@@ -1,0 +1,325 @@
+<?xml version='1.0' encoding='UTF-8' standalone='no'?>
+<doxygen xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="compound.xsd" version="1.8.13">
+  <compounddef id="classlsst_1_1ip_1_1cpp_1_1cpp_task_1_1_cpp_task" kind="class" language="Python" prot="public">
+    <compoundname>lsst::ip::cpp::cppTask::CppTask</compoundname>
+    <basecompoundref prot="public" virt="non-virtual">CmdLineTask</basecompoundref>
+      <sectiondef kind="public-static-attrib">
+      <memberdef kind="variable" id="classlsst_1_1ip_1_1cpp_1_1cpp_task_1_1_cpp_task_1a9fba251d45d3bb3076b08dfaca57971b" prot="public" static="yes" mutable="no">
+        <type></type>
+        <definition>lsst.ip.cpp.cppTask.CppTask::ConfigClass</definition>
+        <argsstring></argsstring>
+        <name>ConfigClass</name>
+        <initializer>=  <ref refid="classlsst_1_1ip_1_1cpp_1_1cpp_task_1_1_cpp_task_config" kindref="compound">CppTaskConfig</ref></initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="python/lsst/ip/cpp/cppTask.py" line="190" column="1" bodyfile="python/lsst/ip/cpp/cppTask.py" bodystart="190" bodyend="-1"/>
+      </memberdef>
+      </sectiondef>
+      <sectiondef kind="private-static-attrib">
+      <memberdef kind="variable" id="classlsst_1_1ip_1_1cpp_1_1cpp_task_1_1_cpp_task_1ac5b5ef4354c2a356a0eeb8cf1930448d" prot="private" static="yes" mutable="no">
+        <type>string</type>
+        <definition>string lsst.ip.cpp.cppTask.CppTask::_DefaultName</definition>
+        <argsstring></argsstring>
+        <name>_DefaultName</name>
+        <initializer>=  &quot;cpp&quot;</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="python/lsst/ip/cpp/cppTask.py" line="191" column="1" bodyfile="python/lsst/ip/cpp/cppTask.py" bodystart="191" bodyend="-1"/>
+      </memberdef>
+      </sectiondef>
+      <sectiondef kind="public-func">
+      <memberdef kind="function" id="classlsst_1_1ip_1_1cpp_1_1cpp_task_1_1_cpp_task_1a9aee21c0920345fb4145b76572ac9e6e" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>def</type>
+        <definition>def lsst.ip.cpp.cppTask.CppTask.__init__</definition>
+        <argsstring>(self, args, kwargs)</argsstring>
+        <name>__init__</name>
+        <param>
+          <type>self</type>
+          <defname>self</defname>
+        </param>
+        <param>
+          <type>args</type>
+          <defname>args</defname>
+        </param>
+        <param>
+          <type>kwargs</type>
+          <defname>kwargs</defname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para><verbatim>Constructor for CppTask.
+
+Calls the lsst.pipe.base.task.Task.__init__() method, then sets up the
+various subTasks for calibration products production task.
+
+Parameters
+----------
+*args :
+    a list of positional arguments passed on to the Task constructor
+**kwargs :
+    a dictionary of keyword arguments passed on to the Task constructor
+</verbatim> </para>        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="python/lsst/ip/cpp/cppTask.py" line="193" column="1" bodyfile="python/lsst/ip/cpp/cppTask.py" bodystart="193" bodyend="227"/>
+      </memberdef>
+      <memberdef kind="function" id="classlsst_1_1ip_1_1cpp_1_1cpp_task_1_1_cpp_task_1af5bf048af7b633fc73738d1a6c3973bd" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>def</type>
+        <definition>def lsst.ip.cpp.cppTask.CppTask.testMethod</definition>
+        <argsstring>(self)</argsstring>
+        <name>testMethod</name>
+        <param>
+          <type>self</type>
+          <defname>self</defname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para><verbatim>TODO: Remove this docstring that only exists to remove flake8 error.</verbatim> </para>        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="python/lsst/ip/cpp/cppTask.py" line="275" column="1" bodyfile="python/lsst/ip/cpp/cppTask.py" bodystart="275" bodyend="279"/>
+      </memberdef>
+      <memberdef kind="function" id="classlsst_1_1ip_1_1cpp_1_1cpp_task_1_1_cpp_task_1a9da7f63d3750528eb2f47b292b9176e8" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>def</type>
+        <definition>def lsst.ip.cpp.cppTask.CppTask.runEotestDirect</definition>
+        <argsstring>(self, butler, run=None)</argsstring>
+        <name>runEotestDirect</name>
+        <param>
+          <type>self</type>
+          <defname>self</defname>
+        </param>
+        <param>
+          <type>butler</type>
+          <defname>butler</defname>
+        </param>
+        <param>
+          <type><ref refid="namespacelsst_1_1utils_1_1tests_1a6a7d1841d3979bcf26ebc9c817ebe282" kindref="member" external="/ssd/lsstsw/stack3_20171021/stack/miniconda3-4.3.21-10a4fa6/Linux64/utils/14.0-4-gac01bb5+2/doc/utils.tag">run</ref></type>
+          <defname>run</defname>
+          <defval>None</defval>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para><verbatim>Generate calibration products using eotest algorithms.
+
+Generate all calibration products possible using the vanilla eotest implementation,
+given a butler for a TS8 (raft-test) repo. It can contain multiple runs, but must correspond to
+only a single raft/RTM.
+
+- Run all eotest tasks possible, using the butler to gather the data
+- Write outputs in eotest format
+
+In order to replicate the canonical eotest analysis, the tasks should be run in a specific order.
+This is given/defined in the &quot;Steps&quot; section here:
+http://lsst-camera.slac.stanford.edu/eTraveler/exp/LSST-CAMERA/
+       displayProcess.jsp?processPath=1179
+
+But is replicated here for conveniece:
+* 55Fe Analysis
+* CCD Read Noise Analysis
+* Bright Defects Analysis
+* Dark Defects Analysis
+* Traps Finding
+* Dark Current                  X - will not be implemented here
+* Charge Transfer Efficiencies
+* Photo-response analysis       X - will not be implemented here
+* Flat Pairs Analysis
+* Photon Transfer Curve
+* Quantum Efficiency            X - will not be implemented here
+
+List of tasks that exist in the eotest package but aren&apos;t mentioned on the above link:
+--------
+# linearityTask()
+# fe55CteTask()
+# eperTask()
+# crosstalkTask()
+# persistenceTask()
+
+# TODO: For each eotest task, find out what the standard raft testing does for the optional params.
+i.e. many have optional params for gains, bias-frames etc - if we want bitwise identicallity then we
+need to know what is typically provided to these tasks when the camera team runs this code.
+This can probably be worked out from https://github.com/lsst-camera-dh/lcatr-harness
+but it sounds like Jim Chiang doesn&apos;t recommend trying to do that.
+
+Parameters
+----------
+butler : daf.persistence.butler
+    Butler for the repo containg the eotest data to be used
+run : string or int
+    Optional run number, to be used for repos containing multiple runs
+</verbatim> </para>        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="python/lsst/ip/cpp/cppTask.py" line="281" column="1" bodyfile="python/lsst/ip/cpp/cppTask.py" bodystart="281" bodyend="595"/>
+      </memberdef>
+      </sectiondef>
+      <sectiondef kind="private-func">
+      <memberdef kind="function" id="classlsst_1_1ip_1_1cpp_1_1cpp_task_1_1_cpp_task_1a36ffa686cc9ce5bdebaa026fe244a497" prot="private" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>def</type>
+        <definition>def lsst.ip.cpp.cppTask.CppTask._getMaskFiles</definition>
+        <argsstring>(self, path, ccd)</argsstring>
+        <name>_getMaskFiles</name>
+        <param>
+          <type>self</type>
+          <defname>self</defname>
+        </param>
+        <param>
+          <type>path</type>
+          <defname>path</defname>
+        </param>
+        <param>
+          <type>ccd</type>
+          <defname>ccd</defname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para><verbatim>Get all available eotest mask files for a given ccd.
+
+Each stage of the processing generates more mask files, so this allows each to be picked up
+as more and more tests run, and saves having to have clever logic for if some tasks fail.
+Parameters
+----------
+path : string
+    Path on which to find the mask files
+ccd : string
+    Name/identifier of the CCD
+Returns
+-------
+maskFiles : list/tuple
+    List of mask files, or an empty tuple if none are found
+</verbatim> </para>        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="python/lsst/ip/cpp/cppTask.py" line="228" column="1" bodyfile="python/lsst/ip/cpp/cppTask.py" bodystart="228" bodyend="247"/>
+      </memberdef>
+      <memberdef kind="function" id="classlsst_1_1ip_1_1cpp_1_1cpp_task_1_1_cpp_task_1a00a9b7cb7210e16c3a729bcac495e64e" prot="private" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>def</type>
+        <definition>def lsst.ip.cpp.cppTask.CppTask._cleanupEotest</definition>
+        <argsstring>(self, path)</argsstring>
+        <name>_cleanupEotest</name>
+        <param>
+          <type>self</type>
+          <defname>self</defname>
+        </param>
+        <param>
+          <type>path</type>
+          <defname>path</defname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para><verbatim>Delete all the medianed files left behind after eotest has run.
+
+Running eotest generates a lot of interim medianed files, so this just cleans them up.
+Parameters
+----------
+path : string
+   Path on which to delete all the eotest medianed files.
+</verbatim> </para>        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="python/lsst/ip/cpp/cppTask.py" line="248" column="1" bodyfile="python/lsst/ip/cpp/cppTask.py" bodystart="248" bodyend="259"/>
+      </memberdef>
+      <memberdef kind="function" id="classlsst_1_1ip_1_1cpp_1_1cpp_task_1_1_cpp_task_1a138996ff25e75e2f614c839869f89940" prot="private" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>def</type>
+        <definition>def lsst.ip.cpp.cppTask.CppTask._gainPropSetToDict</definition>
+        <argsstring>(self, pSet)</argsstring>
+        <name>_gainPropSetToDict</name>
+        <param>
+          <type>self</type>
+          <defname>self</defname>
+        </param>
+        <param>
+          <type>pSet</type>
+          <defname>pSet</defname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para><verbatim>Translator for the persisted gain values.
+
+eotest wants an {amp: gain} dictionary with integer keys for the amps.
+When we persist dafBase.propertySets these only take strings for keys,
+so the provided .toDict() method won&apos;t do, so here we provide an extra
+layer of translation to keep eotest happy.
+
+Parameters
+----------
+pSet : daf.base.PropertySet
+   PropertySet to be translated to an integer-keyed dictionary
+</verbatim> </para>        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="python/lsst/ip/cpp/cppTask.py" line="260" column="1" bodyfile="python/lsst/ip/cpp/cppTask.py" bodystart="260" bodyend="274"/>
+      </memberdef>
+      </sectiondef>
+    <briefdescription>
+    </briefdescription>
+    <detaileddescription>
+<para><verbatim>Calibration Products Production (CPP) task.
+
+This task is used to produce the calibration products required to calibrate cameras.
+Examples of such operations are as follows:
+Given a set of flat-field images, find the dark pixels and columns.
+Given a set of darks, find the bright pixels and columns.
+Given a set of Fe55 exposures, calulate the gain of the readout chain, in e-/ADU
+Given a set of Fe55 exposures, calulate the instrinsic PSF of the silicon, and the degradation of
+the PSF due to CTE.
+Given a set of flat-pairs, measure the photon transfer curve (PTC).
+Given a set of bias frames, calculate the read noise of the system in e-.
+Given a set of pocket-pumping exposures, find charge-traps in the silicon.
+
+The CppTask.runEotestDirect() is only applicable to LSST sensors, and only for a specific type of dataset
+This method takes a dafPersistance.Butler corresponding to a repository in which a full eotest run has
+been taken and ingested, and runs each of the tasks in eotest directly, allowing for bitwise comparison
+with results given by the camera team.
+
+See http://ls.st/ldm-151 Chapter 4, Calibration Products Production for further details
+regarding the inputs and outputs.
+</verbatim> </para>    </detaileddescription>
+    <inheritancegraph>
+      <node id="1">
+        <label>pipeBase::CmdLineTask</label>
+      </node>
+      <node id="0">
+        <label>lsst.ip.cpp.cppTask.CppTask</label>
+        <link refid="classlsst_1_1ip_1_1cpp_1_1cpp_task_1_1_cpp_task"/>
+        <childnode refid="1" relation="public-inheritance">
+        </childnode>
+      </node>
+    </inheritancegraph>
+    <collaborationgraph>
+      <node id="3">
+        <label>pipeBase::CmdLineTask</label>
+      </node>
+      <node id="2">
+        <label>lsst.ip.cpp.cppTask.CppTask</label>
+        <link refid="classlsst_1_1ip_1_1cpp_1_1cpp_task_1_1_cpp_task"/>
+        <childnode refid="3" relation="public-inheritance">
+        </childnode>
+      </node>
+    </collaborationgraph>
+    <location file="python/lsst/ip/cpp/cppTask.py" line="166" column="1" bodyfile="python/lsst/ip/cpp/cppTask.py" bodystart="166" bodyend="595"/>
+    <listofallmembers>
+      <member refid="classlsst_1_1ip_1_1cpp_1_1cpp_task_1_1_cpp_task_1a9aee21c0920345fb4145b76572ac9e6e" prot="public" virt="non-virtual"><scope>lsst::ip::cpp::cppTask::CppTask</scope><name>__init__</name></member>
+      <member refid="classlsst_1_1ip_1_1cpp_1_1cpp_task_1_1_cpp_task_1a00a9b7cb7210e16c3a729bcac495e64e" prot="private" virt="non-virtual"><scope>lsst::ip::cpp::cppTask::CppTask</scope><name>_cleanupEotest</name></member>
+      <member refid="classlsst_1_1ip_1_1cpp_1_1cpp_task_1_1_cpp_task_1ac5b5ef4354c2a356a0eeb8cf1930448d" prot="private" virt="non-virtual"><scope>lsst::ip::cpp::cppTask::CppTask</scope><name>_DefaultName</name></member>
+      <member refid="classlsst_1_1ip_1_1cpp_1_1cpp_task_1_1_cpp_task_1a138996ff25e75e2f614c839869f89940" prot="private" virt="non-virtual"><scope>lsst::ip::cpp::cppTask::CppTask</scope><name>_gainPropSetToDict</name></member>
+      <member refid="classlsst_1_1ip_1_1cpp_1_1cpp_task_1_1_cpp_task_1a36ffa686cc9ce5bdebaa026fe244a497" prot="private" virt="non-virtual"><scope>lsst::ip::cpp::cppTask::CppTask</scope><name>_getMaskFiles</name></member>
+      <member refid="classlsst_1_1ip_1_1cpp_1_1cpp_task_1_1_cpp_task_1a9fba251d45d3bb3076b08dfaca57971b" prot="public" virt="non-virtual"><scope>lsst::ip::cpp::cppTask::CppTask</scope><name>ConfigClass</name></member>
+      <member refid="classlsst_1_1ip_1_1cpp_1_1cpp_task_1_1_cpp_task_1a9da7f63d3750528eb2f47b292b9176e8" prot="public" virt="non-virtual"><scope>lsst::ip::cpp::cppTask::CppTask</scope><name>runEotestDirect</name></member>
+      <member refid="classlsst_1_1ip_1_1cpp_1_1cpp_task_1_1_cpp_task_1af5bf048af7b633fc73738d1a6c3973bd" prot="public" virt="non-virtual"><scope>lsst::ip::cpp::cppTask::CppTask</scope><name>testMethod</name></member>
+    </listofallmembers>
+  </compounddef>
+</doxygen>

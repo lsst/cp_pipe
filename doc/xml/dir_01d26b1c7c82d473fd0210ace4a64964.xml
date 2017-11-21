@@ -1,0 +1,14 @@
+<?xml version='1.0' encoding='UTF-8' standalone='no'?>
+<doxygen xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="compound.xsd" version="1.8.13">
+  <compounddef id="dir_01d26b1c7c82d473fd0210ace4a64964" kind="dir">
+    <compoundname>python/lsst/ip/cpp</compoundname>
+    <innerfile refid="ip_2cpp_2____init_____8py">__init__.py</innerfile>
+    <innerfile refid="cpp_task_8py">cppTask.py</innerfile>
+    <innerfile refid="version_8py">version.py</innerfile>
+    <briefdescription>
+    </briefdescription>
+    <detaileddescription>
+    </detaileddescription>
+    <location file="python/lsst/ip/cpp/"/>
+  </compounddef>
+</doxygen>

@@ -1,0 +1,13 @@
+<?xml version='1.0' encoding='UTF-8' standalone='no'?>
+<doxygen xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="compound.xsd" version="1.8.13">
+  <compounddef id="namespacelsst_1_1ip_1_1cpp" kind="namespace" language="Python">
+    <compoundname>lsst::ip::cpp</compoundname>
+    <innernamespace refid="namespacelsst_1_1ip_1_1cpp_1_1cpp_task">lsst::ip::cpp::cppTask</innernamespace>
+    <innernamespace refid="namespacelsst_1_1ip_1_1cpp_1_1version">lsst::ip::cpp::version</innernamespace>
+    <briefdescription>
+    </briefdescription>
+    <detaileddescription>
+    </detaileddescription>
+    <location file="python/lsst/ip/cpp/__init__.py" line="1" column="1"/>
+  </compounddef>
+</doxygen>
