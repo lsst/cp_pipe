@@ -1,3 +1,3 @@
 # -*- python -*-
 from lsst.sconsUtils import scripts
-scripts.BasicSConstruct("ip_cpp")
+scripts.BasicSConstruct("cp_pipe")

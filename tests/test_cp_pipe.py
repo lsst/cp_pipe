@@ -22,7 +22,7 @@
 # the GNU General Public License along with this program.  If not,
 # see <https://www.lsstcorp.org/LegalNotices/>.
 #
-"""Test cases for ip_cpp."""
+"""Test cases for cp_pipe."""
 
 from __future__ import absolute_import, division, print_function
 import unittest
@@ -39,21 +39,21 @@ except ImportError:
     noEotest = True
 
 
-class IpCppTestCase(lsst.utils.tests.TestCase):
-    """A test case for ip_cpp."""
+class CpPipeTestCase(lsst.utils.tests.TestCase):
+    """A test case for cp_pipe."""
 
     def testExample(self):
         pass
 
     @unittest.skipIf(noEotest, noEotestMsg)
     def testImport(self):
-        import lsst.ip.cpp as ipCpp
+        import lsst.cp.pipe as cpPipe
 
     @unittest.skipIf(noEotest, noEotestMsg)
     def testClassInstantiation(self):
-        from lsst.ip.cpp import CppTask
-        cppConfig = CppTask.ConfigClass()
-        cppTask = CppTask(config=cppConfig)
+        from lsst.cp.pipe import CppTask
+        cpConfig = CpTask.ConfigClass()
+        cpTask = CpTask(config=cpConfig)
 
 
 class TestMemory(lsst.utils.tests.MemoryTestCase):
