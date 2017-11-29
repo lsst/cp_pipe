@@ -26,6 +26,7 @@ from __future__ import absolute_import, division, print_function
 
 import os
 import glob
+import sys
 
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
@@ -202,6 +203,9 @@ class CpTask(pipeBase.CmdLineTask):
 
     def __init__(self, *args, **kwargs):
         """Constructor for the CpTask."""
+        if 'lsst.eotest.sensor' not in sys.modules:  # check we have eotest before going further
+            raise RuntimeError('eotest failed to import')
+
         pipeBase.CmdLineTask.__init__(self, *args, **kwargs)
 
         # Note - we can't currently call validate on the subTask configs, as they are NOT valid
@@ -253,6 +257,29 @@ class CpTask(pipeBase.CmdLineTask):
         """
         for filename in glob.glob(os.path.join(path, '*_median_*.fits')):
             os.remove(filename)
+
+    def makeEotestReport(self, butler):
+        """After running eotest, generate pdf(s) of the results.
+
+        Generate a sensor test report from the output data in config.eotestOutputPath, one for each CCD.
+        The pdf file(s), along with the .tex file(s) and the individual plots are written
+        to the eotestOutputPath.
+        .pdf generation requires a TeX distro including pdflatex to be installed.
+        """
+        ccds = butler.queryMetadata('raw', ['ccd'])
+        for ccd in ccds:
+            self.log.info("Starting test report generation for %s"%ccd)
+            try:
+                plotPath = os.path.join(self.config.eotestOutputPath, 'plots')
+                if not os.path.exists(plotPath):
+                    os.makedirs(plotPath)
+                plots = sensorTest.EOTestPlots(ccd, self.config.eotestOutputPath, plotPath)
+                eoTestReport = sensorTest.EOTestReport(plots, wl_dir='')
+                eoTestReport.make_figures()
+                eoTestReport.make_pdf()
+            except Exception as e:
+                self.log.warn("Failed to make eotest report for %s: %s"%(ccd, e))
+        self.log.info("Finished test report generation.")
 
     @pipeBase.timeMethod
     def runEotestDirect(self, butler, run=None):
