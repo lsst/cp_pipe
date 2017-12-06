@@ -130,15 +130,15 @@ class CpTaskConfig(pexConfig.Config):
 
     def setDefaults(self):
         """Set default config options for the subTasks."""
-        # TODO: Set to proper values
+        # TODO: Set to proper values - DM-12939
         self.fe55.temp_set_point = -100
         self.fe55.temp_set_point_tol = 20
 
-        # TODO: Set to proper values
+        # TODO: Set to proper values - DM-12939
         self.readNoise.temp_set_point = -100
         self.readNoise.temp_set_point_tol = 20
 
-        # TODO: make this work
+        # TODO: make this work - DM-12939
         self.brightPixels.temp_set_point = -100
         self.brightPixels.temp_set_point_tol = 20
 
@@ -146,6 +146,7 @@ class CpTaskConfig(pexConfig.Config):
         # or working out what's wrong with the MONDIODE values (debug that anyway as a large difference might
         # indicate something else going on). Note that this task doesn't really use much in its config class,
         # but passes in things at runtime param to its run() method, hence putting in a slot for them here.
+        # DM-12939
         self.flatPairMaxPdFracDev = 0.99
 
     def validate(self):
@@ -330,6 +331,7 @@ class CpTask(pipeBase.CmdLineTask):
         need to know what is typically provided to these tasks when the camera team runs this code.
         This can probably be worked out from https://github.com/lsst-camera-dh/lcatr-harness
         but it sounds like Jim Chiang doesn't recommend trying to do that.
+        DM-12939
 
         Parameters
         ----------
@@ -366,7 +368,7 @@ class CpTask(pipeBase.CmdLineTask):
             fe55TaskDataId = {'run': run, 'testType': 'FE55', 'imageType': 'FE55'}
             self.log.info("Starting Fe55 pixel task")
             for ccd in ccds:
-                if 'FE55' not in testTypes:  # TODO: Remove not to test functionality
+                if 'FE55' not in testTypes:
                     msg = "No Fe55 tests found. Available data: %s"%testTypes
                     if self.config.requireAllEOTests:
                         raise RuntimeError(msg)
@@ -388,6 +390,7 @@ class CpTask(pipeBase.CmdLineTask):
         # TODO: validate the results above, and/or change code to (be able to) always run
         # over all files instead of stopping at the "required accuracy"
         # This will require making changes to the eotest code.
+        # DM-12939
 
         ################################
         ################################
@@ -423,7 +426,7 @@ class CpTask(pipeBase.CmdLineTask):
             self.log.info("Starting bright pixel task")
             brightTaskDataId = {'run': run, 'testType': 'DARK', 'imageType': 'DARK'}
             for ccd in ccds:
-                if 'DARK' not in testTypes:  # TODO: Remove not to test functionality
+                if 'DARK' not in testTypes:
                     msg = "No dark tests found. Available data: %s"%testTypes
                     if self.config.requireAllEOTests:
                         raise RuntimeError(msg)
@@ -536,7 +539,7 @@ class CpTask(pipeBase.CmdLineTask):
                 # so we need to filter these for only the pair acquisitions (as the eotest code looks like it
                 # isn't totally thorough on rejecting the wrong types of data here)
                 # TODO: adding a translator to obs_comCam and ingesting this would allow this to be done
-                # by the butler instead of here.
+                # by the butler instead of here. DM-12939
                 flatPairFilenames = [os.path.realpath(_) for _ in flatPairFilenames if
                                      os.path.realpath(_).find('flat1') != -1 or
                                      os.path.realpath(_).find('flat2') != -1]
@@ -572,7 +575,7 @@ class CpTask(pipeBase.CmdLineTask):
                 # so we need to filter these for only the pair acquisitions (as the eotest code looks like it
                 # isn't totally thorough on rejecting the wrong types of data here)
                 # TODO: adding a translator to obs_comCam and ingesting this would allow this to be done
-                # by the butler instead of here.
+                # by the butler instead of here. DM-12939
                 ptcFilenames = [os.path.realpath(_) for _ in ptcFilenames if
                                 os.path.realpath(_).find('flat1') != -1 or
                                 os.path.realpath(_).find('flat2') != -1]
