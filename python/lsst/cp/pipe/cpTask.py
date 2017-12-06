@@ -39,74 +39,74 @@ class CpTaskConfig(pexConfig.Config):
 
     fe55 = pexConfig.ConfigurableField(
         target=sensorTest.Fe55Task,
-        doc="The eotest Fe55 analysis task.",
+        doc="The Fe55 analysis task.",
     )
     doFe55 = pexConfig.Field(
         dtype=bool,
-        doc="Run the Fe55 task to measure gains?",
+        doc="Measure gains using Fe55?",
         default=True,
     )
     readNoise = pexConfig.ConfigurableField(
         target=sensorTest.ReadNoiseTask,
-        doc="The eotest read noise task.",
+        doc="The read noise task.",
     )
     doReadNoise = pexConfig.Field(
         dtype=bool,
-        doc="Run the readNoiseTask to measure read noise?",
+        doc="Measure the read-noise?",
         default=True,
     )
     brightPixels = pexConfig.ConfigurableField(
         target=sensorTest.BrightPixelsTask,
-        doc="The eotest bright pixel/column finding task.",
+        doc="The bright pixel/column finding task.",
     )
     doBrightPixels = pexConfig.Field(
         dtype=bool,
-        doc="Run the brightPixelTask to find the bright pixels?",
+        doc="Find bright pixels?",
         default=True,
     )
     darkPixels = pexConfig.ConfigurableField(
         target=sensorTest.DarkPixelsTask,
-        doc="The eotest dark pixel/column finding task.",
+        doc="The dark pixel/column finding task.",
     )
     doDarkPixels = pexConfig.Field(
         dtype=bool,
-        doc="Run the darkPixelsTask to find the dark pixels?",
+        doc="Find dark pixels?",
         default=True,
     )
     traps = pexConfig.ConfigurableField(
         target=sensorTest.TrapTask,
-        doc="The eotest trap-finding task.",
+        doc="The trap-finding task.",
     )
     doTraps = pexConfig.Field(
         dtype=bool,
-        doc="Run the trapTask to find the traps?",
+        doc="Find traps using pocket-pumping exposures?",
         default=True,
     )
     cte = pexConfig.ConfigurableField(
         target=sensorTest.CteTask,
-        doc="The eotest CTE analysis task.",
+        doc="The CTE analysis task.",
     )
     doCTE = pexConfig.Field(
         dtype=bool,
-        doc="Run the CTE task to measure the CTE?",
+        doc="Measure the charge transfer efficiency?",
         default=True,
     )
     ptc = pexConfig.ConfigurableField(
         target=sensorTest.PtcTask,
-        doc="The eotest PTC analysis task.",
+        doc="The PTC analysis task.",
     )
     doPTC = pexConfig.Field(
         dtype=bool,
-        doc="Run the PTC task to measure the photon transfer curve?",
+        doc="Measure the photon transfer curve?",
         default=True,
     )
     flatPair = pexConfig.ConfigurableField(
         target=sensorTest.FlatPairTask,
-        doc="The eotest flat-pair analysis task.",
+        doc="The flat-pair analysis task.",
     )
     doFlatPair = pexConfig.Field(
         dtype=bool,
-        doc="Run the flatPair task?",
+        doc="Measure the detector response vs incident flux using flat pairs?",
         default=True,
     )
     eotestOutputPath = pexConfig.Field(
