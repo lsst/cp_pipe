@@ -21,23 +21,17 @@
 # see <https://www.lsstcorp.org/LegalNotices/>.
 #
 
-# import math
-# import numpy
 """Calibration products production task code."""
 from __future__ import absolute_import, division, print_function
+
+import os
+import glob
 
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 import lsst.daf.base as dafBase
 import lsst.log as lsstLog
-# despite living inside the lsst namespace this is not a standard lsst package and usually won't be present
-try:
-    import lsst.eotest.sensor as sensorTest
-except ImportError:
-    raise RuntimeError("Error importing eotest")
-
-import os
-import glob
+import lsst.eotest.sensor as sensorTest
 
 
 class CpTaskConfig(pexConfig.Config):
