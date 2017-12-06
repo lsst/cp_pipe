@@ -39,7 +39,7 @@ class CpTaskConfig(pexConfig.Config):
 
     fe55 = pexConfig.ConfigurableField(
         target=sensorTest.Fe55Task,
-        doc="The eotest Fe55 analysis task. Should not be retragetted.",
+        doc="The eotest Fe55 analysis task.",
     )
     doFe55 = pexConfig.Field(
         dtype=bool,
@@ -48,7 +48,7 @@ class CpTaskConfig(pexConfig.Config):
     )
     readNoise = pexConfig.ConfigurableField(
         target=sensorTest.ReadNoiseTask,
-        doc="The eotest read noise task. Should not be retragetted.",
+        doc="The eotest read noise task.",
     )
     doReadNoise = pexConfig.Field(
         dtype=bool,
@@ -57,7 +57,7 @@ class CpTaskConfig(pexConfig.Config):
     )
     brightPixels = pexConfig.ConfigurableField(
         target=sensorTest.BrightPixelsTask,
-        doc="The eotest bright pixel/column finding task. Should not be retragetted.",
+        doc="The eotest bright pixel/column finding task.",
     )
     doBrightPixels = pexConfig.Field(
         dtype=bool,
@@ -66,7 +66,7 @@ class CpTaskConfig(pexConfig.Config):
     )
     darkPixels = pexConfig.ConfigurableField(
         target=sensorTest.DarkPixelsTask,
-        doc="The eotest dark pixel/column finding task. Should not be retragetted.",
+        doc="The eotest dark pixel/column finding task.",
     )
     doDarkPixels = pexConfig.Field(
         dtype=bool,
@@ -75,7 +75,7 @@ class CpTaskConfig(pexConfig.Config):
     )
     traps = pexConfig.ConfigurableField(
         target=sensorTest.TrapTask,
-        doc="The eotest trap-finding task. Should not be retragetted.",
+        doc="The eotest trap-finding task.",
     )
     doTraps = pexConfig.Field(
         dtype=bool,
@@ -84,7 +84,7 @@ class CpTaskConfig(pexConfig.Config):
     )
     cte = pexConfig.ConfigurableField(
         target=sensorTest.CteTask,
-        doc="The eotest CTE analysis task. Should not be retragetted.",
+        doc="The eotest CTE analysis task.",
     )
     doCTE = pexConfig.Field(
         dtype=bool,
@@ -93,7 +93,7 @@ class CpTaskConfig(pexConfig.Config):
     )
     ptc = pexConfig.ConfigurableField(
         target=sensorTest.PtcTask,
-        doc="The eotest PTC analysis task. Should not be retragetted.",
+        doc="The eotest PTC analysis task.",
     )
     doPTC = pexConfig.Field(
         dtype=bool,
@@ -102,7 +102,7 @@ class CpTaskConfig(pexConfig.Config):
     )
     flatPair = pexConfig.ConfigurableField(
         target=sensorTest.FlatPairTask,
-        doc="The eotest flat-pair analysis task. Should not be retragetted.",
+        doc="The eotest flat-pair analysis task.",
     )
     doFlatPair = pexConfig.Field(
         dtype=bool,
