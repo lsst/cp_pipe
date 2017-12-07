@@ -381,7 +381,6 @@ class CpTask(pipeBase.CmdLineTask):
         ################################
         # Run the Noise task
         if self.config.doReadNoise:
-            # self.readNoise.config.output_dir = '/home/mfl/thisisbad/'
             # note that LCA-10103 defines the Fe55 bias frames as the ones to use here
             self.log.info("Starting readNoise task")
             noiseTaskDataId = {'run': run, 'testType': 'FE55', 'imageType': 'BIAS'}
@@ -392,7 +391,7 @@ class CpTask(pipeBase.CmdLineTask):
                     if self.config.requireAllEOTests:
                         raise RuntimeError(msg)
                     else:
-                        self.log.warn(msg + "\nSkipping Fe55 task")
+                        self.log.warn(msg + "\nSkipping noise task")
                 noiseFilenames = [butler.get('raw_filename', dataId={'visit': visit,
                                                                      'ccd': ccd})[0][:-3]
                                   for visit in butler.queryMetadata('raw', ['visit'],
@@ -422,7 +421,7 @@ class CpTask(pipeBase.CmdLineTask):
                                                                     'ccd': ccd})[0][:-3]
                                  for visit in butler.queryMetadata('raw', ['visit'],
                                                                    dataId=brightTaskDataId)]
-                self.log.trace("BrigtTask: Processing %s with %s files" % (ccd, len(darkFilenames)))
+                self.log.trace("BrightTask: Processing %s with %s files" % (ccd, len(darkFilenames)))
                 maskFiles = self._getMaskFiles(self.config.eotestOutputPath, ccd)
                 gains = self._gainPropSetToDict(butler.get('eotest_gain', dataId={'ccd': ccd, 'run': run}))
                 self.brightPixels.run(sensor_id=ccd, dark_files=darkFilenames,
