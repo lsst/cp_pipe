@@ -176,18 +176,18 @@ class CpTaskConfig(pexConfig.Config):
 
 class CpTask(pipeBase.CmdLineTask):
     """
-    Calibration Products Production (CP) task.
+    Calibration (Products) Production (CP) task.
 
     This task is used to produce the calibration products required to calibrate cameras.
     Examples of such operations are as follows:
-    Given a set of flat-field images, find the dark pixels and columns.
-    Given a set of darks, find the bright pixels and columns.
-    Given a set of Fe55 exposures, calulate the gain of the readout chain, in e-/ADU
-    Given a set of Fe55 exposures, calulate the instrinsic PSF of the silicon, and the degradation of
-    the PSF due to CTE.
-    Given a set of flat-pairs, measure the photon transfer curve (PTC).
-    Given a set of bias frames, calculate the read noise of the system in e-.
-    Given a set of pocket-pumping exposures, find charge-traps in the silicon.
+    * Given a set of flat-field images, find the dark pixels and columns.
+    * Given a set of darks, find the bright pixels and columns.
+    * Given a set of Fe55 exposures, calulate the gain of the readout chain, in e-/ADU
+    * Given a set of Fe55 exposures, calulate the instrinsic PSF of the silicon, and the degradation of
+    * the PSF due to CTE.
+    * Given a set of flat-pairs, measure the photon transfer curve (PTC).
+    * Given a set of bias frames, calculate the read noise of the system in e-.
+    * Given a set of pocket-pumping exposures, find charge-traps in the silicon.
 
     The CpTask.runEotestDirect() is only applicable to LSST sensors, and only for a specific type of dataset
     This method takes a dafPersistance.Butler corresponding to a repository in which a full eotest run has
@@ -202,19 +202,7 @@ class CpTask(pipeBase.CmdLineTask):
     _DefaultName = "cp"
 
     def __init__(self, *args, **kwargs):
-        """
-        Constructor for CpTask.
-
-        Calls the lsst.pipe.base.task.Task.__init__() method, then sets up the
-        various subTasks for calibration products production task.
-
-        Parameters
-        ----------
-        *args :
-            a list of positional arguments passed on to the Task constructor
-        **kwargs :
-            a dictionary of keyword arguments passed on to the Task constructor
-        """
+        """Constructor for the CpTask."""
         pipeBase.CmdLineTask.__init__(self, *args, **kwargs)
 
         # Note - we can't currently call validate on the subTask configs, as they are NOT valid
@@ -223,7 +211,6 @@ class CpTask(pipeBase.CmdLineTask):
         self.config.validate()
         self.config.freeze()
 
-        # One of these for each pexConfig.ConfigurableField
         self.makeSubtask("fe55")
         self.makeSubtask("readNoise")
         self.makeSubtask("brightPixels")
