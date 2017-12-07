@@ -284,8 +284,7 @@ class CpTask(pipeBase.CmdLineTask):
 
         In order to replicate the canonical eotest analysis, the tasks should be run in a specific order.
         This is given/defined in the "Steps" section here:
-        http://lsst-camera.slac.stanford.edu/eTraveler/exp/LSST-CAMERA/
-               displayProcess.jsp?processPath=1179
+        http://lsst-camera.slac.stanford.edu/eTraveler/exp/LSST-CAMERA/displayProcess.jsp?processPath=1179
 
         But is replicated here for conveniece:
         * 55Fe Analysis
@@ -323,21 +322,25 @@ class CpTask(pipeBase.CmdLineTask):
             Optional run number, to be used for repos containing multiple runs
         """
         self.log.info("Running eotest routines direct")
+
+        # Input testing to check that run is in the repo
         runs = butler.queryMetadata('raw', ['run'])
-        if isinstance(run, int):
+        if run is None:
+            if len(runs) == 1:
+                run = runs[0]
+            else:
+                raise RuntimeError("Butler query found %s for runs. eotest datasets must have a run number,"
+                                   "and you must specify which run to use if a respoitory contains several."
+                                   % runs)
+        else:
             run = str(run)
-        if len(runs) != 1 and run is None:  # lots found and we don't know which one to choose
-            raise RuntimeError("Butler query found %s for runs. eotest datasets must have a run number, and "
-                               "must specify which run to use if a respoitory contains several." % runs)
-        elif run is not None and run not in runs:  # Could be specifying one of many, or one of one here
-            raise RuntimeError("Butler query found %s for runs, but the run specified (%s) "
-                               "was not among them." % (runs, run))
-        elif run is None:  # we know it's OK now
-            run = butler.queryMetadata('raw', ['run'])[0]
+            if run not in runs:
+                raise RuntimeError("Butler query found %s for runs, but the run specified (%s) "
+                                   "was not among them." % (runs, run))
         del runs  # we have run defined now, so remove this to avoid potential confusion later
 
         if not os.path.exists(self.config.eotestOutputPath):
-            os.mkdir(self.config.eotestOutputPath)
+            os.makedirs(self.config.eotestOutputPath)
 
         ccds = butler.queryMetadata('raw', ['ccd'])
         imTypes = butler.queryMetadata('raw', ['imageType'])
