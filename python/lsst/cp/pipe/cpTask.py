@@ -220,20 +220,19 @@ class CpTask(pipeBase.CmdLineTask):
         self.makeSubtask("flatPair")
         self.makeSubtask("ptc")
 
-        # Do we want to switch to the better-named logger below or use the one we get from cmdLineTask?
-        # e.g. using self.log = lsstLog.Log.getLogger("cp.pipe.cpTask")?
-
     def _getMaskFiles(self, path, ccd):
         """Get all available eotest mask files for a given ccd.
 
         Each stage of the processing generates more mask files, so this allows each to be picked up
         as more and more tests run, and saves having to have clever logic for if some tasks fail.
+
         Parameters
         ----------
         path : string
             Path on which to find the mask files
         ccd : string/int
             Name/identifier of the CCD
+
         Returns
         -------
         maskFiles : list/tuple
@@ -247,6 +246,7 @@ class CpTask(pipeBase.CmdLineTask):
         """Delete all the medianed files left behind after eotest has run.
 
         Running eotest generates a lot of interim medianed files, so this just cleans them up.
+
         Parameters
         ----------
         path : string
