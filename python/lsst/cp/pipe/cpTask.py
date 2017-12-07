@@ -169,8 +169,8 @@ class CpTaskConfig(pexConfig.Config):
                 # specified something, and we're going to clobber it, so raise a warning. Unlike to happen.
                 log.warn("OVERWRITING: Found a user defined output path of %s for %sTask. "
                          "This has been overwritten with %s, as individually specified output paths for "
-                         "subTasks are not supported at present"%(getattr(self, task).output_dir,
-                                                                  task, self.eotestOutputPath))
+                         "subTasks are not supported at present" % (getattr(self, task).output_dir,
+                                                                    task, self.eotestOutputPath))
             getattr(self, task).output_dir = self.eotestOutputPath
 
 
@@ -345,11 +345,11 @@ class CpTask(pipeBase.CmdLineTask):
         if isinstance(run, int):
             run = str(run)
         if len(runs) != 1 and run is None:  # lots found and we don't know which one to choose
-            raise RuntimeError("Butler query found %s for runs. eotest datasets must have a run numbers, and"
-                               " must specify which run to use if a respoitory contains multiple runs."%runs)
+            raise RuntimeError("Butler query found %s for runs. eotest datasets must have a run number, and "
+                               "must specify which run to use if a respoitory contains several." % runs)
         elif run is not None and run not in runs:  # Could be specifying one of many, or one of one here
             raise RuntimeError("Butler query found %s for runs, but the run specified (%s) "
-                               "was not among them."%(runs, run))
+                               "was not among them." % (runs, run))
         elif run is None:  # we know it's OK now
             run = butler.queryMetadata('raw', ['run'])[0]
         del runs  # we have run defined now, so remove this to avoid potential confusion later
@@ -369,7 +369,7 @@ class CpTask(pipeBase.CmdLineTask):
             self.log.info("Starting Fe55 pixel task")
             for ccd in ccds:
                 if 'FE55' not in testTypes:
-                    msg = "No Fe55 tests found. Available data: %s"%testTypes
+                    msg = "No Fe55 tests found. Available data: %s" % testTypes
                     if self.config.requireAllEOTests:
                         raise RuntimeError(msg)
                     else:
@@ -378,7 +378,7 @@ class CpTask(pipeBase.CmdLineTask):
                 fe55Filenames = [butler.get('raw_filename', dataId={'visit': visit,
                                                                     'ccd': ccd})[0][:-3]
                                  for visit in butler.queryMetadata('raw', ['visit'], dataId=fe55TaskDataId)]
-                self.log.trace("Fe55Task: Processing %s with %s files"%(ccd, len(fe55Filenames)))
+                self.log.trace("Fe55Task: Processing %s with %s files" % (ccd, len(fe55Filenames)))
                 maskFiles = self._getMaskFiles(self.config.eotestOutputPath, ccd)
                 gains = self.fe55.run(sensor_id=ccd, infiles=fe55Filenames, mask_files=maskFiles)
                 gainsPropSet = dafBase.PropertySet()
@@ -403,7 +403,7 @@ class CpTask(pipeBase.CmdLineTask):
             for ccd in ccds:
                 if ('FE55' not in testTypes) or ('BIAS' not in imTypes):
                     msg = "Required data for readNoise unavailable. Available data:\
-                           \ntestTypes: %s\nimageTypes: %s"%(testTypes, imTypes)
+                           \ntestTypes: %s\nimageTypes: %s" % (testTypes, imTypes)
                     if self.config.requireAllEOTests:
                         raise RuntimeError(msg)
                     else:
@@ -412,7 +412,7 @@ class CpTask(pipeBase.CmdLineTask):
                                                                      'ccd': ccd})[0][:-3]
                                   for visit in butler.queryMetadata('raw', ['visit'],
                                                                     dataId=noiseTaskDataId)]
-                self.log.trace("Fe55Task: Processing %s with %s files"%(ccd, len(noiseFilenames)))
+                self.log.trace("Fe55Task: Processing %s with %s files" % (ccd, len(noiseFilenames)))
                 maskFiles = self._getMaskFiles(self.config.eotestOutputPath, ccd)
                 gains = self._gainPropSetToDict(butler.get('eotest_gain', dataId={'ccd': ccd, 'run': run}))
                 self.readNoise.run(sensor_id=ccd, bias_files=noiseFilenames,
@@ -427,7 +427,7 @@ class CpTask(pipeBase.CmdLineTask):
             brightTaskDataId = {'run': run, 'testType': 'DARK', 'imageType': 'DARK'}
             for ccd in ccds:
                 if 'DARK' not in testTypes:
-                    msg = "No dark tests found. Available data: %s"%testTypes
+                    msg = "No dark tests found. Available data: %s" % testTypes
                     if self.config.requireAllEOTests:
                         raise RuntimeError(msg)
                     else:
@@ -437,7 +437,7 @@ class CpTask(pipeBase.CmdLineTask):
                                                                     'ccd': ccd})[0][:-3]
                                  for visit in butler.queryMetadata('raw', ['visit'],
                                                                    dataId=brightTaskDataId)]
-                self.log.trace("BrigtTask: Processing %s with %s files"%(ccd, len(darkFilenames)))
+                self.log.trace("BrigtTask: Processing %s with %s files" % (ccd, len(darkFilenames)))
                 maskFiles = self._getMaskFiles(self.config.eotestOutputPath, ccd)
                 gains = self._gainPropSetToDict(butler.get('eotest_gain', dataId={'ccd': ccd, 'run': run}))
                 self.brightPixels.run(sensor_id=ccd, dark_files=darkFilenames,
@@ -452,7 +452,7 @@ class CpTask(pipeBase.CmdLineTask):
             darkTaskDataId = {'run': run, 'testType': 'SFLAT_500', 'imageType': 'FLAT'}
             for ccd in ccds:
                 if 'SFLAT_500' not in testTypes:
-                    msg = "No superflats found. Available data: %s"%testTypes
+                    msg = "No superflats found. Available data: %s" % testTypes
                     if self.config.requireAllEOTests:
                         raise RuntimeError(msg)
                     else:
@@ -462,7 +462,7 @@ class CpTask(pipeBase.CmdLineTask):
                                                                      'ccd': ccd})[0][:-3]
                                   for visit in butler.queryMetadata('raw', ['visit'],
                                                                     dataId=darkTaskDataId)]
-                self.log.trace("DarkTask: Processing %s with %s files"%(ccd, len(sflatFilenames)))
+                self.log.trace("DarkTask: Processing %s with %s files" % (ccd, len(sflatFilenames)))
                 maskFiles = self._getMaskFiles(self.config.eotestOutputPath, ccd)
                 self.darkPixels.run(sensor_id=ccd, sflat_files=sflatFilenames, mask_files=maskFiles)
             del darkTaskDataId
@@ -475,7 +475,7 @@ class CpTask(pipeBase.CmdLineTask):
             trapTaskDataId = {'run': run, 'testType': 'TRAP', 'imageType': 'PPUMP'}
             for ccd in ccds:
                 if ('TRAP' not in testTypes) and ('PPUMP' not in imTypes):
-                    msg = "No pocket pumping exposures found. Available data: %s"%testTypes
+                    msg = "No pocket pumping exposures found. Available data: %s" % testTypes
                     if self.config.requireAllEOTests:
                         raise RuntimeError(msg)
                     else:
@@ -485,8 +485,8 @@ class CpTask(pipeBase.CmdLineTask):
                                                                     'ccd': ccd})[0][:-3]
                                  for visit in butler.queryMetadata('raw', ['visit'], dataId=trapTaskDataId)]
                 if len(trapFilenames) != 1:  # eotest can't handle more than one
-                    self.log.fatal("Trap Task: Found more than one ppump trap file: %s"%trapFilenames)
-                self.log.trace("Trap Task: Processing %s with %s files"%(ccd, len(trapFilenames)))
+                    self.log.fatal("Trap Task: Found more than one ppump trap file: %s" % trapFilenames)
+                self.log.trace("Trap Task: Processing %s with %s files" % (ccd, len(trapFilenames)))
                 maskFiles = self._getMaskFiles(self.config.eotestOutputPath, ccd)
                 gains = self._gainPropSetToDict(butler.get('eotest_gain', dataId={'ccd': ccd, 'run': run}))
                 self.traps.run(sensor_id=ccd, pocket_pumped_file=trapFilenames[0],
@@ -501,7 +501,7 @@ class CpTask(pipeBase.CmdLineTask):
             cteTaskDataId = {'run': run, 'testType': 'SFLAT_500', 'imageType': 'FLAT'}
             for ccd in ccds:
                 if 'SFLAT_500' not in testTypes:
-                    msg = "No superflats found. Available data: %s"%testTypes
+                    msg = "No superflats found. Available data: %s" % testTypes
                     if self.config.requireAllEOTests:
                         raise RuntimeError(msg)
                     else:
@@ -510,7 +510,7 @@ class CpTask(pipeBase.CmdLineTask):
                 sflatFilenames = [butler.get('raw_filename', dataId={'visit': visit,
                                                                      'ccd': ccd})[0][:-3]
                                   for visit in butler.queryMetadata('raw', ['visit'], dataId=cteTaskDataId)]
-                self.log.trace("CTETask: Processing %s with %s files"%(ccd, len(sflatFilenames)))
+                self.log.trace("CTETask: Processing %s with %s files" % (ccd, len(sflatFilenames)))
                 maskFiles = self._getMaskFiles(self.config.eotestOutputPath, ccd)
                 self.cte.run(sensor_id=ccd, superflat_files=sflatFilenames, mask_files=maskFiles)
             del cteTaskDataId
@@ -523,7 +523,7 @@ class CpTask(pipeBase.CmdLineTask):
             flatPairDataId = {'run': run, 'testType': 'FLAT', 'imageType': 'FLAT'}
             for ccd in ccds:
                 if 'FLAT' not in testTypes:
-                    msg = "No dataset for flat_pairs found. Available data: %s"%testTypes
+                    msg = "No dataset for flat_pairs found. Available data: %s" % testTypes
                     if self.config.requireAllEOTests:
                         raise RuntimeError(msg)
                     else:
@@ -545,7 +545,7 @@ class CpTask(pipeBase.CmdLineTask):
                                      os.path.realpath(_).find('flat2') != -1]
                 if not flatPairFilenames:
                     raise RuntimeError("No flatPair files found.")
-                self.log.trace("FlatPairTask: Processing %s with %s files"%(ccd, len(flatPairFilenames)))
+                self.log.trace("FlatPairTask: Processing %s with %s files" % (ccd, len(flatPairFilenames)))
                 maskFiles = self._getMaskFiles(self.config.eotestOutputPath, ccd)
                 gains = self._gainPropSetToDict(butler.get('eotest_gain', dataId={'ccd': ccd, 'run': run}))
                 self.flatPair.run(sensor_id=ccd, infiles=flatPairFilenames, mask_files=maskFiles,
@@ -560,7 +560,7 @@ class CpTask(pipeBase.CmdLineTask):
             ptcDataId = {'run': run, 'testType': 'FLAT', 'imageType': 'FLAT'}
             for ccd in ccds:
                 if 'FLAT' not in testTypes:
-                    msg = "No dataset for flat_pairs found. Available data: %s"%testTypes
+                    msg = "No dataset for flat_pairs found. Available data: %s" % testTypes
                     if self.config.requireAllEOTests:
                         raise RuntimeError(msg)
                     else:
@@ -581,7 +581,7 @@ class CpTask(pipeBase.CmdLineTask):
                                 os.path.realpath(_).find('flat2') != -1]
                 if not ptcFilenames:
                     raise RuntimeError("No flatPair files found")
-                self.log.trace("PTCTask: Processing %s with %s files"%(ccd, len(ptcFilenames)))
+                self.log.trace("PTCTask: Processing %s with %s files" % (ccd, len(ptcFilenames)))
                 maskFiles = self._getMaskFiles(self.config.eotestOutputPath, ccd)
                 gains = self._gainPropSetToDict(butler.get('eotest_gain', dataId={'ccd': ccd, 'run': run}))
                 self.ptc.run(sensor_id=ccd, infiles=ptcFilenames, mask_files=maskFiles, gains=gains)
