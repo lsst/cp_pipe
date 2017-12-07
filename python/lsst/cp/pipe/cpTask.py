@@ -228,14 +228,14 @@ class CpTask(pipeBase.CmdLineTask):
 
         Parameters
         ----------
-        path : string
+        path : `str`
             Path on which to find the mask files
-        ccd : string/int
+        ccd : `string` or `int`
             Name/identifier of the CCD
 
         Returns
         -------
-        maskFiles : list/tuple
+        maskFiles : iterable of `str`
             List of mask files, or an empty tuple if none are found
         """
         pattern = '*' + str(ccd) + '*mask*'  # the cast to str supports obs_auxTel
@@ -249,10 +249,10 @@ class CpTask(pipeBase.CmdLineTask):
 
         Parameters
         ----------
-        path : string
+        path : `str`
            Path on which to delete all the eotest medianed files.
         """
-        for filename in glob.glob(os.path.join(path, '*median*')):
+        for filename in glob.glob(os.path.join(path, '*_median_*.fits')):
             os.remove(filename)
 
     def _gainPropSetToDict(self, pSet):
@@ -265,7 +265,7 @@ class CpTask(pipeBase.CmdLineTask):
 
         Parameters
         ----------
-        pSet : daf.base.PropertySet
+        pSet : `lsst.daf.base.PropertySet`
            PropertySet to be translated to an integer-keyed dictionary
         """
         return {int(amp): gain for amp, gain in pSet.toDict().items()}
@@ -322,9 +322,9 @@ class CpTask(pipeBase.CmdLineTask):
 
         Parameters
         ----------
-        butler : daf.persistence.butler
+        butler : `lsst.daf.persistence.butler`
             Butler for the repo containg the eotest data to be used
-        run : string or int
+        run : `str` or `int`
             Optional run number, to be used for repos containing multiple runs
         """
         self.log.info("Running eotest routines direct")
