@@ -517,16 +517,17 @@ class CpTask(pipeBase.CmdLineTask):
                                                 'ccd': ccd})[0][:-3]
                                      for visit in butler.queryMetadata('raw', ['visit'],
                                                                        dataId=flatPairDataId)]
-                # Note that eotest needs the original filenames as that is the only place the flat
-                # pair-number is kept, so we have to resolve links and pass in the *original* paths here :(
+                # Note that eotest needs the original filename as written by the test-stand data acquisition
+                # system, as that is the only place the flat pair-number is recorded, so we have to resolve
+                # sym-links and pass in the *original* paths/filenames here :(
                 # Also, there is no "flat-pair" test type, so all FLAT/FLAT imType/testType will appear here
                 # so we need to filter these for only the pair acquisitions (as the eotest code looks like it
                 # isn't totally thorough on rejecting the wrong types of data here)
                 # TODO: adding a translator to obs_comCam and ingesting this would allow this to be done
                 # by the butler instead of here. DM-12939
-                flatPairFilenames = [os.path.realpath(_) for _ in flatPairFilenames if
-                                     os.path.realpath(_).find('flat1') != -1 or
-                                     os.path.realpath(_).find('flat2') != -1]
+                flatPairFilenames = [os.path.realpath(f) for f in flatPairFilenames if
+                                     os.path.realpath(f).find('flat1') != -1 or
+                                     os.path.realpath(f).find('flat2') != -1]
                 if not flatPairFilenames:
                     raise RuntimeError("No flatPair files found.")
                 self.log.trace("FlatPairTask: Processing %s with %s files" % (ccd, len(flatPairFilenames)))
@@ -553,16 +554,17 @@ class CpTask(pipeBase.CmdLineTask):
                 ptcFilenames = [butler.get('raw_filename', dataId={'visit': visit,
                                                                    'ccd': ccd})[0][:-3]
                                 for visit in butler.queryMetadata('raw', ['visit'], dataId=ptcDataId)]
-                # Note that eotest needs the original filenames as that is the only place the flat
-                # pair-number is kept, so we have to resolve links and pass in the *original* paths here :(
+                # Note that eotest needs the original filename as written by the test-stand data acquisition
+                # system, as that is the only place the flat pair-number is recorded, so we have to resolve
+                # sym-links and pass in the *original* paths/filenames here :(
                 # Also, there is no "flat-pair" test type, so all FLAT/FLAT imType/testType will appear here
                 # so we need to filter these for only the pair acquisitions (as the eotest code looks like it
                 # isn't totally thorough on rejecting the wrong types of data here)
                 # TODO: adding a translator to obs_comCam and ingesting this would allow this to be done
                 # by the butler instead of here. DM-12939
-                ptcFilenames = [os.path.realpath(_) for _ in ptcFilenames if
-                                os.path.realpath(_).find('flat1') != -1 or
-                                os.path.realpath(_).find('flat2') != -1]
+                ptcFilenames = [os.path.realpath(f) for f in ptcFilenames if
+                                os.path.realpath(f).find('flat1') != -1 or
+                                os.path.realpath(f).find('flat2') != -1]
                 if not ptcFilenames:
                     raise RuntimeError("No flatPair files found")
                 self.log.trace("PTCTask: Processing %s with %s files" % (ccd, len(ptcFilenames)))
