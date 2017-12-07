@@ -270,12 +270,7 @@ class CpTask(pipeBase.CmdLineTask):
         """
         return {int(amp): gain for amp, gain in pSet.toDict().items()}
 
-    def testMethod(self):  # TODO: XXX remove this whole method, just useful for debugging/dev work
-        """TODO: Remove this docstring that only exists to remove flake8 error."""
-        self.log.warn("Test warning message")
-        print(self.config.requireAllEOTests)
-
-    # @pipeBase.timeMethod #xxx re-include this
+    @pipeBase.timeMethod
     def runEotestDirect(self, butler, run=None):
         """
         Generate calibration products using eotest algorithms.
