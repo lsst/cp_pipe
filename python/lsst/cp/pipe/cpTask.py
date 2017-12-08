@@ -29,7 +29,6 @@ import glob
 
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
-import lsst.daf.base as dafBase
 import lsst.log as lsstLog
 import lsst.eotest.sensor as sensorTest
 
@@ -255,21 +254,6 @@ class CpTask(pipeBase.CmdLineTask):
         for filename in glob.glob(os.path.join(path, '*_median_*.fits')):
             os.remove(filename)
 
-    def _gainPropSetToDict(self, pSet):
-        """Translator for the persisted gain values.
-
-        eotest wants an {amp: gain} dictionary with integer keys for the amps.
-        When we persist dafBase.propertySets these only take strings for keys,
-        so the provided .toDict() method won't do, so here we provide an extra
-        layer of translation to keep eotest happy.
-
-        Parameters
-        ----------
-        pSet : `lsst.daf.base.PropertySet`
-           PropertySet to be translated to an integer-keyed dictionary
-        """
-        return {int(amp): gain for amp, gain in pSet.toDict().items()}
-
     @pipeBase.timeMethod
     def runEotestDirect(self, butler, run=None):
         """
@@ -366,10 +350,10 @@ class CpTask(pipeBase.CmdLineTask):
                 self.log.trace("Fe55Task: Processing %s with %s files" % (ccd, len(fe55Filenames)))
                 maskFiles = self._getMaskFiles(self.config.eotestOutputPath, ccd)
                 gains = self.fe55.run(sensor_id=ccd, infiles=fe55Filenames, mask_files=maskFiles)
-                gainsPropSet = dafBase.PropertySet()
-                for amp, gain in gains.items():  # there is no propSet.fromDict() method so make like this
-                    gainsPropSet.addDouble(str(amp), gain)
-                butler.put(gainsPropSet, 'eotest_gain', dataId={'ccd': ccd, 'run': run})
+                # gainsPropSet = dafBase.PropertySet()
+                # for amp, gain in gains.items():  # there is no propSet.fromDict() method so make like this
+                #     gainsPropSet.addDouble(str(amp), gain)
+                butler.put(gains, 'eotest_gain', dataId={'ccd': ccd, 'run': run})
             del fe55TaskDataId
 
         # TODO: validate the results above, and/or change code to (be able to) always run
@@ -398,7 +382,8 @@ class CpTask(pipeBase.CmdLineTask):
                                                                     dataId=noiseTaskDataId)]
                 self.log.trace("Fe55Task: Processing %s with %s files" % (ccd, len(noiseFilenames)))
                 maskFiles = self._getMaskFiles(self.config.eotestOutputPath, ccd)
-                gains = self._gainPropSetToDict(butler.get('eotest_gain', dataId={'ccd': ccd, 'run': run}))
+                # gains = self._gainPropSetToDict(butler.get('eotest_gain', dataId={'ccd': ccd, 'run': run}))
+                gains = butler.get('eotest_gain', dataId={'ccd': ccd, 'run': run})
                 self.readNoise.run(sensor_id=ccd, bias_files=noiseFilenames,
                                    gains=gains, mask_files=maskFiles)
             del noiseTaskDataId
@@ -423,7 +408,8 @@ class CpTask(pipeBase.CmdLineTask):
                                                                    dataId=brightTaskDataId)]
                 self.log.trace("BrightTask: Processing %s with %s files" % (ccd, len(darkFilenames)))
                 maskFiles = self._getMaskFiles(self.config.eotestOutputPath, ccd)
-                gains = self._gainPropSetToDict(butler.get('eotest_gain', dataId={'ccd': ccd, 'run': run}))
+                # gains = self._gainPropSetToDict(butler.get('eotest_gain', dataId={'ccd': ccd, 'run': run}))
+                gains = butler.get('eotest_gain', dataId={'ccd': ccd, 'run': run})
                 self.brightPixels.run(sensor_id=ccd, dark_files=darkFilenames,
                                       mask_files=maskFiles, gains=gains)
             del brightTaskDataId
@@ -472,7 +458,8 @@ class CpTask(pipeBase.CmdLineTask):
                     self.log.fatal("Trap Task: Found more than one ppump trap file: %s" % trapFilenames)
                 self.log.trace("Trap Task: Processing %s with %s files" % (ccd, len(trapFilenames)))
                 maskFiles = self._getMaskFiles(self.config.eotestOutputPath, ccd)
-                gains = self._gainPropSetToDict(butler.get('eotest_gain', dataId={'ccd': ccd, 'run': run}))
+                # gains = self._gainPropSetToDict(butler.get('eotest_gain', dataId={'ccd': ccd, 'run': run}))
+                gains = butler.get('eotest_gain', dataId={'ccd': ccd, 'run': run})
                 self.traps.run(sensor_id=ccd, pocket_pumped_file=trapFilenames[0],
                                mask_files=maskFiles, gains=gains)
             del trapTaskDataId
@@ -532,7 +519,8 @@ class CpTask(pipeBase.CmdLineTask):
                     raise RuntimeError("No flatPair files found.")
                 self.log.trace("FlatPairTask: Processing %s with %s files" % (ccd, len(flatPairFilenames)))
                 maskFiles = self._getMaskFiles(self.config.eotestOutputPath, ccd)
-                gains = self._gainPropSetToDict(butler.get('eotest_gain', dataId={'ccd': ccd, 'run': run}))
+                # gains = self._gainPropSetToDict(butler.get('eotest_gain', dataId={'ccd': ccd, 'run': run}))
+                gains = butler.get('eotest_gain', dataId={'ccd': ccd, 'run': run})
                 self.flatPair.run(sensor_id=ccd, infiles=flatPairFilenames, mask_files=maskFiles,
                                   gains=gains, max_pd_frac_dev=self.config.flatPairMaxPdFracDev)
             del flatPairDataId
@@ -569,7 +557,8 @@ class CpTask(pipeBase.CmdLineTask):
                     raise RuntimeError("No flatPair files found")
                 self.log.trace("PTCTask: Processing %s with %s files" % (ccd, len(ptcFilenames)))
                 maskFiles = self._getMaskFiles(self.config.eotestOutputPath, ccd)
-                gains = self._gainPropSetToDict(butler.get('eotest_gain', dataId={'ccd': ccd, 'run': run}))
+                # gains = self._gainPropSetToDict(butler.get('eotest_gain', dataId={'ccd': ccd, 'run': run}))
+                gains = butler.get('eotest_gain', dataId={'ccd': ccd, 'run': run})
                 self.ptc.run(sensor_id=ccd, infiles=ptcFilenames, mask_files=maskFiles, gains=gains)
             del ptcDataId
 
