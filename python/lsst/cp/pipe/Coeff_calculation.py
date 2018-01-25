@@ -1,3 +1,4 @@
+from __future__ import print_function
 import math
 import os
 import re
@@ -162,12 +163,12 @@ def xcorr(im1, im2, Visits, n=5, border=20, frame=None, CCD=[1], GAIN=None, sigm
                 gain = GAIN[j]
            # gain/=gain
             smi *= gain
-            print mean*gain, afwMath.makeStatistics(smi, afwMath.MEANCLIP, sctrl).getValue()
+            print(mean*gain, afwMath.makeStatistics(smi, afwMath.MEANCLIP, sctrl).getValue())
             smi -= mean*gain
             smiTemp *= gain
         means1[i] = afwMath.makeStatistics(
             temp[border:-border, border:-border], afwMath.MEANCLIP, sctrl).getValue()
-        print afwMath.makeStatistics(temp[border:-border, border:-border], afwMath.MEANCLIP, sctrl).getValue()
+        print(afwMath.makeStatistics(temp[border:-border, border:-border], afwMath.MEANCLIP, sctrl).getValue())
     #    print(afwMath.makeStatistics(temp, afwMath.MEANCLIP,sctrl).getValue()-afwMath.makeStatistics(temp[0:-n,0:-n], afwMath.MEANCLIP,sctrl).getValue())
     im1, im2 = ims
     #
@@ -196,8 +197,8 @@ def xcorr(im1, im2, Visits, n=5, border=20, frame=None, CCD=[1], GAIN=None, sigm
         global diffim
         diffim = diff
     if False:
-        print afwMath.makeStatistics(diff, afwMath.MEDIAN, sctrl).getValue()
-        print afwMath.makeStatistics(diff, afwMath.VARIANCECLIP, sctrl).getValue(), np.var(diff.getArray())
+        print(afwMath.makeStatistics(diff, afwMath.MEDIAN, sctrl).getValue())
+        print(afwMath.makeStatistics(diff, afwMath.VARIANCECLIP, sctrl).getValue(), np.var(diff.getArray()))
     #
     # Measure the correlations
     #
@@ -219,7 +220,7 @@ def xcorr(im1, im2, Visits, n=5, border=20, frame=None, CCD=[1], GAIN=None, sigm
             XCORR[-i+L, j+L] = xcorr.getArray()[i, j]
             XCORR[i+L, -j+L] = xcorr.getArray()[i, j]
             XCORR[-i+L, -j+L] = xcorr.getArray()[i, j]
-    print sum(means1), xcorr.getArray()[0, 0], np.sum(XCORR), xcorr.getArray()[0, 0]/sum(means1), np.sum(XCORR)/sum(means1)
+    print(sum(means1), xcorr.getArray()[0, 0], np.sum(XCORR), xcorr.getArray()[0, 0]/sum(means1), np.sum(XCORR)/sum(means1))
     return (xcorr, means1)
 
 #This program is used to plot the correlation functions
@@ -429,7 +430,7 @@ def gainInvest(butler, v1, v2, ccds=[12], n=5, border=10, plot=False, zmax=.05, 
                 XCORR[I+L, -J+L] = xcorr.getArray()[I, J]
                 XCORR[-I+L, -J+L] = xcorr.getArray()[I, J]
         CorVar.append(np.sum(XCORR))
-        print means1[0][i], means1[1][i], means1[0][i]+means1[1][i], Var[i], CorVar[i]
+        print(means1[0][i], means1[1][i], means1[0][i]+means1[1][i], Var[i], CorVar[i])
     return ([i+j for i, j in zip(means1[1], means1[0])], Var, CorVar, gains)
 
 
@@ -561,7 +562,7 @@ def ampCorrelation(butler, v1, v2, ccds=[12], n=5, border=20, plot=False, zmax=.
                 XCORR[I+L, J+L] = xcorr.getArray()[I, J]
                 XCORR[-I+L, J+L] = xcorr.getArray()[I, J]
                 XCORR[I+L, -J+L] = xcorr.getArray()[I, J]
-        print means1[0][i], means1[1][i], means1[0][i]+means1[1][i], Var[i], np.sum(XCORR)
+        print(means1[0][i], means1[1][i], means1[0][i]+means1[1][i], Var[i], np.sum(XCORR))
     return (means1[0], means1[1], [i+j for i, j in zip(means1[1], means1[0])], Var, CorVar)
 
 
@@ -573,7 +574,7 @@ def iterativeRegression(x, y, intercept=0, sigma=3):
     sctrl.setNumSigmaClip(sigma)
     if intercept:
         while iterate:
-            print iterate, np.shape(x)
+            print(iterate, np.shape(x))
             A = np.vstack([x, np.ones(len(x))]).T
             B, _, _, _ = np.linalg.lstsq(A, y)
             slope, intercept = B
@@ -581,7 +582,7 @@ def iterativeRegression(x, y, intercept=0, sigma=3):
             resMean = afwMath.makeStatistics(res, afwMath.MEANCLIP, sctrl).getValue()
             resSTD = np.sqrt(afwMath.makeStatistics(res, afwMath.VARIANCECLIP, sctrl).getValue())
             index = np.where((res > (resMean+sigma*resSTD)) | (res < resMean-sigma*resSTD))
-            print resMean, resSTD, np.max(res), sigma
+            print(resMean, resSTD, np.max(res), sigma)
             if np.shape(np.where(index))[1] == 0:
                 break
             x = np.delete(x, index)
@@ -589,7 +590,7 @@ def iterativeRegression(x, y, intercept=0, sigma=3):
 
         return slope, intercept
     while iterate:
-        print iterate, np.shape(x)
+        print(iterate, np.shape(x))
         TEST = x[:, np.newaxis]
         slope, _, _, _ = np.linalg.lstsq(TEST, y)
         slope = slope[0]
@@ -597,7 +598,7 @@ def iterativeRegression(x, y, intercept=0, sigma=3):
         resMean = afwMath.makeStatistics(res, afwMath.MEANCLIP, sctrl).getValue()
         resSTD = np.sqrt(afwMath.makeStatistics(res, afwMath.VARIANCECLIP, sctrl).getValue())
         index = np.where((res > (resMean+sigma*resSTD)) | (res < resMean-sigma*resSTD))
-        print resMean, resSTD, np.max(res), sigma
+        print(resMean, resSTD, np.max(res), sigma)
         if np.shape(np.where(index))[1] == 0:
             break
         x = np.delete(x, index)
@@ -633,7 +634,7 @@ def gainEst(SelCCDS, butler, Visits, intercept=0, saveDic=0, outputFile='/home/w
             #So sanity checks. If these are failed more investigation is needed!
             for i, j in enumerate(a):
                 if a[i]*10 < b[i] or a[i]*10 < c[i]:
-                    print '\n\n\n\n Check this visit! ', VISITS, ' \n\n\n\n'
+                    print('\n\n\n\n Check this visit! ', VISITS, ' \n\n\n\n')
                     breaker += 1
             if breaker:
                 continue
@@ -665,9 +666,9 @@ def gainEst(SelCCDS, butler, Visits, intercept=0, saveDic=0, outputFile='/home/w
             TEST = AmpMeans[i][:, np.newaxis]
             slope = iterativeRegression(AmpMeans[i], AmpCorrVariance[i])
             slope3, intercept2 = iterativeRegression(AmpMeans[i], AmpCorrVariance[i], intercept=1)
-            print "\n\n\n\n slope of fit: ", slope2, "intercept of fit: ", intercept, 'p value', p_value
-            print " slope of second fit: ", slope, 'difference:', slope-slope2
-            print " slope of third fit: ", slope3, 'difference:', slope-slope3
+            print("\n\n\n\n slope of fit: ", slope2, "intercept of fit: ", intercept, 'p value', p_value)
+            print(" slope of second fit: ", slope, 'difference:', slope-slope2)
+            print(" slope of third fit: ", slope3, 'difference:', slope-slope3)
             if intercept:
                 slope = slope3
 
@@ -698,7 +699,7 @@ def gainEst(SelCCDS, butler, Visits, intercept=0, saveDic=0, outputFile='/home/w
             FILE.truncate()
             pickle.dump(STOREDGAINS, FILE)
             FILE.close()
-    print '\n\n\n GAINS ', GAINS, '\n\n', oGAINS
+    print('\n\n\n GAINS ', GAINS, '\n\n', oGAINS)
     return (GAINS, oGAINS)
 
 
@@ -757,9 +758,9 @@ def SOR(source, dx=1.0, MAXIT=10000, eLevel=5.0e-14):
             omega = 1.0/(1-rhoSpe*rhoSpe*omega/4.0)
         COUNT += 1
     if COUNT == MAXIT*2:
-        print "Did not converge ", COUNT, outError, inError*eLevel
+        print("Did not converge ", COUNT, outError, inError*eLevel)
     else:
-        print "Converged in ", COUNT, outError, inError*eLevel
+        print("Converged in ", COUNT, outError, inError*eLevel)
     return func[1:-1, 1:-1]
 
 
@@ -784,7 +785,7 @@ def kernelGen(corr, means, LEVEL=.20, MAXIT=10000, eLevel=5.0e-14, sigma=4.0):
                 CORR = corr[I].copy()
             CORR[0, 0] -= (mean1+mean2)
             if CORR[0, 0] > 0:
-                print 'Unexpected value of the variance -mean!!!'
+                print('Unexpected value of the variance -mean!!!')
                 continue
             CORR /= -float(1.0*(mean1**2+mean2**2))
             #print CORR.shape[0]
@@ -799,7 +800,7 @@ def kernelGen(corr, means, LEVEL=.20, MAXIT=10000, eLevel=5.0e-14, sigma=4.0):
                     TIsource[i+L, -j+L] = CORR[i, j]
                     TIsource[-i+L, -j+L] = CORR[i, j]
             if np.abs(np.sum(TIsource))/np.sum(np.abs(TIsource)) > LEVEL:
-                print 'Sum of the xcorr is unexpectedly high. Investigate item num ', I, np.abs(np.sum(TIsource))/np.sum(np.abs(TIsource))
+                print('Sum of the xcorr is unexpectedly high. Investigate item num ', I, np.abs(np.sum(TIsource))/np.sum(np.abs(TIsource)))
                 continue
             #Isource+=TIsource
             Isource.append(TIsource)
@@ -820,7 +821,7 @@ def kernelGen(corr, means, LEVEL=.20, MAXIT=10000, eLevel=5.0e-14, sigma=4.0):
             CORR = corr
         CORR[0, 0] -= (means[0]+means[1])
         if CORR[0, 0] > 0:
-            print 'Unexpected value of the variance -mean!!!'
+            print('Unexpected value of the variance -mean!!!')
             return 0
         CORR /= -float(1.0*(means[0]**2+means[1]**2))
         #print CORR.shape[0]
@@ -835,7 +836,7 @@ def kernelGen(corr, means, LEVEL=.20, MAXIT=10000, eLevel=5.0e-14, sigma=4.0):
                 TIsource[i+L, -j+L] = CORR[i, j]
                 TIsource[-i+L, -j+L] = CORR[i, j]
         if np.abs(np.sum(TIsource))/np.sum(np.abs(TIsource)) > LEVEL:
-            print 'Sum of the xcorr is unexpectedly high. Investigate here ', np.abs(np.sum(TIsource))/np.sum(np.abs(TIsource)) > LEVEL
+            print('Sum of the xcorr is unexpectedly high. Investigate here ', np.abs(np.sum(TIsource))/np.sum(np.abs(TIsource)) > LEVEL)
             return 0
         Isource += TIsource
 
@@ -934,9 +935,9 @@ def xcorr_bias(rangeMeans=[87500, 70000, 111000], repeats=5, sig=5, border=3, se
                 XCORR, xcorr, means, MEANS1 = xcorr_sim(im, im0, border=border, sigma=sig)
                 MEANS[MEAN].append(means)
                 XCORRS[MEAN].append(xcorr)
-            print '\n\n\n'
+            print('\n\n\n')
             for i, MEAN in enumerate(rangeMeans):
-                print "Simulated/Expected:", MEAN, MEANS[MEAN][-1], XCORRS[MEAN][-1].getArray()[0, 0]/MEANS[MEAN][-1]
+                print("Simulated/Expected:", MEAN, MEANS[MEAN][-1], XCORRS[MEAN][-1].getArray()[0, 0]/MEANS[MEAN][-1])
     else:
         for rep in range(repeats):
             for i, MEAN in enumerate(rangeMeans):
@@ -951,7 +952,7 @@ def xcorr_bias(rangeMeans=[87500, 70000, 111000], repeats=5, sig=5, border=3, se
                 XCORR, xcorr, means, MEANS1 = xcorr_sim(im, im0, border=border, sigma=sig)
                 MEANS[MEAN].append(means)
                 XCORRS[MEAN].append(xcorr)
-            print '\n\n\n'
+            print('\n\n\n')
             for i, MEAN in enumerate(rangeMeans):
-                print "Simulated/Expected:", MEANS[MEAN][-1], '\n', (XCORRS[MEAN][-1].getArray()[1, 1]/MEANS[MEAN][-1]*(1+a))/.1
+                print("Simulated/Expected:", MEANS[MEAN][-1], '\n', (XCORRS[MEAN][-1].getArray()[1, 1]/MEANS[MEAN][-1]*(1+a))/.1)
     return MEANS, XCORRS
