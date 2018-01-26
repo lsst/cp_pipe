@@ -146,7 +146,8 @@ def xcorr(im1, im2, Visits, n=5, border=20, frame=None, CCD=[1], GAIN=None, sigm
     means = [None, None]
     means1 = [None, None]
     for i, im in enumerate(ims):
-        ccd = afwCG.cast_Ccd(im.getDetector())
+        # ccd = afwCG.cast_Ccd(im.getDetector())
+        ccd = im.getDetector()
         try:
             frameId = int(re.sub(r"^SUPA0*", "", im.getMetadata().get("FRAMEID")))
         except:
@@ -359,10 +360,12 @@ def gainInvest(butler, v1, v2, ccds=[12], n=5, border=10, plot=False, zmax=.05,
     gains = []
     sctrl = afwMath.StatisticsControl()
     sctrl.setNumSigmaClip(sigma)
-    CCD = afwCG.cast_Ccd(ims[0].getDetector())
+    # CCD = afwCG.cast_Ccd(ims[0].getDetector())
+    CCD = ims[0].getDetector()
     for i, im in enumerate(ims):
 
-        ccd = afwCG.cast_Ccd(im.getDetector())
+        # ccd = afwCG.cast_Ccd(im.getDetector())
+        ccd = im.getDetector()
         try:
             frameId = int(re.sub(r"^SUPA0*", "", im.getMetadata().get("FRAMEID")))
         except:
@@ -498,10 +501,12 @@ def ampCorrelation(butler, v1, v2, ccds=[12], n=5, border=20, plot=False, zmax=.
     means1 = [[], []]
     sctrl = afwMath.StatisticsControl()
     sctrl.setNumSigmaClip(sigma)
-    CCD = afwCG.cast_Ccd(ims[0].getDetector())
+    # CCD = afwCG.cast_Ccd(ims[0].getDetector())
+    CCD = ims[0].getDetector()
     for i, im in enumerate(ims):
 
-        ccd = afwCG.cast_Ccd(im.getDetector())
+        # ccd = afwCG.cast_Ccd(im.getDetector())
+        ccd = im.getDetector()
         try:
             frameId = int(re.sub(r"^SUPA0*", "", im.getMetadata().get("FRAMEID")))
         except:
