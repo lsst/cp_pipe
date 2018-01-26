@@ -28,7 +28,6 @@ import lsst.afw.display.ds9 as ds9
 # import ctypes
 from lsst.obs.subaru.crosstalk import CrosstalkTask
 from lsst.obs.subaru.isr import SubaruIsrTask
-from hsc.pipe.base.butler import getDataRef
 # import random
 # import lsst.pex.exceptions as pexExcept
 import matplotlib as mpl
@@ -101,7 +100,7 @@ def xcorrFromVisit(butler, v1, v2, ccds=[1], n=5, border=10, plot=False,
 def isr(butler, v, ccd):
     """Docstring."""
     dataId = {'visit': v, 'ccd': ccd}
-    dataRef = getDataRef(butler, dataId)
+    dataRef = butler.dataRef('raw', dataId=dataId)
     config = SubaruIsrTask.ConfigClass()
     # config.load(os.path.join(os.environ["OBS_SUBARU_DIR"], "config", "isr.py"))
     # config.load(os.path.join(os.environ["OBS_SUBARU_DIR"], "config", "hsc", "isr.py"))
@@ -116,7 +115,7 @@ def isr(butler, v, ccd):
     config.doFringe = False
     config.fringe.filters = ['y', ]
     config.overscanFitType = "AKIMA_SPLINE"
-    config.overscanPolyOrder = 30
+    config.overscanOrder = 30
     # Overscan is fairly efficient at removing bias level, but leaves a line in the middle
     config.doBias = True
     config.doDark = True  # Required especially around CCD 33
