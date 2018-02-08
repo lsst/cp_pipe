@@ -174,7 +174,8 @@ def xcorr(im1, im2, Visits, n=5, border=20, frame=None, CCD=[1], GAIN=None, sigm
             smiTemp = temp[a.getBBox()]
             mean = afwMath.makeStatistics(smi, afwMath.MEANCLIP, sctrl).getValue()
             if GAIN == None:
-                gain = a.getElectronicParams().getGain()
+                # gain = a.getElectronicParams().getGain()
+                gain = a.getGain()
             else:
                 gain = GAIN[j]
             # gain/=gain
@@ -394,7 +395,8 @@ def gainInvest(butler, v1, v2, ccds=[12], n=5, border=10, plot=False, zmax=.05,
                 mean = afwMath.makeStatistics(smi[:-border, border:-border], afwMath.MEANCLIP).getValue()
             else:
                 mean = afwMath.makeStatistics(smi[:, border:-border], afwMath.MEANCLIP).getValue()
-            gain = a.getElectronicParams().getGain()
+            # gain = a.getElectronicParams().getGain()
+            gain = a.getGain()
             means1[i].append(mean)
             if i == 0:
                 gains.append(gain)
@@ -540,7 +542,8 @@ def ampCorrelation(butler, v1, v2, ccds=[12], n=5, border=20, plot=False, zmax=.
             if GAINS is not None:
                 gain = GAINS[0]
             else:
-                gain = a.getElectronicParams().getGain()
+                # gain = a.getElectronicParams().getGain()
+                gain = a.getGain()
             means1[i].append(mean*gain)
             smi *= gain
             smi -= mean*gain
