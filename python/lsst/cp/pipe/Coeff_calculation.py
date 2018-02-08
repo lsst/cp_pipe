@@ -168,8 +168,10 @@ def xcorr(im1, im2, Visits, n=5, border=20, frame=None, CCD=[1], GAIN=None, sigm
         temp = im.clone()
         # Rescale each amp by the appropriate gain and subtract the mean.
         for j, a in enumerate(ccd):
-            smi = im[a.getDataSec(True)]
-            smiTemp = temp[a.getDataSec(True)]
+            # smi = im[a.getDataSec(True)]
+            # smiTemp = temp[a.getDataSec(True)]
+            smi = im[a.getBBox()]
+            smiTemp = temp[a.getBBox()]
             mean = afwMath.makeStatistics(smi, afwMath.MEANCLIP, sctrl).getValue()
             if GAIN == None:
                 gain = a.getElectronicParams().getGain()
@@ -384,7 +386,8 @@ def gainInvest(butler, v1, v2, ccds=[12], n=5, border=10, plot=False, zmax=.05,
         # ims[i]=ims[i][border:-border,border:-border]
         means[i] = afwMath.makeStatistics(im, afwMath.MEANCLIP, sctrl).getValue()
         for j, a in enumerate(ccd):
-            smi = im[a.getDataSec(True)]
+            # smi = im[a.getDataSec(True)]
+            smi = im[a.getBBox()]
             if j == 0:
                 mean = afwMath.makeStatistics(smi[border:, border:-border], afwMath.MEANCLIP).getValue()
             elif j == 3:
@@ -425,7 +428,8 @@ def gainInvest(butler, v1, v2, ccds=[12], n=5, border=10, plot=False, zmax=.05,
             borderL = border
         if i == 3:
             borderR = border
-        smi = diff[a.getDataSec(True)].clone()
+        # smi = diff[a.getDataSec(True)].clone()
+        smi = diff[a.getBBox()].clone()
         # dim0 = smi[border:-border-n,border:-border-n]
         dim0 = smi[borderL:-borderR-n, border:-border-n]
         dim0 -= afwMath.makeStatistics(dim0, afwMath.MEANCLIP, sctrl).getValue()
@@ -525,7 +529,8 @@ def ampCorrelation(butler, v1, v2, ccds=[12], n=5, border=20, plot=False, zmax=.
         # ims[i]=ims[i][border:-border,border:-border]
         means[i] = afwMath.makeStatistics(im, afwMath.MEANCLIP, sctrl).getValue()
         for j, a in enumerate(ccd):
-            smi = im[a.getDataSec(True)]
+            # smi = im[a.getDataSec(True)]
+            smi = im[a.getBBox()]
             if j == 0:
                 mean = afwMath.makeStatistics(smi[border:, border:-border], afwMath.MEANCLIP).getValue()
             elif j == 3:
@@ -561,7 +566,8 @@ def ampCorrelation(butler, v1, v2, ccds=[12], n=5, border=20, plot=False, zmax=.
             borderL = border
         if i == 3:
             borderR = border
-        smi = diff[a.getDataSec(True)].clone()
+        # smi = diff[a.getDataSec(True)].clone()
+        smi = diff[a.getBBox()].clone()
         # dim0 = smi[border:-border-n,border:-border-n]
         dim0 = smi[borderL:-borderR-n, border:-border-n]
 
