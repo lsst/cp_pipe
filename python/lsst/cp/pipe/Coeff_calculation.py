@@ -43,6 +43,7 @@ except ImportError:
 mpl.use('Agg')
 pyplot = plt
 
+OUTPUT_PATH = '/home/mfl/bf_output'
 
 # This is code preforms some preliminary operations and then calls the main correlation calculation code.
 # This is used for calculating the xcorr after setting the gains.
@@ -91,8 +92,8 @@ def xcorrFromVisit(butler, v1, v2, ccds=[1], n=5, border=10, plot=False,
                   (getNameOfSet(v1), getNameOfSet(v2), getNameOfSet(ccds),
                    (means1[0]+means[1]), ims[0].getFilter().getName(), float(xcorrImg.getArray()[0, 0]) /
                    (means1[0]+means[1])), zmax=zmax, fig=fig, SAVE=True,
-                  fileName=("/home/wcoulton/HSC/Graphs/I/Correlation_Functions/Xcorr_visit_" +
-                            str(v1[0])+"_"+str(v2[0])+"_ccd_"+str(ccds[0])+".png"))
+                  fileName=(os.path.join(OUTPUT_PATH + ("Xcorr_visit_" + str(v1[0])+"_"+str(v2[0])+"_ccd_" +
+                                                   str(ccds[0])+".png"))))
     return xcorrImg, means1
 
 
@@ -641,8 +642,8 @@ def iterativeRegression(x, y, intercept=0, sigma=3):
 
 
 def gainEst(SelCCDS, butler, Visits, intercept=0, saveDic=0,
-            outputFile='/home/wcoulton/HSC/Data/WILLS_GAINS.pkl',
-            figLocation='/home/wcoulton/HSC/Graphs/', plot=1):
+            outputFile=os.path.join(OUTPUT_PATH + 'WILLS_GAINS.pkl'),
+            figLocation=OUTPUT_PATH, plot=1):
     """Function uses the above functions to measure the gains.
 
     Pass the desired ccd(s), a butler and a set
@@ -716,7 +717,7 @@ def gainEst(SelCCDS, butler, Visits, intercept=0, saveDic=0,
 
                 else:
                     ax.plot(AmpMeans[i], AmpMeans[i]*slope, label='fix')
-                fig.savefig(figLocation+'/PTC_CCD_'+str(CCDS)+'_AMP_'+str(i)+'.pdf')
+                fig.savefig(os.path.join(figLocation, ('PTC_CCD_'+str(CCDS)+'_AMP_'+str(i)+'.pdf')))
                 # plt.show()
             GAINS[CCDS].append(1.0/slope)
 
