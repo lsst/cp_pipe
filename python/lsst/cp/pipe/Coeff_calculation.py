@@ -730,7 +730,7 @@ def gainEst(SelCCDS, butler, Visits, intercept=0, saveDic=0,
                 except EOFError:
                     STOREDGAINS = {}
             except IOError:
-                FILE = open(outputFile, 'w')
+                FILE = open(outputFile, 'wb')
                 STOREDGAINS = {}
             STOREDGAINS[CCDS] = GAINS[CCDS]
             FILE.seek(0)
