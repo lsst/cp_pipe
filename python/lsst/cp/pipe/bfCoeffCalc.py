@@ -1,43 +1,50 @@
+#
+# LSST Data Management System
+#
+# Copyright 2008-2017  AURA/LSST.
+#
+# This product includes software developed by the
+# LSST Project (http://www.lsst.org/).
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the LSST License Statement and
+# the GNU General Public License along with this program.  If not,
+# see <https://www.lsstcorp.org/LegalNotices/>.
+#
+
 """Calculation of brighter-fatter effect corellations and kernels."""
 from __future__ import print_function
+
 from builtins import zip
 from builtins import str
 from builtins import range
-# import math
 import os
 import re
-# import sys
 import pickle
-# from mpl_toolkits.mplot3d import Axes3D
-
-
 from scipy import stats
-# import lsst.daf.base as dafBase
-# import lsst.pex.config as pexConfig
-import lsst.afw.cameraGeom as afwCG
-# import lsst.afw.cameraGeom.utils as afwCGUtils
-# import lsst.afw.detection as afwDet
-# import lsst.afw.geom as afwGeom
-import lsst.afw.image as afwImage
-import lsst.afw.math as afwMath
-import lsst.afw.display.ds9 as ds9
-# import lsst.afw.display.utils as ds9Utils
-# import lsst.meas.algorithms as measAlg
-# import lsst.afw.table as afwTable
-# from lsst.daf.persistence import Butler
-# import ctypes
-from lsst.obs.subaru.crosstalk import CrosstalkTask
-from lsst.obs.subaru.isr import SubaruIsrTask
-# import random
-# import lsst.pex.exceptions as pexExcept
 import matplotlib as mpl
 import numpy as np
 import matplotlib.pyplot as plt
+
+# import lsst.afw.cameraGeom as afwCG
+import lsst.afw.image as afwImage
+import lsst.afw.math as afwMath
+import lsst.afw.display.ds9 as ds9
+from lsst.obs.subaru.crosstalk import CrosstalkTask
+from lsst.obs.subaru.isr import SubaruIsrTask
+
 try:
     import scipy
     import scipy.interpolate
-    # from scipy.integrate import romb
-    # from scipy.interpolate import griddata
 except ImportError:
     scipy = None
 mpl.use('Agg')
