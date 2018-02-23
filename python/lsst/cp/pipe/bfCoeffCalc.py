@@ -52,11 +52,14 @@ pyplot = plt
 
 OUTPUT_PATH = '/home/mfl/bf_output'
 
-# This is code preforms some preliminary operations and then calls the main correlation calculation code.
-# This is used for calculating the xcorr after setting the gains.
+
 def xcorrFromVisit(butler, v1, v2, ccds=[1], n=5, border=10, plot=False,
                    zmax=.04, fig=None, display=False, GAIN=None, sigma=5):
-    """Return an xcorr from a given pair of visits (and ccds)."""
+    """Return an xcorr from a given pair of visits (and ccds).
+
+    This is code preforms some preliminary operations and then calls the main correlation calculation code.
+    This is used for calculating the xcorr after setting the gains.
+    """
     try:
         v1[0]
     except TypeError:
@@ -100,7 +103,7 @@ def xcorrFromVisit(butler, v1, v2, ccds=[1], n=5, border=10, plot=False,
                    (means1[0]+means[1]), ims[0].getFilter().getName(), float(xcorrImg.getArray()[0, 0]) /
                    (means1[0]+means[1])), zmax=zmax, fig=fig, SAVE=True,
                   fileName=(os.path.join(OUTPUT_PATH + ("Xcorr_visit_" + str(v1[0])+"_"+str(v2[0])+"_ccd_" +
-                                                   str(ccds[0])+".png"))))
+                                                        str(ccds[0])+".png"))))
     return xcorrImg, means1
 
 
