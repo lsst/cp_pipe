@@ -356,146 +356,130 @@ class BfTask(pipeBase.CmdLineTask):
 
         return ", ".join(valName)
 
+    def _calcMeansAndVars(self, butler, v1, v2, ccds, n=5, border=10, plot=False, zmax=.05,
+                          fig=None, display=False, sigma=5, biasCorr=0.9241):
+        """Calculate the means, vars, covars, and retieve the nominal gains, for each amp in each ccd.
 
-    def gainInvest(self, butler, v1, v2, ccds=[12], n=5, border=10, plot=False, zmax=.05,
-                   fig=None, display=False, sigma=5, biasCorr=0.9241):
-        """This is similiar to the xcorr function above except is used in the calculation of the amp gains.
+        This code runs using two visit numbers, and for ccds specified.
+        It calculates the correlations in the individual amps without rescaling any gains.
+        This allows a photon transfer curve to be generated and the gains measured.
 
-        It is run on two visit numbers and the ccds that you are interested in. It will calculate the
-        correlations in the individual amps without rescaling any gains.
-        From this you can generate a photon transfer curve and deduce the gain.
-        This code runs some basic ISR on the images.
-        Note that border pixels are discard only from the edge of the ccd and not from the boundary between amps.
-        This returns the sum of the means, variance, one quarter of the xcorr and the original gain for each amp.
+        Images are assembled with use the isrTask, and basic isr is performed.
+        Note that the isr task used MUST set the EDGE bits.[xxx need to change to using this, or change this]
+
+        Parameters:
+        -----------
+        butler : `lsst.daf.persistence.butler`
+            Butler for the repo containg the flats to be used
+        v1 : `int`
+            First visit of the visit pair
+        v2 : `int`
+            Second visit of the visit pair
+        ccds : `list`
+            Names of the ccds to use
+
+        Returns
+        -------
+        means, vars, covars, gains : `tuple` of `lists`
+            The sum of the means, variance, one quarter of the xcorr, and the original gain for each amp.
         """
-        try:
-            v1[0]
-        except TypeError:
-            v1 = [v1]
-        try:
-            v2[0]
-        except TypeError:
-            v2 = [v2]
-        try:
-            ccds[0]
-        except TypeError:
-            ccds = [ccds]
-        ims = [None, None]
-        means = [None, None]
-        for i, vs in enumerate([v1, v2, ]):
-            for v in vs:
-                for ccd in ccds:
-                    tmp = isr(butler, v, ccd)
-                    if ims[i] is None:
-                        ims[i] = tmp
-                        im = ims[i].getMaskedImage()
-                    else:
-                        im += tmp.getMaskedImage()
+        nomGains = []
+        imMeans = [None, None]
+        ampMeans = [[], []]
 
-            nData = len(ccds)*len(vs)
-            if nData > 1:
-                im /= nData
-            if display:
-                ds9.mtv(trim(ims[i]), frame=i, title=v)
+        ims = [isr(butler, v1, ccd), isr(butler, v2, ccd)]
+        # if display:  # TODO: replace with lsstDebug
+        #     ds9.mtv(trim(ims[i]), frame=i, title=v)
 
-        means = [None, None]
-        means1 = [[], []]
-        gains = []
         sctrl = afwMath.StatisticsControl()
-        sctrl.setNumSigmaClip(sigma)
-        # CCD = afwCG.cast_Ccd(ims[0].getDetector())
-        CCD = ims[0].getDetector()
-        for i, im in enumerate(ims):
-
-            # ccd = afwCG.cast_Ccd(im.getDetector())
+        sctrl.setNumSigmaClip(sigma)  # TODO: change to pexConfig option
+        for imNum, im in enumerate(ims):
             ccd = im.getDetector()
-            try:
-                frameId = int(re.sub(r"^SUPA0*", "", im.getMetadata().get("FRAMEID")))
-            except:
-                frameId = -1
-            #
             # Starting with an Exposure, MaskedImage, or Image trim the data and convert to float
-            #
             for attr in ("getMaskedImage", "getImage"):
                 if hasattr(im, attr):
                     im = getattr(im, attr)()
             try:
                 im = im.convertF()
             except AttributeError:
+                self.log.warn("Failed to convert image %s to float"%imNum)  # xxx fatal? Raise?
                 pass
-            # im = trim(im, ccd)
-            # ims[i]=ims[i][border:-border,border:-border]
-            means[i] = afwMath.makeStatistics(im, afwMath.MEANCLIP, sctrl).getValue()
-            for j, a in enumerate(ccd):
-                # smi = im[a.getDataSec(True)]
-                smi = im[a.getBBox()]
-                if j == 0:
-                    mean = afwMath.makeStatistics(smi[border:, border:-border], afwMath.MEANCLIP).getValue()
-                elif j == 3:
-                    mean = afwMath.makeStatistics(smi[:-border, border:-border], afwMath.MEANCLIP).getValue()
+
+            # calculate the sigma-clipped mean, excluding the borders
+            # TODO: rewrite to use egde bits
+            imMeans[imNum] = afwMath.makeStatistics(im, afwMath.MEANCLIP, sctrl).getValue()
+            for ampNum, amp in enumerate(ccd):
+                ampIm = im[amp.getBBox()]
+                if ampNum == 0:
+                    mean = afwMath.makeStatistics(ampIm[border:, border:-border],
+                                                  afwMath.MEANCLIP).getValue()
+                elif ampNum == 3:
+                    mean = afwMath.makeStatistics(ampIm[:-border, border:-border],
+                                                  afwMath.MEANCLIP).getValue()
                 else:
-                    mean = afwMath.makeStatistics(smi[:, border:-border], afwMath.MEANCLIP).getValue()
-                # gain = a.getElectronicParams().getGain()
-                gain = a.getGain()
-                means1[i].append(mean)
-                if i == 0:
-                    gains.append(gain)
-                # means1[i].append(mean*gain)
-                # smi*=gain
-                # smi-=mean*gain
-                smi -= mean
+                    mean = afwMath.makeStatistics(ampIm[:, border:-border], afwMath.MEANCLIP).getValue()
+                nomGain = amp.getGain()
+                ampMeans[imNum].append(mean)
+                if imNum == 0:
+                    nomGains.append(nomGain)
+                ampIm -= mean
+
         diff = ims[0].clone()
         diff = diff.getMaskedImage().getImage()
         diff -= ims[1].getMaskedImage().getImage()
 
         temp = diff[border:-border, border:-border]
 
-        #
         # Subtract background.  It should be a constant, but it isn't always (e.g. some SuprimeCam flats)
-        #
-        binsize = 128
+        # TODO: Check how this looks, and if this is the "right" way to do this
+        binsize = 128  # TODO: change to pexConfig option
         nx = temp.getWidth()//binsize
         ny = temp.getHeight()//binsize
         bctrl = afwMath.BackgroundControl(nx, ny, sctrl, afwMath.MEANCLIP)
         bkgd = afwMath.makeBackground(temp, bctrl)
-        diff[border:-border, border:-
-             border] -= bkgd.getImageF(afwMath.Interpolate.CUBIC_SPLINE, afwMath.REDUCE_INTERP_ORDER)
-        Var = []
-        CorVar = []
+        diff[border:-border, border:-border] -= bkgd.getImageF(afwMath.Interpolate.CUBIC_SPLINE,
+                                                               afwMath.REDUCE_INTERP_ORDER)
+        variances = []  # can't shadow builtin "vars"
+        coVars = []
         # For each amp calculate the correlation
-        for i, a in enumerate(CCD):
+        CCD = ims[0].getDetector()  # xxx can you do this for a heterogenous focal plane? (answer: 100% no)
+        for ampNum, amp in enumerate(CCD):
             borderL = 0
             borderR = 0
-            if i == 0:
+            if ampNum == 0:  # TODO: this needs rewriting for using edge bits to make camera agnostic
                 borderL = border
-            if i == 3:
+            if ampNum == 3:
                 borderR = border
-            # smi = diff[a.getDataSec(True)].clone()
-            smi = diff[a.getBBox()].clone()
-            # dim0 = smi[border:-border-n,border:-border-n]
-            dim0 = smi[borderL:-borderR-n, border:-border-n]
-            dim0 -= afwMath.makeStatistics(dim0, afwMath.MEANCLIP, sctrl).getValue()
-            w, h = dim0.getDimensions()
+
+            diffAmpIm = diff[amp.getBBox()].clone()  # xxx why is this a clone? move .clone() to next line?
+            diffAmpImCrop = diffAmpIm[borderL:-borderR-n, border:-border-n]
+            diffAmpImCrop -= afwMath.makeStatistics(diffAmpImCrop, afwMath.MEANCLIP, sctrl).getValue()
+            w, h = diffAmpImCrop.getDimensions()
             xcorr = afwImage.ImageF(n + 1, n + 1)
-            for di in range(n + 1):
-                for dj in range(n + 1):
-                    dim_ij = smi[borderL+di:borderL+di + w, border+dj: border+dj + h].clone()
-                    # dim_ij = smi[border+di:border+di + w, border+dj: border+dj + h].clone()
-                    dim_ij -= afwMath.makeStatistics(dim_ij, afwMath.MEANCLIP, sctrl).getValue()
-                    dim_ij *= dim0
-                    xcorr[di, dj] = afwMath.makeStatistics(dim_ij, afwMath.MEANCLIP, sctrl).getValue()/(biasCorr)
-            Var.append(xcorr.getArray()[0, 0])
-            L = np.shape(xcorr.getArray())[0]-1
-            XCORR = np.zeros([2*L+1, 2*L+1])
-            for I in range(L+1):
-                for J in range(L+1):
-                    XCORR[I+L, J+L] = xcorr.getArray()[I, J]
-                    XCORR[-I+L, J+L] = xcorr.getArray()[I, J]
-                    XCORR[I+L, -J+L] = xcorr.getArray()[I, J]
-                    XCORR[-I+L, -J+L] = xcorr.getArray()[I, J]
-            CorVar.append(np.sum(XCORR))
-            print(means1[0][i], means1[1][i], means1[0][i]+means1[1][i], Var[i], CorVar[i])
-        return ([i+j for i, j in zip(means1[1], means1[0])], Var, CorVar, gains)
+
+            # calculate the cross correlation
+            for xlag in range(n + 1):
+                for ylag in range(n + 1):
+                    dim_xy = diffAmpIm[borderL+xlag:borderL+xlag + w, border+ylag: border+ylag + h].clone()
+                    dim_xy -= afwMath.makeStatistics(dim_xy, afwMath.MEANCLIP, sctrl).getValue()
+                    dim_xy *= diffAmpImCrop
+                    xcorr[xlag, ylag] = afwMath.makeStatistics(dim_xy,
+                                                               afwMath.MEANCLIP, sctrl).getValue()/(biasCorr)
+            variances.append(xcorr.getArray()[0, 0])
+
+            # tile the quarter xcorr into a fullsize one to sum it
+            length = np.shape(xcorr.getArray())[0]-1
+            xcorr_full = np.zeros([2*length+1, 2*length+1])
+            for i in range(length+1):
+                for j in range(length+1):
+                    xcorr_full[i+length, j+length] = xcorr.getArray()[i, j]
+                    xcorr_full[-i+length, j+length] = xcorr.getArray()[i, j]
+                    xcorr_full[i+length, -j+length] = xcorr.getArray()[i, j]
+                    xcorr_full[-i+length, -j+length] = xcorr.getArray()[i, j]
+            coVars.append(np.sum(xcorr_full))
+            print(ampMeans[0][i], ampMeans[1][i], ampMeans[0][i]+ampMeans[1][i], variances[i], coVars[i])
+        return ([i+j for i, j in zip(ampMeans[1], ampMeans[0])], variances, coVars, nomGains)
+
 
 
     # For future, merge with the above function!!
@@ -678,7 +662,6 @@ class BfTask(pipeBase.CmdLineTask):
             y = np.delete(y, index)
 
         return slope
-
 
     def estimateGains(self, SelCCDS, butler, visits, intercept=0, saveDic=0,
                       outputFile=os.path.join(OUTPUT_PATH + 'WILLS_GAINS.pkl'),
