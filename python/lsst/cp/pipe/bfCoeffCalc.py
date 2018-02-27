@@ -21,7 +21,7 @@
 # see <https://www.lsstcorp.org/LegalNotices/>.
 #
 
-"""Calculation of brighter-fatter effect corellations and kernels."""
+"""Calculation of brighter-fatter effect correlations and kernels."""
 from __future__ import print_function
 
 from builtins import zip
@@ -33,6 +33,8 @@ import pickle
 from scipy import stats
 import matplotlib as mpl
 import numpy as np
+# mpl.use('Agg')
+# pyplot = plt
 import matplotlib.pyplot as plt
 
 import lsst.afw.image as afwImage
@@ -40,7 +42,7 @@ import lsst.afw.math as afwMath
 import lsst.afw.display.ds9 as ds9
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
-import lsst.log as lsstLog
+# import lsst.log as lsstLog
 from lsst.obs.subaru.crosstalk import CrosstalkTask
 from lsst.obs.subaru.isr import SubaruIsrTask
 import lsstDebug
@@ -51,10 +53,8 @@ debug = lsstDebug.Info(__name__)
 #     import scipy.interpolate
 # except ImportError:
 #     scipy = None
-mpl.use('Agg')
-pyplot = plt
 
-OUTPUT_PATH = '/home/mfl/bf_output'
+OUTPUT_PATH = '/home/mfl/bf_testing/'
 
 
 class BfTaskConfig(pexConfig.Config):
@@ -83,6 +83,33 @@ class BfTask(pipeBase.CmdLineTask):
 
         self.config.validate()
         self.config.freeze()
+
+    def run(self, dummy):
+        """Docstring."""
+        import lsst.daf.persistence as dafPersist
+        butler = dafPersist.Butler('/datasets/hsc/repo/')
+        # visPairs = [(904606, 904608),
+        #             (904610, 904612)]
+        visPairs = [(904606, 904608),
+                    (904610, 904612),
+                    (904618, 904620),
+                    (904614, 904616),
+                    (904590, 904592),
+                    (904602, 904604),
+                    (904594, 904596),
+                    (904588, 904590),
+                    (904584, 904586),
+                    (904626, 904628),
+                    (904622, 904624),
+                    (904630, 904632),
+                    (904646, 904648),
+                    (904642, 904644),
+                    (904660, 904664),
+                    (904662, 904662)]
+        ignoreCcdList = [_ for _ in range(112)]
+        ignoreCcdList.remove(41)
+
+        self.estimateGains(butler, visPairs, ignoreCcdList)
 
     def xcorrFromVisit(self, butler, v1, v2, ccds=[1], n=5, border=10, plot=False,
                        zmax=.04, fig=None, display=False, GAIN=None, sigma=5):
@@ -130,10 +157,10 @@ class BfTask(pipeBase.CmdLineTask):
         if plot:
             plotXcorr(xcorrImg.clone(), (means1[0]+means[1]), title=r"Visits %s; %s, CCDs %s  $\langle{I}\rangle"
                       " = %.3f$ (%s) Var = %.4f" %
-                      (getNameOfSet(v1), getNameOfSet(v2), getNameOfSet(ccds),
+                      (_getNameOfSet(v1), _getNameOfSet(v2), _getNameOfSet(ccds),
                        (means1[0]+means[1]), ims[0].getFilter().getName(), float(xcorrImg.getArray()[0, 0]) /
                        (means1[0]+means[1])), zmax=zmax, fig=fig, SAVE=True,
-                      fileName=(os.path.join(OUTPUT_PATH + ("Xcorr_visit_" + str(v1[0])+"_"+str(v2[0])+"_ccd_" +
+                      fileName=(os.path.join(OUTPUT_PATH, ("Xcorr_visit_" + str(v1[0])+"_"+str(v2[0])+"_ccd_" +
                                                             str(ccds[0])+".png"))))
         return xcorrImg, means1
 
@@ -166,7 +193,6 @@ class BfTask(pipeBase.CmdLineTask):
         isr = SubaruIsrTask(config=config)
         exp = isr.run(dataRef).exposure
         return exp
-
 
     def xcorr(self, im1, im2, Visits, n=5, border=20, frame=None, CCD=[1], GAIN=None, sigma=5, biasCorr=0.9241):
         """Calculate the cross-correlation of two images im1 and im2 (using robust measures of the covariance).
@@ -283,7 +309,6 @@ class BfTask(pipeBase.CmdLineTask):
               np.sum(XCORR)/sum(means1))
         return (xcorr, means1)
 
-
     def plotXcorr(self, xcorr, mean, zmax=0.05, title=None, fig=None, SAVE=False, fileName=None):
         """This program is used to plot the correlation functions."""
         try:
@@ -327,13 +352,13 @@ class BfTask(pipeBase.CmdLineTask):
         #plt.close(fig)
         return fig, ax
 
-
-    def getNameOfSet(self, vals):
+    @staticmethod
+    def _getNameOfSet(vals):
         """Convert a list of numbers into a string, merging consecutive values."""
         if not vals:
             return ""
 
-        def addPairToName(valName, val0, val1):
+        def _addPairToName(valName, val0, val1):
             """Add a pair of values, val0 and val1, to the valName list."""
             sval1 = str(val1)
             if val0 != val1:
@@ -348,19 +373,19 @@ class BfTask(pipeBase.CmdLineTask):
             if isinstance(val, int) and val == val1 + 1:
                 val1 = val
             else:
-                addPairToName(valName, val0, val1)
+                _addPairToName(valName, val0, val1)
                 val0 = val
                 val1 = val0
 
-        addPairToName(valName, val0, val1)
+        _addPairToName(valName, val0, val1)
 
         return ", ".join(valName)
 
-    def _calcMeansAndVars(self, butler, v1, v2, ccds, n=5, border=10, plot=False, zmax=.05,
+    def _calcMeansAndVars(self, butler, v1, v2, ccd, n=5, border=10, plot=False, zmax=.05,
                           fig=None, display=False, sigma=5, biasCorr=0.9241):
         """Calculate the means, vars, covars, and retieve the nominal gains, for each amp in each ccd.
 
-        This code runs using two visit numbers, and for ccds specified.
+        This code runs using two visit numbers, and for ccd specified.
         It calculates the correlations in the individual amps without rescaling any gains.
         This allows a photon transfer curve to be generated and the gains measured.
 
@@ -375,7 +400,7 @@ class BfTask(pipeBase.CmdLineTask):
             First visit of the visit pair
         v2 : `int`
             Second visit of the visit pair
-        ccds : `list`
+        ccd : `string` or `int`
             Names of the ccds to use
 
         Returns
@@ -387,7 +412,9 @@ class BfTask(pipeBase.CmdLineTask):
         imMeans = [None, None]
         ampMeans = [[], []]
 
-        ims = [isr(butler, v1, ccd), isr(butler, v2, ccd)]
+        # TODO_URGENT: turn this into a dict so that we don't get muddled up. Currently this is nonsense.
+        # TODO: change to looping over ccds so that we don't hold all the isr-ed images
+        ims = [self.isr(butler, v1, ccd), self.isr(butler, v2, ccd)]
         # if display:  # TODO: replace with lsstDebug
         #     ds9.mtv(trim(ims[i]), frame=i, title=v)
 
@@ -477,10 +504,13 @@ class BfTask(pipeBase.CmdLineTask):
                     xcorr_full[i+length, -j+length] = xcorr.getArray()[i, j]
                     xcorr_full[-i+length, -j+length] = xcorr.getArray()[i, j]
             coVars.append(np.sum(xcorr_full))
-            print(ampMeans[0][i], ampMeans[1][i], ampMeans[0][i]+ampMeans[1][i], variances[i], coVars[i])
+            msg = "M1: " + str(ampMeans[0][ampNum])
+            msg += " M2 " + str(ampMeans[1][ampNum])
+            msg += " M_sum: " + str((ampMeans[0][ampNum])+ampMeans[1][ampNum])
+            msg += " Var " + str(variances[ampNum])
+            msg += " coVar: " + str(coVars[ampNum])
+            self.log.info(msg)  # xxx change to debug or trace level
         return ([i+j for i, j in zip(ampMeans[1], ampMeans[0])], variances, coVars, nomGains)
-
-
 
     # For future, merge with the above function!!
     """ This calculates the xcorr in the amps after correcting for the gain (either default or user supplied).
@@ -492,8 +522,6 @@ class BfTask(pipeBase.CmdLineTask):
         Note that border pixels are discard only from the edge of the ccd and not from the boundary between amps.
         This returns the sum of the means, variance, one quarter of the xcorr and the original gain for each amp.
      """
-
-
     def ampCorrelation(self, butler, v1, v2, ccds=[12], n=5, border=20, plot=False, zmax=.05,
                        fig=None, display=False, GAINS=None, sigma=5, biasCorr=0.9241):
         """Return an xcorr from a given pair of visits (and ccds)."""
@@ -620,148 +648,236 @@ class BfTask(pipeBase.CmdLineTask):
             print(means1[0][i], means1[1][i], means1[0][i]+means1[1][i], Var[i], np.sum(XCORR))
         return (means1[0], means1[1], [i+j for i, j in zip(means1[1], means1[0])], Var, CorVar)
 
-
-    def iterativeRegression(self, x, y, intercept=0, sigma=3):
-        """A best fit method which removes outliers.
+    def iterativeRegression(self, x, y, fixThroughOrigin=False, nSigmaClip=3, maxIter=10):
+        """Use linear regression to fit a line of best fit, iteratively removing outliers.
 
         Useful when you have sufficiently large numbers of points on your PTC.
+
+        Parameters:
+        -----------
+        x : `numpy.array`
+            The independent variable
+        y : `numpy.array`
+            The dependent variable
+
+        Returns:
+        --------
+        slope : `float`
+            The slope of the line of best fit
         """
-        iterate = 1
+        nIter = 0
         sctrl = afwMath.StatisticsControl()
-        sctrl.setNumSigmaClip(sigma)
-        if intercept:
-            while iterate:
-                print(iterate, np.shape(x))
-                A = np.vstack([x, np.ones(len(x))]).T
-                B, _, _, _ = np.linalg.lstsq(A, y)
-                slope, intercept = B
-                res = y-slope*x-intercept
+        sctrl.setNumSigmaClip(nSigmaClip)
+
+        if fixThroughOrigin:
+            while nIter < maxIter:  # TODO: change log levels to debug
+                nIter += 1
+                self.log.info("Origin fixed, iteration # %s, %s elements:"%(nIter, np.shape(x)[0]))
+                TEST = x[:, np.newaxis]
+                slope, _, _, _ = np.linalg.lstsq(TEST, y)
+                slope = slope[0]
+                res = y - slope * x
                 resMean = afwMath.makeStatistics(res, afwMath.MEANCLIP, sctrl).getValue()
-                resSTD = np.sqrt(afwMath.makeStatistics(res, afwMath.VARIANCECLIP, sctrl).getValue())
-                index = np.where((res > (resMean+sigma*resSTD)) | (res < resMean-sigma*resSTD))
-                print(resMean, resSTD, np.max(res), sigma)
-                if np.shape(np.where(index))[1] == 0:
+                resStd = np.sqrt(afwMath.makeStatistics(res, afwMath.VARIANCECLIP, sctrl).getValue())
+                index = np.where((res > (resMean + nSigmaClip * resStd)) | (res < resMean - nSigmaClip * resStd))
+                self.log.info("%.3f %.3f %.3f %.3f"%(resMean, resStd, np.max(res), nSigmaClip))
+                if np.shape(np.where(index))[1] == 0 or (nIter >= maxIter):  # run out of points, or iterations
                     break
                 x = np.delete(x, index)
                 y = np.delete(y, index)
 
-            return slope, intercept
-        while iterate:
-            print(iterate, np.shape(x))
-            TEST = x[:, np.newaxis]
-            slope, _, _, _ = np.linalg.lstsq(TEST, y)
-            slope = slope[0]
-            res = y-slope*x
+            return slope, 0
+
+        while nIter < maxIter:  # TODO: change log levels to debug
+            nIter += 1
+            self.log.info("Iteration # %s, %s elements:"%(nIter, np.shape(x)[0]))
+            xx = np.vstack([x, np.ones(len(x))]).T
+            ret, _, _, _ = np.linalg.lstsq(xx, y)
+            slope, intercept = ret
+            res = y - slope*x - intercept
             resMean = afwMath.makeStatistics(res, afwMath.MEANCLIP, sctrl).getValue()
-            resSTD = np.sqrt(afwMath.makeStatistics(res, afwMath.VARIANCECLIP, sctrl).getValue())
-            index = np.where((res > (resMean+sigma*resSTD)) | (res < resMean-sigma*resSTD))
-            print(resMean, resSTD, np.max(res), sigma)
-            if np.shape(np.where(index))[1] == 0:
+            resStd = np.sqrt(afwMath.makeStatistics(res, afwMath.VARIANCECLIP, sctrl).getValue())
+            index = np.where((res > (resMean + nSigmaClip * resStd)) | (res < resMean - nSigmaClip * resStd))
+            self.log.info("%.3f %.3f %.3f %.3f"%(resMean, resStd, np.max(res), nSigmaClip))
+            if np.shape(np.where(index))[1] == 0 or (nIter >= maxIter):  # run out of points, or iterations
                 break
             x = np.delete(x, index)
             y = np.delete(y, index)
 
-        return slope
+        return slope, intercept
 
-    def estimateGains(self, SelCCDS, butler, visits, intercept=0, saveDic=0,
-                      outputFile=os.path.join(OUTPUT_PATH + 'WILLS_GAINS.pkl'),
-                      figLocation=OUTPUT_PATH, plot=1):
-        """Function uses the above functions to measure the gains.
+    # def iterativeRegressionOLDXXX(self, x, y, intercept=0, sigma=3):
+    #     """A best fit method which removes outliers.
 
-        Pass the desired CCD(s), a butler and a set of flats of varying intensity.
+    #     Useful when you have sufficiently large numbers of points on your PTC.
+    #     """
+    #     import ipdb as pdb; pdb.set_trace()
+    #     iterate = 1
+    #     sctrl = afwMath.StatisticsControl()
+    #     sctrl.setNumSigmaClip(sigma)
+    #     if intercept:
+    #         while iterate:
+    #             print("Iteration # %s: %s"%(iterate, np.shape(x)))
+    #             A = np.vstack([x, np.ones(len(x))]).T
+    #             B, _, _, _ = np.linalg.lstsq(A, y)
+    #             slope, intercept = B
+    #             res = y-slope*x-intercept
+    #             resMean = afwMath.makeStatistics(res, afwMath.MEANCLIP, sctrl).getValue()
+    #             resSTD = np.sqrt(afwMath.makeStatistics(res, afwMath.VARIANCECLIP, sctrl).getValue())
+    #             index = np.where((res > (resMean+sigma*resSTD)) | (res < resMean-sigma*resSTD))
+    #             print(resMean, resSTD, np.max(res), sigma)
+    #             if np.shape(np.where(index))[1] == 0:
+    #                 break
+    #             x = np.delete(x, index)
+    #             y = np.delete(y, index)
+
+    #         return slope, intercept
+    #     while iterate:
+    #         print("Iteration # %s: %s"%(iterate, np.shape(x)))
+    #         TEST = x[:, np.newaxis]
+    #         slope, _, _, _ = np.linalg.lstsq(TEST, y)
+    #         slope = slope[0]
+    #         res = y-slope*x
+    #         resMean = afwMath.makeStatistics(res, afwMath.MEANCLIP, sctrl).getValue()
+    #         resSTD = np.sqrt(afwMath.makeStatistics(res, afwMath.VARIANCECLIP, sctrl).getValue())
+    #         index = np.where((res > (resMean+sigma*resSTD)) | (res < resMean-sigma*resSTD))
+    #         print(resMean, resSTD, np.max(res), sigma)
+    #         if np.shape(np.where(index))[1] == 0:
+    #             break
+    #         x = np.delete(x, index)
+    #         y = np.delete(y, index)
+
+    #     return slope
+
+    def estimateGains(self, butler, visitPairs, ignoreCcdList=None, intercept=0, writeGains=True,
+                      xxx_outputFile=os.path.join(OUTPUT_PATH, 'WILLS_GAINS.pkl'),
+                      xxx_figLocation=OUTPUT_PATH, xxx_plot=True):
+        """Estimate the gains of the specified CCD(s) using the specified visits.
+
+        Given a butler and list of flats of varying intensity, calculate the gain for each
+        CCD specified using the PTC method.
+
         The intercept option chooses the linear fitting option. The default fits
-        Var=1/g mean, if non zero Var=1/g mean + const is fit. If saveDic is false no writing is done.
-        Elsewise the gains are added to a dictionary containing the gains of each ccd in outputFile.
+        Var=1/g mean, if non zero Var=1/g mean + const is fit.
+        By default, gains are persisted per-amplifier as a dictionary
+
+        Parameters
+        ----------
+        butler : `lsst.daf.persistence.butler`
+            Butler for the repo containg the flats to be used
+        visitPairs : `list` of `tuple`
+            List of visit-pairs to use, as [(v1,v2), (v3,v4)...]
+        writeGains : `bool`
+            Persist the calculated gain values
+        ignoreCcdList : `list`
+            List of CCD(s) to skip, by CCD number. Defaults to none, i.e. use all CCDs in camera
+
+        Returns
+        -------
+        gains : `dict`
+            Amplifier gain values, as calculated
+        nominalGains : `dict`
+            Amplifier gains, as given by the `detector` objects
         """
-        oGAINS = {}
-        GAINS = {}
-        try:
-            SelCCDS[0]
-        except:
-            SelCCDS = [SelCCDS]
-        # This cycles through the input ccds
-        for CCDS in SelCCDS:
-            AmpMeans = []
-            AmpVariance = []
-            AmpCorrVariance = []
-            AmpGain = []
-            oGAINS[CCDS] = []
-            # This cycles through the input visits and calculates the xcorr in the individual amps.
-            # No gain correction is applied
-            for I, VISITS in enumerate(visits[:]):
-                a, b, c, d = gainInvest(butler, VISITS[0], VISITS[1], n=8, ccds=CCDS, plot=plot)
+        gains = {}
+        nomGains = {}
+
+        camera = butler.get('camera')
+        useCcds = [ccd.getId() for ccd in camera if ccd.getId() not in ignoreCcdList]
+        assert(len(camera) == len(useCcds) + len(ignoreCcdList))
+        self.log.info('Processing CCDs %s'%useCcds)
+
+        # Loop over the CCDs, calculating a PTC for each amplifier.
+        # Amplifier iteration is performed in _calcMeansAndVars()
+        for ccd in useCcds:
+            ampMeans = []
+            ampVariances = []
+            ampCorrVariances = []
+            ampGains = []
+            nomGains[ccd] = []
+            # Cycles through the input visits and calculate the xcorr in the individual amps.
+            # NB: no gain correction is applied
+            for visPairNum, visPair in enumerate(visitPairs):
+                _means, _vars, _covars, _gains = self._calcMeansAndVars(butler, visPair[0], visPair[1],
+                                                                        n=8, ccd=ccd, plot=xxx_plot)
                 breaker = 0
-                # So sanity checks. If these are failed more investigation is needed!
-                for i, j in enumerate(a):
-                    if a[i]*10 < b[i] or a[i]*10 < c[i]:
-                        print('\n\n\n\n Check this visit! ', VISITS, ' \n\n\n\n')
+                # Do sanity checks; if these are failed more investigation is needed!
+                for i, j in enumerate(_means):
+                    if _means[i]*10 < _vars[i] or _means[i]*10 < _covars[i]:
+                        self.log.warn('Sanity check failed; check visit %s'%visPair)
                         breaker += 1
                 if breaker:
                     continue
-                if I == 0:
-                    for i in range(len(a)):
-                        AmpMeans.append(np.array([]))
-                        AmpVariance.append(np.array([]))
-                        AmpCorrVariance.append(np.array([]))
-                        AmpGain.append(np.array([]))
-                for i, j in enumerate(a):
-                    if I == 0:
-                        oGAINS[CCDS].append(d[i])
-                    if b[i]*1.3 < c[i] or b[i]*0.7 > c[i]:
+                if visPairNum == 0:
+                    for i in range(len(_means)):
+                        ampMeans.append(np.array([]))
+                        ampVariances.append(np.array([]))
+                        ampCorrVariances.append(np.array([]))
+                        ampGains.append(np.array([]))
+                for i, j in enumerate(_means):
+                    if visPairNum == 0:
+                        nomGains[ccd].append(_gains[i])
+                    if _vars[i]*1.3 < _covars[i] or _vars[i]*0.7 > _covars[i]:
                         continue
-                    AmpMeans[i] = np.append(AmpMeans[i], a[i])
-                    AmpVariance[i] = np.append(AmpVariance[i], b[i])
-                    AmpCorrVariance[i] = np.append(AmpCorrVariance[i], c[i])
-                    AmpGain[i] = np.append(AmpGain[i], d[i])
-            # Use the resulting means and xcorr to find the gain. There are two options,
+                    ampMeans[i] = np.append(ampMeans[i], _means[i])
+                    ampVariances[i] = np.append(ampVariances[i], _vars[i])
+                    ampCorrVariances[i] = np.append(ampCorrVariances[i], _covars[i])
+                    ampGains[i] = np.append(ampGains[i], _gains[i])
+
+            # TODO: Change the "intercept" option to a pexConfig option (or decide which is best and remove)
             fig = None
-            GAINS[CCDS] = []
-            for i in range(len(AmpMeans)):
+            gains[ccd] = []
+            for i in range(len(ampMeans)):
+                # TODO: replace with lsstDebug
+                # TODO: move to inside the if: plot block below
                 if fig is None:
                     fig = plt.figure()
                 else:
                     fig.clf()
                 ax = fig.add_subplot(111)
-                slope2, intercept, r_value, p_value, std_err = stats.linregress(AmpMeans[i], AmpCorrVariance[i])
-                TEST = AmpMeans[i][:, np.newaxis]
-                slope = iterativeRegression(AmpMeans[i], AmpCorrVariance[i])
-                slope3, intercept2 = iterativeRegression(AmpMeans[i], AmpCorrVariance[i], intercept=1)
-                print("\n\n\n\n slope of fit: ", slope2, "intercept of fit: ", intercept, 'p value', p_value)
-                print(" slope of second fit: ", slope, 'difference:', slope-slope2)
-                print(" slope of third fit: ", slope3, 'difference:', slope-slope3)
+                slope2, intercept, r_value, p_value, std_err = stats.linregress(ampMeans[i],
+                                                                                ampCorrVariances[i])
+                slope, _ = self.iterativeRegression(ampMeans[i], ampCorrVariances[i], fixThroughOrigin=True)
+                slope3, intercept2 = self.iterativeRegression(ampMeans[i], ampCorrVariances[i])
+                # slope = self.iterativeRegressionOLDXXX(ampMeans[i], ampCorrVariances[i])  # xxx remove
+                # slope3, intercept2 = self.iterativeRegressionOLDXXX(ampMeans[i], ampCorrVariances[i], intercept=1)  # xxx remove
+                # TODO: Change messages to say what these ARE, not just second/third fits
+                self.log.info("slope of fit: %s intercept of fit: %s p value: %s"%(slope2,
+                                                                                   intercept, p_value))
+                self.log.info("slope of second fit: %s, difference:%s"%(slope, slope-slope2))
+                self.log.info("slope of third  fit: %s, difference: %s"%(slope3, slope-slope3))
                 if intercept:
                     slope = slope3
 
-                if plot:
-                    ax.plot(AmpMeans[i], AmpCorrVariance[i], linestyle='None', marker='x', label='data')
+                if xxx_plot:  # TODO: replace with lsstDebug.Also, consider dumping based on p_value or X_sq?
+                    ax.plot(ampMeans[i], ampCorrVariances[i], linestyle='None', marker='x', label='data')
                     if intercept:
-                        ax.plot(AmpMeans[i], AmpMeans[i]*slope+intercept2, label='fix')
+                        ax.plot(ampMeans[i], ampMeans[i]*slope+intercept2, label='fix')
 
                     else:
-                        ax.plot(AmpMeans[i], AmpMeans[i]*slope, label='fix')
-                    fig.savefig(os.path.join(figLocation, ('PTC_CCD_'+str(CCDS)+'_AMP_'+str(i)+'.pdf')))
+                        ax.plot(ampMeans[i], ampMeans[i]*slope, label='fix')
+                    fig.savefig(os.path.join(xxx_figLocation, ('PTC_CCD_'+str(ccd)+'_AMP_'+str(i)+'.pdf')))
                     # plt.show()
-                GAINS[CCDS].append(1.0/slope)
+                gains[ccd].append(1.0/slope)
 
-            if saveDic:
+            if writeGains:  # TODO: replace with buttleable dataset
                 try:
-                    FILE = open(outputFile, 'r+b')
-                    FILE.seek(0)
+                    f = open(xxx_outputFile, 'r+b')
+                    f.seek(0)
                     try:
-                        STOREDGAINS = pickle.load(FILE)
+                        storedGains = pickle.load(f)
                     except EOFError:
-                        STOREDGAINS = {}
+                        storedGains = {}
                 except IOError:
-                    FILE = open(outputFile, 'wb')
-                    STOREDGAINS = {}
-                STOREDGAINS[CCDS] = GAINS[CCDS]
-                FILE.seek(0)
-                FILE.truncate()
-                pickle.dump(STOREDGAINS, FILE)
-                FILE.close()
-        print('\n\n\n GAINS ', GAINS, '\n\n', oGAINS)
-        return (GAINS, oGAINS)
-
+                    f = open(xxx_outputFile, 'wb')
+                    storedGains = {}
+                storedGains[ccd] = gains[ccd]
+                f.seek(0)
+                f.truncate()
+                pickle.dump(storedGains, f)
+                f.close()
+        self.log.info('gains %s\noGains %s'%(gains, nomGains))
+        return (gains, nomGains)
 
     def SOR(self, source, dx=1.0, MAXIT=10000, eLevel=5.0e-14):
         """An implementation of the successive over relaxation method.
