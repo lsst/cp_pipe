@@ -65,6 +65,27 @@ class BfTaskConfig(pexConfig.Config):
         doc="Maximum number of iterations... xxx",
         default=1000
     )
+    xcorrCheckRejectLevel = pexConfig.Field(
+        dtype=float,
+        doc="Sanity check level for the sum of the input cross-correlations. Arrays which "
+        "sum to greater than this are discarded before the clipped mean is calculated.",
+        default=0.2
+    )
+    maxIterSOR = pexConfig.Field(
+        dtype=int,
+        doc="The maximum number of iterations allowed for the successive over-relaxation method",
+        default=10000
+    )
+    eLevelSOR = pexConfig.Field(
+        dtype=float,
+        doc="The target residual error for the successive over-relaxation method",
+        default=5.0e-14
+    )
+    kernelGenSigmaClip = pexConfig.Field(
+        dtype=float,
+        doc="Number of sigma to clip to, during pixel-wise clipping when generating the kernel",
+        default=4
+    )
 
 
 class BfTask(pipeBase.CmdLineTask):
@@ -86,6 +107,10 @@ class BfTask(pipeBase.CmdLineTask):
 
     def run(self, dummy):
         """Docstring."""
+        # self.xxx_test_estimateGains()
+        self.xxx_test_generateKernel()
+
+    def xxx_test_estimateGains(self):
         import lsst.daf.persistence as dafPersist
         butler = dafPersist.Butler('/datasets/hsc/repo/')
         # visPairs = [(904606, 904608),
@@ -108,8 +133,18 @@ class BfTask(pipeBase.CmdLineTask):
                     (904662, 904662)]
         ignoreCcdList = [_ for _ in range(112)]
         ignoreCcdList.remove(41)
-
         self.estimateGains(butler, visPairs, ignoreCcdList)
+
+    def xxx_test_generateKernel(self):
+        import pickle
+        f = open('/home/mfl/bf_output/merlinTestXcorr.pkl','rb')
+        xcorr, means = pickle.load(f)
+        f.close()
+        print('\n\n Level = %s\n\n'%self.config.xcorrCheckRejectLevel)
+        Kernel = self._generateKernel(xcorr, means)
+        f = open('/home/mfl/bf_output/taskOutput_kernel.pkl','wb')
+        pickle.dump(Kernel, f)
+        f.close()
 
     def xcorrFromVisit(self, butler, v1, v2, ccds=[1], n=5, border=10, plot=False,
                        zmax=.04, fig=None, display=False, GAIN=None, sigma=5):
@@ -820,10 +855,10 @@ class BfTask(pipeBase.CmdLineTask):
                     ampGains[i] = np.append(ampGains[i], _gains[i])
 
             # TODO: Change the "intercept" option to a pexConfig option (or decide which is best and remove)
+            # TODO: replace with lsstDebug
             fig = None
             gains[ccd] = []
             for i in range(len(ampMeans)):
-                # TODO: replace with lsstDebug
                 # TODO: move to inside the if: plot block below
                 if fig is None:
                     fig = plt.figure()
@@ -834,8 +869,6 @@ class BfTask(pipeBase.CmdLineTask):
                                                                                 ampCorrVariances[i])
                 slope, _ = self.iterativeRegression(ampMeans[i], ampCorrVariances[i], fixThroughOrigin=True)
                 slope3, intercept2 = self.iterativeRegression(ampMeans[i], ampCorrVariances[i])
-                # slope = self.iterativeRegressionOLDXXX(ampMeans[i], ampCorrVariances[i])  # xxx remove
-                # slope3, intercept2 = self.iterativeRegressionOLDXXX(ampMeans[i], ampCorrVariances[i], intercept=1)  # xxx remove
                 # TODO: Change messages to say what these ARE, not just second/third fits
                 self.log.info("slope of fit: %s intercept of fit: %s p value: %s"%(slope2,
                                                                                    intercept, p_value))
@@ -855,7 +888,7 @@ class BfTask(pipeBase.CmdLineTask):
                     # plt.show()
                 gains[ccd].append(1.0/slope)
 
-            if writeGains:  # TODO: replace with buttleable dataset
+            if writeGains:  # TODO: replace with buttleable dataset. Also, should be using `with`
                 try:
                     f = open(xxx_outputFile, 'r+b')
                     f.seek(0)
@@ -874,14 +907,97 @@ class BfTask(pipeBase.CmdLineTask):
         self.log.info('gains %s\noGains %s'%(gains, nomGains))
         return (gains, nomGains)
 
-    def SOR(self, source, dx=1.0, MAXIT=10000, eLevel=5.0e-14):
-        """An implementation of the successive over relaxation method.
+    def _generateKernel(self, corrs, means, rejectLevel=None):
+        """Generate the full kernel from a list of (gain-corrected) cross-correlations and means.
 
-        As described in press et al Numerical Recipes (2007) section 20.5.1. See Press for more details.
+        Taking a list of quarter-image, gain-corrected cross-correlations, do a pixel-wise sigma-clipped
+        mean of each, and tile into the full-sized kernel image.
+
+        Each corr in corrs is one quarter of the full cross-correlation, and has been gain-corrected.
+        Each mean in means is a tuple of the means of the two individual images, corresponding to that corr.
+
+        Parameters:
+        -----------
+        corrs : `list` of `numpy.ndarray`, (Ny, Nx)
+            A list of the quarter-image cross-correlations
+        means : `list` of `tuples` of `floats`
+            The means of the input images for each corr in corrs
+        rejectLevel : `float`, optional
+            This is essentially is a sanity check parameter.
+            If this condition is violated there is something unexpected going on in the image, and it is
+            discarded from the stack before the clipped-mean is calculated.
+
+        Returns:
+        --------
+        kernel : `numpy.ndarray`, (Ny, Nx)
+            The output kernel
         """
-        # initialise function: Done to zero here. Setting boundary conditions too!
-        func = np.zeros([source.shape[0]+2, source.shape[1]+2])
+        if not rejectLevel:
+            rejectLevel = self.config.xcorrCheckRejectLevel
 
+        if not isinstance(corrs, list):  # we expect a list of arrays
+            corrs = [corrs]
+
+        # Try to average over a set of possible inputs. This generates a simple function of the kernel that
+        # should be constant across the images, and averages that.
+        xcorrList = []
+        sctrl = afwMath.StatisticsControl()
+        sctrl.setNumSigmaClip(self.config.kernelGenSigmaClip)
+
+        for corrNum, ((mean1, mean2), corr) in enumerate(zip(means, corrs)):
+            corr[0, 0] -= (mean1+mean2)
+            if corr[0, 0] > 0:
+                self.log.warn('Skipped item %s due to unexpected value of (variance-mean)!'%corrNum)
+                continue
+            corr /= -float(1.0*(mean1**2+mean2**2))
+
+            fullCorr = self._tileArray(corr)
+
+            # TODO: what is this block really testing? Is this what it should be doing? First line is fishy
+            xcorrCheck = np.abs(np.sum(fullCorr))/np.sum(np.abs(fullCorr))
+            if xcorrCheck > rejectLevel:
+                self.log.warn("Sum of the xcorr is unexpectedly high. Investigate item num %s. \n"
+                              "value = %s"%(corrNum, xcorrCheck))
+                continue
+            xcorrList.append(fullCorr)
+        
+        if not xcorrList:
+            raise RuntimeError("Cannot generate kernel because all inputs were discarded. "
+                               "Either the data is bad, or config.xcorrCheckRejectLevel is too high")
+
+        # stack the individual xcorrs and apply a per-pixel clipped-mean
+        meanXcorr = np.zeros_like(fullCorr)
+        xcorrList = np.transpose(xcorrList)
+        for i in range(np.shape(meanXcorr)[0]):
+            for j in range(np.shape(meanXcorr)[1]):
+                meanXcorr[i, j] = afwMath.makeStatistics(xcorrList[i, j], afwMath.MEANCLIP, sctrl).getValue()
+
+        return self._SOR(meanXcorr)
+
+    def _SOR(self, source, maxIter=None, eLevel=None):
+        """An implementation of the successive over relaxation (SOR) method.
+
+        Parameters:
+        -----------
+        source : `numpy.ndarray`, (Ny, Nx)
+            The input array
+        maxIter : `int`, optional
+            Maximum number of iterations to attempt before aborting
+        eLevel : `float`, optional
+            The target error level factor at which we deem convergence to have occured
+
+        Returns:
+        --------
+        output : `numpy.ndarray`, (Ny, Nx)
+            The solution
+        """
+        if not maxIter:
+            maxIter = self.config.maxIterSOR
+        if not eLevel:
+            eLevel = self.config.eLevelSOR
+
+        # initialise, and set boundary conditions
+        func = np.zeros([source.shape[0]+2, source.shape[1]+2])
         resid = np.zeros([source.shape[0]+2, source.shape[1]+2])
         rhoSpe = np.cos(np.pi/source.shape[0])  # Here a square grid is assummed
 
@@ -889,136 +1005,56 @@ class BfTask(pipeBase.CmdLineTask):
         # Calculate the initial error
         for i in range(1, func.shape[0]-1):
             for j in range(1, func.shape[1]-1):
-                resid[i, j] = func[i, j-1]+func[i, j+1]+func[i-1, j]+func[i+1, j]-4*func[i, j]-source[i-1, j-1]
-                # inError+=abs(resid[i,j])
+                resid[i, j] = (func[i, j-1]+func[i, j+1]+func[i-1, j] +
+                               func[i+1, j]-4*func[i, j]-source[i-1, j-1])
         inError = np.sum(np.abs(resid))
-        COUNT = 0
+
+        # Iterate until convergence
+        # We perform two sweeps per cycle, updating 'odd' and 'even' points separately
+        nIter = 0
         omega = 1.0
-        # Iterate until convergence. We perform two sweeps per cycle, updating 'odd' and 'even' points separately
-        while COUNT < MAXIT*2:
+        dx = 1.0
+        while nIter < maxIter*2:
             outError = 0
-            if COUNT%2 == 0:
+            if nIter%2 == 0:
                 for i in range(1, func.shape[0]-1, 2):
                     for j in range(1, func.shape[0]-1, 2):
                         resid[i, j] = float(func[i, j-1]+func[i, j+1]+func[i-1, j] +
                                             func[i+1, j]-4.0*func[i, j]-dx*dx*source[i-1, j-1])
                         func[i, j] += omega*resid[i, j]*.25
-                        # outError+=float(abs(resid[i,j]))
                 for i in range(2, func.shape[0]-1, 2):
                     for j in range(2, func.shape[0]-1, 2):
                         resid[i, j] = float(func[i, j-1]+func[i, j+1]+func[i-1, j] +
                                             func[i+1, j]-4.0*func[i, j]-dx*dx*source[i-1, j-1])
                         func[i, j] += omega*resid[i, j]*.25
-                        # outError+=float(abs(resid[i,j]))
             else:
                 for i in range(1, func.shape[0]-1, 2):
                     for j in range(2, func.shape[0]-1, 2):
                         resid[i, j] = float(func[i, j-1]+func[i, j+1]+func[i-1, j] +
                                             func[i+1, j]-4.0*func[i, j]-dx*dx*source[i-1, j-1])
                         func[i, j] += omega*resid[i, j]*.25
-                        # outError+=float(abs(resid[i,j]))
                 for i in range(2, func.shape[0]-1, 2):
                     for j in range(1, func.shape[0]-1, 2):
                         resid[i, j] = float(func[i, j-1]+func[i, j+1]+func[i-1, j] +
                                             func[i+1, j]-4.0*func[i, j]-dx*dx*source[i-1, j-1])
                         func[i, j] += omega*resid[i, j]*.25
-                        # outError+=float(abs(resid[i,j]))
             outError = np.sum(np.abs(resid))
             if outError < inError*eLevel:
                 break
-            if COUNT == 0:
+            if nIter == 0:
                 omega = 1.0/(1-rhoSpe*rhoSpe/2.0)
             else:
                 omega = 1.0/(1-rhoSpe*rhoSpe*omega/4.0)
-            COUNT += 1
-        if COUNT == MAXIT*2:
-            print("Did not converge ", COUNT, outError, inError*eLevel)
+            nIter += 1
+
+        if nIter >= maxIter*2:
+            self.log.warn("Did not converge in %s iterations.\noutError: %s, inError: "
+                          "%s,"%(nIter//2, outError, inError*eLevel))
         else:
-            print("Converged in ", COUNT, outError, inError*eLevel)
+            self.log.info("Converged in %s iterations.\noutError: %s, inError: "
+                          "%s", nIter//2, outError, inError*eLevel)
         return func[1:-1, 1:-1]
 
-
-    def kernelGen(self, corr, means, LEVEL=.20, MAXIT=10000, eLevel=5.0e-14, sigma=4.0):
-        """Use a xcorr with gain correction to calculate the kernel.
-
-        corr is one quarter of the full xcorr., means is the means of the two individual images.
-        MAXIT and eLevel are parameters for deciding when to end the SOR, either after a certain num
-        of iterations or after the error has been reduced by a factor eLevel
-        LEVEL is a sanity check parameter.
-        If this condition is violated there is something unexpected going on in the image.
-        """
-        try:
-            # Try to average over a set of possible inputs. This generates a simple function of the kernel that
-            # should be constant across the images and averages that.
-            counter = 0
-            Isource = []
-            sctrl = afwMath.StatisticsControl()
-            sctrl.setNumSigmaClip(sigma)
-            for I, (mean1, mean2) in enumerate(means):
-                if isinstance(corr[I], afwImage.ImageF):
-                    CORR = corr[I].getArray().copy()
-                else:
-                    CORR = corr[I].copy()
-                CORR[0, 0] -= (mean1+mean2)
-                if CORR[0, 0] > 0:
-                    print('Unexpected value of the variance -mean!!!')
-                    continue
-                CORR /= -float(1.0*(mean1**2+mean2**2))
-                # print CORR.shape[0]
-                # assume square...
-                L = CORR.shape[0]-1
-                l = L
-                TIsource = np.zeros([2*L+1, 2*L+1])
-                for i in range(L+1):
-                    for j in range(L+1):
-                        TIsource[i+L, j+L] = CORR[i, j]
-                        TIsource[-i+L, j+L] = CORR[i, j]
-                        TIsource[i+L, -j+L] = CORR[i, j]
-                        TIsource[-i+L, -j+L] = CORR[i, j]
-                if np.abs(np.sum(TIsource))/np.sum(np.abs(TIsource)) > LEVEL:
-                    print('Sum of the xcorr is unexpectedly high. Investigate item num ', I,
-                          np.abs(np.sum(TIsource))/np.sum(np.abs(TIsource)))
-                    continue
-                # Isource+=TIsource
-                Isource.append(TIsource)
-                counter += 1
-            # Isource/=float(counter)
-            IS = Isource[0].copy()
-            IS[:, :] = 0
-            Isource = np.transpose(Isource)
-            for i in range(np.shape(IS)[0]):
-                for j in range(np.shape(IS)[1]):
-                    IS[i, j] = afwMath.makeStatistics(Isource[i, j], afwMath.MEANCLIP, sctrl).getValue()
-            Isource = IS
-        except TypeError:
-            Isource = 0
-            if isinstance(corr, afwImage.ImageF):
-                CORR = corr.getArray()
-            else:
-                CORR = corr
-            CORR[0, 0] -= (means[0]+means[1])
-            if CORR[0, 0] > 0:
-                print('Unexpected value of the variance -mean!!!')
-                return 0
-            CORR /= -float(1.0*(means[0]**2+means[1]**2))
-            # print CORR.shape[0]
-            # assume square...
-            L = CORR.shape[0]-1
-            l = L
-            TIsource = np.zeros([2*L+1, 2*L+1])
-            for i in range(L+1):
-                for j in range(L+1):
-                    TIsource[i+L, j+L] = CORR[i, j]
-                    TIsource[-i+L, j+L] = CORR[i, j]
-                    TIsource[i+L, -j+L] = CORR[i, j]
-                    TIsource[-i+L, -j+L] = CORR[i, j]
-            if np.abs(np.sum(TIsource))/np.sum(np.abs(TIsource)) > LEVEL:
-                print('Sum of the xcorr is unexpectedly high. Investigate here ',
-                      np.abs(np.sum(TIsource))/np.sum(np.abs(TIsource)) > LEVEL)
-                return 0
-            Isource += TIsource
-
-        return SOR(Isource, 1, MAXIT, eLevel)
 
 
     # This sim code is used to estimate the bias correction used above.
