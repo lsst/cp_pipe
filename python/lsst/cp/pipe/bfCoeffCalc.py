@@ -111,6 +111,7 @@ class BfTask(pipeBase.CmdLineTask):
         self.xxx_test_generateKernel()
 
     def xxx_test_estimateGains(self):
+        """Docstring."""
         import lsst.daf.persistence as dafPersist
         butler = dafPersist.Butler('/datasets/hsc/repo/')
         # visPairs = [(904606, 904608),
@@ -136,14 +137,15 @@ class BfTask(pipeBase.CmdLineTask):
         self.estimateGains(butler, visPairs, ignoreCcdList)
 
     def xxx_test_generateKernel(self):
+        """Docstring."""
         import pickle
-        f = open('/home/mfl/bf_output/merlinTestXcorr.pkl','rb')
+        f = open('/home/mfl/bf_output/merlinTestXcorr.pkl', 'rb')
         xcorr, means = pickle.load(f)
         f.close()
         print('\n\n Level = %s\n\n'%self.config.xcorrCheckRejectLevel)
-        Kernel = self._generateKernel(xcorr, means)
-        f = open('/home/mfl/bf_output/taskOutput_kernel.pkl','wb')
-        pickle.dump(Kernel, f)
+        kernel = self._generateKernel(xcorr, means)
+        f = open('/home/mfl/bf_output/taskOutput_kernel.pkl', 'wb')
+        pickle.dump(kernel, f)
         f.close()
 
     def xcorrFromVisit(self, butler, v1, v2, ccds=[1], n=5, border=10, plot=False,
@@ -680,6 +682,8 @@ class BfTask(pipeBase.CmdLineTask):
         """Use linear regression to fit a line of best fit, iteratively removing outliers.
 
         Useful when you have sufficiently large numbers of points on your PTC.
+        Function iterates until either there are no outliers of nSigmaClip magnitude, or until the specified
+        max number of iterations have been performed.
 
         Parameters:
         -----------
@@ -692,6 +696,8 @@ class BfTask(pipeBase.CmdLineTask):
         --------
         slope : `float`
             The slope of the line of best fit
+        intercept : `float`
+            The y-intercept of the line of best fit
         """
         nIter = 0
         sctrl = afwMath.StatisticsControl()
