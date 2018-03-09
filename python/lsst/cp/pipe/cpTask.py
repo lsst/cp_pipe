@@ -311,12 +311,11 @@ class CpTask(pipeBase.CmdLineTask):
         * Quantum Efficiency            X - will not be implemented here
 
         List of tasks that exist in the eotest package but aren't mentioned on the above link:
-        --------
-        # linearityTask()
-        # fe55CteTask()
-        # eperTask()
-        # crosstalkTask()
-        # persistenceTask()
+        * linearityTask()
+        * fe55CteTask()
+        * eperTask()
+        * crosstalkTask()
+        * persistenceTask()
 
         # TODO: For each eotest task, find out what the standard raft testing does for the optional params.
         i.e. many have optional params for gains, bias-frames etc - if we want bitwise identicallity then we
