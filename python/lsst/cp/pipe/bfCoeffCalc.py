@@ -129,6 +129,35 @@ class BfTaskRunner(pipeBase.TaskRunner):
         return pipeBase.TaskRunner.getTargetList(parsedCmd, visitPairs=visitPairs, **kwargs)
 
 
+class BfDataIdContainer(pipeBase.DataIdContainer):
+    """A DataIdContainer for the BF task."""
+
+    def makeDataRefList(self, namespace):
+        """Compute refList based on idList.
+
+        Parameters
+        ----------
+        namespace
+            Results of parsing command-line (with ``butler`` and ``log`` elements).
+
+        Notes
+        -----
+        Not called if ``add_id_argument`` called with ``doMakeDataRefList=False``.
+        Note that this is almost a copy-and-paste of the vanilla implementation, but without checking
+        if the datasets already exist as this task exists to make them.
+        """
+        if self.datasetType is None:
+            raise RuntimeError("Must call setDatasetType first")
+        butler = namespace.butler
+        for dataId in self.idList:
+            refList = list(butler.subset(datasetType=self.datasetType, level=self.level, dataId=dataId))
+            # exclude nonexistent data
+            # this is a recursive test, e.g. for the sake of "raw" data
+            if not refList:
+                namespace.log.warn("No data found for dataId=%s", dataId)
+                continue
+            self.refList += refList
+
 
 class BfTask(pipeBase.CmdLineTask):
     """Bright-fatter effect coefficient calculation task.
@@ -154,11 +183,10 @@ class BfTask(pipeBase.CmdLineTask):
         parser = pipeBase.ArgumentParser(name=cls._DefaultName)
         parser.add_argument("--visitPairs", help="The list of visit pairs to use, as a list of tuples "
                             "enclosed in quotes e.g. \"(123,456),(789,987),(654,321)\""
-                            "NB: comma-separated-tuples, enclosed in quotes!")
-        parser.add_id_argument("--id", datasetType="bfKernelNew",
+                            "NB: must be comma-separated-tuples with no spaces, enclosed in quotes!")
+        parser.add_id_argument("--id", datasetType="bfKernelNew", ContainerClass=BfDataIdContainer,
                                help="The ccds to use, e.g. --id ccd=0..100")
         return parser
-
 
     # @pipeBase.timeMethod  # xxx
     def run(self, dataRef, visitPairs):
@@ -182,11 +210,9 @@ class BfTask(pipeBase.CmdLineTask):
         # self.xxx_test_estimateGains()
         # self.xxx_test_generateKernel()
         # self.xxx_test_xcorr()
-        # return
+        self.xxx_test_put(dataRef)
+        return
 
-        a = np.zeros((3,3))
-
-        import ipdb as pdb; pdb.set_trace()
         # gainDict = {}
         # xcorrDict = {}
         # kernelDict = {}
@@ -207,6 +233,16 @@ class BfTask(pipeBase.CmdLineTask):
         print('finished')
 
         return pipeBase.Struct(exitStatus=exitStatus)
+
+    def xxx_test_put(self, dataRef):
+        """Xxx Docstring."""
+        from time import sleep
+        print('Starting, if parallelised this will be printed -j times simultaneously')
+        sleep(4)
+        print('finished')
+        a = np.zeros((3, 3))
+        dataRef.put(a)
+        return
 
     def xxx_test_xcorr(self):
         """Xxx Docstring."""
