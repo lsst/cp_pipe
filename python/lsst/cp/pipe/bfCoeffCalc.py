@@ -31,7 +31,7 @@ import os
 import re
 import pickle
 from scipy import stats
-import matplotlib as mpl
+# import matplotlib as mpl
 import numpy as np
 # mpl.use('Agg')
 # pyplot = plt
@@ -120,7 +120,7 @@ class BfTaskRunner(pipeBase.TaskRunner):
 
         tuples = visitPairs.split("),(")  # split
         tuples[0] = tuples[0][1:]  # remove leading "(
-        tuples[-1] = tuples[-1][:-2]  # remove trailing )"
+        tuples[-1] = tuples[-1][:-1]  # remove trailing )"
         visitPairs = [(int(v1), int(v2)) for (v1, v2) in [tup.split(',') for tup in tuples]]  # cast to int
 
         # if the reviewer is a die-hard regex fan then uncomment the below, but the above is more readable
@@ -192,43 +192,56 @@ class BfTask(pipeBase.CmdLineTask):
     def run(self, dataRef, visitPairs):
         """Run the brighter-fatter measurement task.
 
-        For a dataRef (which is just a ccd here), and given a list of visit pairs, calulate the
+        For a dataRef (which is each ccd here), and given a list of visit pairs, calulate the
         brighter-fatter kernel for the ccd.
 
-        # need to have some syntax for ganging ccds together
+        TODO: might want to have some syntax for ganging ccds together
         #    though this might just be all-together, or all separate actually
         #    it's possible we could gang together on boule/batch, but let's not worry for now
 
         Parameters
         ----------
-        dataRefs : list of lsst.daf.persistence.ButlerDataRef
-            List of data references to the exposures to be fit.
+        dataRef : list of lsst.daf.persistence.ButlerDataRef
+            dataRef for the CCD for the visits to be fit.
         visitPairs : `iterable` of `tuple` of `int`
             Pairs of visit numbers to be processed together
-
         """
+
         # self.xxx_test_estimateGains()
         # self.xxx_test_generateKernel()
         # self.xxx_test_xcorr()
-        self.xxx_test_put(dataRef)
-        return
+        # self.xxx_test_put(dataRef)
+        # return
 
-        # gainDict = {}
-        # xcorrDict = {}
-        # kernelDict = {}
-        # probably prepopulate the above with .fromKeys() after querying the camera and building lists
+        gains = []
+        xcorrs = []
+        means = []
 
-        ignoreCcdList = [_ for _ in range(112)]
-        ignoreCcdList.remove(41)
+        ccdNum = dataRef.dataId['ccd']
 
-        for visPair in visPairs():
-            if self.config.doCalcGains:
-                gains, nomGains = self.estimateGains()
+        if self.config.doCalcGains:
+            self.log.info('Beginning gain estimation for CCD %s'%ccdNum)
+            gains, nomGains = self.estimateGains(dataRef, visitPairs)
+            print(gains)
+            print(nomGains)
+        else:
+            # TODO: buttle gains back here
+            pass
+        self.log.info('Finished gain estimation for CCD %s'%ccdNum)
 
+        # calculating the cross corellations
         for (v1, v2) in visitPairs:
-            im1 = dataRef.get('raw', visit=v1)
-            # im2 = dataRef.get('raw', dataId={'ccd': dataRef.dataId, 'visit': v2})
-            break
+            xcorr, mean = self.xcorrFromVisit(dataRef, v1, v2, gains=gains)
+            xcorrs.append(xcorr.getArray())
+            means.append(mean)
+
+        kernel = self._generateKernel(xcorr, means)
+        dataRef.put(kernel)
+
+        # for (v1, v2) in visitPairs:
+        #     im1 = dataRef.get('raw', visit=v1)
+        #     # im2 = dataRef.get('raw', dataId={'ccd': dataRef.dataId, 'visit': v2})
+        #     break
 
         print('finished')
 
@@ -316,6 +329,261 @@ class BfTask(pipeBase.CmdLineTask):
         pickle.dump(kernel, f)
         f.close()
 
+    def estimateGains(self, dataRef, visitPairs, intercept=0, writeGains=True,
+                      xxx_outputFile=os.path.join(OUTPUT_PATH, 'WILLS_GAINS.pkl'),
+                      xxx_figLocation=OUTPUT_PATH, xxx_plot=True):
+        """Estimate the gains of the specified CCD(s) using the specified visits.
+
+        XXX This is really a ptcGainTask by Will. Should this move to its own task?
+        TODO: compare results from this task to the eotest PTC gain task once that's ported
+
+        Given a dataRef and list of flats of varying intensity, calculate the gain for each
+        CCD specified using the PTC method.
+
+        The intercept option chooses the linear fitting option. The default fits
+        Var=1/g mean, if non zero Var=1/g mean + const is fit.
+        By default, gains are persisted per-amplifier as a dictionary
+
+        Parameters
+        ----------
+        dataRef : `lsst.daf.persistence.butler.Butler.dataRef`
+            dataRef for the CCD for the flats to be used
+        visitPairs : `list` of `tuple`
+            List of visit-pairs to use, as [(v1,v2), (v3,v4)...]
+        writeGains : `bool`
+            Persist the calculated gain values
+
+        Returns
+        -------
+        gains : `dict`
+            Amplifier gain values, as calculated
+        nominalGains : `dict`
+            Amplifier gains, as given by the `detector` objects
+        """
+
+        # camera = butler.get('camera')
+        # useCcds = [ccd.getId() for ccd in camera if ccd.getId() not in ignoreCcdList]
+        # assert(len(camera) == len(useCcds) + len(ignoreCcdList))
+        # self.log.info('Processing CCDs %s'%useCcds)
+
+        # Loop over the CCDs, calculating a PTC for each amplifier.
+        # Amplifier iteration is performed in _calcMeansAndVars()
+        ampMeans = []
+        ampVariances = []
+        ampCorrVariances = []
+        ampGains = []
+        nomGains = []
+
+        # Cycles through the input visits and calculate the xcorr in the individual amps.
+        # NB: no gain correction is applied
+        for visPairNum, visPair in enumerate(visitPairs):
+            _means, _vars, _covars, _gains = self._calcMeansAndVars(dataRef, visPair[0], visPair[1])
+            breaker = 0
+            # Do sanity checks; if these are failed more investigation is needed!
+            for i, j in enumerate(_means):
+                if _means[i]*10 < _vars[i] or _means[i]*10 < _covars[i]:
+                    self.log.warn('Sanity check failed; check visit %s'%visPair)
+                    breaker += 1
+            if breaker:
+                continue
+            if visPairNum == 0:
+                for i in range(len(_means)):
+                    ampMeans.append(np.array([]))
+                    ampVariances.append(np.array([]))
+                    ampCorrVariances.append(np.array([]))
+                    ampGains.append(np.array([]))
+            for i, j in enumerate(_means):
+                if visPairNum == 0:
+                    nomGains.append(_gains[i])
+                if _vars[i]*1.3 < _covars[i] or _vars[i]*0.7 > _covars[i]:
+                    continue
+                ampMeans[i] = np.append(ampMeans[i], _means[i])
+                ampVariances[i] = np.append(ampVariances[i], _vars[i])
+                ampCorrVariances[i] = np.append(ampCorrVariances[i], _covars[i])
+                ampGains[i] = np.append(ampGains[i], _gains[i])
+
+        # TODO: Change the "intercept" option to a pexConfig option (or decide which is best and remove)
+        # TODO: replace with lsstDebug
+        fig = None
+        gains = []
+        for i in range(len(ampMeans)):
+            # TODO: move to inside the if: plot block below
+            if fig is None:
+                fig = plt.figure()
+            else:
+                fig.clf()
+            ax = fig.add_subplot(111)
+            slope2, intercept, r_value, p_value, std_err = stats.linregress(ampMeans[i],
+                                                                            ampCorrVariances[i])
+            slope, _ = self.iterativeRegression(ampMeans[i], ampCorrVariances[i], fixThroughOrigin=True)
+            slope3, intercept2 = self.iterativeRegression(ampMeans[i], ampCorrVariances[i])
+            # TODO: Change messages to say what these ARE, not just second/third fits
+            self.log.info("slope of fit: %s intercept of fit: %s p value: %s"%(slope2,
+                                                                               intercept, p_value))
+            self.log.info("slope of second fit: %s, difference:%s"%(slope, slope-slope2))
+            self.log.info("slope of third  fit: %s, difference: %s"%(slope3, slope-slope3))
+            if intercept:
+                slope = slope3
+
+            if xxx_plot:  # TODO: replace with lsstDebug.Also, consider dumping based on p_value or X_sq?
+                ax.plot(ampMeans[i], ampCorrVariances[i], linestyle='None', marker='x', label='data')
+                if intercept:
+                    ax.plot(ampMeans[i], ampMeans[i]*slope+intercept2, label='fix')
+
+                else:
+                    ax.plot(ampMeans[i], ampMeans[i]*slope, label='fix')
+                ccdNum = dataRef.dataId['ccd']
+                fig.savefig(os.path.join(xxx_figLocation, ('PTC_CCD_'+str(ccdNum)+'_AMP_'+str(i)+'.pdf')))
+                # plt.show()
+            gains.append(1.0/slope)
+
+        if writeGains:  # TODO: replace with buttleable dataset. Also, should be using `with`
+            try:
+                f = open(xxx_outputFile, 'r+b')
+                f.seek(0)
+                try:
+                    storedGains = pickle.load(f)
+                except EOFError:
+                    storedGains = {}
+            except IOError:
+                f = open(xxx_outputFile, 'wb')
+                storedGains = {}
+            storedGains = gains
+            f.seek(0)
+            f.truncate()
+            pickle.dump(storedGains, f)
+            f.close()
+        self.log.info('gains %s\noGains %s'%(gains, nomGains))
+        return (gains, nomGains)
+
+    def _calcMeansAndVars(self, dataRef, v1, v2, n=8, border=10, plot=False, zmax=.05,
+                          fig=None, display=False, sigma=5, biasCorr=0.9241):
+        """Calculate the means, vars, covars, and retieve the nominal gains, for each amp in each ccd.
+
+        This code runs using two visit numbers, and for ccd specified.
+        It calculates the correlations in the individual amps without rescaling any gains.
+        This allows a photon transfer curve to be generated and the gains measured.
+
+        Images are assembled with use the isrTask, and basic isr is performed.
+        Note that the isr task used MUST set the EDGE bits.[xxx need to change to using this, or change this]
+
+        Parameters:
+        -----------
+        dataRef : `lsst.daf.persistence.butler.Butler.dataRef`
+            Butler for the repo containg the flats to be used
+        v1 : `int`
+            First visit of the visit pair
+        v2 : `int`
+            Second visit of the visit pair
+        ccd : `string` or `int`
+            Names of the ccds to use
+
+        Returns
+        -------
+        means, vars, covars, gains : `tuple` of `lists`
+            The sum of the means, variance, one quarter of the xcorr, and the original gain for each amp.
+        """
+        nomGains = []
+        imMeans = [None, None]
+        ampMeans = [[], []]
+
+        # TODO_URGENT: turn this into a dict so that we don't get muddled up. Currently this is nonsense.
+        # TODO: change to looping over ccds so that we don't hold all the isr-ed images
+
+        # TODO: reinclude the ISR step at this point
+        ims = [self.isr(dataRef, v1), self.isr(dataRef, v2)]
+        # ims = [dataRef.get('raw', visit=v1), dataRef.get('raw', visit=v2)]
+        # if d1isplay:  # TODO: replace with lsstDebug
+        #     ds9.mtv(trim(ims[i]), frame=i, title=v)
+
+        sctrl = afwMath.StatisticsControl()
+        sctrl.setNumSigmaClip(sigma)  # TODO: change to pexConfig option
+        for imNum, im in enumerate(ims):
+            ccd = im.getDetector()
+            # Starting with an Exposure, MaskedImage, or Image trim the data and convert to float
+            for attr in ("getMaskedImage", "getImage"):
+                if hasattr(im, attr):
+                    im = getattr(im, attr)()
+            try:
+                im = im.convertF()
+            except AttributeError:
+                self.log.warn("Failed to convert image %s to float"%imNum)  # xxx fatal? Raise?
+                pass
+
+            # calculate the sigma-clipped mean, excluding the borders
+            # TODO: rewrite to use egde bits
+            imMeans[imNum] = afwMath.makeStatistics(im, afwMath.MEANCLIP, sctrl).getValue()
+            for ampNum, amp in enumerate(ccd):
+                ampIm = im[amp.getBBox()]
+                if ampNum == 0:
+                    mean = afwMath.makeStatistics(ampIm[border:, border:-border],
+                                                  afwMath.MEANCLIP).getValue()
+                elif ampNum == 3:
+                    mean = afwMath.makeStatistics(ampIm[:-border, border:-border],
+                                                  afwMath.MEANCLIP).getValue()
+                else:
+                    mean = afwMath.makeStatistics(ampIm[:, border:-border], afwMath.MEANCLIP).getValue()
+                nomGain = amp.getGain()
+                ampMeans[imNum].append(mean)
+                if imNum == 0:
+                    nomGains.append(nomGain)
+                ampIm -= mean
+
+        diff = ims[0].clone()
+        diff = diff.getMaskedImage().getImage()
+        diff -= ims[1].getMaskedImage().getImage()
+
+        temp = diff[border:-border, border:-border]
+
+        # Subtract background.  It should be a constant, but it isn't always (e.g. some SuprimeCam flats)
+        # TODO: Check how this looks, and if this is the "right" way to do this
+        binsize = 128  # TODO: change to pexConfig option
+        nx = temp.getWidth()//binsize
+        ny = temp.getHeight()//binsize
+        bctrl = afwMath.BackgroundControl(nx, ny, sctrl, afwMath.MEANCLIP)
+        bkgd = afwMath.makeBackground(temp, bctrl)
+        diff[border:-border, border:-border] -= bkgd.getImageF(afwMath.Interpolate.CUBIC_SPLINE,
+                                                               afwMath.REDUCE_INTERP_ORDER)
+        variances = []  # can't shadow builtin "vars"
+        coVars = []
+        # For each amp calculate the correlation
+        CCD = ims[0].getDetector()  # xxx can you do this for a heterogenous focal plane? (answer: 100% no)
+        for ampNum, amp in enumerate(CCD):
+            borderL = 0
+            borderR = 0
+            if ampNum == 0:  # TODO: this needs rewriting for using edge bits to make camera agnostic
+                borderL = border
+            if ampNum == 3:
+                borderR = border
+
+            diffAmpIm = diff[amp.getBBox()].clone()  # xxx why is this a clone? move .clone() to next line?
+            diffAmpImCrop = diffAmpIm[borderL:-borderR-n, border:-border-n]
+            diffAmpImCrop -= afwMath.makeStatistics(diffAmpImCrop, afwMath.MEANCLIP, sctrl).getValue()
+            w, h = diffAmpImCrop.getDimensions()
+            xcorr = np.zeros((n + 1, n + 1), dtype=np.float64)
+
+            # calculate the cross correlation
+            for xlag in range(n + 1):
+                for ylag in range(n + 1):
+                    dim_xy = diffAmpIm[borderL+xlag:borderL+xlag + w, border+ylag: border+ylag + h].clone()
+                    dim_xy -= afwMath.makeStatistics(dim_xy, afwMath.MEANCLIP, sctrl).getValue()
+                    dim_xy *= diffAmpImCrop
+                    xcorr[xlag, ylag] = afwMath.makeStatistics(dim_xy,
+                                                               afwMath.MEANCLIP, sctrl).getValue()/(biasCorr)
+
+            variances.append(xcorr[0, 0])
+            xcorr_full = self._tileArray(xcorr)
+            coVars.append(np.sum(xcorr_full))
+
+            msg = "M1: " + str(ampMeans[0][ampNum])
+            msg += " M2 " + str(ampMeans[1][ampNum])
+            msg += " M_sum: " + str((ampMeans[0][ampNum])+ampMeans[1][ampNum])
+            msg += " Var " + str(variances[ampNum])
+            msg += " coVar: " + str(coVars[ampNum])
+            self.log.info(msg)  # xxx change to debug or trace level
+        return ([i+j for i, j in zip(ampMeans[1], ampMeans[0])], variances, coVars, nomGains)
+
+
     # def xcorrFromVisit(self, butler, v1, v2, ccds=[1], n=5, border=10, plot=False,
     #                    zmax=.04, fig=None, display=False, GAIN=None, sigma=5):
     #     """Return an xcorr from a given pair of visits (and ccds).
@@ -369,35 +637,35 @@ class BfTask(pipeBase.CmdLineTask):
     #                                                        str(ccds[0])+".png"))))
     #     return xcorrImg, means1
 
-    # def isr(self, butler, v, ccd):  # TODO: Need to replace this with a retargetable ISR task
-    #     """Some simple code to perform some simple ISR."""
-    #     dataId = {'visit': v, 'ccd': ccd}
-    #     dataRef = butler.dataRef('raw', dataId=dataId)
-    #     config = SubaruIsrTask.ConfigClass()
-    #     # config.load(os.path.join(os.environ["OBS_SUBARU_DIR"], "config", "isr.py"))
-    #     # config.load(os.path.join(os.environ["OBS_SUBARU_DIR"], "config", "hsc", "isr.py"))
+    def isr(self, dataRef, visit):  # TODO: Need to replace this with a retargetable ISR task
+        """Some simple code to perform some simple ISR."""
+        dataRef.dataId['visit'] = visit
+        config = SubaruIsrTask.ConfigClass()
+        # config.load(os.path.join(os.environ["OBS_SUBARU_DIR"], "config", "isr.py"))
+        # config.load(os.path.join(os.environ["OBS_SUBARU_DIR"], "config", "hsc", "isr.py"))
 
-    #     config.doFlat = False
-    #     config.doGuider = False
-    #     config.doSaturation = True
-    #     config.doWrite = False
-    #     config.doDefect = True
-    #     config.qa.doThumbnailOss = False
-    #     config.qa.doThumbnailFlattened = False
-    #     config.doFringe = False
-    #     config.fringe.filters = ['y', ]
-    #     config.overscanFitType = "AKIMA_SPLINE"
-    #     config.overscanOrder = 30
-    #     # Overscan is fairly efficient at removing bias level, but leaves a line in the middle
-    #     config.doBias = True
-    #     config.doDark = True  # Required especially around CCD 33
-    #     config.crosstalk.retarget(CrosstalkTask)
-    #     config.crosstalk.value.coeffs.values = [0.0e-6, -125.0e-6, -149.0e-6, -156.0e-6, -124.0e-6, 0.0e-6, -
-    #                                             132.0e-6, -157.0e-6, -171.0e-6, -134.0e-6, 0.0e-6, -153.0e-6,
-    #                                             -157.0e-6, -151.0e-6, -137.0e-6, 0.0e-6, ]
-    #     isr = SubaruIsrTask(config=config)
-    #     exp = isr.run(dataRef).exposure
-    #     return exp
+        config.doFlat = False
+        config.doGuider = False
+        config.doSaturation = True
+        config.doWrite = False
+        config.doDefect = True
+        config.qa.doThumbnailOss = False
+        config.qa.doThumbnailFlattened = False
+        config.doFringe = False
+        config.fringe.filters = ['y', ]
+        config.overscanFitType = "AKIMA_SPLINE"
+        config.overscanOrder = 30
+        config.doAttachTransmissionCurve = False
+        # Overscan is fairly efficient at removing bias level, but leaves a line in the middle
+        config.doBias = True
+        config.doDark = True  # Required especially around CCD 33
+        config.crosstalk.retarget(CrosstalkTask)
+        config.crosstalk.value.coeffs.values = [0.0e-6, -125.0e-6, -149.0e-6, -156.0e-6, -124.0e-6, 0.0e-6, -
+                                                132.0e-6, -157.0e-6, -171.0e-6, -134.0e-6, 0.0e-6, -153.0e-6,
+                                                -157.0e-6, -151.0e-6, -137.0e-6, 0.0e-6, ]
+        isr = SubaruIsrTask(config=config)
+        exp = isr.run(dataRef).exposure
+        return exp
 
     def xcorr(self, im1, im2, Visits, n=5, border=20, frame=None, CCD=[1], GAIN=None, sigma=5, biasCorr=0.9241):
         """Calculate the cross-correlation of two images im1 and im2 (using robust measures of the covariance).
@@ -586,8 +854,8 @@ class BfTask(pipeBase.CmdLineTask):
 
         return ", ".join(valName)
 
-    def _calcMeansAndVars(self, butler, v1, v2, ccd, n=5, border=10, plot=False, zmax=.05,
-                          fig=None, display=False, sigma=5, biasCorr=0.9241):
+    def _calcMeansAndVars_old(self, butler, v1, v2, ccd, n=5, border=10, plot=False, zmax=.05,
+                              fig=None, display=False, sigma=5, biasCorr=0.9241):
         """Calculate the means, vars, covars, and retieve the nominal gains, for each amp in each ccd.
 
         This code runs using two visit numbers, and for ccd specified.
@@ -956,7 +1224,7 @@ class BfTask(pipeBase.CmdLineTask):
 
     #     return slope
 
-    def estimateGains(self, butler, visitPairs, ignoreCcdList=None, intercept=0, writeGains=True,
+    def estimateGains_old(self, butler, visitPairs, ignoreCcdList=None, intercept=0, writeGains=True,
                       xxx_outputFile=os.path.join(OUTPUT_PATH, 'WILLS_GAINS.pkl'),
                       xxx_figLocation=OUTPUT_PATH, xxx_plot=True):
         """Estimate the gains of the specified CCD(s) using the specified visits.
