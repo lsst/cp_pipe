@@ -94,8 +94,23 @@ class BfTaskConfig(pexConfig.Config):
     )
     nSigmaClipKernelGen = pexConfig.Field(
         dtype=float,
-        doc="Number of sigma to clip to, during pixel-wise clipping when generating the kernel",
+        doc="Number of sigma to clip to during pixel-wise clipping when generating the kernel",
         default=4
+    )
+    nSigmaClipXCorr = pexConfig.Field(
+        dtype=float,
+        doc="Number of sigma to clip when calculating means for the cross correlation",
+        default=5
+    )
+    maxLag = pexConfig.Field(
+        dtype=int,
+        doc="The maximum lag to use when calculating the cross correlation/kernel",
+        default=5
+    )
+    nPixBorderXCorr = pexConfig.Field(
+        dtype=int,
+        doc="The number of border pixels to exclude when calculating the cross correlation/kernel",
+        default=20
     )
 
 
@@ -232,7 +247,7 @@ class BfTask(pipeBase.CmdLineTask):
         self.log.info('CCD %s has gains %s'%(ccdNum, gains))
         return
 
-        # calculating the cross corellations
+        # calculating the cross correlations
         for (v1, v2) in visitPairs:
             xcorr, mean = self.xcorrFromVisit(dataRef, v1, v2, gains=gains)
             xcorrs.append(xcorr.getArray())
