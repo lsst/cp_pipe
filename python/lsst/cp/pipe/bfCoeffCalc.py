@@ -266,22 +266,6 @@ class BfTask(pipeBase.CmdLineTask):
         butler = dafPersist.Butler('/datasets/hsc/repo/')
         visPairs = [(904606, 904608),
                     (904610, 904612)]
-        # visPairs = [(904606, 904608),
-        #             (904610, 904612),
-        #             (904618, 904620),
-        #             (904614, 904616),
-        #             (904590, 904592),
-        #             (904602, 904604),
-        #             (904594, 904596),
-        #             (904588, 904590),
-        #             (904584, 904586),
-        #             (904626, 904628),
-        #             (904622, 904624),
-        #             (904630, 904632),
-        #             (904646, 904648),
-        #             (904642, 904644),
-        #             (904660, 904664),
-        #             (904662, 904662)]
         xcorrDict = {}
 
         ignoreCcdList = [_ for _ in range(112)]
@@ -298,24 +282,8 @@ class BfTask(pipeBase.CmdLineTask):
         """Xxx Docstring."""
         import lsst.daf.persistence as dafPersist
         butler = dafPersist.Butler('/datasets/hsc/repo/')
-        # visPairs = [(904606, 904608),
-        #             (904610, 904612)]
         visPairs = [(904606, 904608),
-                    (904610, 904612),
-                    (904618, 904620),
-                    (904614, 904616),
-                    (904590, 904592),
-                    (904602, 904604),
-                    (904594, 904596),
-                    (904588, 904590),
-                    (904584, 904586),
-                    (904626, 904628),
-                    (904622, 904624),
-                    (904630, 904632),
-                    (904646, 904648),
-                    (904642, 904644),
-                    (904660, 904664),
-                    (904662, 904662)]
+                    (904610, 904612)]
         ignoreCcdList = [_ for _ in range(112)]
         ignoreCcdList.remove(41)
         self.estimateGains(butler, visPairs, ignoreCcdList)
@@ -574,60 +542,6 @@ class BfTask(pipeBase.CmdLineTask):
             msg += " coVar: " + str(coVars[ampNum])
             self.log.info(msg)  # xxx change to debug or trace level
         return ([i+j for i, j in zip(ampMeans[1], ampMeans[0])], variances, coVars, nomGains)
-
-
-    # def xcorrFromVisit(self, butler, v1, v2, ccds=[1], n=5, border=10, plot=False,
-    #                    zmax=.04, fig=None, display=False, GAIN=None, sigma=5):
-    #     """Return an xcorr from a given pair of visits (and ccds).
-
-    #     This is code preforms some preliminary operations and then calls the main correlation calc code.
-    #     This is used for calculating the xcorr after setting the gains.
-    #     """
-    #     try:
-    #         v1[0]
-    #     except TypeError:
-    #         v1 = [v1]
-    #     try:
-    #         v2[0]
-    #     except TypeError:
-    #         v2 = [v2]
-
-    #     try:
-    #         ccds[0]
-    #     except TypeError:
-    #         ccds = [ccds]
-
-    #     ims = [None, None]
-    #     means = [None, None]
-    #     for i, vs in enumerate([v1, v2, ]):
-    #         for v in vs:
-    #             for ccd in ccds:
-    #                 tmp = isr(butler, v, ccd)
-    #                 if ims[i] is None:
-    #                     ims[i] = tmp
-    #                     im = ims[i].getMaskedImage()
-    #                 else:
-    #                     im += tmp.getMaskedImage()
-
-    #         nData = len(ccds)*len(vs)
-    #         if nData > 1:
-    #             im /= nData
-    #         means[i] = afwMath.makeStatistics(im, afwMath.MEANCLIP).getValue()
-    #         if display:
-    #             ds9.mtv(trim(ims[i]), frame=i, title=v)
-    #     mean = np.mean(means)
-    #     xcorrImg, means1 = xcorr(*ims, Visits=[v1, v2], n=n, border=border, frame=len(ims)
-    #                              if display else None, CCD=[ccds[0]], GAIN=GAIN, sigma=sigma)
-
-    #     if plot:
-    #         plotXcorr(xcorrImg.clone(), (means1[0]+means[1]), title=r"Visits %s; %s, CCDs %s  $\langle{I}\rangle"
-    #                   " = %.3f$ (%s) Var = %.4f" %
-    #                   (_getNameOfSet(v1), _getNameOfSet(v2), _getNameOfSet(ccds),
-    #                    (means1[0]+means[1]), ims[0].getFilter().getName(), float(xcorrImg.getArray()[0, 0]) /
-    #                    (means1[0]+means[1])), zmax=zmax, fig=fig, SAVE=True,
-    #                   fileName=(os.path.join(OUTPUT_PATH, ("Xcorr_visit_" + str(v1[0])+"_"+str(v2[0])+"_ccd_" +
-    #                                                        str(ccds[0])+".png"))))
-    #     return xcorrImg, means1
 
     def isr(self, dataRef, visit):  # TODO: Need to replace this with a retargetable ISR task
         """Some simple code to perform some simple ISR."""
