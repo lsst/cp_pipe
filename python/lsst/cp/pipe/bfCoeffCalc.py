@@ -227,7 +227,9 @@ class BfTask(pipeBase.CmdLineTask):
         else:
             # TODO: buttle gains back here
             pass
+        dataRef.put(gains, datasetType='bfGain')
         self.log.info('Finished gain estimation for CCD %s'%ccdNum)
+        return
 
         # calculating the cross corellations
         for (v1, v2) in visitPairs:
@@ -331,7 +333,7 @@ class BfTask(pipeBase.CmdLineTask):
 
     def estimateGains(self, dataRef, visitPairs, intercept=0, writeGains=True,
                       xxx_outputFile=os.path.join(OUTPUT_PATH, 'WILLS_GAINS.pkl'),
-                      xxx_figLocation=OUTPUT_PATH, xxx_plot=True):
+                      xxx_figLocation=OUTPUT_PATH, xxx_plot=False):
         """Estimate the gains of the specified CCD(s) using the specified visits.
 
         XXX This is really a ptcGainTask by Will. Should this move to its own task?
@@ -407,14 +409,7 @@ class BfTask(pipeBase.CmdLineTask):
         fig = None
         gains = []
         for i in range(len(ampMeans)):
-            # TODO: move to inside the if: plot block below
-            if fig is None:
-                fig = plt.figure()
-            else:
-                fig.clf()
-            ax = fig.add_subplot(111)
-            slope2, intercept, r_value, p_value, std_err = stats.linregress(ampMeans[i],
-                                                                            ampCorrVariances[i])
+            slope2, intercept, r_value, p_value, std_err = stats.linregress(ampMeans[i], ampCorrVariances[i])
             slope, _ = self.iterativeRegression(ampMeans[i], ampCorrVariances[i], fixThroughOrigin=True)
             slope3, intercept2 = self.iterativeRegression(ampMeans[i], ampCorrVariances[i])
             # TODO: Change messages to say what these ARE, not just second/third fits
@@ -426,6 +421,11 @@ class BfTask(pipeBase.CmdLineTask):
                 slope = slope3
 
             if xxx_plot:  # TODO: replace with lsstDebug.Also, consider dumping based on p_value or X_sq?
+                if fig is None:
+                    fig = plt.figure()
+                else:
+                    fig.clf()
+                ax = fig.add_subplot(111)
                 ax.plot(ampMeans[i], ampCorrVariances[i], linestyle='None', marker='x', label='data')
                 if intercept:
                     ax.plot(ampMeans[i], ampMeans[i]*slope+intercept2, label='fix')
@@ -1328,7 +1328,6 @@ class BfTask(pipeBase.CmdLineTask):
                     ax.plot(ampMeans[i], ampCorrVariances[i], linestyle='None', marker='x', label='data')
                     if intercept:
                         ax.plot(ampMeans[i], ampMeans[i]*slope+intercept2, label='fix')
-
                     else:
                         ax.plot(ampMeans[i], ampMeans[i]*slope, label='fix')
                     fig.savefig(os.path.join(xxx_figLocation, ('PTC_CCD_'+str(ccd)+'_AMP_'+str(i)+'.pdf')))
