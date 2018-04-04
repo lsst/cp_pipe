@@ -222,13 +222,14 @@ class BfTask(pipeBase.CmdLineTask):
         if self.config.doCalcGains:
             self.log.info('Beginning gain estimation for CCD %s'%ccdNum)
             gains, nomGains = self.estimateGains(dataRef, visitPairs)
-            print(gains)
-            print(nomGains)
+            dataRef.put(gains, datasetType='bfGain')
+            self.log.info('Finished gain estimation for CCD %s'%ccdNum)
         else:
-            # TODO: buttle gains back here
-            pass
-        dataRef.put(gains, datasetType='bfGain')
-        self.log.info('Finished gain estimation for CCD %s'%ccdNum)
+            gains = dataRef.get('bfGain')
+            if not gains:
+                raise RuntimeError("Failed to retrieved gains for CCD %s"%ccdNum)
+            self.log.info('Retrieved stored gain for CCD %s'%ccdNum)
+        self.log.info('CCD %s has gains %s'%(ccdNum, gains))
         return
 
         # calculating the cross corellations
@@ -332,12 +333,8 @@ class BfTask(pipeBase.CmdLineTask):
         f.close()
 
     def estimateGains(self, dataRef, visitPairs, intercept=0, writeGains=True,
-                      xxx_outputFile=os.path.join(OUTPUT_PATH, 'WILLS_GAINS.pkl'),
                       xxx_figLocation=OUTPUT_PATH, xxx_plot=False):
-        """Estimate the gains of the specified CCD(s) using the specified visits.
-
-        XXX This is really a ptcGainTask by Will. Should this move to its own task?
-        TODO: compare results from this task to the eotest PTC gain task once that's ported
+        """Estimate the gains of the amplifiers in the CCD using the specified visits.
 
         Given a dataRef and list of flats of varying intensity, calculate the gain for each
         CCD specified using the PTC method.
@@ -345,6 +342,9 @@ class BfTask(pipeBase.CmdLineTask):
         The intercept option chooses the linear fitting option. The default fits
         Var=1/g mean, if non zero Var=1/g mean + const is fit.
         By default, gains are persisted per-amplifier as a dictionary
+
+        XXX This is really a ptcGainTask by Will. Should this move to its own task?
+        TODO: compare results from this task to the eotest PTC gain task once that's ported
 
         Parameters
         ----------
@@ -362,21 +362,14 @@ class BfTask(pipeBase.CmdLineTask):
         nominalGains : `dict`
             Amplifier gains, as given by the `detector` objects
         """
-
-        # camera = butler.get('camera')
-        # useCcds = [ccd.getId() for ccd in camera if ccd.getId() not in ignoreCcdList]
-        # assert(len(camera) == len(useCcds) + len(ignoreCcdList))
-        # self.log.info('Processing CCDs %s'%useCcds)
-
-        # Loop over the CCDs, calculating a PTC for each amplifier.
-        # Amplifier iteration is performed in _calcMeansAndVars()
         ampMeans = []
         ampVariances = []
         ampCorrVariances = []
         ampGains = []
         nomGains = []
 
-        # Cycles through the input visits and calculate the xcorr in the individual amps.
+        # Loop over the amps in the CCD, calculating a PTC for each amplifier.
+        # The amplifier iteration is performed in _calcMeansAndVars()
         # NB: no gain correction is applied
         for visPairNum, visPair in enumerate(visitPairs):
             _means, _vars, _covars, _gains = self._calcMeansAndVars(dataRef, visPair[0], visPair[1])
@@ -405,7 +398,6 @@ class BfTask(pipeBase.CmdLineTask):
                 ampGains[i] = np.append(ampGains[i], _gains[i])
 
         # TODO: Change the "intercept" option to a pexConfig option (or decide which is best and remove)
-        # TODO: replace with lsstDebug
         fig = None
         gains = []
         for i in range(len(ampMeans)):
@@ -413,13 +405,13 @@ class BfTask(pipeBase.CmdLineTask):
             slope, _ = self.iterativeRegression(ampMeans[i], ampCorrVariances[i], fixThroughOrigin=True)
             slope3, intercept2 = self.iterativeRegression(ampMeans[i], ampCorrVariances[i])
             # TODO: Change messages to say what these ARE, not just second/third fits
-            self.log.info("slope of fit: %s intercept of fit: %s p value: %s"%(slope2,
-                                                                               intercept, p_value))
+            self.log.info("slope of fit: %s intercept of fit: %s p value: %s"%(slope2, intercept, p_value))
             self.log.info("slope of second fit: %s, difference:%s"%(slope, slope-slope2))
-            self.log.info("slope of third  fit: %s, difference: %s"%(slope3, slope-slope3))
+            self.log.info("slope of third  fit: %s, difference:%s"%(slope3, slope-slope3))
             if intercept:
                 slope = slope3
 
+            # TODO: replace with lsstDebug
             if xxx_plot:  # TODO: replace with lsstDebug.Also, consider dumping based on p_value or X_sq?
                 if fig is None:
                     fig = plt.figure()
@@ -429,32 +421,30 @@ class BfTask(pipeBase.CmdLineTask):
                 ax.plot(ampMeans[i], ampCorrVariances[i], linestyle='None', marker='x', label='data')
                 if intercept:
                     ax.plot(ampMeans[i], ampMeans[i]*slope+intercept2, label='fix')
-
                 else:
                     ax.plot(ampMeans[i], ampMeans[i]*slope, label='fix')
                 ccdNum = dataRef.dataId['ccd']
                 fig.savefig(os.path.join(xxx_figLocation, ('PTC_CCD_'+str(ccdNum)+'_AMP_'+str(i)+'.pdf')))
-                # plt.show()
             gains.append(1.0/slope)
 
-        if writeGains:  # TODO: replace with buttleable dataset. Also, should be using `with`
-            try:
-                f = open(xxx_outputFile, 'r+b')
-                f.seek(0)
-                try:
-                    storedGains = pickle.load(f)
-                except EOFError:
-                    storedGains = {}
-            except IOError:
-                f = open(xxx_outputFile, 'wb')
-                storedGains = {}
-            storedGains = gains
-            f.seek(0)
-            f.truncate()
-            pickle.dump(storedGains, f)
-            f.close()
-        self.log.info('gains %s\noGains %s'%(gains, nomGains))
-        return (gains, nomGains)
+        # if writeGains:  # TODO: replace with buttleable dataset. Also, should be using `with`
+        #     try:
+        #         f = open(xxx_outputFile, 'r+b')
+        #         f.seek(0)
+        #         try:
+        #             storedGains = pickle.load(f)
+        #         except EOFError:
+        #             storedGains = {}
+        #     except IOError:
+        #         f = open(xxx_outputFile, 'wb')
+        #         storedGains = {}
+        #     storedGains = gains
+        #     f.seek(0)
+        #     f.truncate()
+        #     pickle.dump(storedGains, f)
+        #     f.close()
+        # self.log.info('gains %s\noGains %s'%(gains, nomGains))
+        return gains, nomGains
 
     def _calcMeansAndVars(self, dataRef, v1, v2, n=8, border=10, plot=False, zmax=.05,
                           fig=None, display=False, sigma=5, biasCorr=0.9241):
@@ -547,7 +537,9 @@ class BfTask(pipeBase.CmdLineTask):
         variances = []  # can't shadow builtin "vars"
         coVars = []
         # For each amp calculate the correlation
-        CCD = ims[0].getDetector()  # xxx can you do this for a heterogenous focal plane? (answer: 100% no)
+        # xxx can you do this for a heterogenous focal plane? (answer: 100% no)
+        # xxx update note to self - now that we're doing ccd by ccd with a dataRef this is fine again
+        CCD = ims[0].getDetector()
         for ampNum, amp in enumerate(CCD):
             borderL = 0
             borderR = 0
