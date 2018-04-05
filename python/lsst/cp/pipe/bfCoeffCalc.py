@@ -80,8 +80,8 @@ class BfTaskConfig(pexConfig.Config):
         dtype=float,
         doc="Sanity check level for the sum of the input cross-correlations. Arrays which "
         "sum to greater than this are discarded before the clipped mean is calculated.",
-        default=1000.0  # xxx change this back once the problem is fixed!
-        # default=0.2
+        # default=1000.0  # xxx change this back once the problem is fixed!
+        default=0.2
     )
     maxIterSOR = pexConfig.Field(
         dtype=int,
