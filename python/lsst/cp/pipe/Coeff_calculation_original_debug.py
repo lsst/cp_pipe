@@ -216,7 +216,8 @@ def xcorr(im1, im2, Visits, n=5, border=20, frame=None, CCD=[1], GAIN=None, sigm
     if False:
         global diffim
         diffim = diff
-    if False:
+    if True:
+        print("median and variance of diff:")
         print(afwMath.makeStatistics(diff, afwMath.MEDIAN, sctrl).getValue())
         print(afwMath.makeStatistics(diff, afwMath.VARIANCECLIP, sctrl).getValue(), np.var(diff.getArray()))
     #
