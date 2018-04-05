@@ -111,7 +111,7 @@ class BfTaskConfig(pexConfig.Config):
     nPixBorderXCorr = pexConfig.Field(
         dtype=int,
         doc="The number of border pixels to exclude when calculating the cross correlation/kernel",
-        default=20
+        default=10
     )
     biasCorr = pexConfig.Field(
         dtype=float,
@@ -249,9 +249,10 @@ class BfTask(pipeBase.CmdLineTask):
         else:
             gains = dataRef.get('bfGain')
             if not gains:
-                raise RuntimeError("Failed to retrieved gains for CCD %s"%ccdNum)
+                self.log.fatal('Failed to retrieved gains for CCD %s'%ccdNum)
+                raise RuntimeError("Must either calculate or supply gains for %s"%ccdNum)
             self.log.info('Retrieved stored gain for CCD %s'%ccdNum)
-        self.log.info('CCD %s has gains %s'%(ccdNum, gains))
+        self.log.debug('CCD %s has gains %s'%(ccdNum, gains))
 
         # calculating the cross correlations
         for (v1, v2) in visitPairs:
@@ -259,7 +260,7 @@ class BfTask(pipeBase.CmdLineTask):
             xcorrs.append(xcorr)
             means.append(mean)
 
-        kernel = self._generateKernel(xcorr, means)
+        kernel = self._generateKernel(xcorrs, means)
         dataRef.put(kernel)
 
         # for (v1, v2) in visitPairs:
@@ -1080,7 +1081,7 @@ class BfTask(pipeBase.CmdLineTask):
         maxLag = self.config.maxLag
         border = self.config.nPixBorderXCorr
         sigma = self.config.nSigmaClipXCorr
-        biasCorr = self.config.nPixBorderXCorr
+        biasCorr = self.config.biasCorr
 
         sctrl = afwMath.StatisticsControl()
         sctrl.setNumSigmaClip(sigma)
@@ -1152,7 +1153,8 @@ class BfTask(pipeBase.CmdLineTask):
         if False:
             global diffim
             diffim = diff
-        if False:
+        if True:
+            print("median and variance of diff:")
             print(afwMath.makeStatistics(diff, afwMath.MEDIAN, sctrl).getValue())
             print(afwMath.makeStatistics(diff, afwMath.VARIANCECLIP, sctrl).getValue(), np.var(diff.getArray()))
         #
