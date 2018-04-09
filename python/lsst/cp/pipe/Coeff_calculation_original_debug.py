@@ -843,7 +843,9 @@ def kernelGen(corr, means, LEVEL=.20, MAXIT=10000, eLevel=5.0e-14, sigma=4.0):
                     TIsource[-i+L, j+L] = CORR[i, j]
                     TIsource[i+L, -j+L] = CORR[i, j]
                     TIsource[-i+L, -j+L] = CORR[i, j]
-            if np.abs(np.sum(TIsource))/np.sum(np.abs(TIsource)) > LEVEL:
+            testLevel = np.abs(np.sum(TIsource))/np.sum(np.abs(TIsource))
+            # if np.abs(np.sum(TIsource))/np.sum(np.abs(TIsource)) > LEVEL:
+            if testLevel > LEVEL:
                 print('Sum of the xcorr is unexpectedly high. Investigate item num ', I,
                       np.abs(np.sum(TIsource))/np.sum(np.abs(TIsource)))
                 continue
