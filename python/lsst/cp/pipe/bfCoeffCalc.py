@@ -30,6 +30,7 @@ from builtins import range
 import os
 import re
 # import matplotlib as mpl
+from mpl_toolkits.mplot3d import axes3d
 import numpy as np
 # mpl.use('Agg')
 # pyplot = plt
@@ -42,9 +43,7 @@ import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 from lsst.obs.subaru.crosstalk import CrosstalkTask
 from lsst.obs.subaru.isr import SubaruIsrTask
-
 import lsstDebug
-debug = lsstDebug.Info(__name__)
 
 OUTPUT_PATH = '/home/mfl/bf_testing/'
 
@@ -187,6 +186,11 @@ class BfTask(pipeBase.CmdLineTask):
         """Constructor for the BfTask."""
         pipeBase.CmdLineTask.__init__(self, *args, **kwargs)
 
+        self.debugInfo = lsstDebug.Info(__name__)
+        self.debug = self.debugInfo.enabled
+        if self.debug:
+            self.log.info("Running with debug enabled...")
+
         self.config.validate()
         self.config.freeze()
 
@@ -223,8 +227,6 @@ class BfTask(pipeBase.CmdLineTask):
         # self.xxx_test_generateKernel()
         # self.xxx_test_xcorr()
         # self.xxx_test_put(dataRef)
-        
-        return
 
         gains = []
         xcorrs = []
@@ -286,19 +288,23 @@ class BfTask(pipeBase.CmdLineTask):
         im2 = self.isr(dataRef, v2)
         xcorr, xcorrMeans = self._xcorr(im1, im2, gains)
 
-        # TODO: Change to lsstDebug
-        if False:
-            means = [afwMath.makeStatistics(im, afwMath.MEANCLIP).getValue() for im in [im1, im2]]
-            self._plotXcorr(xcorr.clone(), (xcorrMeans[0]+means[1]),
-                            title=r"Visits %s; %s, CCDs %s  $\langle{I}\rangle"
-                            " = %.3f$ (%s) Var = %.4f" %
-                            (self._getNameOfSet(v1), self._getNameOfSet(v2), self._getNameOfSet(ccds),
-                             (xcorrMeans[0]+means[1]), im1.getFilter().getName(), float(xcorr[0, 0]) /
-                             (xcorrMeans[0]+means[1])), zmax=zmax, fig=fig, SAVE=True,
-                            fileName=(os.path.join(OUTPUT_PATH,
-                                                   ("Xcorr_visit_" +
-                                                    str(v1[0]) + "_" + str(v2[0]) +
-                                                    "_ccd_" + str(ccds[0])+".png"))))
+        if self.debug:
+            means = [afwMath.makeStatistics(im.getMaskedImage(),
+                                            afwMath.MEANCLIP).getValue() for im in [im1, im2]]
+            ccdNum = dataRef.dataId['ccd']
+            title = "Visits %s; %s, CCDs %s <I> = %.3f (%s) Var = %.4f"%(self._getNameOfSet([v1]),
+                                                                         self._getNameOfSet([v2]),
+                                                                         self._getNameOfSet([ccdNum]),
+                                                                         xcorrMeans[0]+means[1],
+                                                                         im1.getFilter().getName(),
+                                                                         float(xcorr[0, 0]) /
+                                                                              (xcorrMeans[0]+means[1]))
+            fileName = (os.path.join(self.debugInfo.debugPath, '_'.join(['xcorr_visit', str(v1),
+                                                                        str(v2), 'ccd', str(ccdNum)])))
+            fileName += '.jpg'
+            self._plotXcorr(xcorr.copy(), (xcorrMeans[0]+means[1]),
+                            title=title, save=True, fileName=fileName)
+
         return xcorr, xcorrMeans
 
     def xxx_test_put(self, dataRef):
@@ -588,7 +594,7 @@ class BfTask(pipeBase.CmdLineTask):
         exp = isr.run(dataRef).exposure
         return exp
 
-    def plotXcorr(self, xcorr, mean, zmax=0.05, title=None, fig=None, SAVE=False, fileName=None):
+    def _plotXcorr(self, xcorr, mean, zmax=0.05, title=None, fig=None, save=False, fileName=None):
         """Used to plot the correlation functions."""
         try:
             xcorr = xcorr.getArray()
@@ -626,10 +632,10 @@ class BfTask(pipeBase.CmdLineTask):
 
         if title:
             fig.suptitle(title)
-        if SAVE is True:
+        if save is True:
             fig.savefig(fileName)
         # plt.close(fig)
-        return fig, ax
+        # return fig, ax
 
     @staticmethod
     def _getNameOfSet(vals):
