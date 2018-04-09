@@ -29,7 +29,6 @@ from builtins import str
 from builtins import range
 import os
 import re
-from scipy import stats
 # import matplotlib as mpl
 import numpy as np
 # mpl.use('Agg')
@@ -41,18 +40,11 @@ import lsst.afw.math as afwMath
 import lsst.afw.display.ds9 as ds9
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
-# import lsst.log as lsstLog
 from lsst.obs.subaru.crosstalk import CrosstalkTask
 from lsst.obs.subaru.isr import SubaruIsrTask
 
 import lsstDebug
 debug = lsstDebug.Info(__name__)
-
-# try:
-#     import scipy
-#     import scipy.interpolate
-# except ImportError:
-#     scipy = None
 
 OUTPUT_PATH = '/home/mfl/bf_testing/'
 
@@ -231,7 +223,8 @@ class BfTask(pipeBase.CmdLineTask):
         # self.xxx_test_generateKernel()
         # self.xxx_test_xcorr()
         # self.xxx_test_put(dataRef)
-        # return
+        
+        return
 
         gains = []
         xcorrs = []
