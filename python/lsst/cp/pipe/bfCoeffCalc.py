@@ -30,6 +30,7 @@ from builtins import range
 import os
 import re
 # import matplotlib as mpl
+from scipy import stats
 from mpl_toolkits.mplot3d import axes3d
 import numpy as np
 # mpl.use('Agg')
@@ -418,8 +419,7 @@ class BfTask(pipeBase.CmdLineTask):
             if intercept:
                 slope = slope3
 
-            # TODO: replace with lsstDebug
-            if xxx_plot:  # TODO: replace with lsstDebug.Also, consider dumping based on p_value or X_sq?
+            if self.debug:  # TODO: replace with lsstDebug. Also, consider dumping based on p_value or X_sq?
                 if fig is None:
                     fig = plt.figure()
                 else:
@@ -431,7 +431,10 @@ class BfTask(pipeBase.CmdLineTask):
                 else:
                     ax.plot(ampMeans[i], ampMeans[i]*slope, label='fix')
                 ccdNum = dataRef.dataId['ccd']
-                fig.savefig(os.path.join(xxx_figLocation, ('PTC_CCD_'+str(ccdNum)+'_AMP_'+str(i)+'.pdf')))
+                title = '_'.join(['PTC_CCD', str(ccdNum), 'AMP', str(i), '.pdf'])
+                fileName = os.path.join(self.debugInfo.debugPath, title)
+                fig.savefig(fileName)
+                self.log.info('Saved PTC to %s'%fileName)
             gains.append(1.0/slope)
         return gains, nomGains
 
