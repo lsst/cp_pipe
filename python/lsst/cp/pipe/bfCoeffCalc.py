@@ -29,7 +29,6 @@ from builtins import str
 from builtins import range
 import os
 import re
-import pickle
 from scipy import stats
 # import matplotlib as mpl
 import numpy as np
@@ -115,8 +114,8 @@ class BfTaskConfig(pexConfig.Config):
     )
     biasCorr = pexConfig.Field(
         dtype=float,
-        doc="A scary, empirically determined correction-factor, correcting for the sigma-clipping " + 
-        "a non-Gaussian distribution",
+        doc="A scary, empirically determined correction-factor correcting for the sigma-clipping" +
+        " a non-Gaussian distribution",
         default=0.9241
     )
 
@@ -210,7 +209,7 @@ class BfTask(pipeBase.CmdLineTask):
                                help="The ccds to use, e.g. --id ccd=0..100")
         return parser
 
-    # @pipeBase.timeMethod  # xxx
+    @pipeBase.timeMethod
     def run(self, dataRef, visitPairs):
         """Run the brighter-fatter measurement task.
 
@@ -228,7 +227,6 @@ class BfTask(pipeBase.CmdLineTask):
         visitPairs : `iterable` of `tuple` of `int`
             Pairs of visit numbers to be processed together
         """
-
         # self.xxx_test_estimateGains()
         # self.xxx_test_generateKernel()
         # self.xxx_test_xcorr()
@@ -254,22 +252,18 @@ class BfTask(pipeBase.CmdLineTask):
             self.log.info('Retrieved stored gain for CCD %s'%ccdNum)
         self.log.debug('CCD %s has gains %s'%(ccdNum, gains))
 
-        # calculating the cross correlations
+        # calculate the cross correlations
         for (v1, v2) in visitPairs:
+            self.log.info('Beginning cross corellation calculation for CCD %s'%ccdNum)
             xcorr, mean = self.xcorrFromVisitPair(dataRef, v1, v2, gains=gains)
             xcorrs.append(xcorr)
             means.append(mean)
 
+        self.log.info('Generating kernel for CCD %s'%ccdNum)
         kernel = self._generateKernel(xcorrs, means)
         dataRef.put(kernel)
 
-        # for (v1, v2) in visitPairs:
-        #     im1 = dataRef.get('raw', visit=v1)
-        #     # im2 = dataRef.get('raw', dataId={'ccd': dataRef.dataId, 'visit': v2})
-        #     break
-
-        print('finished')
-
+        self.log.info('Finished generating kernel for %s'%ccdNum)
         return pipeBase.Struct(exitStatus=0)
 
     def xcorrFromVisitPair(self, dataRef, v1, v2, gains):
@@ -308,8 +302,10 @@ class BfTask(pipeBase.CmdLineTask):
                             (self._getNameOfSet(v1), self._getNameOfSet(v2), self._getNameOfSet(ccds),
                              (xcorrMeans[0]+means[1]), im1.getFilter().getName(), float(xcorr[0, 0]) /
                              (xcorrMeans[0]+means[1])), zmax=zmax, fig=fig, SAVE=True,
-                            fileName=(os.path.join(OUTPUT_PATH, ("Xcorr_visit_" + str(v1[0])+"_"+str(v2[0])+"_ccd_" +
-                                                                 str(ccds[0])+".png"))))
+                            fileName=(os.path.join(OUTPUT_PATH,
+                                                   ("Xcorr_visit_" +
+                                                    str(v1[0]) + "_" + str(v2[0]) +
+                                                    "_ccd_" + str(ccds[0])+".png"))))
         return xcorr, xcorrMeans
 
     def xxx_test_put(self, dataRef):
@@ -320,24 +316,6 @@ class BfTask(pipeBase.CmdLineTask):
         print('finished')
         a = np.zeros((3, 3))
         dataRef.put(a)
-        return
-
-    def xxx_test_xcorr(self):
-        """Xxx Docstring."""
-        import lsst.daf.persistence as dafPersist
-        butler = dafPersist.Butler('/datasets/hsc/repo/')
-        visPairs = [(904606, 904608),
-                    (904610, 904612)]
-        xcorrDict = {}
-
-        ignoreCcdList = [_ for _ in range(112)]
-        ignoreCcdList.remove(41)
-
-        for visPair in visPairs():
-
-            # xcorrDict...
-            self.xxx(butler, visPairs, ignoreCcdList)
-
         return
 
     def xxx_test_estimateGains(self):
@@ -356,7 +334,7 @@ class BfTask(pipeBase.CmdLineTask):
         f = open('/home/mfl/bf_output/merlinTestXcorr.pkl', 'rb')
         xcorr, means = pickle.load(f)
         f.close()
-        print('\n\n Level = %s\n\n'%self.config.xcorrCheckRejectLevel)
+        self.log.info('\n\nLevel = %s\n\n'%self.config.xcorrCheckRejectLevel)
         kernel = self._generateKernel(xcorr, means)
         f = open('/home/mfl/bf_output/taskOutput_kernel.pkl', 'wb')
         pickle.dump(kernel, f)
@@ -618,7 +596,7 @@ class BfTask(pipeBase.CmdLineTask):
         return exp
 
     def plotXcorr(self, xcorr, mean, zmax=0.05, title=None, fig=None, SAVE=False, fileName=None):
-        """This program is used to plot the correlation functions."""
+        """Used to plot the correlation functions."""
         try:
             xcorr = xcorr.getArray()
         except:
@@ -655,7 +633,7 @@ class BfTask(pipeBase.CmdLineTask):
 
         if title:
             fig.suptitle(title)
-        if SAVE == True:
+        if SAVE is True:
             fig.savefig(fileName)
         # plt.close(fig)
         return fig, ax
@@ -729,9 +707,9 @@ class BfTask(pipeBase.CmdLineTask):
                 res = y - slope * x
                 resMean = afwMath.makeStatistics(res, afwMath.MEANCLIP, sctrl).getValue()
                 resStd = np.sqrt(afwMath.makeStatistics(res, afwMath.VARIANCECLIP, sctrl).getValue())
-                index = np.where((res > (resMean + nSigmaClip * resStd)) | (res < resMean - nSigmaClip * resStd))
+                index = np.where((res > (resMean+nSigmaClip*resStd)) | (res < (resMean-nSigmaClip*resStd)))  # xxx check this line performs the same
                 self.log.info("%.3f %.3f %.3f %.3f"%(resMean, resStd, np.max(res), nSigmaClip))
-                if np.shape(np.where(index))[1] == 0 or (nIter >= maxIter):  # run out of points, or iterations
+                if np.shape(np.where(index))[1] == 0 or (nIter >= maxIter):  # run out of points or iters
                     break
                 x = np.delete(x, index)
                 y = np.delete(y, index)
@@ -910,7 +888,8 @@ class BfTask(pipeBase.CmdLineTask):
 
         It contains many elements of the actual code
         above (without individual amps and ISR removal )
-        It takes two images, im and im2; n the max lag of the correlation function; border, the number of border
+        It takes two images, im and im2;
+        n the max lag of the correlation function; border, the number of border
         pixels to discard; and sigma the sigma to use in the mean clip.
         """
         sctrl = afwMath.StatisticsControl()
@@ -962,8 +941,6 @@ class BfTask(pipeBase.CmdLineTask):
                 XCORR[-i+L, j+L] = xcorr.getArray()[i, j]
                 XCORR[i+L, -j+L] = xcorr.getArray()[i, j]
                 XCORR[-i+L, -j+L] = xcorr.getArray()[i, j]
-        # print((means1),xcorr.getArray()[0,0],np.sum(XCORR),xcorr.getArray()[0,0]/
-        #       (np.sum(means1)),np.sum(XCORR)/(np.sum(means1)))
         return (XCORR, xcorr, np.sum(means1), means1)
 
     def xcorr_bias(self, rangeMeans=[87500, 70000, 111000], repeats=5, sig=5,
@@ -994,24 +971,19 @@ class BfTask(pipeBase.CmdLineTask):
 
                     im = afwImage.ImageD(nx, ny)
                     im0 = afwImage.ImageD(nx, ny)
-                    # im.getArray()[:,:]=local_random.normal(MEAN,np.sqrt(MEAN),(ny,nx))
-                    # im0.getArray()[:,:]=local_random.normal(MEAN,np.sqrt(MEAN),(ny,nx))
                     im.getArray()[:, :] = local_random.poisson(MEAN, (ny, nx))
                     im0.getArray()[:, :] = local_random.poisson(MEAN, (ny, nx))
                     XCORR, xcorr, means, MEANS1 = xcorr_sim(im, im0, border=border, sigma=sig)
                     MEANS[MEAN].append(means)
                     XCORRS[MEAN].append(xcorr)
-                print('\n\n\n')
                 for i, MEAN in enumerate(rangeMeans):
-                    print("Simulated/Expected:", MEAN, MEANS[MEAN][-1],
-                          XCORRS[MEAN][-1].getArray()[0, 0]/MEANS[MEAN][-1])
+                    self.log.debug("Simulated/Expected:", MEAN, MEANS[MEAN][-1],
+                                   XCORRS[MEAN][-1].getArray()[0, 0]/MEANS[MEAN][-1])
         else:
             for rep in range(repeats):
                 for i, MEAN in enumerate(rangeMeans):
                     im = afwImage.ImageD(nx, ny)
                     im0 = afwImage.ImageD(nx, ny)
-                    # im.getArray()[:,:]=local_random.normal(MEAN,np.sqrt(MEAN),(ny,nx))
-                    # im0.getArray()[:,:]=local_random.normal(MEAN,np.sqrt(MEAN),(ny,nx))
                     im.getArray()[:, :] = local_random.poisson(MEAN, (ny, nx))
                     im.getArray()[1:, 1:] += a*im.getArray()[:-1, :-1]
                     im0.getArray()[:, :] = local_random.poisson(MEAN, (ny, nx))
@@ -1019,10 +991,9 @@ class BfTask(pipeBase.CmdLineTask):
                     XCORR, xcorr, means, MEANS1 = xcorr_sim(im, im0, border=border, sigma=sig)
                     MEANS[MEAN].append(means)
                     XCORRS[MEAN].append(xcorr)
-                print('\n\n\n')
                 for i, MEAN in enumerate(rangeMeans):
-                    print("Simulated/Expected:", MEANS[MEAN][-1], '\n',
-                          (XCORRS[MEAN][-1].getArray()[1, 1]/MEANS[MEAN][-1]*(1+a))/.1)
+                    self.log.debug("Simulated/Expected:", MEANS[MEAN][-1], '\n',
+                                   (XCORRS[MEAN][-1].getArray()[1, 1]/MEANS[MEAN][-1]*(1+a))/.1)
         return MEANS, XCORRS
 
     @staticmethod
@@ -1073,10 +1044,11 @@ class BfTask(pipeBase.CmdLineTask):
         Maximum lag is maxLag, and ignore border pixels around the outside.
         Sigma is the number of sigma passed to sig cut.
         GAIN allows user specified GAINS to be used otherwise the default gains are used.
-        The biasCorr parameter is used to correct from the bias of our measurements introduced by the sigma cuts.
+        The biasCorr parameter is used to correct from the bias of our measurements,
+        introduced by the sigma cuts.
         This was calculated using the sim. code at the bottom.
-        This function returns one quater of the correlation function, the sum of the means of the two images and
-        the individual means of the images
+        This function returns one quater of the correlation function,
+        the sum of the means of the two images and the individual means of the images
         """
         maxLag = self.config.maxLag
         border = self.config.nPixBorderXCorr
@@ -1118,16 +1090,13 @@ class BfTask(pipeBase.CmdLineTask):
                 gain = gains[ampNum]
                 # gain/=gain
                 smi *= gain
-                print(mean*gain, afwMath.makeStatistics(smi, afwMath.MEANCLIP, sctrl).getValue())
+                self.log.debug(mean*gain, afwMath.makeStatistics(smi, afwMath.MEANCLIP, sctrl).getValue())
                 smi -= mean*gain
                 smiTemp *= gain
             means1[imNum] = afwMath.makeStatistics(temp[border:-border, border:-border],
                                                    afwMath.MEANCLIP, sctrl).getValue()
-            print(afwMath.makeStatistics(temp[border:-border, border:-border],
-                                         afwMath.MEANCLIP, sctrl).getValue())
-        #    print(afwMath.makeStatistics(temp, afwMath.MEANCLIP,sctrl).getValue()-
-        #          afwMath.makeStatistics(temp[0:-maxLag,0:-maxLag], afwMath.MEANCLIP,sctrl).getValue())
-
+            self.log.debug(afwMath.makeStatistics(temp[border:-border, border:-border],
+                                                  afwMath.MEANCLIP, sctrl).getValue())
         #
         # Actually diff the images
         #
@@ -1148,15 +1117,16 @@ class BfTask(pipeBase.CmdLineTask):
         diff -= bkgd.getImageF(afwMath.Interpolate.CUBIC_SPLINE, afwMath.REDUCE_INTERP_ORDER)
 
         if False:
-            ds9.mtv(diff, frame=frame, title="diff")
+            ds9.mtv(diff, frame=frameId, title="diff")
 
         if False:
             global diffim
             diffim = diff
         if True:
-            print("median and variance of diff:")
-            print(afwMath.makeStatistics(diff, afwMath.MEDIAN, sctrl).getValue())
-            print(afwMath.makeStatistics(diff, afwMath.VARIANCECLIP, sctrl).getValue(), np.var(diff.getArray()))
+            self.log.debug("Median and variance of diff:")
+            self.log.debug(afwMath.makeStatistics(diff, afwMath.MEDIAN, sctrl).getValue())
+            self.log.debug(afwMath.makeStatistics(diff, afwMath.VARIANCECLIP,
+                                                  sctrl).getValue(), np.var(diff.getArray()))
         #
         # Measure the correlations
         #
@@ -1170,9 +1140,10 @@ class BfTask(pipeBase.CmdLineTask):
                 dim_xy = diff[xlag:xlag + w, ylag: ylag + h].clone()
                 dim_xy -= afwMath.makeStatistics(dim_xy, afwMath.MEANCLIP, sctrl).getValue()
                 dim_xy *= dim0
-                xcorr[xlag, ylag] = afwMath.makeStatistics(dim_xy, afwMath.MEANCLIP, sctrl).getValue()/(biasCorr)
+                xcorr[xlag, ylag] = afwMath.makeStatistics(dim_xy,
+                                                           afwMath.MEANCLIP, sctrl).getValue()/(biasCorr)
 
         xcorr_full = self._tileArray(xcorr)
-        print(sum(means1), xcorr[0, 0], np.sum(xcorr_full), xcorr[0, 0]/sum(means1),
-              np.sum(xcorr_full)/sum(means1))
+        self.log.debug(sum(means1), xcorr[0, 0], np.sum(xcorr_full), xcorr[0, 0]/sum(means1),
+                       np.sum(xcorr_full)/sum(means1))
         return (xcorr, means1)
