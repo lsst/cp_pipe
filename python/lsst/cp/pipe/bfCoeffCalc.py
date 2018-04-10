@@ -120,6 +120,11 @@ class BfTaskConfig(pexConfig.Config):
         " a non-Gaussian distribution",
         default=0.9241
     )
+    backgroundBinSize = pexConfig.Field(
+        dtype=int,
+        doc="Size of the background bins",
+        default=128
+    )
 
 
 class BfTaskRunner(pipeBase.TaskRunner):
@@ -529,7 +534,7 @@ class BfTask(pipeBase.CmdLineTask):
 
         # Subtract background.  It should be a constant, but it isn't always (e.g. some SuprimeCam flats)
         # TODO: Check how this looks, and if this is the "right" way to do this
-        binsize = 128  # TODO: change to pexConfig option
+        binsize = self.config.backgroundBinSize
         nx = temp.getWidth()//binsize
         ny = temp.getHeight()//binsize
         bctrl = afwMath.BackgroundControl(nx, ny, sctrl, afwMath.MEANCLIP)
@@ -647,8 +652,6 @@ class BfTask(pipeBase.CmdLineTask):
             fig.suptitle(title)
         if save is True:
             fig.savefig(fileName)
-        # plt.close(fig)
-        # return fig, ax
 
     @staticmethod
     def _getNameOfSet(vals):
@@ -929,7 +932,7 @@ class BfTask(pipeBase.CmdLineTask):
         diff = im2.clone()
         diff -= im.clone()
         diff = diff[border:-border, border:-border]
-        binsize = 128
+        binsize = self.config.backgroundBinSize
         nx = diff.getWidth()//binsize
         ny = diff.getHeight()//binsize
         bctrl = afwMath.BackgroundControl(nx, ny, sctrl, afwMath.MEANCLIP)
@@ -1121,7 +1124,7 @@ class BfTask(pipeBase.CmdLineTask):
         #
         # Subtract background.  It should be a constant, but it isn't always
         #
-        binsize = 128
+        binsize = self.config.backgroundBinSize
         nx = diff.getWidth()//binsize
         ny = diff.getHeight()//binsize
         bctrl = afwMath.BackgroundControl(nx, ny, sctrl, afwMath.MEANCLIP)
