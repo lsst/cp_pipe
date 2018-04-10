@@ -472,8 +472,7 @@ class BfTask(pipeBase.CmdLineTask):
         means, vars, covars, gains : `tuple` of `lists`
             The sum of the means, variance, one quarter of the xcorr, and the original gain for each amp.
         """
-        if not sigma:
-            sigma = self.config.nSigmaClipGainCalc
+        sigma = self.config.nSigmaClipGainCalc
         maxLag = self.config.maxLag
         border = self.config.nPixBorderGainCalc
         biasCorr = self.config.biasCorr
@@ -509,12 +508,13 @@ class BfTask(pipeBase.CmdLineTask):
                 ampIm = im[amp.getBBox()]
                 if ampNum == 0:
                     mean = afwMath.makeStatistics(ampIm[border:, border:-border],
-                                                  afwMath.MEANCLIP).getValue()
+                                                  afwMath.MEANCLIP, sctrl).getValue()
                 elif ampNum == 3:
                     mean = afwMath.makeStatistics(ampIm[:-border, border:-border],
-                                                  afwMath.MEANCLIP).getValue()
+                                                  afwMath.MEANCLIP, sctrl).getValue()
                 else:
-                    mean = afwMath.makeStatistics(ampIm[:, border:-border], afwMath.MEANCLIP).getValue()
+                    mean = afwMath.makeStatistics(ampIm[:, border:-border],
+                                                  afwMath.MEANCLIP, sctrl).getValue()
                 nomGain = amp.getGain()
                 ampMeans[imNum].append(mean)
                 if imNum == 0:
@@ -574,7 +574,7 @@ class BfTask(pipeBase.CmdLineTask):
             msg += " M_sum: " + str((ampMeans[0][ampNum])+ampMeans[1][ampNum])
             msg += " Var " + str(variances[ampNum])
             msg += " coVar: " + str(coVars[ampNum])
-            self.log.info(msg)  # xxx change to debug or trace level
+            self.log.debug(msg)
         return ([i+j for i, j in zip(ampMeans[1], ampMeans[0])], variances, coVars, nomGains)
 
     def isr(self, dataRef, visit):  # TODO: Need to replace this with a retargetable ISR task
@@ -1101,7 +1101,6 @@ class BfTask(pipeBase.CmdLineTask):
                 smiTemp = temp[amp.getBBox()]
                 mean = afwMath.makeStatistics(smi, afwMath.MEANCLIP, sctrl).getValue()
                 gain = gains[ampNum]
-                # gain/=gain
                 smi *= gain
                 self.log.debug(mean*gain, afwMath.makeStatistics(smi, afwMath.MEANCLIP, sctrl).getValue())
                 smi -= mean*gain
@@ -1129,17 +1128,16 @@ class BfTask(pipeBase.CmdLineTask):
         bkgd = afwMath.makeBackground(diff, bctrl)
         diff -= bkgd.getImageF(afwMath.Interpolate.CUBIC_SPLINE, afwMath.REDUCE_INTERP_ORDER)
 
-        if False:
-            ds9.mtv(diff, frame=frameId, title="diff")
+        # if self.debugInfo.display:  # TODO: make this work
+        #     ds9.mtv(diff, frame=frameId, title="diff")
 
         if False:
             global diffim
             diffim = diff
-        if True:
-            self.log.debug("Median and variance of diff:")
-            self.log.debug(afwMath.makeStatistics(diff, afwMath.MEDIAN, sctrl).getValue())
-            self.log.debug(afwMath.makeStatistics(diff, afwMath.VARIANCECLIP,
-                                                  sctrl).getValue(), np.var(diff.getArray()))
+        self.log.debug("Median and variance of diff:")
+        self.log.debug(afwMath.makeStatistics(diff, afwMath.MEDIAN, sctrl).getValue())
+        self.log.debug(afwMath.makeStatistics(diff, afwMath.VARIANCECLIP,
+                                              sctrl).getValue(), np.var(diff.getArray()))
         #
         # Measure the correlations
         #
