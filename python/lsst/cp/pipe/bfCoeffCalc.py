@@ -62,6 +62,11 @@ class BfTaskConfig(pexConfig.Config):
         doc="Maximum number of iterations for the iterative regression fitter",
         default=10
     )
+    nSigmaClipGainCalc = pexConfig.Field(
+        dtype=int,
+        doc="Number of sigma to clip to during gain calculation",
+        default=5
+    )
     nSigmaClipRegression = pexConfig.Field(
         dtype=int,
         doc="Number of sigma to clip to during iterative regression",
@@ -98,6 +103,11 @@ class BfTaskConfig(pexConfig.Config):
         dtype=int,
         doc="The maximum lag to use when calculating the cross correlation/kernel",
         default=5
+    )
+    nPixBorderGainCalc = pexConfig.Field(
+        dtype=int,
+        doc="The number of border pixels to exclude when calculating the gain",
+        default=10
     )
     nPixBorderXCorr = pexConfig.Field(
         dtype=int,
@@ -188,7 +198,7 @@ class BfTask(pipeBase.CmdLineTask):
         pipeBase.CmdLineTask.__init__(self, *args, **kwargs)
 
         self.debugInfo = lsstDebug.Info(__name__)
-        self.debug = self.debugInfo.enabled
+        self.debug = self.debugInfo.enabled  # just a convenience to make testing for debug blocks shorter
         if self.debug:
             self.log.info("Running with debug enabled...")
 
@@ -300,9 +310,9 @@ class BfTask(pipeBase.CmdLineTask):
                                                                          im1.getFilter().getName(),
                                                                          float(xcorr[0, 0]) /
                                                                               (xcorrMeans[0]+means[1]))
-            fileName = (os.path.join(self.debugInfo.debugPath, '_'.join(['xcorr_visit', str(v1),
-                                                                        str(v2), 'ccd', str(ccdNum)])))
-            fileName += '.jpg'
+            fileName = (os.path.join(self.debugInfo.debugPlotPath, '_'.join(['xcorr_visit', str(v1),
+                                                                             str(v2), 'ccd', str(ccdNum)])))
+            fileName += self.debugInfo.plotType
             self._plotXcorr(xcorr.copy(), (xcorrMeans[0]+means[1]),
                             title=title, save=True, fileName=fileName)
 
@@ -419,7 +429,7 @@ class BfTask(pipeBase.CmdLineTask):
             if intercept:
                 slope = slope3
 
-            if self.debug:  # TODO: replace with lsstDebug. Also, consider dumping based on p_value or X_sq?
+            if self.debug:  # consider dumping based on p_value or X_sq?
                 if fig is None:
                     fig = plt.figure()
                 else:
@@ -431,15 +441,14 @@ class BfTask(pipeBase.CmdLineTask):
                 else:
                     ax.plot(ampMeans[i], ampMeans[i]*slope, label='fix')
                 ccdNum = dataRef.dataId['ccd']
-                title = '_'.join(['PTC_CCD', str(ccdNum), 'AMP', str(i), '.pdf'])
-                fileName = os.path.join(self.debugInfo.debugPath, title)
+                title = '_'.join(['PTC_CCD', str(ccdNum), 'AMP', str(i), self.debugInfo.plotType])
+                fileName = os.path.join(self.debugInfo.debugPlotPath, title)
                 fig.savefig(fileName)
                 self.log.info('Saved PTC to %s'%fileName)
             gains.append(1.0/slope)
         return gains, nomGains
 
-    def _calcMeansAndVars(self, dataRef, v1, v2, n=8, border=10, plot=False, zmax=.05,
-                          fig=None, display=False, sigma=5, biasCorr=0.9241):
+    def _calcMeansAndVars(self, dataRef, v1, v2):
         """Calculate the means, vars, covars, and retieve the nominal gains, for each amp in each ccd.
 
         This code runs using two visit numbers, and for ccd specified.
@@ -452,34 +461,35 @@ class BfTask(pipeBase.CmdLineTask):
         Parameters:
         -----------
         dataRef : `lsst.daf.persistence.butler.Butler.dataRef`
-            Butler for the repo containg the flats to be used
+            dataRef for the CCD for the repo containg the flats to be used
         v1 : `int`
             First visit of the visit pair
         v2 : `int`
             Second visit of the visit pair
-        ccd : `string` or `int`
-            Names of the ccds to use
 
         Returns
         -------
         means, vars, covars, gains : `tuple` of `lists`
             The sum of the means, variance, one quarter of the xcorr, and the original gain for each amp.
         """
+        if not sigma:
+            sigma = self.config.nSigmaClipGainCalc
+        maxLag = self.config.maxLag
+        border = self.config.nPixBorderGainCalc
+        biasCorr = self.config.biasCorr
+
         nomGains = []
         imMeans = [None, None]
         ampMeans = [[], []]
 
         # TODO_URGENT: turn this into a dict so that we don't get muddled up. Currently this is nonsense.
-        # TODO: change to looping over ccds so that we don't hold all the isr-ed images
 
-        # TODO: reinclude the ISR step at this point
         ims = [self.isr(dataRef, v1), self.isr(dataRef, v2)]
-        # ims = [dataRef.get('raw', visit=v1), dataRef.get('raw', visit=v2)]
-        # if d1isplay:  # TODO: replace with lsstDebug
+        # if self.debugInfo.display:  # TODO: enable this debug functionality
         #     ds9.mtv(trim(ims[i]), frame=i, title=v)
 
         sctrl = afwMath.StatisticsControl()
-        sctrl.setNumSigmaClip(sigma)  # TODO: change to pexConfig option
+        sctrl.setNumSigmaClip(sigma)
         for imNum, im in enumerate(ims):
             ccd = im.getDetector()
             # Starting with an Exposure, MaskedImage, or Image trim the data and convert to float
@@ -544,11 +554,11 @@ class BfTask(pipeBase.CmdLineTask):
             diffAmpImCrop = diffAmpIm[borderL:-borderR-n, border:-border-n]
             diffAmpImCrop -= afwMath.makeStatistics(diffAmpImCrop, afwMath.MEANCLIP, sctrl).getValue()
             w, h = diffAmpImCrop.getDimensions()
-            xcorr = np.zeros((n + 1, n + 1), dtype=np.float64)
+            xcorr = np.zeros((maxLag + 1, maxLag + 1), dtype=np.float64)
 
             # calculate the cross correlation
-            for xlag in range(n + 1):
-                for ylag in range(n + 1):
+            for xlag in range(maxLag + 1):
+                for ylag in range(maxLag + 1):
                     dim_xy = diffAmpIm[borderL+xlag:borderL+xlag + w, border+ylag: border+ylag + h].clone()
                     dim_xy -= afwMath.makeStatistics(dim_xy, afwMath.MEANCLIP, sctrl).getValue()
                     dim_xy *= diffAmpImCrop
@@ -700,17 +710,18 @@ class BfTask(pipeBase.CmdLineTask):
         sctrl.setNumSigmaClip(nSigmaClip)
 
         if fixThroughOrigin:
-            while nIter < maxIter:  # TODO: change log levels to debug
+            while nIter < maxIter:
                 nIter += 1
-                self.log.info("Origin fixed, iteration # %s, %s elements:"%(nIter, np.shape(x)[0]))
+                self.log.debug("Origin fixed, iteration # %s using %s elements:"%(nIter, np.shape(x)[0]))
                 TEST = x[:, np.newaxis]
                 slope, _, _, _ = np.linalg.lstsq(TEST, y)
                 slope = slope[0]
                 res = y - slope * x
                 resMean = afwMath.makeStatistics(res, afwMath.MEANCLIP, sctrl).getValue()
                 resStd = np.sqrt(afwMath.makeStatistics(res, afwMath.VARIANCECLIP, sctrl).getValue())
-                index = np.where((res > (resMean+nSigmaClip*resStd)) | (res < (resMean-nSigmaClip*resStd)))  # xxx check this line performs the same
-                self.log.info("%.3f %.3f %.3f %.3f"%(resMean, resStd, np.max(res), nSigmaClip))
+                # xxx check this line performs the same
+                index = np.where((res > (resMean+nSigmaClip*resStd)) | (res < (resMean-nSigmaClip*resStd)))
+                self.log.debug("%.3f %.3f %.3f %.3f"%(resMean, resStd, np.max(res), nSigmaClip))
                 if np.shape(np.where(index))[1] == 0 or (nIter >= maxIter):  # run out of points or iters
                     break
                 x = np.delete(x, index)
@@ -718,9 +729,9 @@ class BfTask(pipeBase.CmdLineTask):
 
             return slope, 0
 
-        while nIter < maxIter:  # TODO: change log levels to debug
+        while nIter < maxIter:
             nIter += 1
-            self.log.info("Iteration # %s, %s elements:"%(nIter, np.shape(x)[0]))
+            self.log.debug("Iteration # %s using %s elements:"%(nIter, np.shape(x)[0]))
             xx = np.vstack([x, np.ones(len(x))]).T
             ret, _, _, _ = np.linalg.lstsq(xx, y)
             slope, intercept = ret
@@ -728,7 +739,7 @@ class BfTask(pipeBase.CmdLineTask):
             resMean = afwMath.makeStatistics(res, afwMath.MEANCLIP, sctrl).getValue()
             resStd = np.sqrt(afwMath.makeStatistics(res, afwMath.VARIANCECLIP, sctrl).getValue())
             index = np.where((res > (resMean + nSigmaClip * resStd)) | (res < resMean - nSigmaClip * resStd))
-            self.log.info("%.3f %.3f %.3f %.3f"%(resMean, resStd, np.max(res), nSigmaClip))
+            self.log.debug("%.3f %.3f %.3f %.3f"%(resMean, resStd, np.max(res), nSigmaClip))
             if np.shape(np.where(index))[1] == 0 or (nIter >= maxIter):  # run out of points, or iterations
                 break
             x = np.delete(x, index)
