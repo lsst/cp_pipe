@@ -141,7 +141,7 @@ class BfTaskRunner(pipeBase.TaskRunner):
 
     @staticmethod
     def getTargetList(parsedCmd, **kwargs):
-        """Pass the visit list through explicitly."""
+        """Parse the visit list and pass through explicitly."""
         visitPairs = parsedCmd.visitPairs
 
         tuples = visitPairs.split("),(")  # split
@@ -160,6 +160,8 @@ class BfDataIdContainer(pipeBase.DataIdContainer):
 
     def makeDataRefList(self, namespace):
         """Compute refList based on idList.
+
+        This method must be defined as the dataset does not exist before this task is run.
 
         Parameters
         ----------
