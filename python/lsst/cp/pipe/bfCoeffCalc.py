@@ -1073,16 +1073,34 @@ class BfTask(pipeBase.CmdLineTask):
     def _xcorr(self, im1, im2, gains):
         """Calculate the cross-correlation of two images im1 and im2 using robust measures of the covariance.
 
-        TODO: Write a proper docstring here
+        Parameters:
+        -----------
+        im1 : `afwImage.Image` or similar
+            The first image-like object, to be cross-correlated with the second
+        im2 : `afwImage.Image` or similar
+            The second image-like object, to be cross-correlated with the first
+        gains : `list` of `float`
+            The per-amplifier gains for the detector
 
-        Maximum lag is maxLag, and ignore border pixels around the outside.
-        Sigma is the number of sigma passed to sig cut.
-        GAIN allows user specified GAINS to be used otherwise the default gains are used.
-        The biasCorr parameter is used to correct from the bias of our measurements,
-        introduced by the sigma cuts.
-        This was calculated using the sim. code at the bottom.
-        This function returns one quater of the correlation function,
-        the sum of the means of the two images and the individual means of the images
+        Returns:
+        --------
+        xcorr : `np.array`
+            The quarter-image cross-corellation
+        means : `list` of `float`
+            The as-calculated means of the input images (clipped, and with borders applied)
+
+        Notes:
+        ------
+        This function is controlled by the following pexConfig parameters:
+
+        maxLag : `int`
+            The maximum lag to use in the cross-correlation calculation
+        nPixBorderXCorr : `int`
+            The number of border pixels to exclude
+        nSigmaClipXCorr : `float`
+            The number of sigma to be clipped to
+        biasCorr : `float`
+            Parameter used to correct from the bias introduced by the sigma cuts.
         """
         maxLag = self.config.maxLag
         border = self.config.nPixBorderXCorr
