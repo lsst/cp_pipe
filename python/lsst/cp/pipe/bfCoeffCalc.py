@@ -28,10 +28,9 @@ from builtins import zip
 from builtins import str
 from builtins import range
 import os
-import re
 # import matplotlib as mpl
 from scipy import stats
-from mpl_toolkits.mplot3d import axes3d
+from mpl_toolkits.mplot3d import axes3d  # not actually unused, required for 3d projection
 import numpy as np
 # mpl.use('Agg')
 # pyplot = plt
@@ -39,14 +38,12 @@ import matplotlib.pyplot as plt
 
 import lsst.afw.image as afwImage
 import lsst.afw.math as afwMath
-import lsst.afw.display.ds9 as ds9
+import lsst.afw.display as afwDisp
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 from lsst.obs.subaru.crosstalk import CrosstalkTask
 from lsst.obs.subaru.isr import SubaruIsrTask
 import lsstDebug
-
-OUTPUT_PATH = '/home/mfl/bf_testing/'
 
 
 class BfTaskConfig(pexConfig.Config):
@@ -202,10 +199,26 @@ class BfTask(pipeBase.CmdLineTask):
         """Constructor for the BfTask."""
         pipeBase.CmdLineTask.__init__(self, *args, **kwargs)
 
-        self.debugInfo = lsstDebug.Info(__name__)
-        self.debug = self.debugInfo.enabled  # just a convenience to make testing for debug blocks shorter
-        if self.debug:
+        self.debug = lsstDebug.Info(__name__)
+        if self.debug.enabled:
             self.log.info("Running with debug enabled...")
+            # if we're displaying, test it works, and save the displays for later
+            # it's worth testing here as displays are flaky and sometimes can't be contacted
+            # and given processing takes a while, it's a shame to fail late due to display issues
+            if self.debug.display:
+                try:
+                    afwDisp.setDefaultBackend(self.debug.displayBackend)
+                    afwDisp.Display.delAllDisplays()
+                    self.disp1 = afwDisp.Display(0, open=True)
+                    self.disp2 = afwDisp.Display(1, open=True)
+
+                    im = afwImage.ImageF(1, 1)
+                    im.array[:] = [[1]]
+                    self.disp1.mtv(im)
+                    self.disp1.erase()
+                except NameError:
+                    self.debug.display = False
+                    self.log.warn('Failed to setup/connect to display! Debug display has been disabled')
 
         self.config.validate()
         self.config.freeze()
@@ -250,6 +263,7 @@ class BfTask(pipeBase.CmdLineTask):
 
         ccdNum = dataRef.dataId['ccd']
 
+        # calculate or retrieve the gains
         if self.config.doCalcGains:
             self.log.info('Beginning gain estimation for CCD %s'%ccdNum)
             gains, nomGains = self.estimateGains(dataRef, visitPairs)
@@ -270,6 +284,7 @@ class BfTask(pipeBase.CmdLineTask):
             xcorrs.append(xcorr)
             means.append(mean)
 
+        # generate the kernel
         self.log.info('Generating kernel for CCD %s'%ccdNum)
         kernel = self._generateKernel(xcorrs, means)
         dataRef.put(kernel)
@@ -304,7 +319,7 @@ class BfTask(pipeBase.CmdLineTask):
         im2 = self.isr(dataRef, v2)
         xcorr, xcorrMeans = self._xcorr(im1, im2, gains)
 
-        if self.debug:
+        if self.debug.enabled:
             means = [afwMath.makeStatistics(im.getMaskedImage(),
                                             afwMath.MEANCLIP).getValue() for im in [im1, im2]]
             ccdNum = dataRef.dataId['ccd']
@@ -315,9 +330,9 @@ class BfTask(pipeBase.CmdLineTask):
                                                                          im1.getFilter().getName(),
                                                                          float(xcorr[0, 0]) /
                                                                               (xcorrMeans[0]+means[1]))
-            fileName = (os.path.join(self.debugInfo.debugPlotPath, '_'.join(['xcorr_visit', str(v1),
-                                                                             str(v2), 'ccd', str(ccdNum)])))
-            fileName += self.debugInfo.plotType
+            fileName = (os.path.join(self.debug.debugPlotPath, '_'.join(['xcorr_visit', str(v1),
+                                                                         str(v2), 'ccd', str(ccdNum)])))
+            fileName += self.debug.plotType
             self._plotXcorr(xcorr.copy(), (xcorrMeans[0]+means[1]),
                             title=title, save=True, fileName=fileName)
 
@@ -355,8 +370,7 @@ class BfTask(pipeBase.CmdLineTask):
         pickle.dump(kernel, f)
         f.close()
 
-    def estimateGains(self, dataRef, visitPairs, intercept=0, writeGains=True,
-                      xxx_figLocation=OUTPUT_PATH, xxx_plot=False):
+    def estimateGains(self, dataRef, visitPairs, intercept=0):
         """Estimate the gains of the amplifiers in the CCD using the specified visits.
 
         Given a dataRef and list of flats of varying intensity, calculate the gain for each
@@ -375,8 +389,6 @@ class BfTask(pipeBase.CmdLineTask):
             dataRef for the CCD for the flats to be used
         visitPairs : `list` of `tuple`
             List of visit-pairs to use, as [(v1,v2), (v3,v4)...]
-        writeGains : `bool`
-            Persist the calculated gain values
 
         Returns
         -------
@@ -434,7 +446,7 @@ class BfTask(pipeBase.CmdLineTask):
             if intercept:
                 slope = slope3
 
-            if self.debug:  # consider dumping based on p_value or X_sq?
+            if self.debug.enabled:  # consider dumping based on p_value or X_sq?
                 if fig is None:
                     fig = plt.figure()
                 else:
@@ -446,8 +458,8 @@ class BfTask(pipeBase.CmdLineTask):
                 else:
                     ax.plot(ampMeans[i], ampMeans[i]*slope, label='fix')
                 ccdNum = dataRef.dataId['ccd']
-                title = '_'.join(['PTC_CCD', str(ccdNum), 'AMP', str(i), self.debugInfo.plotType])
-                fileName = os.path.join(self.debugInfo.debugPlotPath, title)
+                title = '_'.join(['PTC_CCD', str(ccdNum), 'AMP', str(i), self.debug.plotType])
+                fileName = os.path.join(self.debug.debugPlotPath, title)
                 fig.savefig(fileName)
                 self.log.info('Saved PTC to %s'%fileName)
             gains.append(1.0/slope)
@@ -486,11 +498,10 @@ class BfTask(pipeBase.CmdLineTask):
         imMeans = [None, None]
         ampMeans = [[], []]
 
-        # TODO_URGENT: turn this into a dict so that we don't get muddled up. Currently this is nonsense.
-
         ims = [self.isr(dataRef, v1), self.isr(dataRef, v2)]
-        # if self.debugInfo.display:  # TODO: enable this debug functionality
-        #     ds9.mtv(trim(ims[i]), frame=i, title=v)
+        if self.debug.display:
+            self.disp1.mtv(ims[0], title=str(v1))
+            self.disp2.mtv(ims[1], title=str(v2))
 
         sctrl = afwMath.StatisticsControl()
         sctrl.setNumSigmaClip(sigma)
@@ -556,7 +567,7 @@ class BfTask(pipeBase.CmdLineTask):
                 borderR = border
 
             diffAmpIm = diff[amp.getBBox()].clone()  # xxx why is this a clone? move .clone() to next line?
-            diffAmpImCrop = diffAmpIm[borderL:-borderR-n, border:-border-n]
+            diffAmpImCrop = diffAmpIm[borderL:-borderR-maxLag, border:-border-maxLag]
             diffAmpImCrop -= afwMath.makeStatistics(diffAmpImCrop, afwMath.MEANCLIP, sctrl).getValue()
             w, h = diffAmpImCrop.getDimensions()
             xcorr = np.zeros((maxLag + 1, maxLag + 1), dtype=np.float64)
@@ -1078,10 +1089,6 @@ class BfTask(pipeBase.CmdLineTask):
         means1 = [None, None]
         for imNum, im in enumerate([im1, im2]):
             ccd = im.getDetector()
-            try:
-                frameId = int(re.sub(r"^SUPA0*", "", im.getMetadata().get("FRAMEID")))
-            except:
-                frameId = -1
             #
             # Starting with an Exposure, MaskedImage, or Image trim the data and convert to float
             #
@@ -1131,10 +1138,16 @@ class BfTask(pipeBase.CmdLineTask):
         bkgd = afwMath.makeBackground(diff, bctrl)
         diff -= bkgd.getImageF(afwMath.Interpolate.CUBIC_SPLINE, afwMath.REDUCE_INTERP_ORDER)
 
-        # if self.debugInfo.display:  # TODO: make this work
-        #     ds9.mtv(diff, frame=frameId, title="diff")
+        if self.debug.display:
+            try:
+                frameId1 = im1.getMetadata().get("FRAMEID")
+                frameId2 = im2.getMetadata().get("FRAMEID")
+                frameId = ' diff '.join(frameId1, frameId2)
+            except:
+                frameId = 'Im1 diff Im2'
+            self.disp1.mtv(diff, title=frameId)
 
-        if False:
+        if False:  # xxx work out what this was ever about
             global diffim
             diffim = diff
         self.log.debug("Median and variance of diff:")
