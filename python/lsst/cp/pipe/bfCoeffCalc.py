@@ -28,14 +28,12 @@ from builtins import zip
 from builtins import str
 from builtins import range
 import os
-# import matplotlib as mpl
 from scipy import stats
 from mpl_toolkits.mplot3d import axes3d  # not actually unused, required for 3d projection
 import numpy as np
-# mpl.use('Agg')
-# pyplot = plt
 import matplotlib.pyplot as plt
 
+import lsstDebug
 import lsst.afw.image as afwImage
 import lsst.afw.math as afwMath
 import lsst.afw.display as afwDisp
@@ -43,7 +41,6 @@ import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 from lsst.obs.subaru.crosstalk import CrosstalkTask
 from lsst.obs.subaru.isr import SubaruIsrTask
-import lsstDebug
 
 
 class BfTaskConfig(pexConfig.Config):
