@@ -380,8 +380,9 @@ class BfTask(pipeBase.CmdLineTask):
         Var=1/g mean, if non zero Var=1/g mean + const is fit.
         By default, gains are persisted per-amplifier as a dictionary
 
-        XXX This is really a ptcGainTask by Will. Should this move to its own task?
-        TODO: compare results from this task to the eotest PTC gain task once that's ported
+        TODO: DM-14063
+        This is really a PTC gain measurement method. So we should compare results from this
+        task to the eotest PTC gain measurements once that's ported
 
         Parameters
         ----------
