@@ -122,6 +122,11 @@ class BfTaskConfig(pexConfig.Config):
         doc="Size of the background bins",
         default=128
     )
+    fixPtcThroughOrigin = pexConfig.Field(
+        dtype=bool,
+        doc="Contrain the fit of the PTC to go through the origin?",
+        default=True
+    )
 
 
 class BfTaskRunner(pipeBase.TaskRunner):
@@ -370,15 +375,15 @@ class BfTask(pipeBase.CmdLineTask):
         pickle.dump(kernel, f)
         f.close()
 
-    def estimateGains(self, dataRef, visitPairs, intercept=0):
+    def estimateGains(self, dataRef, visitPairs):
         """Estimate the gains of the amplifiers in the CCD using the specified visits.
 
         Given a dataRef and list of flats of varying intensity, calculate the gain for each
         CCD specified using the PTC method.
 
-        The intercept option chooses the linear fitting option. The default fits
-        Var=1/g mean, if non zero Var=1/g mean + const is fit.
-        By default, gains are persisted per-amplifier as a dictionary
+        The fixPtcThroughOrigin config option determines whether the iterative fitting is
+        forced to go through the origin or not. This defaults to True, fitting var=1/gain * mean,
+        if set to False then var=1/g * mean + const is fitted.
 
         TODO: DM-14063
         This is really a PTC gain measurement method. So we should compare results from this
@@ -393,10 +398,10 @@ class BfTask(pipeBase.CmdLineTask):
 
         Returns
         -------
-        gains : `dict`
-            Amplifier gain values, as calculated
-        nominalGains : `dict`
-            Amplifier gains, as given by the `detector` objects
+        gains : `list` of `float`
+            List of the as-calculated amplifier gain values
+        nominalGains : `list` of `float`
+            The amplifier gains, as reported by the `detector` object
         """
         ampMeans = []
         ampVariances = []
@@ -433,37 +438,38 @@ class BfTask(pipeBase.CmdLineTask):
                 ampCorrVariances[i] = np.append(ampCorrVariances[i], _covars[i])
                 ampGains[i] = np.append(ampGains[i], _gains[i])
 
-        # TODO: Change the "intercept" option to a pexConfig option (or decide which is best and remove)
-        fig = None
         gains = []
         for i in range(len(ampMeans)):
-            slope2, intercept, r_value, p_value, std_err = stats.linregress(ampMeans[i], ampCorrVariances[i])
-            slope, _ = self.iterativeRegression(ampMeans[i], ampCorrVariances[i], fixThroughOrigin=True)
-            slope3, intercept2 = self.iterativeRegression(ampMeans[i], ampCorrVariances[i])
-            # TODO: Change messages to say what these ARE, not just second/third fits
-            self.log.info("slope of fit: %s intercept of fit: %s p value: %s"%(slope2, intercept, p_value))
-            self.log.info("slope of second fit: %s, difference:%s"%(slope, slope-slope2))
-            self.log.info("slope of third  fit: %s, difference:%s"%(slope3, slope-slope3))
-            if intercept:
-                slope = slope3
+            slopeRaw, interceptRaw, rVal, pVal, stdErr = stats.linregress(ampMeans[i], ampCorrVariances[i])
+            slopeFix, _ = self._iterativeRegression(ampMeans[i], ampCorrVariances[i], fixThroughOrigin=True)
+            slopeUnfix, intercept = self._iterativeRegression(ampMeans[i], ampCorrVariances[i],
+                                                              fixThroughOrigin=False)
+            self.log.info("Slope of     raw fit: %s  intercept: %s p value: %s"%(slopeRaw,
+                                                                                 interceptRaw, pVal))
+            self.log.info("slope of   fixed fit: %s, difference vs raw:%s"%(slopeFix,
+                                                                            slopeFix-slopeRaw))
+            self.log.info("slope of unfixed fit: %s, difference vs fix:%s"%(slopeUnfix,
+                                                                            slopeFix-slopeUnfix))
+            if self.config.fixPtcThroughOrigin:
+                slopeToUse = slopeFix
+            else:
+                slopeToUse = slopeUnfix
 
-            if self.debug.enabled:  # consider dumping based on p_value or X_sq?
-                if fig is None:
-                    fig = plt.figure()
-                else:
-                    fig.clf()
+            if self.debug.enabled:
+                fig = plt.figure()
                 ax = fig.add_subplot(111)
                 ax.plot(ampMeans[i], ampCorrVariances[i], linestyle='None', marker='x', label='data')
-                if intercept:
-                    ax.plot(ampMeans[i], ampMeans[i]*slope+intercept2, label='fix')
+                if self.config.fixPtcThroughOrigin:
+                    ax.plot(ampMeans[i], ampMeans[i]*slopeToUse, label='Fit through origin')
                 else:
-                    ax.plot(ampMeans[i], ampMeans[i]*slope, label='fix')
+                    ax.plot(ampMeans[i], ampMeans[i]*slopeToUse+intercept,
+                            label='Fit (intercept unconstrained')
                 ccdNum = dataRef.dataId['ccd']
                 title = '_'.join(['PTC_CCD', str(ccdNum), 'AMP', str(i), self.debug.plotType])
                 fileName = os.path.join(self.debug.debugPlotPath, title)
                 fig.savefig(fileName)
                 self.log.info('Saved PTC to %s'%fileName)
-            gains.append(1.0/slope)
+            gains.append(1.0/slopeToUse)
         return gains, nomGains
 
     def _calcMeansAndVars(self, dataRef, v1, v2):
@@ -694,7 +700,7 @@ class BfTask(pipeBase.CmdLineTask):
 
         return ", ".join(valName)
 
-    def iterativeRegression(self, x, y, fixThroughOrigin=False, nSigmaClip=None, maxIter=None):
+    def _iterativeRegression(self, x, y, fixThroughOrigin=False, nSigmaClip=None, maxIter=None):
         """Use linear regression to fit a line of best fit, iteratively removing outliers.
 
         Useful when you have sufficiently large numbers of points on your PTC.
