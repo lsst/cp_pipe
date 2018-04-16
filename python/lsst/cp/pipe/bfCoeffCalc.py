@@ -629,50 +629,56 @@ class BfTask(pipeBase.CmdLineTask):
         Returns
         -------
         gains : `dict` of `float`
-            List of the as-calculated amplifier gain values
+            Dict of the as-calculated amplifier gain values, keyed by amplifier name
         nominalGains : `dict` of `float`
-            The amplifier gains, as reported by the `detector` object
+            Dict of the amplifier gains, as reported by the `detector` object, keyed by amplifier name
         """
-        ampMeans = []
-        ampVariances = []
-        ampCorrVariances = []
-        ampGains = []
-        nomGains = []
+        detector = dataRef.get('raw_detector')
+        ampInfoCat = detector.getAmpInfoCatalog()
+        ampNames = [amp.getName() for amp in ampInfoCat]
+
+        ampMeans = {key: [] for key in ampNames}  # these get turned into np.arrays later
+        ampCorrVariances = {key: [] for key in ampNames}
+        ampVariances = {key: [] for key in ampNames}
 
         # Loop over the amps in the CCD, calculating a PTC for each amplifier.
         # The amplifier iteration is performed in _calcMeansAndVars()
         # NB: no gain correction is applied
         for visPairNum, visPair in enumerate(visitPairs):
-            _means, _vars, _covars, _gains = self._calcMeansAndVars(dataRef, visPair[0], visPair[1])
+            # _means, _vars, _covars, _gains = self._calcMeansAndVars(dataRef, visPair[0], visPair[1])
+            _means, _vars, _covars = self._calcMeansAndVars(dataRef, visPair[0], visPair[1])
             breaker = 0
             # Do sanity checks; if these are failed more investigation is needed!
-            for i, j in enumerate(_means):
-                if _means[i]*10 < _vars[i] or _means[i]*10 < _covars[i]:
+            # for i, j in enumerate(_means):
+            for amp in detector:
+                ampName = amp.getName()
+                if _means[ampName]*10 < _vars[ampName] or _means[ampName]*10 < _covars[ampName]:
                     self.log.warn('Sanity check failed; check visit %s'%visPair)
                     breaker += 1
             if breaker:
                 continue
-            if visPairNum == 0:
-                for i in range(len(_means)):
-                    ampMeans.append(np.array([]))
-                    ampVariances.append(np.array([]))
-                    ampCorrVariances.append(np.array([]))
-                    ampGains.append(np.array([]))
-            for i, j in enumerate(_means):
-                if visPairNum == 0:
-                    nomGains.append(_gains[i])
-                if _vars[i]*1.3 < _covars[i] or _vars[i]*0.7 > _covars[i]:
-                    continue
-                ampMeans[i] = np.append(ampMeans[i], _means[i])
-                ampVariances[i] = np.append(ampVariances[i], _vars[i])
-                ampCorrVariances[i] = np.append(ampCorrVariances[i], _covars[i])
-                ampGains[i] = np.append(ampGains[i], _gains[i])
 
-        gains = []
-        for i in range(len(ampMeans)):
-            slopeRaw, interceptRaw, rVal, pVal, stdErr = stats.linregress(ampMeans[i], ampCorrVariances[i])
-            slopeFix, _ = self._iterativeRegression(ampMeans[i], ampCorrVariances[i], fixThroughOrigin=True)
-            slopeUnfix, intercept = self._iterativeRegression(ampMeans[i], ampCorrVariances[i],
+            # having made sanity checks, pull the values out into the respective dicts
+            for k in _means.keys():  # these had better all have the same keys!
+                if _vars[k]*1.3 < _covars[k] or _vars[k]*0.7 > _covars[k]:
+                    self.log.warn('Dropped a value')
+                    continue
+                ampMeans[k].append(_means[k])
+                ampVariances[k].append(_vars[k])
+                ampCorrVariances[k].append(_covars[k])
+
+        gains = {}
+        nomGains = {}
+        for amp in detector:
+            ampName = amp.getName()
+            nomGains[ampName] = amp.getGain()
+            slopeRaw, interceptRaw, rVal, pVal, stdErr = \
+                stats.linregress(np.asarray(ampMeans[ampName]), np.asarray(ampCorrVariances[ampName]))
+            slopeFix, _ = self._iterativeRegression(np.asarray(ampMeans[ampName]),
+                                                    np.asarray(ampCorrVariances[ampName]),
+                                                    fixThroughOrigin=True)
+            slopeUnfix, intercept = self._iterativeRegression(np.asarray(ampMeans[ampName]),
+                                                              np.asarray(ampCorrVariances[ampName]),
                                                               fixThroughOrigin=False)
             self.log.info("Slope of     raw fit: %s  intercept: %s p value: %s"%(slopeRaw,
                                                                                  interceptRaw, pVal))
@@ -688,18 +694,21 @@ class BfTask(pipeBase.CmdLineTask):
             if self.debug.enabled:
                 fig = plt.figure()
                 ax = fig.add_subplot(111)
-                ax.plot(ampMeans[i], ampCorrVariances[i], linestyle='None', marker='x', label='data')
+                ax.plot(np.asarray(ampMeans[ampName]),
+                        np.asarray(ampCorrVariances[ampName]), linestyle='None', marker='x', label='data')
                 if self.config.fixPtcThroughOrigin:
-                    ax.plot(ampMeans[i], ampMeans[i]*slopeToUse, label='Fit through origin')
+                    ax.plot(np.asarray(ampMeans[ampName]),
+                            np.asarray(ampMeans[ampName])*slopeToUse, label='Fit through origin')
                 else:
-                    ax.plot(ampMeans[i], ampMeans[i]*slopeToUse+intercept,
+                    ax.plot(np.asarray(ampMeans[ampName]),
+                            np.asarray(ampMeans[ampName])*slopeToUse+intercept,
                             label='Fit (intercept unconstrained')
                 ccdNum = dataRef.dataId['ccd']
-                title = '_'.join(['PTC_CCD', str(ccdNum), 'AMP', str(i), self.debug.plotType])
+                title = '_'.join(['PTC_CCD', str(ccdNum), 'AMP', str(ampName), self.debug.plotType])
                 fileName = os.path.join(self.debug.debugPlotPath, title)
                 fig.savefig(fileName)
                 self.log.info('Saved PTC to %s'%fileName)
-            gains.append(1.0/slopeToUse)
+            gains[ampName] = 1.0/slopeToUse
         return gains, nomGains
 
     def _calcMeansAndVars(self, dataRef, v1, v2):
@@ -723,19 +732,23 @@ class BfTask(pipeBase.CmdLineTask):
 
         Returns
         -------
-        means, vars, covars, gains : `tuple` of `lists`
-            The sum of the means, variance, one quarter of the xcorr, and the original gain for each amp.
+        means, vars, covars : `tuple` of `dicts`
+            Three dicts, keyed by ampName, containing the sum of the image-means,
+            the variance, and the quarter-image of the xcorr.
         """
         sigma = self.config.nSigmaClipGainCalc
         maxLag = self.config.maxLag
         border = self.config.nPixBorderGainCalc
         biasCorr = self.config.biasCorr
 
-        nomGains = []
-        imMeans = [None, None]
-        ampMeans = [[], []]
+        detector = dataRef.get('raw_detector')
+
+        ampMeans = {}
 
         ims = [self.isr(dataRef, v1), self.isr(dataRef, v2)]
+        detector = ims[0].getDetector()  # note we lose the detector in the next line as they belong to exp
+        ims = [self._convertImagelikeToFloatImage(im) for im in ims]
+
         if self.debug.display:
             self.disp1.mtv(ims[0], title=str(v1))
             self.disp2.mtv(ims[1], title=str(v2))
@@ -743,33 +756,22 @@ class BfTask(pipeBase.CmdLineTask):
         sctrl = afwMath.StatisticsControl()
         sctrl.setNumSigmaClip(sigma)
         for imNum, im in enumerate(ims):
-            ccd = im.getDetector()
-            # Starting with an Exposure, MaskedImage, or Image trim the data and convert to float
-            im = self._convertImagelikeToFloatImage(im)
 
             # calculate the sigma-clipped mean, excluding the borders
-            # TODO: rewrite to use egde bits
-            imMeans[imNum] = afwMath.makeStatistics(im, afwMath.MEANCLIP, sctrl).getValue()
-            for ampNum, amp in enumerate(ccd):
+            # safest to apply borders to all amps regardless of edges
+            # easier, camera-agnostic, and mitigates potentially dodgy overscan-biases around edges
+            for amp in detector:
+                ampName = amp.getName()
                 ampIm = im[amp.getBBox()]
-                if ampNum == 0:
-                    mean = afwMath.makeStatistics(ampIm[border:, border:-border],
-                                                  afwMath.MEANCLIP, sctrl).getValue()
-                elif ampNum == 3:
-                    mean = afwMath.makeStatistics(ampIm[:-border, border:-border],
-                                                  afwMath.MEANCLIP, sctrl).getValue()
-                else:
-                    mean = afwMath.makeStatistics(ampIm[:, border:-border],
-                                                  afwMath.MEANCLIP, sctrl).getValue()
-                nomGain = amp.getGain()
-                ampMeans[imNum].append(mean)
-                if imNum == 0:
-                    nomGains.append(nomGain)
+                mean = afwMath.makeStatistics(ampIm[border:-border, border:-border],
+                                              afwMath.MEANCLIP, sctrl).getValue()
+                if ampName not in ampMeans.keys():
+                    ampMeans[ampName] = []
+                ampMeans[ampName].append(mean)
                 ampIm -= mean
 
         diff = ims[0].clone()
-        diff = diff.getMaskedImage().getImage()
-        diff -= ims[1].getMaskedImage().getImage()
+        diff -= ims[1]
 
         temp = diff[border:-border, border:-border]
 
@@ -782,22 +784,14 @@ class BfTask(pipeBase.CmdLineTask):
         bkgd = afwMath.makeBackground(temp, bctrl)
         diff[border:-border, border:-border] -= bkgd.getImageF(afwMath.Interpolate.CUBIC_SPLINE,
                                                                afwMath.REDUCE_INTERP_ORDER)
-        variances = []  # can't shadow builtin "vars"
-        coVars = []
-        # For each amp calculate the correlation
-        # xxx can you do this for a heterogenous focal plane? (answer: 100% no)
-        # xxx update note to self - now that we're doing ccd by ccd with a dataRef this is fine again
-        CCD = ims[0].getDetector()
-        for ampNum, amp in enumerate(CCD):
-            borderL = 0
-            borderR = 0
-            if ampNum == 0:  # TODO: this needs rewriting for using edge bits to make camera agnostic
-                borderL = border
-            if ampNum == 3:
-                borderR = border
+        
+        variances = {}  # can't shadow builtin "vars"
+        coVars = {}
+        for amp in detector:
+            ampName = amp.getName()
 
-            diffAmpIm = diff[amp.getBBox()].clone()  # xxx why is this a clone? move .clone() to next line?
-            diffAmpImCrop = diffAmpIm[borderL:-borderR-maxLag, border:-border-maxLag]
+            diffAmpIm = diff[amp.getBBox()].clone()
+            diffAmpImCrop = diffAmpIm[border:-border-maxLag, border:-border-maxLag]
             diffAmpImCrop -= afwMath.makeStatistics(diffAmpImCrop, afwMath.MEANCLIP, sctrl).getValue()
             w, h = diffAmpImCrop.getDimensions()
             xcorr = np.zeros((maxLag + 1, maxLag + 1), dtype=np.float64)
@@ -805,23 +799,29 @@ class BfTask(pipeBase.CmdLineTask):
             # calculate the cross correlation
             for xlag in range(maxLag + 1):
                 for ylag in range(maxLag + 1):
-                    dim_xy = diffAmpIm[borderL+xlag:borderL+xlag + w, border+ylag: border+ylag + h].clone()
+                    dim_xy = diffAmpIm[border+xlag:border+xlag + w, border+ylag: border+ylag + h].clone()
                     dim_xy -= afwMath.makeStatistics(dim_xy, afwMath.MEANCLIP, sctrl).getValue()
                     dim_xy *= diffAmpImCrop
                     xcorr[xlag, ylag] = afwMath.makeStatistics(dim_xy,
                                                                afwMath.MEANCLIP, sctrl).getValue()/(biasCorr)
 
-            variances.append(xcorr[0, 0])
+            variances[ampName] = xcorr[0, 0]
             xcorr_full = self._tileArray(xcorr)
-            coVars.append(np.sum(xcorr_full))
+            coVars[ampName] = np.sum(xcorr_full)
 
-            msg = "M1: " + str(ampMeans[0][ampNum])
-            msg += " M2 " + str(ampMeans[1][ampNum])
-            msg += " M_sum: " + str((ampMeans[0][ampNum])+ampMeans[1][ampNum])
-            msg += " Var " + str(variances[ampNum])
-            msg += " coVar: " + str(coVars[ampNum])
+            msg = "M1: " + str(ampMeans[ampName][0])
+            msg += " M2 " + str(ampMeans[ampName][1])
+            msg += " M_sum: " + str((ampMeans[ampName][0])+ampMeans[ampName][1])
+            msg += " Var " + str(variances[ampName])
+            msg += " coVar: " + str(coVars[ampName])
             self.log.debug(msg)
-        return ([i+j for i, j in zip(ampMeans[1], ampMeans[0])], variances, coVars, nomGains)
+
+            means = {}
+            for amp in detector:
+                ampName = amp.getName()
+                means[ampName] = ampMeans[ampName][0] + ampMeans[ampName][1]
+
+        return means, variances, coVars
 
     def isr(self, dataRef, visit):  # TODO: Need to replace this with a retargetable ISR task
         """Some simple code to perform some simple ISR."""
@@ -933,9 +933,9 @@ class BfTask(pipeBase.CmdLineTask):
         Parameters:
         -----------
         x : `numpy.array`
-            The independent variable
+            The independent variable. Must be a numpy array, not a list.
         y : `numpy.array`
-            The dependent variable
+            The dependent variable. Must be a numpy array, not a list.
 
         Returns:
         --------
