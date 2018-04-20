@@ -279,8 +279,6 @@ class BfTask(pipeBase.CmdLineTask):
         # setup necessary objects
         ccdNum = dataRef.dataId['ccd']
         if self.config.level == 'CCD':
-            # xcorrs = dict(ccdNum, [])
-            # means = dict(ccdNum, [])
             xcorrs = {ccdNum: []}
             means = {ccdNum: []}
         elif self.config.level == 'AMP':
@@ -313,35 +311,30 @@ class BfTask(pipeBase.CmdLineTask):
             _scaledMaskedIm1, _means1 = self._prepareImage(exp1, gains, self.config.level)
             _scaledMaskedIm2, _means2 = self._prepareImage(exp2, gains, self.config.level)
 
-            # if self.debug.enabled:
-            #     try:
-            #         frameId1 = exp1.getMetadata().get("FRAMEID")
-            #         frameId2 = exp2.getMetadata().get("FRAMEID")
-            #         frameId = '_diff_'.join(frameId1, frameId2)
-            #     except:
-            #         frameId = 'Im1 diff Im2'
+            if self.debug.enabled:
+                try:
+                    frameId1 = exp1.getMetadata().get("FRAMEID")
+                    frameId2 = exp2.getMetadata().get("FRAMEID")
+                    frameId = '_diff_'.join(frameId1, frameId2)
+                except:
+                    frameId = 'Im1 diff Im2'
 
             # depending on level this is either one pass or n_amps
-            for key in _scaledMaskedIm1.keys():  # looping over either CCD or amps
-                xcorrs[key] = self._crossCorrelate(_scaledMaskedIm1[key], _scaledMaskedIm2[key])
-                means[key] = [_means1[key], _means2[key]]
+            for det_object in _scaledMaskedIm1.keys():  # looping over either CCD or amps
+                xcorrs[det_object].append(self._crossCorrelate(_scaledMaskedIm1[det_object],
+                                                               _scaledMaskedIm2[det_object]))
+                means[det_object].append([_means1[det_object], _means2[det_object]])
 
-        self.log.info('Generating kernel(s) for %s'%ccdNum)
         # generate the kernel(s)
+        self.log.info('Generating kernel(s) for %s'%ccdNum)
         for det_object in xcorrs.keys():  # looping over either CCD or amps
-            kernels[det_object] = self._generateKernel(xcorrs[det_object], means[det_object])
+            if self.config.level == 'CCD':
+                objId = 'CCD %s'%det_object
+            elif self.config.level == 'AMP':
+                objId = 'CCD %s AMP %s'%(ccdNum, det_object)
+            kernels[det_object] = self._generateKernel(xcorrs[det_object], means[det_object], objId)
         # kernels['level'] = self.config.level  # this might be useful, but might also mess things up
         dataRef.put(kernels)
-
-        # # generate the kernel
-        # if self.level == 'CCD':
-        #     self.log.info('Generating kernel for CCD %s'%ccdNum)
-        #     kernel = self._generateKernel(xcorrs, means)
-        #     dataRef.put(kernel)
-        # else:  # currently this is only 'AMP'
-        #     self.log.info('Generating kernels for CCD %s'%ccdNum)
-        #     kernels = self._generateKernel(xcorrs, means, level=self.level)
-        #     dataRef.put(kernels)
 
         self.log.info('Finished generating kernel(s) for %s'%ccdNum)
         return pipeBase.Struct(exitStatus=0)
@@ -602,7 +595,6 @@ class BfTask(pipeBase.CmdLineTask):
 
 
         """
-
 
     def xcorrFromVisitPair_old(self, dataRef, v1, v2, gains, level):
         """Return the cross-correlation from a given pair of visits.
@@ -1070,7 +1062,7 @@ class BfTask(pipeBase.CmdLineTask):
 
         return slope, intercept
 
-    def _generateKernel(self, corrs, means, rejectLevel=None):
+    def _generateKernel(self, corrs, means, objId, rejectLevel=None):
         """Generate the full kernel from a list of (gain-corrected) cross-correlations and means.
 
         Taking a list of quarter-image, gain-corrected cross-correlations, do a pixel-wise sigma-clipped
@@ -1083,7 +1075,7 @@ class BfTask(pipeBase.CmdLineTask):
         -----------
         corrs : `list` of `numpy.ndarray`, (Ny, Nx)
             A list of the quarter-image cross-correlations
-        means : `list` of `tuples` of `floats`
+        means : `dict` of `tuples` of `floats`
             The means of the input images for each corr in corrs
         rejectLevel : `float`, optional
             This is essentially is a sanity check parameter.
@@ -1098,15 +1090,13 @@ class BfTask(pipeBase.CmdLineTask):
         if not rejectLevel:
             rejectLevel = self.config.xcorrCheckRejectLevel
 
-        if not isinstance(corrs, list):  # we expect a list of arrays
-            corrs = [corrs]
-
         # Try to average over a set of possible inputs. This generates a simple function of the kernel that
         # should be constant across the images, and averages that.
         xcorrList = []
         sctrl = afwMath.StatisticsControl()
         sctrl.setNumSigmaClip(self.config.nSigmaClipKernelGen)
 
+        # for corrNum, ((mean1, mean2), corr) in enumerate(zip(means, corrs)):
         for corrNum, ((mean1, mean2), corr) in enumerate(zip(means, corrs)):
             corr[0, 0] -= (mean1+mean2)
             if corr[0, 0] > 0:
@@ -1119,8 +1109,8 @@ class BfTask(pipeBase.CmdLineTask):
             # TODO: what is this block really testing? Is this what it should be doing? First line is fishy
             xcorrCheck = np.abs(np.sum(fullCorr))/np.sum(np.abs(fullCorr))
             if xcorrCheck > rejectLevel:
-                self.log.warn("Sum of the xcorr is unexpectedly high. Investigate item num %s. \n"
-                              "value = %s"%(corrNum, xcorrCheck))
+                self.log.warn("Sum of the xcorr is unexpectedly high. Investigate item num %s for %s. \n"
+                              "value = %s"%(corrNum, objId, xcorrCheck))
                 continue
             xcorrList.append(fullCorr)
 
