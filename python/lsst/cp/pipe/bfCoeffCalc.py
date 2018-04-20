@@ -325,6 +325,26 @@ class BfTask(pipeBase.CmdLineTask):
                                                                _scaledMaskedIm2[det_object]))
                 means[det_object].append([_means1[det_object], _means2[det_object]])
 
+            # this is awkward now that code is refactored
+            # not sure how best to make this work without passing everything around
+            # if self.debug.enabled:
+            #     rawMeans = [afwMath.makeStatistics(im.getMaskedImage(), afwMath.MEANCLIP).getValue() \
+            #                 for im in [exp1, exp2]]
+            #     title = "Visits %s; %s, CCDs %s <I> = %.3f (%s) Var = %.4f"%(self._getNameOfSet([v1]),
+            #                                                                  self._getNameOfSet([v2]),
+            #                                                                  self._getNameOfSet([ccdNum]),
+            #                                                                  _means1+rawMeans[1],
+            #                                                                  im1.getFilter().getName(),
+            #                                                                  float(xcorr[0, 0]) /
+            #                                                                       (_means1+rawMeans[1]))
+            #     detObjId = str(ccdNum)
+            #     if level=='AMP': detObjId += ampName
+            #     fileName = (os.path.join(self.debug.debugPlotPath, '_'.join(['xcorr_visit', str(v1),
+            #                                                                  str(v2), 'ccd', str(ccdNum)])))
+            #     fileName += self.debug.plotType
+            #     self._plotXcorr(xcorr.copy(), (xcorrMeans[0]+means[1]),
+            #                     title=title, save=True, fileName=fileName)
+
         # generate the kernel(s)
         self.log.info('Generating kernel(s) for %s'%ccdNum)
         for det_object in xcorrs.keys():  # looping over either CCD or amps
@@ -338,79 +358,6 @@ class BfTask(pipeBase.CmdLineTask):
 
         self.log.info('Finished generating kernel(s) for %s'%ccdNum)
         return pipeBase.Struct(exitStatus=0)
-
-    def xcorrFromVisitPair(self, dataRef, v1, v2, gains, level):
-        """Return the cross-correlation from a given pair of visits.
-
-        This is code preforms some preliminary operations and then calls the main correlation calc code.
-        This is used for calculating the xcorr after setting the gains.
-
-        Parameters:
-        -----------
-        dataRef : list of lsst.daf.persistence.ButlerDataRef
-            dataRef for the CCD for the visits to be fit.
-        v1 : `int`
-            Visit number of the first visit
-        v2 : `int`
-            Visit number of the second visit
-        gains : `dict`
-            Dictionary of gains for each amplifier in the CCD. Keys are amp name, values are gains
-        level : `str`
-            The level at which to calculate the kernel, either 'AMP' or 'CCD'
-
-        Returns:
-        xcorr : `dict` of `np.array`
-            The cross-correlation numpy arrays in a dict, keyed depending on the level
-        means : `list` of `float`
-            The sigma-clipped-mean flux in the input images in a dict, keyed depending on the level
-        """
-        im1 = self.isr(dataRef, v1)
-        im2 = self.isr(dataRef, v2)
-
-        xcorrDict = {}
-        meanDict = {}
-
-        detector = dataRef.get('raw_detector')
-
-        if level == 'CCD':
-            xcorr, xcorrMeans = self._newxcorr(im1, im2, gains, level)
-            detId = detector.getId()
-            xcorrDict[detId] = xcorr  # note that we key by ID *not* name here (unlike for amps)
-            meanDict[detId] = xcorrMeans  # this is following the dataIds which we loop over detectors with
-        else:
-            ampInfoCat = detector.getAmpInfoCatalog()
-            for ampNum, ampInfo in enumerate(ampInfoCat):
-                bbox = ampInfo.getBBox()
-                ampName = ampInfo.getName()
-                gain = gains[ampName]
-                area1 = im1[bbox]
-                area2 = im2[bbox]
-                xcorr, xcorrMeans = self._newxcorr(area1, area2, gain, level)
-                xcorrDict[ampName] = xcorr
-                meanDict[ampName] = xcorrMeans
-
-        return xcorrDict, meanDict
-
-        # xcorr, xcorrMeans = self._xcorr(im1, im2, gains)
-
-        # if self.debug.enabled:
-        #     means = [afwMath.makeStatistics(im.getMaskedImage(),
-        #                                     afwMath.MEANCLIP).getValue() for im in [im1, im2]]
-        #     ccdNum = dataRef.dataId['ccd']
-        #     title = "Visits %s; %s, CCDs %s <I> = %.3f (%s) Var = %.4f"%(self._getNameOfSet([v1]),
-        #                                                                  self._getNameOfSet([v2]),
-        #                                                                  self._getNameOfSet([ccdNum]),
-        #                                                                  xcorrMeans[0]+means[1],
-        #                                                                  im1.getFilter().getName(),
-        #                                                                  float(xcorr[0, 0]) /
-        #                                                                       (xcorrMeans[0]+means[1]))
-        #     fileName = (os.path.join(self.debug.debugPlotPath, '_'.join(['xcorr_visit', str(v1),
-        #                                                                  str(v2), 'ccd', str(ccdNum)])))
-        #     fileName += self.debug.plotType
-        #     self._plotXcorr(xcorr.copy(), (xcorrMeans[0]+means[1]),
-        #                     title=title, save=True, fileName=fileName)
-
-        # return xcorr, xcorrMeans
 
     def _prepareImage(self, exp, gains, level):
         """Prepare images for cross-correlation calculation.
@@ -574,108 +521,6 @@ class BfTask(pipeBase.CmdLineTask):
         #                np.sum(xcorr_full)/sum(means))
         return xcorr
 
-    def _newxcorr(self, im1, im2, gains, level):
-        """Calculate the cross-correlation of two images im1 and im2 using robust measures of the covariance.
-
-        Parameters:
-        -----------
-        im1 : `afwImage.Exposure` or similar
-            The first image-like object, to be cross-correlated with the second
-        im2 : `afwImage.Exposure` or similar
-            The second image-like object, to be cross-correlated with the first
-        gains : `list` of `float`
-            The per-amplifier gains for the detector
-
-        Returns:
-        --------
-        xcorr : `np.array`
-            The quarter-image cross-corellation
-        means : `list` of `float`
-            The as-calculated means of the input images (clipped, and with borders applied)
-
-
-        """
-
-    def xcorrFromVisitPair_old(self, dataRef, v1, v2, gains, level):
-        """Return the cross-correlation from a given pair of visits.
-
-        This is code preforms some preliminary operations and then calls the main correlation calc code.
-        This is used for calculating the xcorr after setting the gains.
-
-        Parameters:
-        -----------
-        dataRef : list of lsst.daf.persistence.ButlerDataRef
-            dataRef for the CCD for the visits to be fit.
-        v1 : `int`
-            Visit number of the first visit
-        v2 : `int`
-            Visit number of the second visit
-        gains : `iterable` of `float`
-            The gains for each amplifier in the CCD
-        level : `str`
-            The level at which to calculate the kernel, either 'AMP' or 'CCD'
-
-        Returns:
-        xcorr : `dict` of `np.array`
-            The cross-correlation numpy arrays in a dict, keyed depending on the level
-        means : `list` of `float`
-            The sigma-clipped-mean flux in the input images in a dict, keyed depending on the level
-        """
-        im1 = self.isr(dataRef, v1)
-        im2 = self.isr(dataRef, v2)
-        xcorr, xcorrMeans = self._xcorr(im1, im2, gains)
-
-        if self.debug.enabled:
-            means = [afwMath.makeStatistics(im.getMaskedImage(),
-                                            afwMath.MEANCLIP).getValue() for im in [im1, im2]]
-            ccdNum = dataRef.dataId['ccd']
-            title = "Visits %s; %s, CCDs %s <I> = %.3f (%s) Var = %.4f"%(self._getNameOfSet([v1]),
-                                                                         self._getNameOfSet([v2]),
-                                                                         self._getNameOfSet([ccdNum]),
-                                                                         xcorrMeans[0]+means[1],
-                                                                         im1.getFilter().getName(),
-                                                                         float(xcorr[0, 0]) /
-                                                                              (xcorrMeans[0]+means[1]))
-            fileName = (os.path.join(self.debug.debugPlotPath, '_'.join(['xcorr_visit', str(v1),
-                                                                         str(v2), 'ccd', str(ccdNum)])))
-            fileName += self.debug.plotType
-            self._plotXcorr(xcorr.copy(), (xcorrMeans[0]+means[1]),
-                            title=title, save=True, fileName=fileName)
-
-        return xcorr, xcorrMeans
-
-    def xxx_test_put(self, dataRef):
-        """Xxx Docstring."""
-        from time import sleep
-        print('Starting, if parallelised this will be printed -j times simultaneously')
-        sleep(4)
-        print('finished')
-        a = np.zeros((3, 3))
-        dataRef.put(a)
-        return
-
-    def xxx_test_estimateGains(self):
-        """Xxx Docstring."""
-        import lsst.daf.persistence as dafPersist
-        butler = dafPersist.Butler('/datasets/hsc/repo/')
-        visPairs = [(904606, 904608),
-                    (904610, 904612)]
-        ignoreCcdList = [_ for _ in range(112)]
-        ignoreCcdList.remove(41)
-        self.estimateGains(butler, visPairs, ignoreCcdList)
-
-    def xxx_test_generateKernel(self):
-        """Docstring."""
-        import pickle
-        f = open('/home/mfl/bf_output/merlinTestXcorr.pkl', 'rb')
-        xcorr, means = pickle.load(f)
-        f.close()
-        self.log.info('\n\nLevel = %s\n\n'%self.config.xcorrCheckRejectLevel)
-        kernel = self._generateKernel(xcorr, means)
-        f = open('/home/mfl/bf_output/taskOutput_kernel.pkl', 'wb')
-        pickle.dump(kernel, f)
-        f.close()
-
     def estimateGains(self, dataRef, visitPairs):
         """Estimate the gains of the amplifiers in the CCD using the specified visits.
 
@@ -716,9 +561,9 @@ class BfTask(pipeBase.CmdLineTask):
         # The amplifier iteration is performed in _calcMeansAndVars()
         # NB: no gain correction is applied
         for visPairNum, visPair in enumerate(visitPairs):
-            # _means, _vars, _covars, _gains = self._calcMeansAndVars(dataRef, visPair[0], visPair[1])
             _means, _vars, _covars = self._calcMeansAndVars(dataRef, visPair[0], visPair[1])
             breaker = 0
+
             # Do sanity checks; if these are failed more investigation is needed!
             # for i, j in enumerate(_means):
             for amp in detector:
@@ -856,7 +701,7 @@ class BfTask(pipeBase.CmdLineTask):
         diff[border:-border, border:-border] -= bkgd.getImageF(afwMath.Interpolate.CUBIC_SPLINE,
                                                                afwMath.REDUCE_INTERP_ORDER)
 
-        variances = {}  # can't shadow builtin "vars"
+        variances = {}
         coVars = {}
         for amp in detector:
             ampName = amp.getName()
@@ -1366,133 +1211,3 @@ class BfTask(pipeBase.CmdLineTask):
         except AttributeError:
             raise RuntimeError("Failed to convert image to float")
         return floatImage
-
-    # def _xcorr(self, im1, im2, gains):
-    #     """Calculate the cross-correlation of two images im1 and im2 using robust measures of the covariance.
-
-    #     Parameters:
-    #     -----------
-    #     im1 : `afwImage.Image` or similar
-    #         The first image-like object, to be cross-correlated with the second
-    #     im2 : `afwImage.Image` or similar
-    #         The second image-like object, to be cross-correlated with the first
-    #     gains : `list` of `float`
-    #         The per-amplifier gains for the detector
-
-    #     Returns:
-    #     --------
-    #     xcorr : `np.array`
-    #         The quarter-image cross-corellation
-    #     means : `list` of `float`
-    #         The as-calculated means of the input images (clipped, and with borders applied)
-
-    #     Notes:
-    #     ------
-    #     This function is controlled by the following pexConfig parameters:
-
-    #     maxLag : `int`
-    #         The maximum lag to use in the cross-correlation calculation
-    #     nPixBorderXCorr : `int`
-    #         The number of border pixels to exclude
-    #     nSigmaClipXCorr : `float`
-    #         The number of sigma to be clipped to
-    #     biasCorr : `float`
-    #         Parameter used to correct from the bias introduced by the sigma cuts.
-    #     """
-    #     maxLag = self.config.maxLag
-    #     border = self.config.nPixBorderXCorr
-    #     sigma = self.config.nSigmaClipXCorr
-    #     biasCorr = self.config.biasCorr
-
-    #     sctrl = afwMath.StatisticsControl()
-    #     sctrl.setNumSigmaClip(sigma)
-
-    #     means = [None, None]
-    #     means1 = [None, None]
-    #     for imNum, im in enumerate([im1, im2]):
-    #         ccd = im.getDetector()
-    #         #
-    #         # Starting with an Exposure, MaskedImage, or Image trim the data and convert to float
-    #         #
-    #         for attr in ("getMaskedImage", "getImage"):
-    #             if hasattr(im, attr):
-    #                 im = getattr(im, attr)()
-    #         try:
-    #             im = im.convertF()
-    #         except AttributeError:
-    #             pass
-    #         # im = trim(im, ccd)
-    #         means[imNum] = afwMath.makeStatistics(im[border:-border, border:-border],
-    #                                               afwMath.MEANCLIP, sctrl).getValue()
-    #         temp = im.clone()
-    #         # Rescale each amp by the appropriate gain and subtract the mean.
-    #         for ampNum, amp in enumerate(ccd):
-    #             # smi = im[amp.getDataSec(True)]
-    #             # smiTemp = temp[amp.getDataSec(True)]
-    #             smi = im[amp.getBBox()]
-    #             smiTemp = temp[amp.getBBox()]
-    #             mean = afwMath.makeStatistics(smi, afwMath.MEANCLIP, sctrl).getValue()
-    #             gain = gains[ampNum]
-    #             smi *= gain
-    #             self.log.debug(mean*gain, afwMath.makeStatistics(smi, afwMath.MEANCLIP, sctrl).getValue())
-    #             smi -= mean*gain
-    #             smiTemp *= gain
-    #         means1[imNum] = afwMath.makeStatistics(temp[border:-border, border:-border],
-    #                                                afwMath.MEANCLIP, sctrl).getValue()
-    #         self.log.debug(afwMath.makeStatistics(temp[border:-border, border:-border],
-    #                                               afwMath.MEANCLIP, sctrl).getValue())
-    #     #
-    #     # Actually diff the images
-    #     #
-    #     diff = im1.clone()
-    #     diff = diff.getMaskedImage().getImage()
-    #     diff -= im2.getMaskedImage().getImage()
-
-    #     diff = diff[border:-border, border:-border]
-    #     # diff.writeFits("./Data/Diff_CCD_"+str(CCD)+".fits")
-    #     #
-    #     # Subtract background.  It should be a constant, but it isn't always
-    #     #
-    #     binsize = self.config.backgroundBinSize
-    #     nx = diff.getWidth()//binsize
-    #     ny = diff.getHeight()//binsize
-    #     bctrl = afwMath.BackgroundControl(nx, ny, sctrl, afwMath.MEANCLIP)
-    #     bkgd = afwMath.makeBackground(diff, bctrl)
-    #     diff -= bkgd.getImageF(afwMath.Interpolate.CUBIC_SPLINE, afwMath.REDUCE_INTERP_ORDER)
-
-    #     if self.debug.display:
-    #         try:
-    #             frameId1 = im1.getMetadata().get("FRAMEID")
-    #             frameId2 = im2.getMetadata().get("FRAMEID")
-    #             frameId = ' diff '.join(frameId1, frameId2)
-    #         except:
-    #             frameId = 'Im1 diff Im2'
-    #         self.disp1.mtv(diff, title=frameId)
-
-    #     if False:  # xxx work out what this was ever about
-    #         global diffim
-    #         diffim = diff
-    #     self.log.debug("Median and variance of diff:")
-    #     self.log.debug(afwMath.makeStatistics(diff, afwMath.MEDIAN, sctrl).getValue())
-    #     self.log.debug(afwMath.makeStatistics(diff, afwMath.VARIANCECLIP,
-    #                                           sctrl).getValue(), np.var(diff.getArray()))
-    #     #
-    #     # Measure the correlations
-    #     #
-    #     dim0 = diff[0: -maxLag, : -maxLag]
-    #     dim0 -= afwMath.makeStatistics(dim0, afwMath.MEANCLIP, sctrl).getValue()
-    #     w, h = dim0.getDimensions()
-    #     xcorr = np.zeros((maxLag + 1, maxLag + 1), dtype=np.float64)
-
-    #     for xlag in range(maxLag + 1):
-    #         for ylag in range(maxLag + 1):
-    #             dim_xy = diff[xlag:xlag + w, ylag: ylag + h].clone()
-    #             dim_xy -= afwMath.makeStatistics(dim_xy, afwMath.MEANCLIP, sctrl).getValue()
-    #             dim_xy *= dim0
-    #             xcorr[xlag, ylag] = afwMath.makeStatistics(dim_xy,
-    #                                                        afwMath.MEANCLIP, sctrl).getValue()/(biasCorr)
-
-    #     xcorr_full = self._tileArray(xcorr)
-    #     self.log.debug(sum(means1), xcorr[0, 0], np.sum(xcorr_full), xcorr[0, 0]/sum(means1),
-    #                    np.sum(xcorr_full)/sum(means1))
-    #     return (xcorr, means1)
