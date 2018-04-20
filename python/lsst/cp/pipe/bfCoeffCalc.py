@@ -1055,6 +1055,58 @@ class BfTask(pipeBase.CmdLineTask):
                           "%s", nIter//2, outError, inError*eLevel)
         return func[1:-1, 1:-1]
 
+    @staticmethod
+    def _tileArray(in_array):
+        """Given a square input quarter-image, tile/mirror it, returning the full image.
+
+        Given an input of side-length n, of the form
+
+        input = array([[1, 2, 3],
+                       [4, 5, 6],
+                       [7, 8, 9]])
+
+        return an array of size 2n-1 as
+
+        output = array([[ 9,  8,  7,  8,  9],
+                        [ 6,  5,  4,  5,  6],
+                        [ 3,  2,  1,  2,  3],
+                        [ 6,  5,  4,  5,  6],
+                        [ 9,  8,  7,  8,  9]])
+
+        Parameters:
+        -----------
+        input : `np.array`
+            The square input quarter-array
+
+        Returns:
+        --------
+        output : `np.array`
+            The full, tiled array
+        """
+        assert(in_array.shape[0] == in_array.shape[1])
+        length = in_array.shape[0]-1
+        output = np.zeros((2*length+1, 2*length+1))
+
+        for i in range(length+1):
+            for j in range(length+1):
+                output[i+length, j+length] = in_array[i, j]
+                output[-i+length, j+length] = in_array[i, j]
+                output[i+length, -j+length] = in_array[i, j]
+                output[-i+length, -j+length] = in_array[i, j]
+        return output
+
+    @staticmethod
+    def _convertImagelikeToFloatImage(imagelikeObject):
+        """Turn an exposure or masked image of any type into an ImageF."""
+        for attr in ("getMaskedImage", "getImage"):
+            if hasattr(imagelikeObject, attr):
+                imagelikeObject = getattr(imagelikeObject, attr)()
+        try:
+            floatImage = imagelikeObject.convertF()
+        except AttributeError:
+            raise RuntimeError("Failed to convert image to float")
+        return floatImage
+
     # This sim code is used to estimate the bias correction used above.
     def xcorr_sim(self, im, im2, n=8, border=10, sigma=5):
         """Perform a simple xcorr from two images.
@@ -1159,55 +1211,3 @@ class BfTask(pipeBase.CmdLineTask):
                     self.log.debug("Simulated/Expected:", MEANS[MEAN][-1], '\n',
                                    (XCORRS[MEAN][-1].getArray()[1, 1]/MEANS[MEAN][-1]*(1+a))/.1)
         return MEANS, XCORRS
-
-    @staticmethod
-    def _tileArray(in_array):
-        """Given a square input quarter-image, tile/mirror it, returning the full image.
-
-        Given an input of side-length n, of the form
-
-        input = array([[1, 2, 3],
-                       [4, 5, 6],
-                       [7, 8, 9]])
-
-        return an array of size 2n-1 as
-
-        output = array([[ 9,  8,  7,  8,  9],
-                        [ 6,  5,  4,  5,  6],
-                        [ 3,  2,  1,  2,  3],
-                        [ 6,  5,  4,  5,  6],
-                        [ 9,  8,  7,  8,  9]])
-
-        Parameters:
-        -----------
-        input : `np.array`
-            The square input quarter-array
-
-        Returns:
-        --------
-        output : `np.array`
-            The full, tiled array
-        """
-        assert(in_array.shape[0] == in_array.shape[1])
-        length = in_array.shape[0]-1
-        output = np.zeros((2*length+1, 2*length+1))
-
-        for i in range(length+1):
-            for j in range(length+1):
-                output[i+length, j+length] = in_array[i, j]
-                output[-i+length, j+length] = in_array[i, j]
-                output[i+length, -j+length] = in_array[i, j]
-                output[-i+length, -j+length] = in_array[i, j]
-        return output
-
-    @staticmethod
-    def _convertImagelikeToFloatImage(imagelikeObject):
-        """Turn an exposure or masked image of any type into an ImageF."""
-        for attr in ("getMaskedImage", "getImage"):
-            if hasattr(imagelikeObject, attr):
-                imagelikeObject = getattr(imagelikeObject, attr)()
-        try:
-            floatImage = imagelikeObject.convertF()
-        except AttributeError:
-            raise RuntimeError("Failed to convert image to float")
-        return floatImage
