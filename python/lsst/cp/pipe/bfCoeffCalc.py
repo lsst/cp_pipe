@@ -1107,107 +1107,115 @@ class BfTask(pipeBase.CmdLineTask):
             raise RuntimeError("Failed to convert image to float")
         return floatImage
 
-    # This sim code is used to estimate the bias correction used above.
-    def xcorr_sim(self, im, im2, n=8, border=10, sigma=5):
-        """Perform a simple xcorr from two images.
 
-        It contains many elements of the actual code
-        above (without individual amps and ISR removal )
-        It takes two images, im and im2;
-        n the max lag of the correlation function; border, the number of border
-        pixels to discard; and sigma the sigma to use in the mean clip.
-        """
-        sctrl = afwMath.StatisticsControl()
-        sctrl.setNumSigmaClip(sigma)
-        im = self._convertImagelikeToFloatImage(im)
-        im2 = self._convertImagelikeToFloatImage(im2)
+# This sim code is used to estimate the bias correction used above.
+def _crossCorrelateSimulate(im, im2, n=8, border=10, sigma=5):
+    """Perform a simple xcorr from two images.
 
-        means1 = [0, 0]
-        means1[0] = afwMath.makeStatistics(im[border:-border, border:-border],
-                                           afwMath.MEANCLIP, sctrl).getValue()
-        means1[1] = afwMath.makeStatistics(im2[border:-border, border:-border],
-                                           afwMath.MEANCLIP, sctrl).getValue()
-        im -= means1[0]
-        im2 -= means1[1]
-        diff = im2.clone()
-        diff -= im.clone()
-        diff = diff[border:-border, border:-border]
-        binsize = self.config.backgroundBinSize
-        nx = diff.getWidth()//binsize
-        ny = diff.getHeight()//binsize
-        bctrl = afwMath.BackgroundControl(nx, ny, sctrl, afwMath.MEANCLIP)
-        bkgd = afwMath.makeBackground(diff, bctrl)
-        diff -= bkgd.getImageF(afwMath.Interpolate.CUBIC_SPLINE, afwMath.REDUCE_INTERP_ORDER)
-        dim0 = diff[0: -n, : -n].clone()
-        dim0 -= afwMath.makeStatistics(dim0, afwMath.MEANCLIP, sctrl).getValue()
-        w, h = dim0.getDimensions()
-        xcorr = afwImage.ImageD(n + 1, n + 1)
-        for di in range(n + 1):
-            for dj in range(n + 1):
-                dim_ij = diff[di:di + w, dj: dj + h].clone()
-                dim_ij -= afwMath.makeStatistics(dim_ij, afwMath.MEANCLIP, sctrl).getValue()
+    It contains many elements of the actual code
+    above (without individual amps and ISR removal )
+    It takes two images, im and im2;
+    n the max lag of the correlation function; border, the number of border
+    pixels to discard; and sigma the sigma to use in the mean clip.
+    """
+    sctrl = afwMath.StatisticsControl()
+    sctrl.setNumSigmaClip(sigma)
+    # im = self._convertImagelikeToFloatImage(im)
+    # im2 = self._convertImagelikeToFloatImage(im2)
 
-                dim_ij *= dim0
-                xcorr[di, dj] = afwMath.makeStatistics(dim_ij, afwMath.MEANCLIP, sctrl).getValue()
-        L = np.shape(xcorr.getArray())[0]-1
-        XCORR = np.zeros([2*L+1, 2*L+1])
-        for i in range(L+1):
-            for j in range(L+1):
-                XCORR[i+L, j+L] = xcorr.getArray()[i, j]
-                XCORR[-i+L, j+L] = xcorr.getArray()[i, j]
-                XCORR[i+L, -j+L] = xcorr.getArray()[i, j]
-                XCORR[-i+L, -j+L] = xcorr.getArray()[i, j]
-        return (XCORR, xcorr, np.sum(means1), means1)
+    means1 = [0, 0]
+    means1[0] = afwMath.makeStatistics(im[border:-border, border:-border],
+                                       afwMath.MEANCLIP, sctrl).getValue()
+    means1[1] = afwMath.makeStatistics(im2[border:-border, border:-border],
+                                       afwMath.MEANCLIP, sctrl).getValue()
+    im -= means1[0]
+    im2 -= means1[1]
+    diff = im2.clone()
+    diff -= im.clone()
+    diff = diff[border:-border, border:-border]
+    binsize = 128  # this needs to change somehow. Where should this be got from?
+    nx = diff.getWidth()//binsize
+    ny = diff.getHeight()//binsize
+    bctrl = afwMath.BackgroundControl(nx, ny, sctrl, afwMath.MEANCLIP)
+    bkgd = afwMath.makeBackground(diff, bctrl)
+    diff -= bkgd.getImageF(afwMath.Interpolate.CUBIC_SPLINE, afwMath.REDUCE_INTERP_ORDER)
+    dim0 = diff[0: -n, : -n].clone()
+    dim0 -= afwMath.makeStatistics(dim0, afwMath.MEANCLIP, sctrl).getValue()
+    w, h = dim0.getDimensions()
+    xcorr = afwImage.ImageD(n + 1, n + 1)
+    for di in range(n + 1):
+        for dj in range(n + 1):
+            dim_ij = diff[di:di + w, dj: dj + h].clone()
+            dim_ij -= afwMath.makeStatistics(dim_ij, afwMath.MEANCLIP, sctrl).getValue()
 
-    def xcorr_bias(self, rangeMeans=[87500, 70000, 111000], repeats=5, sig=5,
-                   border=3, seed=None, nx=2000, ny=4000, case=0, a=.1):
-        """Fill images of specified size (nx and ny) with poisson points with means (in rangeMeans).
+            dim_ij *= dim0
+            xcorr[di, dj] = afwMath.makeStatistics(dim_ij, afwMath.MEANCLIP, sctrl).getValue()
+    L = np.shape(xcorr.getArray())[0]-1
+    XCORR = np.zeros([2*L+1, 2*L+1])
+    for i in range(L+1):
+        for j in range(L+1):
+            XCORR[i+L, j+L] = xcorr.getArray()[i, j]
+            XCORR[-i+L, j+L] = xcorr.getArray()[i, j]
+            XCORR[i+L, -j+L] = xcorr.getArray()[i, j]
+            XCORR[-i+L, -j+L] = xcorr.getArray()[i, j]
+    return xcorr, np.sum(means1)
 
-        before passing it to the above function with border and sig as above
-        Repeats specifies the number of times to run the simulations.
-        If case is 1 then a correlation between x_{i,j} and x_{i+1,j+1} is artificially introduced
+def simulateXcorr(fluxLevels, imageShape, addCorrelations=False, correlationStrength=0.1,
+                  nSigma=5, border=3, repeats=2, seed=0):
+    """Fill images of specified size with poisson-distributed values with means fluxLevels.
+
+    Parameters:
+    -----------
+    fluxLevels : `list` of `int`
+        The mean flux levels at which to simiulate. Nominal values would be something like
+        [87500, 70000, 111000]
+    imageShape : `tuple` of `int`
+        The shape of the image array to simulate, nx by ny pixels.
+    addCorrelations : `bool`
+        Whether to add brighter-fatter like correlations to the simulated images.
+        If true, a correlation between x_{i,j} and x_{i+1,j+1} is artificially introduced
         by adding a*x_{i,j} to x_{i+1,j+1}
-        If seed is left to None the seed with be pulled from /dev/random.
-        Else an int can be passed to see the random number generator.
-        """
-        if seed is None:
-            with open("/dev/random", 'rb') as file:
-                local_random = np.random.RandomState(int(file.read(4).encode('hex'), 16))
-        else:
-            local_random = np.random.RandomState(int(seed))
-        MEANS = {}
-        XCORRS = {}
-        for M in rangeMeans:
-            MEANS[M] = []
-            XCORRS[M] = []
+    correlationStrength : `float`
+        The strength of the correlations, this is the value of the coefficient `a` in the above definition.
+    nSigma : `float`
+        Number of sigma to clip to when calculating the sigma-clipped mean.
+    border : `int`
+        Number of border pixels to mask
+    repeats : `int`
+        Number of repeats to perform. Results are averaged together to improve SNR.
+    seed : `int`
+        The random seed to use for the Poisson points.
 
-        if not case:
-            for rep in range(repeats):
-                for i, MEAN in enumerate(rangeMeans):
+    Returns:
+    --------
+    means : ``
+        xxx
+    xcorrs : ``
+        xxx
+    """
+    means = {f: [] for f in fluxLevels}
+    xcorrs = {f: [] for f in fluxLevels}
 
-                    im = afwImage.ImageD(nx, ny)
-                    im0 = afwImage.ImageD(nx, ny)
-                    im.getArray()[:, :] = local_random.poisson(MEAN, (ny, nx))
-                    im0.getArray()[:, :] = local_random.poisson(MEAN, (ny, nx))
-                    XCORR, xcorr, means, MEANS1 = self.xcorr_sim(im, im0, border=border, sigma=sig)
-                    MEANS[MEAN].append(means)
-                    XCORRS[MEAN].append(xcorr)
-                for i, MEAN in enumerate(rangeMeans):
-                    self.log.debug("Simulated/Expected:", MEAN, MEANS[MEAN][-1],
-                                   XCORRS[MEAN][-1].getArray()[0, 0]/MEANS[MEAN][-1])
-        else:
-            for rep in range(repeats):
-                for i, MEAN in enumerate(rangeMeans):
-                    im = afwImage.ImageD(nx, ny)
-                    im0 = afwImage.ImageD(nx, ny)
-                    im.getArray()[:, :] = local_random.poisson(MEAN, (ny, nx))
-                    im.getArray()[1:, 1:] += a*im.getArray()[:-1, :-1]
-                    im0.getArray()[:, :] = local_random.poisson(MEAN, (ny, nx))
-                    im0.getArray()[1:, 1:] += a*im0.getArray()[:-1, :-1]
-                    XCORR, xcorr, means, MEANS1 = self.xcorr_sim(im, im0, border=border, sigma=sig)
-                    MEANS[MEAN].append(means)
-                    XCORRS[MEAN].append(xcorr)
-                for i, MEAN in enumerate(rangeMeans):
-                    self.log.debug("Simulated/Expected:", MEANS[MEAN][-1], '\n',
-                                   (XCORRS[MEAN][-1].getArray()[1, 1]/MEANS[MEAN][-1]*(1+a))/.1)
-        return MEANS, XCORRS
+    random = np.random.RandomState(seed)
+
+    for rep in range(repeats):
+        for flux in fluxLevels:
+            im0 = afwImage.ImageF(imageShape[1], imageShape[0])  # backwards here because of numpy call next
+            im1 = afwImage.ImageF(imageShape[1], imageShape[0])  # needs to match for broadcast
+            im0.getArray()[:, :] = random.poisson(flux, (imageShape))
+            im1.getArray()[:, :] = random.poisson(flux, (imageShape))
+            if addCorrelations:
+                im0[1:, 1:] += correlationStrength*im0[:-1, :-1]
+                im1[1:, 1:] += correlationStrength*im1[:-1, :-1]
+
+            _xcorr, _means = _crossCorrelateSimulate(im0, im1, border=border, sigma=nSigma)
+            means[flux].append(_means)
+            xcorrs[flux].append(_xcorr)
+            # if addCorrelations:
+            #     self.log.debug("Simulated/Expected:", flux, means[flux][-1], '\n',
+            #                    (xcorrs[flux][-1][1, 1]/means[flux][-1]*(1+correlationStrength))/.1)
+            #     # xxx the 0.1 in the above should be correlationStrength, right?
+            # else:
+            #     self.log.debug("Simulated/Expected:", flux, means[flux][-1], '\n',
+            #                    xcorrs[flux][-1][0, 0]/means[flux][-1])
+    return means, xcorrs
