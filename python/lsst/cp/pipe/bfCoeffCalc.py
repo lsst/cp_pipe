@@ -29,9 +29,7 @@ from builtins import str
 from builtins import range
 import os
 from scipy import stats
-from mpl_toolkits.mplot3d import axes3d  # not actually unused, required for 3d projection
 import numpy as np
-import matplotlib.pyplot as plt
 
 import lsstDebug
 import lsst.afw.image as afwImage
@@ -41,6 +39,9 @@ import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 from lsst.obs.subaru.crosstalk import CrosstalkTask
 from lsst.obs.subaru.isr import SubaruIsrTask
+
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import axes3d  # not actually unused, required for 3d projection
 
 
 class BfTaskConfig(pexConfig.Config):
@@ -369,11 +370,12 @@ class BfTask(pipeBase.CmdLineTask):
 
         Parameters:
         -----------
-        exp1 : `xxx`
-
-        gains : `xxx`
-
-        level : `xxx`
+        exp1 : `lsst.afw.image.exposure.ExposureF`
+            The exposure to prepare
+        gains : `dict` of `float`
+            Dictionary of the amplifier gain values, keyed by amplifier name
+        level : `str`
+            Either `AMP` or `CCD`
 
         Returns:
         --------
@@ -389,6 +391,11 @@ class BfTask(pipeBase.CmdLineTask):
             The number of sigma to be clipped to
         """
         # TODO: see if you can do away with temp and rescaleTemp
+        assert(isinstance(exp, afwImage.ExposureF))
+
+        local_exp = exp.clone()  # we don't want to modify the image passed in
+        del exp
+
         border = self.config.nPixBorderXCorr
         sigma = self.config.nSigmaClipXCorr
 
@@ -398,10 +405,10 @@ class BfTask(pipeBase.CmdLineTask):
         means = {}
         returnAreas = {}
 
-        detector = exp.getDetector()
+        detector = local_exp.getDetector()
         ampInfoCat = detector.getAmpInfoCatalog()
 
-        mi = exp.getMaskedImage()  # makeStatistics does seem to take exposures
+        mi = local_exp.getMaskedImage()  # makeStatistics does not seem to take exposures
         temp = mi.clone()
 
         # Rescale each amp by the appropriate gain and subtract the mean.
@@ -424,24 +431,24 @@ class BfTask(pipeBase.CmdLineTask):
 
         if level == 'CCD':   # else just average the whole CCD
             # xxx I think temp can be done away with by just adding the mean here, right?
-            detName = exp.getDetector().getId()
+            detName = local_exp.getDetector().getId()
             means[detName] = afwMath.makeStatistics(temp[border:-border, border:-border],
                                                     afwMath.MEANCLIP, sctrl).getValue()
             returnAreas[detName] = rescaleIm
 
         return returnAreas, means
 
-    def _crossCorrelate(self, im1, im2, frameId=None, detId=None):
+    def _crossCorrelate(self, maskedIm0, maskedIm1, frameId=None, detId=None):
         """Calculate the cross-correlation of an area.
 
         If the areas in question contains many amplifiers then these must have been gain corrected.
 
         Parameters:
         -----------
-        area1 : ???
-            The first area.
-        area2 : ???
-            The second area
+        area1 : `lsst.afw.image.MaskedImageF`
+            The first image area
+        area2 : `lsst.afw.image.MaskedImageF`
+            The first image area
 
         Returns:
         --------
@@ -472,9 +479,9 @@ class BfTask(pipeBase.CmdLineTask):
 
         # TODO: Make this part a per-amplifier dict depending on level!
         # Actually diff the images
-        diff = im1.clone()
+        diff = maskedIm0.clone()
         # diff = diff.getMaskedImage().getImage()  # xxx haven't we already guaranteed that this is an image?
-        # diff -= im2.getMaskedImage().getImage()
+        diff -= maskedIm1.getImage()
         diff = diff[border:-border, border:-border]
 
         if self.debug.writeDiffImages:
@@ -1109,7 +1116,7 @@ class BfTask(pipeBase.CmdLineTask):
 
 
 # This sim code is used to estimate the bias correction used above.
-def _crossCorrelateSimulate(im, im2, n=8, border=10, sigma=5):
+def _crossCorrelateSimulate(im, im2, n=5, border=10, sigma=5):
     """Perform a simple xcorr from two images.
 
     It contains many elements of the actual code
@@ -1159,6 +1166,7 @@ def _crossCorrelateSimulate(im, im2, n=8, border=10, sigma=5):
             XCORR[i+L, -j+L] = xcorr.getArray()[i, j]
             XCORR[-i+L, -j+L] = xcorr.getArray()[i, j]
     return xcorr, np.sum(means1)
+
 
 def simulateXcorr(fluxLevels, imageShape, addCorrelations=False, correlationStrength=0.1,
                   nSigma=5, border=3, repeats=2, seed=0):
