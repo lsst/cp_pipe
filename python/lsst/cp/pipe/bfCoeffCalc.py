@@ -41,7 +41,8 @@ from lsst.obs.subaru.crosstalk import CrosstalkTask
 from lsst.obs.subaru.isr import SubaruIsrTask
 
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import axes3d  # not actually unused, required for 3d projection
+# following line is not actually unused, it is required for 3d projection
+from mpl_toolkits.mplot3d import axes3d   # noqa: F401
 
 
 class BfTaskConfig(pexConfig.Config):
@@ -71,8 +72,8 @@ class BfTaskConfig(pexConfig.Config):
         dtype=float,
         doc="Sanity check level for the sum of the input cross-correlations. Arrays which "
         "sum to greater than this are discarded before the clipped mean is calculated.",
-        # default=1000.0  # xxx change this back once the problem is fixed!
-        default=0.2
+        default=1.0  # xxx change this back once the problem is fixed!
+        # default=0.2
     )
     maxIterSOR = pexConfig.Field(
         dtype=int,
@@ -131,8 +132,6 @@ class BfTaskConfig(pexConfig.Config):
         allowed={
             "AMP": "Every amplifier treated separately",
             "CCD": "One kernel per CCD",
-            # "VENDOR": "Should this be implemented? How would that work?",
-            # "FOCAL_PLANE": "This seems unwise and probably shouldn't exist",
         }
     )
 
@@ -576,7 +575,7 @@ class BfTask(pipeBase.CmdLineTask):
             for amp in detector:
                 ampName = amp.getName()
                 if _means[ampName]*10 < _vars[ampName] or _means[ampName]*10 < _covars[ampName]:
-                    self.log.warn('Sanity check failed; check visit %s'%visPair)
+                    self.log.warn('Sanity check failed; check visit pair %s,%s'%visPair)
                     breaker += 1
             if breaker:
                 continue
@@ -768,6 +767,7 @@ class BfTask(pipeBase.CmdLineTask):
         # Overscan is fairly efficient at removing bias level, but leaves a line in the middle
         config.doBias = True
         config.doDark = True  # Required especially around CCD 33
+        config.doStrayLight = False  # added to work around the missing INST-PA throw in some visits
         config.crosstalk.retarget(CrosstalkTask)
         config.crosstalk.value.coeffs.values = [0.0e-6, -125.0e-6, -149.0e-6, -156.0e-6, -124.0e-6, 0.0e-6, -
                                                 132.0e-6, -157.0e-6, -171.0e-6, -134.0e-6, 0.0e-6, -153.0e-6,
@@ -976,8 +976,6 @@ class BfTask(pipeBase.CmdLineTask):
         for i in range(np.shape(meanXcorr)[0]):
             for j in range(np.shape(meanXcorr)[1]):
                 meanXcorr[i, j] = afwMath.makeStatistics(xcorrList[i, j], afwMath.MEANCLIP, sctrl).getValue()
-                # xxx is this actually doing anything?!
-                # xxx Did you lose a line here?
 
         return self._SOR(meanXcorr)
 
