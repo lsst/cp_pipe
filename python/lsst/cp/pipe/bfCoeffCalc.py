@@ -35,10 +35,9 @@ import lsstDebug
 import lsst.afw.image as afwImage
 import lsst.afw.math as afwMath
 import lsst.afw.display as afwDisp
+from lsst.ip.isr import IsrTask
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
-from lsst.obs.subaru.crosstalk import CrosstalkTask
-from lsst.obs.subaru.isr import SubaruIsrTask
 
 import matplotlib.pyplot as plt
 # following line is not actually unused, it is required for 3d projection
@@ -48,6 +47,15 @@ from mpl_toolkits.mplot3d import axes3d   # noqa: F401
 class BfTaskConfig(pexConfig.Config):
     """Config class for bright-fatter effect coefficient calculation."""
 
+    isr = pexConfig.ConfigurableField(
+        target=IsrTask,
+        doc="""Task to perform instrumental signature removal or load a post-ISR image; ISR consists of:
+            - assemble raw amplifier images into an exposure with image, variance and mask planes
+            - perform bias subtraction, flat fielding, etc.
+            - mask known bad pixels
+            - provide a preliminary WCS
+            """,
+    )
     doCalcGains = pexConfig.Field(
         dtype=bool,
         doc="Measure the per-amplifier gains using the PTC method",
@@ -135,6 +143,44 @@ class BfTaskConfig(pexConfig.Config):
         }
     )
 
+    def validateIsrConfig(self, logger):
+        """Check that appropriate ISR settings are being used for brighter-fatter kernel calculation."""
+        mandatory = ['doAssembleCcd', 'doOverscan']  # raise if False
+        forbidden = ['doApplyGains', 'normalizeGains', 'doFlat', 'doFringe', 'doAddDistortionModel',
+                     'doBrighterFatter', 'doUseOpticsTransmission', 'doUseFilterTransmission',
+                     'doUseSensorTransmission', 'doUseAtmosphereTransmission', 'doGuider', 'doStrayLight',
+                     'doTweakFlat']  # raise if True
+        desirableTrue = ['doBias', 'doDark', 'doCrosstalk', 'doDefect', 'doLinearize']  # WARN if False
+
+        # How should we handle saturation/bad regions?
+        # 'doSaturationInterpolation': True
+        # 'doNanInterpAfterFlat': False
+        # 'doSaturation': True
+        # 'doSuspect': True
+        # 'doWidenSaturationTrails': True
+        # 'doSetBadRegions': True
+
+        configDict = self.isr.toDict()
+
+        for configParam in mandatory:
+            if configDict[configParam] is False:
+                raise RuntimeError('Must set config.isr.%s to True '
+                                   'for brighter-fatter kernel calulation'%configParam)
+
+        for configParam in forbidden:
+            if configDict[configParam] is True:
+                raise RuntimeError('Must set config.isr.%s to False '
+                                   'for brighter-fatter kernel calulation'%configParam)
+
+        for configParam in desirableTrue:
+            if configDict[configParam] is False:
+                logger.warn('Found config.isr.%s set to False for brighter-fatter kernel calulation. '
+                            'It is probably desirable to have this set to True'%configParam)
+
+        # subtask settings
+        if not self.isr.assembleCcd.doTrim:
+            raise RuntimeError('Must trim when assembling CCDs. Set config.isr.assembleCcd.doTrim to True')
+
 
 class BfTaskRunner(pipeBase.TaskRunner):
     """Subclass of TaskRunner for the bfTask.
@@ -211,6 +257,7 @@ class BfTask(pipeBase.CmdLineTask):
     def __init__(self, *args, **kwargs):
         """Constructor for the BfTask."""
         pipeBase.CmdLineTask.__init__(self, *args, **kwargs)
+        self.makeSubtask("isr")
 
         self.debug = lsstDebug.Info(__name__)
         if self.debug.enabled:
@@ -234,6 +281,7 @@ class BfTask(pipeBase.CmdLineTask):
                     self.log.warn('Failed to setup/connect to display! Debug display has been disabled')
 
         plt.interactive(False)  # stop windows popping up when plotting
+        self.config.validateIsrConfig(self.log)
         self.config.validate()
         self.config.freeze()
 
@@ -304,8 +352,13 @@ class BfTask(pipeBase.CmdLineTask):
 
         # Loop over pairs of visits, calculating the cross correlations at the required level
         for (v1, v2) in visitPairs:
-            exp1 = self.isr(dataRef, v1)
-            exp2 = self.isr(dataRef, v2)
+
+            dataRef.dataId['visit'] = v1
+            exp1 = self.isr.runDataRef(dataRef).exposure
+            dataRef.dataId['visit'] = v2
+            exp2 = self.isr.runDataRef(dataRef).exposure
+            del dataRef.dataId['visit']
+
             self.log.info('Preparring images for cross corellation calculation for CCD %s'%ccdNum)
             # note the shape of these returns depends on level
             _scaledMaskedIm1, _means1 = self._prepareImage(exp1, gains, self.config.level)
@@ -667,9 +720,15 @@ class BfTask(pipeBase.CmdLineTask):
 
         ampMeans = {}
 
-        ims = [self.isr(dataRef, v1), self.isr(dataRef, v2)]
-        detector = ims[0].getDetector()  # note we lose the detector in the next line as they belong to exp
-        ims = [self._convertImagelikeToFloatImage(im) for im in ims]
+        dataRef.dataId['visit'] = v1
+        exp1 = self.isr.runDataRef(dataRef).exposure
+        dataRef.dataId['visit'] = v2
+        exp2 = self.isr.runDataRef(dataRef).exposure
+        del dataRef.dataId['visit']
+        exps = [exp1, exp2]
+
+        detector = exps[0].getDetector()  # note we lose the detector in the next line as they belong to exp
+        ims = [self._convertImagelikeToFloatImage(exp) for exp in exps]
 
         if self.debug.display:
             self.disp1.mtv(ims[0], title=str(v1))
@@ -744,37 +803,6 @@ class BfTask(pipeBase.CmdLineTask):
                 means[ampName] = ampMeans[ampName][0] + ampMeans[ampName][1]
 
         return means, variances, coVars
-
-    def isr(self, dataRef, visit):  # TODO: Need to replace this with a retargetable ISR task
-        """Some simple code to perform some simple ISR."""
-        dataRef.dataId['visit'] = visit
-        config = SubaruIsrTask.ConfigClass()
-        # config.load(os.path.join(os.environ["OBS_SUBARU_DIR"], "config", "isr.py"))
-        # config.load(os.path.join(os.environ["OBS_SUBARU_DIR"], "config", "hsc", "isr.py"))
-
-        config.doFlat = False
-        config.doGuider = False
-        config.doSaturation = True
-        config.doWrite = False
-        config.doDefect = True
-        config.qa.doThumbnailOss = False
-        config.qa.doThumbnailFlattened = False
-        config.doFringe = False
-        config.fringe.filters = ['y', ]
-        config.overscanFitType = "AKIMA_SPLINE"
-        config.overscanOrder = 30
-        config.doAttachTransmissionCurve = False
-        # Overscan is fairly efficient at removing bias level, but leaves a line in the middle
-        config.doBias = True
-        config.doDark = True  # Required especially around CCD 33
-        config.doStrayLight = False  # added to work around the missing INST-PA throw in some visits
-        config.crosstalk.retarget(CrosstalkTask)
-        config.crosstalk.value.coeffs.values = [0.0e-6, -125.0e-6, -149.0e-6, -156.0e-6, -124.0e-6, 0.0e-6, -
-                                                132.0e-6, -157.0e-6, -171.0e-6, -134.0e-6, 0.0e-6, -153.0e-6,
-                                                -157.0e-6, -151.0e-6, -137.0e-6, 0.0e-6, ]
-        isr = SubaruIsrTask(config=config)
-        exp = isr.run(dataRef).exposure
-        return exp
 
     def _plotXcorr(self, xcorr, mean, zmax=0.05, title=None, fig=None, save=False, fileName=None):
         """Used to plot the correlation functions."""
