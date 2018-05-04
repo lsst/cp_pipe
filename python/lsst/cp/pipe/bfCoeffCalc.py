@@ -30,6 +30,9 @@ from builtins import range
 import os
 from scipy import stats
 import numpy as np
+import matplotlib.pyplot as plt
+# following line is not actually unused, it is required for 3d projection
+from mpl_toolkits.mplot3d import axes3d   # noqa: F401
 
 import lsstDebug
 import lsst.afw.image as afwImage
@@ -38,10 +41,6 @@ import lsst.afw.display as afwDisp
 from lsst.ip.isr import IsrTask
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
-
-import matplotlib.pyplot as plt
-# following line is not actually unused, it is required for 3d projection
-from mpl_toolkits.mplot3d import axes3d   # noqa: F401
 
 
 class BfTaskConfig(pexConfig.Config):
@@ -120,7 +119,7 @@ class BfTaskConfig(pexConfig.Config):
     )
     biasCorr = pexConfig.Field(
         dtype=float,
-        doc="A scary, empirically determined correction-factor correcting for the sigma-clipping" +
+        doc="A scary, empirically determined correction-factor correcting for sigma-clipping" +
         " a non-Gaussian distribution",
         default=0.9241
     )
@@ -280,7 +279,7 @@ class BfTask(pipeBase.CmdLineTask):
                     self.debug.display = False
                     self.log.warn('Failed to setup/connect to display! Debug display has been disabled')
 
-        plt.interactive(False)  # stop windows popping up when plotting
+        plt.interactive(False)  # stop windows popping up when plotting. When headless, use 'agg' backend too
         self.config.validateIsrConfig(self.log)
         self.config.validate()
         self.config.freeze()
@@ -303,10 +302,6 @@ class BfTask(pipeBase.CmdLineTask):
         For a dataRef (which is each ccd here), and given a list of visit pairs, calulate the
         brighter-fatter kernel for the ccd.
 
-        TODO: might want to have some syntax for ganging ccds together
-        #    though this might just be all-together, or all separate actually
-        #    it's possible we could gang together on boule/batch, but let's not worry for now
-
         Parameters
         ----------
         dataRef : list of lsst.daf.persistence.ButlerDataRef
@@ -314,12 +309,6 @@ class BfTask(pipeBase.CmdLineTask):
         visitPairs : `iterable` of `tuple` of `int`
             Pairs of visit numbers to be processed together
         """
-        # self.xxx_test_estimateGains()
-        # self.xxx_test_generateKernel()
-        # self.xxx_test_xcorr()
-        # self.xxx_test_put(dataRef)
-
-        gains = []
         xcorrs = {}  # dict of lists keyed by either amp or CCD depending on level
         means = {}
         kernels = {}
@@ -396,7 +385,7 @@ class BfTask(pipeBase.CmdLineTask):
             #                                                                  str(v2), 'ccd', str(ccdNum)])))
             #     fileName += self.debug.plotType
             #     self._plotXcorr(xcorr.copy(), (xcorrMeans[0]+means[1]),
-            #                     title=title, save=True, fileName=fileName)
+            #                     title=title, saveToFileName=fileName)
 
         # generate the kernel(s)
         self.log.info('Generating kernel(s) for %s'%ccdNum)
@@ -446,7 +435,7 @@ class BfTask(pipeBase.CmdLineTask):
         assert(isinstance(exp, afwImage.ExposureF))
 
         local_exp = exp.clone()  # we don't want to modify the image passed in
-        del exp
+        del exp  # ensure we don't make mistakes!
 
         border = self.config.nPixBorderXCorr
         sigma = self.config.nSigmaClipXCorr
@@ -501,6 +490,11 @@ class BfTask(pipeBase.CmdLineTask):
             The first image area
         area2 : `lsst.afw.image.MaskedImageF`
             The first image area
+        frameId : `str`, optional
+            The frame identifier for use in the filename if writing debug outputs.
+        detId : `str`, optional
+            The detector identifier (CCD, or CCD+amp depending on level)
+            for use in the filename if writing debug outputs.
 
         Returns:
         --------
@@ -529,10 +523,8 @@ class BfTask(pipeBase.CmdLineTask):
         sctrl = afwMath.StatisticsControl()
         sctrl.setNumSigmaClip(sigma)
 
-        # TODO: Make this part a per-amplifier dict depending on level!
-        # Actually diff the images
+        # Diff the images, and apply border
         diff = maskedIm0.clone()
-        # diff = diff.getMaskedImage().getImage()  # xxx haven't we already guaranteed that this is an image?
         diff -= maskedIm1.getImage()
         diff = diff[border:-border, border:-border]
 
@@ -541,7 +533,7 @@ class BfTask(pipeBase.CmdLineTask):
             diff.writeFits(os.path.join(self.debug.debugDataPath, filename))
 
         # Subtract background.  It should be a constant, but it isn't always
-        # xxx do we want some logic here for whether to subtract or not?
+        # xxx do we want some logic here for whether to subtract or not? Or a config option?
         binsize = self.config.backgroundBinSize
         nx = diff.getWidth()//binsize
         ny = diff.getHeight()//binsize
@@ -563,18 +555,19 @@ class BfTask(pipeBase.CmdLineTask):
         # Measure the correlations
         dim0 = diff[0: -maxLag, : -maxLag]
         dim0 -= afwMath.makeStatistics(dim0, afwMath.MEANCLIP, sctrl).getValue()
-        w, h = dim0.getDimensions()
-        # default dict, or dict.fromKeys() here maybe? Perhaps same for above?
+        width, height = dim0.getDimensions()
         xcorr = np.zeros((maxLag + 1, maxLag + 1), dtype=np.float64)
 
         for xlag in range(maxLag + 1):
             for ylag in range(maxLag + 1):
-                dim_xy = diff[xlag:xlag + w, ylag: ylag + h].clone()
+                dim_xy = diff[xlag:xlag + width, ylag: ylag + height].clone()
                 dim_xy -= afwMath.makeStatistics(dim_xy, afwMath.MEANCLIP, sctrl).getValue()
                 dim_xy *= dim0
                 xcorr[xlag, ylag] = afwMath.makeStatistics(dim_xy,
                                                            afwMath.MEANCLIP, sctrl).getValue()/(biasCorr)
 
+        # xxx to reinstate this debug block need to work out what 'means' was before the refactor
+        # and why this is even interesting. Probably just remove the whole thing
         # xcorr_full = self._tileArray(xcorr)
         # self.log.debug(sum(means), xcorr[0, 0], np.sum(xcorr_full), xcorr[0, 0]/sum(means),
         #                np.sum(xcorr_full)/sum(means))
@@ -590,9 +583,9 @@ class BfTask(pipeBase.CmdLineTask):
         forced to go through the origin or not. This defaults to True, fitting var=1/gain * mean,
         if set to False then var=1/g * mean + const is fitted.
 
-        TODO: DM-14063
-        This is really a PTC gain measurement method. So we should compare results from this
-        task to the eotest PTC gain measurements once that's ported
+        This is really a PTC gain measurement task. See DM-14063 for results from of a comparison between
+        this task's numbers and the gain values in the HSC camera model, and those measured by the PTC task
+        in eotest.
 
         Parameters
         ----------
@@ -613,7 +606,7 @@ class BfTask(pipeBase.CmdLineTask):
         ampNames = [amp.getName() for amp in ampInfoCat]
 
         ampMeans = {key: [] for key in ampNames}  # these get turned into np.arrays later
-        ampCorrVariances = {key: [] for key in ampNames}
+        ampCoVariances = {key: [] for key in ampNames}
         ampVariances = {key: [] for key in ampNames}
 
         # Loop over the amps in the CCD, calculating a PTC for each amplifier.
@@ -621,10 +614,9 @@ class BfTask(pipeBase.CmdLineTask):
         # NB: no gain correction is applied
         for visPairNum, visPair in enumerate(visitPairs):
             _means, _vars, _covars = self._calcMeansAndVars(dataRef, visPair[0], visPair[1])
-            breaker = 0
 
-            # Do sanity checks; if these are failed more investigation is needed!
-            # for i, j in enumerate(_means):
+            # Do sanity checks; if these are failed more investigation is needed
+            breaker = 0
             for amp in detector:
                 ampName = amp.getName()
                 if _means[ampName]*10 < _vars[ampName] or _means[ampName]*10 < _covars[ampName]:
@@ -634,13 +626,13 @@ class BfTask(pipeBase.CmdLineTask):
                 continue
 
             # having made sanity checks, pull the values out into the respective dicts
-            for k in _means.keys():  # these had better all have the same keys!
+            for k in _means.keys():  # keys are necessarily the same
                 if _vars[k]*1.3 < _covars[k] or _vars[k]*0.7 > _covars[k]:
                     self.log.warn('Dropped a value')
                     continue
                 ampMeans[k].append(_means[k])
                 ampVariances[k].append(_vars[k])
-                ampCorrVariances[k].append(_covars[k])
+                ampCoVariances[k].append(_covars[k])
 
         gains = {}
         nomGains = {}
@@ -648,14 +640,14 @@ class BfTask(pipeBase.CmdLineTask):
             ampName = amp.getName()
             nomGains[ampName] = amp.getGain()
             slopeRaw, interceptRaw, rVal, pVal, stdErr = \
-                stats.linregress(np.asarray(ampMeans[ampName]), np.asarray(ampCorrVariances[ampName]))
+                stats.linregress(np.asarray(ampMeans[ampName]), np.asarray(ampCoVariances[ampName]))
             slopeFix, _ = self._iterativeRegression(np.asarray(ampMeans[ampName]),
-                                                    np.asarray(ampCorrVariances[ampName]),
+                                                    np.asarray(ampCoVariances[ampName]),
                                                     fixThroughOrigin=True)
             slopeUnfix, intercept = self._iterativeRegression(np.asarray(ampMeans[ampName]),
-                                                              np.asarray(ampCorrVariances[ampName]),
+                                                              np.asarray(ampCoVariances[ampName]),
                                                               fixThroughOrigin=False)
-            self.log.info("Slope of     raw fit: %s  intercept: %s p value: %s"%(slopeRaw,
+            self.log.info("Slope of     raw fit: %s, intercept: %s p value: %s"%(slopeRaw,
                                                                                  interceptRaw, pVal))
             self.log.info("slope of   fixed fit: %s, difference vs raw:%s"%(slopeFix,
                                                                             slopeFix-slopeRaw))
@@ -670,7 +662,7 @@ class BfTask(pipeBase.CmdLineTask):
                 fig = plt.figure()
                 ax = fig.add_subplot(111)
                 ax.plot(np.asarray(ampMeans[ampName]),
-                        np.asarray(ampCorrVariances[ampName]), linestyle='None', marker='x', label='data')
+                        np.asarray(ampCoVariances[ampName]), linestyle='None', marker='x', label='data')
                 if self.config.fixPtcThroughOrigin:
                     ax.plot(np.asarray(ampMeans[ampName]),
                             np.asarray(ampMeans[ampName])*slopeToUse, label='Fit through origin')
@@ -694,7 +686,6 @@ class BfTask(pipeBase.CmdLineTask):
         This allows a photon transfer curve to be generated and the gains measured.
 
         Images are assembled with use the isrTask, and basic isr is performed.
-        Note that the isr task used MUST set the EDGE bits.[xxx need to change to using this, or change this]
 
         Parameters:
         -----------
@@ -740,7 +731,7 @@ class BfTask(pipeBase.CmdLineTask):
 
             # calculate the sigma-clipped mean, excluding the borders
             # safest to apply borders to all amps regardless of edges
-            # easier, camera-agnostic, and mitigates potentially dodgy overscan-biases around edges
+            # easier, camera-agnostic, and mitigates potentially dodgy overscan-biases around edges as well
             for amp in detector:
                 ampName = amp.getName()
                 ampIm = im[amp.getBBox()]
@@ -804,7 +795,7 @@ class BfTask(pipeBase.CmdLineTask):
 
         return means, variances, coVars
 
-    def _plotXcorr(self, xcorr, mean, zmax=0.05, title=None, fig=None, save=False, fileName=None):
+    def _plotXcorr(self, xcorr, mean, zmax=0.05, title=None, fig=None, saveToFileName=None):
         """Used to plot the correlation functions."""
         try:
             xcorr = xcorr.getArray()
@@ -842,8 +833,8 @@ class BfTask(pipeBase.CmdLineTask):
 
         if title:
             fig.suptitle(title)
-        if save is True:
-            fig.savefig(fileName)
+        if saveToFileName:
+            fig.savefig(saveToFileName)
 
     @staticmethod
     def _getNameOfSet(vals):
@@ -877,9 +868,9 @@ class BfTask(pipeBase.CmdLineTask):
     def _iterativeRegression(self, x, y, fixThroughOrigin=False, nSigmaClip=None, maxIter=None):
         """Use linear regression to fit a line of best fit, iteratively removing outliers.
 
-        Useful when you have sufficiently large numbers of points on your PTC.
+        Useful when you have a sufficiently large numbers of points on your PTC.
         Function iterates until either there are no outliers of nSigmaClip magnitude, or until the specified
-        max number of iterations have been performed.
+        maximum number of iterations has been performed.
 
         Parameters:
         -----------
@@ -887,6 +878,12 @@ class BfTask(pipeBase.CmdLineTask):
             The independent variable. Must be a numpy array, not a list.
         y : `numpy.array`
             The dependent variable. Must be a numpy array, not a list.
+        fixThroughOrigin : `bool`, optional
+            Whether to fix the PTC through the origin or allow an y-intercept.
+        nSigmaClip : `float`, optional
+            The number of sigma to clip to. Pulled from the task config if not specified.
+        maxIter : `int`, optional
+            The maximum number of iterations allowed. Pulled from the task config if not specified.
 
         Returns:
         --------
@@ -976,17 +973,15 @@ class BfTask(pipeBase.CmdLineTask):
         sctrl = afwMath.StatisticsControl()
         sctrl.setNumSigmaClip(self.config.nSigmaClipKernelGen)
 
-        # for corrNum, ((mean1, mean2), corr) in enumerate(zip(means, corrs)):
         for corrNum, ((mean1, mean2), corr) in enumerate(zip(means, corrs)):
             corr[0, 0] -= (mean1+mean2)
             if corr[0, 0] > 0:
-                self.log.warn('Skipped item %s due to unexpected value of (variance-mean)!'%corrNum)
+                self.log.warn('Skipped item %s due to unexpected value of (variance-mean)'%corrNum)
                 continue
             corr /= -float(1.0*(mean1**2+mean2**2))
 
             fullCorr = self._tileArray(corr)
 
-            # TODO: what is this block really testing? Is this what it should be doing? First line is fishy
             xcorrCheck = np.abs(np.sum(fullCorr))/np.sum(np.abs(fullCorr))
             if xcorrCheck > rejectLevel:
                 self.log.warn("Sum of the xcorr is unexpectedly high. Investigate item num %s for %s. \n"
@@ -1012,7 +1007,7 @@ class BfTask(pipeBase.CmdLineTask):
 
         Parameters:
         -----------
-        source : `numpy.ndarray`, (Ny, Nx)
+        source : `numpy.ndarray`
             The input array
         maxIter : `int`, optional
             Maximum number of iterations to attempt before aborting
@@ -1021,7 +1016,7 @@ class BfTask(pipeBase.CmdLineTask):
 
         Returns:
         --------
-        output : `numpy.ndarray`, (Ny, Nx)
+        output : `numpy.ndarray`
             The solution
         """
         if not maxIter:
@@ -1081,10 +1076,10 @@ class BfTask(pipeBase.CmdLineTask):
             nIter += 1
 
         if nIter >= maxIter*2:
-            self.log.warn("Did not converge in %s iterations.\noutError: %s, inError: "
+            self.log.warn("Failure: SOR did not converge in %s iterations.\noutError: %s, inError: "
                           "%s,"%(nIter//2, outError, inError*eLevel))
         else:
-            self.log.info("Converged in %s iterations.\noutError: %s, inError: "
+            self.log.info("Success: SOR converged in %s iterations.\noutError: %s, inError: "
                           "%s", nIter//2, outError, inError*eLevel)
         return func[1:-1, 1:-1]
 
@@ -1141,9 +1136,14 @@ class BfTask(pipeBase.CmdLineTask):
         return floatImage
 
 
-# This sim code is used to estimate the bias correction used above.
 def _crossCorrelateSimulate(im, im2, n=5, border=10, sigma=5):
     """Perform a simple xcorr from two images.
+
+    This sim code is used to estimate the bias correction used above.
+
+    xxx need to work out why this performs differently,
+    which version is correct, and whether this function needs to exist at all.
+    I don't think it does, as the real code is now modular and doesn't have to run ISR.
 
     It contains many elements of the actual code
     above (without individual amps and ISR removal )
@@ -1194,30 +1194,30 @@ def _crossCorrelateSimulate(im, im2, n=5, border=10, sigma=5):
     return xcorr, np.sum(means1)
 
 
-def simulateXcorr(fluxLevels, imageShape, addCorrelations=False, correlationStrength=0.1,
-                  nSigma=5, border=3, repeats=2, seed=0):
-    """Fill images of specified size with poisson-distributed values with means fluxLevels.
+def simulateXcorr(fluxLevels, imageShape, addCorrelations=False, correlationStrength=0.1, nSigma=5, border=3,
+                  repeats=2, seed=0):
+    """Fill images of specified size with Poisson-distributed values with means fluxLevels.
 
     Parameters:
     -----------
     fluxLevels : `list` of `int`
-        The mean flux levels at which to simiulate. Nominal values would be something like
-        [87500, 70000, 111000]
+        The mean flux levels at which to simiulate. Nominal values might be something like
+        [70000, 90000, 110000]
     imageShape : `tuple` of `int`
         The shape of the image array to simulate, nx by ny pixels.
-    addCorrelations : `bool`
+    addCorrelations : `bool`, optional
         Whether to add brighter-fatter like correlations to the simulated images.
-        If true, a correlation between x_{i,j} and x_{i+1,j+1} is artificially introduced
+        If true, a correlation between x_{i,j} and x_{i+1,j+1} is introduced
         by adding a*x_{i,j} to x_{i+1,j+1}
-    correlationStrength : `float`
-        The strength of the correlations, this is the value of the coefficient `a` in the above definition.
-    nSigma : `float`
+    correlationStrength : `float`, optional
+        The strength of the correlations. This is the value of the coefficient `a` in the above definition.
+    nSigma : `float`, optional
         Number of sigma to clip to when calculating the sigma-clipped mean.
-    border : `int`
+    border : `int`, optional
         Number of border pixels to mask
-    repeats : `int`
-        Number of repeats to perform. Results are averaged together to improve SNR.
-    seed : `int`
+    repeats : `int`, optional
+        Number of repeats to perform so that results can be averaged to improve SNR.
+    seed : `int`, optional
         The random seed to use for the Poisson points.
 
     Returns:
