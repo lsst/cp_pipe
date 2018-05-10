@@ -41,6 +41,7 @@ import lsst.afw.display as afwDisp
 from lsst.ip.isr import IsrTask
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
+from lsst.daf.persistence.safeFileIo import safeMakeDir
 
 
 class BfTaskConfig(pexConfig.Config):
@@ -670,11 +671,16 @@ class BfTask(pipeBase.CmdLineTask):
                     ax.plot(np.asarray(ampMeans[ampName]),
                             np.asarray(ampMeans[ampName])*slopeToUse+intercept,
                             label='Fit (intercept unconstrained')
-                ccdNum = dataRef.dataId['ccd']
-                title = '_'.join(['PTC_CCD', str(ccdNum), 'AMP', str(ampName), self.debug.plotType])
-                fileName = os.path.join(self.debug.debugPlotPath, title)
-                fig.savefig(fileName)
-                self.log.info('Saved PTC to %s'%fileName)
+
+                # TODO: replace with butler.put() matplotlib after rebase and Jim's ticket (DM-14356) merges
+                butlerFilename = dataRef.get("plotBfPtc_filename")[0]
+                index = butlerFilename.find('.png')
+                newFilename = butlerFilename[:index] + '-amp-' + str(ampName) + butlerFilename[index:]
+                if not os.path.exists(os.path.dirname(newFilename)):
+                    safeMakeDir(os.path.dirname(newFilename))
+                fig.savefig(newFilename)
+
+                self.log.info('Saved PTC to %s'%newFilename)
             gains[ampName] = 1.0/slopeToUse
         return gains, nomGains
 
