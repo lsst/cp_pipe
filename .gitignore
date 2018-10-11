@@ -17,3 +17,5 @@ doc/_build
 doc/py-api/
 tests/.tests
 version.py
+.coverage
+bin
