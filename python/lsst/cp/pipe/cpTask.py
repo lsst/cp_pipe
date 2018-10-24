@@ -484,7 +484,9 @@ class CpTask(pipeBase.CmdLineTask):
                                                                     self.config.ccdKey: ccd})[0][:-3]
                                  for visit in butler.queryMetadata('raw', ['visit'], dataId=trapTaskDataId)]
                 if len(trapFilenames) != 1:  # eotest can't handle more than one
-                    self.log.fatal("Trap Task: Found more than one ppump trap file: %s" % trapFilenames)
+                    msg = "Trap Task: Found more than one ppump trap file: %s" % trapFilenames
+                    msg += " Running using only the first one found."
+                    self.log.warn(msg)
                 self.log.trace("Trap Task: Processing %s with %s files" % (ccd, len(trapFilenames)))
                 maskFiles = self._getMaskFiles(self.config.eotestOutputPath, ccd)
                 gains = butler.get('eotest_gain', dataId={self.config.ccdKey: ccd, 'run': run})
