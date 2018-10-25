@@ -37,6 +37,11 @@ import lsst.eotest.sensor as sensorTest
 class CpTaskConfig(pexConfig.Config):
     """Config class for the calibration products production (CP) task."""
 
+    ccdKey = pexConfig.Field(
+        dtype=str,
+        doc="The key by which to pull a detector from a dataId, e.g. 'ccd' or 'detector'",
+        default='ccd',
+    )
     fe55 = pexConfig.ConfigurableField(
         target=sensorTest.Fe55Task,
         doc="The Fe55 analysis task.",
@@ -266,7 +271,7 @@ class CpTask(pipeBase.CmdLineTask):
         to the eotestOutputPath.
         .pdf generation requires a TeX distro including pdflatex to be installed.
         """
-        ccds = butler.queryMetadata('raw', ['ccd'])
+        ccds = butler.queryMetadata('raw', self.config.ccdKey)
         for ccd in ccds:
             self.log.info("Starting test report generation for %s"%ccd)
             try:
@@ -352,7 +357,7 @@ class CpTask(pipeBase.CmdLineTask):
         if not os.path.exists(self.config.eotestOutputPath):
             os.makedirs(self.config.eotestOutputPath)
 
-        ccds = butler.queryMetadata('raw', ['ccd'])
+        ccds = butler.queryMetadata('raw', self.config.ccdKey)
         imTypes = butler.queryMetadata('raw', ['imageType'])
         testTypes = butler.queryMetadata('raw', ['testType'])
 
@@ -371,7 +376,7 @@ class CpTask(pipeBase.CmdLineTask):
                         self.log.warn(msg + "\nSkipping Fe55 task")
                         break
                 fe55Filenames = [butler.get('raw_filename', dataId={'visit': visit,
-                                                                    'ccd': ccd})[0][:-3]
+                                                                    self.config.ccdKey: ccd})[0][:-3]
                                  for visit in butler.queryMetadata('raw', ['visit'], dataId=fe55TaskDataId)]
                 self.log.trace("Fe55Task: Processing %s with %s files" % (ccd, len(fe55Filenames)))
                 maskFiles = self._getMaskFiles(self.config.eotestOutputPath, ccd)
@@ -379,7 +384,7 @@ class CpTask(pipeBase.CmdLineTask):
                 # gainsPropSet = dafBase.PropertySet()
                 # for amp, gain in gains.items():  # there is no propSet.fromDict() method so make like this
                 #     gainsPropSet.addDouble(str(amp), gain)
-                butler.put(gains, 'eotest_gain', dataId={'ccd': ccd, 'run': run})
+                butler.put(gains, 'eotest_gain', dataId={self.config.ccdKey: ccd, 'run': run})
             del fe55TaskDataId
 
         # TODO: validate the results above, and/or change code to (be able to) always run
@@ -403,12 +408,12 @@ class CpTask(pipeBase.CmdLineTask):
                     else:
                         self.log.warn(msg + "\nSkipping noise task")
                 noiseFilenames = [butler.get('raw_filename', dataId={'visit': visit,
-                                                                     'ccd': ccd})[0][:-3]
+                                                                     self.config.ccdKey: ccd})[0][:-3]
                                   for visit in butler.queryMetadata('raw', ['visit'],
                                                                     dataId=noiseTaskDataId)]
                 self.log.trace("Fe55Task: Processing %s with %s files" % (ccd, len(noiseFilenames)))
                 maskFiles = self._getMaskFiles(self.config.eotestOutputPath, ccd)
-                gains = butler.get('eotest_gain', dataId={'ccd': ccd, 'run': run})
+                gains = butler.get('eotest_gain', dataId={self.config.ccdKey: ccd, 'run': run})
                 self.readNoise.run(sensor_id=ccd, bias_files=noiseFilenames,
                                    gains=gains, mask_files=maskFiles)
             del noiseTaskDataId
@@ -428,12 +433,12 @@ class CpTask(pipeBase.CmdLineTask):
                         self.log.warn(msg + "\nSkipping bright pixel task")
                         break
                 darkFilenames = [butler.get('raw_filename', dataId={'visit': visit,
-                                                                    'ccd': ccd})[0][:-3]
+                                                                    self.config.ccdKey: ccd})[0][:-3]
                                  for visit in butler.queryMetadata('raw', ['visit'],
                                                                    dataId=brightTaskDataId)]
                 self.log.trace("BrightTask: Processing %s with %s files" % (ccd, len(darkFilenames)))
                 maskFiles = self._getMaskFiles(self.config.eotestOutputPath, ccd)
-                gains = butler.get('eotest_gain', dataId={'ccd': ccd, 'run': run})
+                gains = butler.get('eotest_gain', dataId={self.config.ccdKey: ccd, 'run': run})
                 self.brightPixels.run(sensor_id=ccd, dark_files=darkFilenames,
                                       mask_files=maskFiles, gains=gains)
             del brightTaskDataId
@@ -453,7 +458,7 @@ class CpTask(pipeBase.CmdLineTask):
                         self.log.warn(msg + "\nSkipping dark pixel task")
                         break
                 sflatFilenames = [butler.get('raw_filename', dataId={'visit': visit,
-                                                                     'ccd': ccd})[0][:-3]
+                                                                     self.config.ccdKey: ccd})[0][:-3]
                                   for visit in butler.queryMetadata('raw', ['visit'],
                                                                     dataId=darkTaskDataId)]
                 self.log.trace("DarkTask: Processing %s with %s files" % (ccd, len(sflatFilenames)))
@@ -476,13 +481,15 @@ class CpTask(pipeBase.CmdLineTask):
                         self.log.warn(msg + "\nSkipping trap task")
                         break
                 trapFilenames = [butler.get('raw_filename', dataId={'visit': visit,
-                                                                    'ccd': ccd})[0][:-3]
+                                                                    self.config.ccdKey: ccd})[0][:-3]
                                  for visit in butler.queryMetadata('raw', ['visit'], dataId=trapTaskDataId)]
                 if len(trapFilenames) != 1:  # eotest can't handle more than one
-                    self.log.fatal("Trap Task: Found more than one ppump trap file: %s" % trapFilenames)
+                    msg = "Trap Task: Found more than one ppump trap file: %s" % trapFilenames
+                    msg += " Running using only the first one found."
+                    self.log.warn(msg)
                 self.log.trace("Trap Task: Processing %s with %s files" % (ccd, len(trapFilenames)))
                 maskFiles = self._getMaskFiles(self.config.eotestOutputPath, ccd)
-                gains = butler.get('eotest_gain', dataId={'ccd': ccd, 'run': run})
+                gains = butler.get('eotest_gain', dataId={self.config.ccdKey: ccd, 'run': run})
                 self.traps.run(sensor_id=ccd, pocket_pumped_file=trapFilenames[0],
                                mask_files=maskFiles, gains=gains)
             del trapTaskDataId
@@ -502,7 +509,7 @@ class CpTask(pipeBase.CmdLineTask):
                         self.log.warn(msg + "\nSkipping CTE task")
                         break
                 sflatFilenames = [butler.get('raw_filename', dataId={'visit': visit,
-                                                                     'ccd': ccd})[0][:-3]
+                                                                     self.config.ccdKey: ccd})[0][:-3]
                                   for visit in butler.queryMetadata('raw', ['visit'], dataId=cteTaskDataId)]
                 self.log.trace("CTETask: Processing %s with %s files" % (ccd, len(sflatFilenames)))
                 maskFiles = self._getMaskFiles(self.config.eotestOutputPath, ccd)
@@ -524,7 +531,7 @@ class CpTask(pipeBase.CmdLineTask):
                         self.log.warn(msg + "\nSkipping flatPair task")
                         break
                 flatPairFilenames = [butler.get('raw_filename', dataId={'visit': visit,
-                                                'ccd': ccd})[0][:-3]
+                                                self.config.ccdKey: ccd})[0][:-3]
                                      for visit in butler.queryMetadata('raw', ['visit'],
                                                                        dataId=flatPairDataId)]
                 # Note that eotest needs the original filename as written by the test-stand data acquisition
@@ -542,7 +549,7 @@ class CpTask(pipeBase.CmdLineTask):
                     raise RuntimeError("No flatPair files found.")
                 self.log.trace("FlatPairTask: Processing %s with %s files" % (ccd, len(flatPairFilenames)))
                 maskFiles = self._getMaskFiles(self.config.eotestOutputPath, ccd)
-                gains = butler.get('eotest_gain', dataId={'ccd': ccd, 'run': run})
+                gains = butler.get('eotest_gain', dataId={self.config.ccdKey: ccd, 'run': run})
                 self.flatPair.run(sensor_id=ccd, infiles=flatPairFilenames, mask_files=maskFiles,
                                   gains=gains, max_pd_frac_dev=self.config.flatPairMaxPdFracDev)
             del flatPairDataId
@@ -562,7 +569,7 @@ class CpTask(pipeBase.CmdLineTask):
                         self.log.warn(msg + "\nSkipping PTC task")
                         break
                 ptcFilenames = [butler.get('raw_filename', dataId={'visit': visit,
-                                                                   'ccd': ccd})[0][:-3]
+                                                                   self.config.ccdKey: ccd})[0][:-3]
                                 for visit in butler.queryMetadata('raw', ['visit'], dataId=ptcDataId)]
                 # Note that eotest needs the original filename as written by the test-stand data acquisition
                 # system, as that is the only place the flat pair-number is recorded, so we have to resolve
@@ -579,7 +586,7 @@ class CpTask(pipeBase.CmdLineTask):
                     raise RuntimeError("No flatPair files found")
                 self.log.trace("PTCTask: Processing %s with %s files" % (ccd, len(ptcFilenames)))
                 maskFiles = self._getMaskFiles(self.config.eotestOutputPath, ccd)
-                gains = butler.get('eotest_gain', dataId={'ccd': ccd, 'run': run})
+                gains = butler.get('eotest_gain', dataId={self.config.ccdKey: ccd, 'run': run})
                 self.ptc.run(sensor_id=ccd, infiles=ptcFilenames, mask_files=maskFiles, gains=gains)
             del ptcDataId
 
