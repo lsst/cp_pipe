@@ -47,14 +47,14 @@ class CpPipeTestCase(lsst.utils.tests.TestCase):
 
     @unittest.skipIf(noEotest, noEotestMsg)
     def testImport(self):
-        import lsst.cp.pipe as cpPipe
+        import lsst.cp.pipe as cpPipe  # noqa: F401
 
     @unittest.skipIf(noEotest, noEotestMsg)
     def testClassInstantiation(self):
         from lsst.cp.pipe import CpTask
         cpConfig = CpTask.ConfigClass()
-        cpConfig.eotestOutputPath='/some/test/path'  # must not be empty for validate() to pass
-        cpTask = CpTask(config=cpConfig)
+        cpConfig.eotestOutputPath = '/some/test/path'  # must not be empty for validate() to pass
+        cpTask = CpTask(config=cpConfig)  # noqa: F841
 
 
 class TestMemory(lsst.utils.tests.MemoryTestCase):
@@ -63,6 +63,7 @@ class TestMemory(lsst.utils.tests.MemoryTestCase):
 
 def setup_module(module):
     lsst.utils.tests.init()
+
 
 if __name__ == "__main__":
     lsst.utils.tests.init()
