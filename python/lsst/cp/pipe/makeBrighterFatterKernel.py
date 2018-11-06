@@ -566,7 +566,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
 
         return returnAreas, means
 
-    def _crossCorrelate(self, maskedIm0, maskedIm1, frameId=None, detId=None):
+    def _crossCorrelate(self, maskedIm0, maskedIm1, runningBiasCorrSim=False, frameId=None, detId=None):
         """Calculate the cross-correlation of an area.
 
         If the area in question contains multiple amplifiers then they must
@@ -585,6 +585,11 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
             The detector identifier (detector, or detector+amp,
             depending on config.level) for use in the filename
             if writing debug outputs.
+        runningBiasCorrSim : `bool`
+            Set to true when using this function to calculate the amount of bias
+            introduced by the sigma clipping. If False, the biasCorr parameter
+            is divided by to remove the bias, but this is, of course, not
+            appropriate when this is the parameter being measured.
 
         Returns:
         --------
@@ -666,8 +671,9 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
                 dim_xy = diff[xlag:xlag + width, ylag: ylag + height, afwImage.LOCAL].clone()
                 dim_xy -= afwMath.makeStatistics(dim_xy, afwMath.MEANCLIP, sctrl).getValue()
                 dim_xy *= dim0
-                xcorr[xlag, ylag] = afwMath.makeStatistics(dim_xy,
-                                                           afwMath.MEANCLIP, sctrl).getValue()/(biasCorr)
+                xcorr[xlag, ylag] = afwMath.makeStatistics(dim_xy, afwMath.MEANCLIP, sctrl).getValue()
+                if not runningBiasCorrSim:
+                    xcorr[xlag, ylag] /= biasCorr
 
         # TODO: DM-15305 improve debug functionality here.
         # This is position 2 for the removed code.
@@ -1421,7 +1427,7 @@ def calcBiasCorr(fluxLevels, imageShape, useTaskCode=True, repeats=1, seed=0, ad
             im1.image.array[:, :] = data1
 
             if useTaskCode:
-                _xcorr, _means = task._crossCorrelate(im0, im1)
+                _xcorr, _means = task._crossCorrelate(im0, im1, runningBiasCorrSim=True)
             else:
                 _xcorr, _means = _crossCorrelateSimulate(im0, im1, maxLag=maxLag, border=border,
                                                          nSigmaClip=nSigmaClip)
