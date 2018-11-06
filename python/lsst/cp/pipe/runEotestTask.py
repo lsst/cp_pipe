@@ -34,7 +34,7 @@ import lsst.log as lsstLog
 import lsst.eotest.sensor as sensorTest
 
 
-class CpTaskConfig(pexConfig.Config):
+class RunEotestConfig(pexConfig.Config):
     """Config class for the calibration products production (CP) task."""
 
     ccdKey = pexConfig.Field(
@@ -162,7 +162,7 @@ class CpTaskConfig(pexConfig.Config):
         override the validate() method here, and use it to set the output directory for each of the tasks
         based on the legal pexConfig parameter for the main task.
         """
-        log = lsstLog.Log.getLogger("cp.pipe.cpTaskConfig")
+        log = lsstLog.Log.getLogger("cp.pipe.runEotestConfig")
         if not self.eotestOutputPath:
             raise RuntimeError("Must supply an output path for eotest data. "
                                "Please set config.eotestOutputPath.")
@@ -179,35 +179,40 @@ class CpTaskConfig(pexConfig.Config):
             getattr(self, task).output_dir = self.eotestOutputPath
 
 
-class CpTask(pipeBase.CmdLineTask):
+class RunEotestTask(pipeBase.CmdLineTask):
     """
-    Calibration (Products) Production (CP) task.
+    Task to run test stand data through eotest using a butler.
 
-    This task is used to produce the calibration products required to calibrate cameras.
-    Examples of such operations are as follows:
+    This task is used to produce an eotest report (the project's sensor
+    acceptance testing package)
+    Examples of some of its operations are as follows:
     * Given a set of flat-field images, find the dark pixels and columns.
     * Given a set of darks, find the bright pixels and columns.
-    * Given a set of Fe55 exposures, calulate the gain of the readout chain, in e-/ADU
-    * Given a set of Fe55 exposures, calulate the instrinsic PSF of the silicon, and the degradation of
+    * Given a set of Fe55 exposures, calulate the gain of the readout chain,
+        in e-/ADU
+    * Given a set of Fe55 exposures, calulate the instrinsic PSF of the silicon,
+        and the degradation of
     * the PSF due to CTE.
     * Given a set of flat-pairs, measure the photon transfer curve (PTC).
     * Given a set of bias frames, calculate the read noise of the system in e-.
     * Given a set of pocket-pumping exposures, find charge-traps in the silicon.
 
-    The CpTask.runEotestDirect() is only applicable to LSST sensors, and only for a specific type of dataset
-    This method takes a dafPersistance.Butler corresponding to a repository in which a full eotest run has
-    been taken and ingested, and runs each of the tasks in eotest directly, allowing for bitwise comparison
-    with results given by the camera team.
+    The RunEotestTask.runEotestDirect() is only applicable to LSST sensors, and
+    only for a specific type of dataset. This method takes a
+    dafPersistance.Butler corresponding to a repository in which a full eotest
+    run has been taken and ingested, and runs each of the tasks in eotest
+    directly, allowing for bitwise comparison with results given by the camera
+    team.
 
-    See http://ls.st/ldm-151 Chapter 4, Calibration Products Production for further details
-    regarding the inputs and outputs.
+    See http://ls.st/ldm-151 Chapter 4, Calibration Products Production for
+    further details regarding the inputs and outputs.
     """
 
-    ConfigClass = CpTaskConfig
-    _DefaultName = "cp"
+    ConfigClass = RunEotestConfig
+    _DefaultName = "runEotest"
 
     def __init__(self, *args, **kwargs):
-        """Constructor for the CpTask."""
+        """Constructor for the RunEotestTask."""
         if 'lsst.eotest.sensor' not in sys.modules:  # check we have eotest before going further
             raise RuntimeError('eotest failed to import')
 
