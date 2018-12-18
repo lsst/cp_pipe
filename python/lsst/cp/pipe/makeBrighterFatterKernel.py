@@ -95,7 +95,7 @@ class MakeBrighterFatterKernelTaskConfig(pexConfig.Config):
         dtype=float,
         doc="Sanity check level for the sum of the input cross-correlations. Arrays which " +
         "sum to greater than this are discarded before the clipped mean is calculated.",
-        default=2.0  # TODO: DM-15401 Restore this to nominal value of 0.2 if appropriate
+        default=2.0
     )
     maxIterSuccessiveOverRelaxation = pexConfig.Field(
         dtype=int,
@@ -566,7 +566,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
 
         return returnAreas, means
 
-    def _crossCorrelate(self, maskedIm0, maskedIm1, frameId=None, detId=None):
+    def _crossCorrelate(self, maskedIm0, maskedIm1, runningBiasCorrSim=False, frameId=None, detId=None):
         """Calculate the cross-correlation of an area.
 
         If the area in question contains multiple amplifiers then they must
@@ -585,6 +585,11 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
             The detector identifier (detector, or detector+amp,
             depending on config.level) for use in the filename
             if writing debug outputs.
+        runningBiasCorrSim : `bool`
+            Set to true when using this function to calculate the amount of bias
+            introduced by the sigma clipping. If False, the biasCorr parameter
+            is divided by to remove the bias, but this is, of course, not
+            appropriate when this is the parameter being measured.
 
         Returns:
         --------
@@ -666,8 +671,9 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
                 dim_xy = diff[xlag:xlag + width, ylag: ylag + height, afwImage.LOCAL].clone()
                 dim_xy -= afwMath.makeStatistics(dim_xy, afwMath.MEANCLIP, sctrl).getValue()
                 dim_xy *= dim0
-                xcorr[xlag, ylag] = afwMath.makeStatistics(dim_xy,
-                                                           afwMath.MEANCLIP, sctrl).getValue()/(biasCorr)
+                xcorr[xlag, ylag] = afwMath.makeStatistics(dim_xy, afwMath.MEANCLIP, sctrl).getValue()
+                if not runningBiasCorrSim:
+                    xcorr[xlag, ylag] /= biasCorr
 
         # TODO: DM-15305 improve debug functionality here.
         # This is position 2 for the removed code.
@@ -1271,82 +1277,14 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         return floatImage
 
 
-def _crossCorrelateSimulate(im, im2, maxLag, border, nSigmaClip):
-    """Perform a simple xcorr with two images.
-
-    This sim code is used to estimate the bias correction used in the main task.
-
-    DM-15756 exists to work out why this performs differently,
-    which version is correct, and whether this function needs to exist at all.
-
-    Parameters:
-    -----------
-    maxLag : `int`, optional
-        The maximum lag to work to in pixels.
-    nSigmaClip : `float`, optional
-        Number of sigma to clip to when calculating the sigma-clipped mean.
-    border : `int`, optional
-        Number of border pixels to mask.
-
-    Returns:
-    --------
-    xcorr : `np.ndarray`
-        The xcorr image for the image pair.
-    mean : `dict` of `list` of `float`
-        The average of the mean flux level in the images after sigma-clipping
-        and applying the border.
-    """
-    sctrl = afwMath.StatisticsControl()
-    sctrl.setNumSigmaClip(nSigmaClip)
-
-    means = [0, 0]
-    means[0] = afwMath.makeStatistics(im[border: -border, border: -border, afwImage.LOCAL],
-                                      afwMath.MEANCLIP, sctrl).getValue()
-    means[1] = afwMath.makeStatistics(im2[border: -border, border: -border, afwImage.LOCAL],
-                                      afwMath.MEANCLIP, sctrl).getValue()
-    im -= means[0]
-    im2 -= means[1]
-    diff = im2.clone()
-    diff -= im.clone()
-    diff = diff[border: -border, border: -border, afwImage.LOCAL]
-    binsize = 128
-    nx = diff.getWidth()//binsize
-    ny = diff.getHeight()//binsize
-    bctrl = afwMath.BackgroundControl(nx, ny, sctrl, afwMath.MEANCLIP)
-    bkgd = afwMath.makeBackground(diff, bctrl)
-    diff -= bkgd.getImageF(afwMath.Interpolate.CUBIC_SPLINE, afwMath.REDUCE_INTERP_ORDER)
-    dim0 = diff[0: -maxLag, : -maxLag, afwImage.LOCAL].clone()
-    dim0 -= afwMath.makeStatistics(dim0, afwMath.MEANCLIP, sctrl).getValue()
-    w, h = dim0.getDimensions()
-    xcorr = afwImage.ImageD(maxLag + 1, maxLag + 1)
-    for di in range(maxLag + 1):
-        for dj in range(maxLag + 1):
-            dim_ij = diff[di:di + w, dj: dj + h, afwImage.LOCAL].clone()
-            dim_ij -= afwMath.makeStatistics(dim_ij, afwMath.MEANCLIP, sctrl).getValue()
-
-            dim_ij *= dim0
-            xcorr[di, dj] = afwMath.makeStatistics(dim_ij, afwMath.MEANCLIP, sctrl).getValue()
-    L = np.shape(xcorr.getArray())[0] - 1
-    XCORR = np.zeros([2*L + 1, 2*L + 1])
-    for i in range(L + 1):
-        for j in range(L + 1):
-            XCORR[i + L, j + L] = xcorr.getArray()[i, j]
-            XCORR[-i + L, j + L] = xcorr.getArray()[i, j]
-            XCORR[i + L, -j + L] = xcorr.getArray()[i, j]
-            XCORR[-i + L, -j + L] = xcorr.getArray()[i, j]
-    return xcorr, np.sum(means)
-
-
-def calcBiasCorr(fluxLevels, imageShape, useTaskCode=True, repeats=1, seed=0, addCorrelations=False,
+def calcBiasCorr(fluxLevels, imageShape, repeats=1, seed=0, addCorrelations=False,
                  correlationStrength=0.1, maxLag=10, nSigmaClip=5, border=10):
     """Calculate the bias induced when sigma-clipping non-Gassian distributions.
 
     Fill image-pairs of the specified size with Poisson-distributed values,
     adding correlations as necessary. Then calculate the cross correlation,
-    using the task code (or the separate code, which is to be removed after
-    DM-15756 is done as these should agree).
-    Then calculate the bias induced using the cross-correlation image and the
-    image means.
+    and calculate the bias induced using the cross-correlation image
+    and the image means.
 
     Parameters:
     -----------
@@ -1355,10 +1293,6 @@ def calcBiasCorr(fluxLevels, imageShape, useTaskCode=True, repeats=1, seed=0, ad
         Nominal values might be something like [70000, 90000, 110000]
     imageShape : `tuple` of `int`
         The shape of the image array to simulate, nx by ny pixels.
-    useTaskCode : `bool`, optional
-        Use the _crossCorrelate() method in the task if True,
-        else use the _crossCorrelateSimulate() method.
-        To be removed after DM-15756.
     repeats : `int`, optional
         Number of repeats to perform so that results
         can be averaged to improve SNR.
@@ -1378,7 +1312,6 @@ def calcBiasCorr(fluxLevels, imageShape, useTaskCode=True, repeats=1, seed=0, ad
     border : `int`, optional
         Number of border pixels to mask
 
-
     Returns:
     --------
     biases : `dict` of `list` of `float`
@@ -1396,14 +1329,13 @@ def calcBiasCorr(fluxLevels, imageShape, useTaskCode=True, repeats=1, seed=0, ad
     xcorrs = {f: [] for f in fluxLevels}
     biases = {f: [] for f in fluxLevels}
 
-    if useTaskCode:
-        config = MakeBrighterFatterKernelTaskConfig()
-        config.isrMandatorySteps = []  # no isr but the validation routine is still run
-        config.isrForbiddenSteps = []
-        config.nSigmaClipXCorr = nSigmaClip
-        config.nPixBorderXCorr = border
-        config.maxLag = maxLag
-        task = MakeBrighterFatterKernelTask(config=config)
+    config = MakeBrighterFatterKernelTaskConfig()
+    config.isrMandatorySteps = []  # no isr but the validation routine is still run
+    config.isrForbiddenSteps = []
+    config.nSigmaClipXCorr = nSigmaClip
+    config.nPixBorderXCorr = border
+    config.maxLag = maxLag
+    task = MakeBrighterFatterKernelTask(config=config)
 
     im0 = afwImage.maskedImage.MaskedImageF(imageShape[1], imageShape[0])
     im1 = afwImage.maskedImage.MaskedImageF(imageShape[1], imageShape[0])
@@ -1420,12 +1352,7 @@ def calcBiasCorr(fluxLevels, imageShape, useTaskCode=True, repeats=1, seed=0, ad
             im0.image.array[:, :] = data0
             im1.image.array[:, :] = data1
 
-            if useTaskCode:
-                _xcorr, _means = task._crossCorrelate(im0, im1)
-            else:
-                _xcorr, _means = _crossCorrelateSimulate(im0, im1, maxLag=maxLag, border=border,
-                                                         nSigmaClip=nSigmaClip)
-                _xcorr = _xcorr.getArray()  # this code returns and afwImage.ImageD
+            _xcorr, _means = task._crossCorrelate(im0, im1, runningBiasCorrSim=True)
 
             means[flux].append(_means)
             xcorrs[flux].append(_xcorr)
