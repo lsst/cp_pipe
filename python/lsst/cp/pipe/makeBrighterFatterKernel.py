@@ -95,7 +95,7 @@ class MakeBrighterFatterKernelTaskConfig(pexConfig.Config):
         dtype=float,
         doc="Sanity check level for the sum of the input cross-correlations. Arrays which " +
         "sum to greater than this are discarded before the clipped mean is calculated.",
-        default=2.0  # TODO: DM-15401 Restore this to nominal value of 0.2 if appropriate
+        default=2.0
     )
     maxIterSuccessiveOverRelaxation = pexConfig.Field(
         dtype=int,
