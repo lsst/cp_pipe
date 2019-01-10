@@ -32,6 +32,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 # the following import is required for 3d projection
 from mpl_toolkits.mplot3d import axes3d   # noqa: F401
+import pickle as pkl
 
 import lsstDebug
 import lsst.afw.image as afwImage
@@ -350,6 +351,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         parser.add_id_argument("--id", datasetType="brighterFatterKernel",
                                ContainerClass=BrighterFatterKernelTaskDataIdContainer,
                                help="The ccds to use, e.g. --id ccd=0..100")
+        
         return parser
 
     def validateIsrConfig(self):
@@ -407,9 +409,13 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         xcorrs = {}  # dict of lists keyed by either amp or detector depending on config.level
         means = {}
         kernels = {}
-
+        print("Starting BF kernel task - 10-Jan-19")
         # setup necessary objects
         detNum = dataRef.dataId[self.config.ccdKey]
+        detector = dataRef.get('camera')[dataRef.dataId[self.config.ccdKey]]
+        ampInfoCat = detector.getAmpInfoCatalog()
+        ampNames = [amp.getName() for amp in ampInfoCat]
+
         if self.config.level == 'DETECTOR':
             xcorrs = {detNum: []}
             means = {detNum: []}
@@ -419,9 +425,6 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
             # composite objects (i.e. LSST images) are handled/constructed
             # these need to be retrieved from the camera and dereferenced
             # rather than accessed directly
-            detector = dataRef.get('camera')[dataRef.dataId[self.config.ccdKey]]
-            ampInfoCat = detector.getAmpInfoCatalog()
-            ampNames = [amp.getName() for amp in ampInfoCat]
             xcorrs = {key: [] for key in ampNames}
             means = {key: [] for key in ampNames}
         else:
@@ -429,21 +432,27 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
 
         # calculate or retrieve the gains
         if self.config.doCalcGains:
-            self.log.info('Compute gains for detector %s' % detNum)
-            gains, nomGains = self.estimateGains(dataRef, visitPairs)
+            # In this case, we set the gains = 1.0 for now, and calculate them later after
+            # the cross-corrrelations have been calculated. This is only supported when the
+            # level is by AMP.
+            if self.config.level == 'DETECTOR':
+                raise RuntimeError('doCalcGains = True is inconsistent with config.level = DETECTOR')                
+            self.log.info('Setting gain to 1.0 for detector %s' % detNum)
+            gains = {key: 1.0 for key in ampNames}
             dataRef.put(gains, datasetType='brighterFatterGain')
-            self.log.debug('Finished gain estimation for detector %s' % detNum)
+
         else:
             gains = dataRef.get('brighterFatterGain')
             if not gains:
-                raise RuntimeError('Failed to retrieved gains for detector %s' % detNum)
+                raise RuntimeError('Failed to retrieve gains for detector %s' % detNum)
             self.log.info('Retrieved stored gain for detector %s' % detNum)
         self.log.debug('Detector %s has gains %s' % (detNum, gains))
 
+        
         # Loop over pairs of visits
         # calculating the cross-correlations at the required level
         for (v1, v2) in visitPairs:
-
+            print("Running pair ", v1, v2)            
             dataRef.dataId['visit'] = v1
             exp1 = self.isr.runDataRef(dataRef).exposure
             dataRef.dataId['visit'] = v2
@@ -469,6 +478,21 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
 
                 # TODO: DM-15305 improve debug functionality here.
                 # This is position 1 for the removed code.
+        # Can't get this to work.  Pickling the data instead.
+        # I tried adding these to obs_lsstCam/policy/lsstCamMapper.yaml, but that still didn't work.
+        #dataRef.put(means, datasetType='brighterFatterMeans')
+        #dataRef.put(xcorrs, datasetType='brighterFatterXcorrs')        
+        corr_pickle = {'xcorrs':xcorrs, 'means': means}
+        filename ='corr_data_%s_full.pkl'%detNum
+        with open(filename, 'wb') as f:
+            pkl.dump(corr_pickle, f)
+
+        if self.config.doCalcGains:
+            # Now we calculate and apply the gains to the calculated
+            # means and cross-correlations
+            self.log.info('Calculating gains for detector %s' % detNum)
+            means, xcorrs  = self._calculateAndApplyGains(dataRef, means, xcorrs)           
+            self.log.debug('Finished gain estimation for detector %s' % detNum)
 
         # generate the kernel(s)
         self.log.info('Generating kernel(s) for %s' % detNum)
@@ -479,7 +503,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
                 objId = 'detector %s AMP %s' % (detNum, det_object)
             kernels[det_object] = self.generateKernel(xcorrs[det_object], means[det_object], objId)
         dataRef.put(BrighterFatterKernel(self.config.level, kernels))
-
+        
         self.log.info('Finished generating kernel(s) for %s' % detNum)
         return pipeBase.Struct(exitStatus=0)
 
@@ -680,117 +704,80 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
 
         return xcorr, mean
 
-    def estimateGains(self, dataRef, visitPairs):
-        """Estimate the amplifier gains using the specified visits.
+    def _calculateAndApplyGains(self, dataRef, means, xcorrs):
+        """Estimate the amplifier gains using the calculated means and variances.
 
-        Given a dataRef and list of flats of varying intensity,
+        Given a dataRef and the calculated means and variances,
         calculate the gain for each amplifier in the detector
         using the photon transfer curve (PTC) method.
 
-        The config.fixPtcThroughOrigin option determines whether the iterative
-        fitting is forced to go through the origin or not.
-        This defaults to True, fitting var=1/gain * mean.
-        If set to False then var=1/g * mean + const is fitted.
-
-        This is really a photo transfer curve (PTC) gain measurement task.
-        See DM-14063 for results from of a comparison between
-        this task's numbers and the gain values in the HSC camera model,
-        and those measured by the PTC task in eotest.
+        The gain is calculated as the linear part of the 
+        photon transfer curve only.
 
         Parameters
         ----------
         dataRef : `lsst.daf.persistence.butler.Butler.dataRef`
             dataRef for the detector for the flats to be used
-        visitPairs : `list` of `tuple`
-            List of visit-pairs to use, as [(v1,v2), (v3,v4)...]
+        means : `list` of mean values of the two visit pairs
+        xcorrs : `list` of cross-correlations values of the two visit pairs
 
         Returns
         -------
-        gains : `dict` of `float`
-            Dict of the as-calculated amplifier gain values,
-            keyed by amplifier name
-        nominalGains : `dict` of `float`
-            Dict of the amplifier gains, as reported by the `detector` object,
-            keyed by amplifier name
+        means : `list` of mean values of the two visit pairs
+        xcorrs : `list` of cross-correlations values of the two visit pairs
+
+        Both of these have been corrected for the measured gains
+        The gains are also stored in dataRef datasetType='brighterFatterGain'.
+
         """
+        print("In calculateAndApplyGains")                    
         # NB: don't use dataRef.get('raw_detector') due to composites
         detector = dataRef.get('camera')[dataRef.dataId[self.config.ccdKey]]
-        ampInfoCat = detector.getAmpInfoCatalog()
-        ampNames = [amp.getName() for amp in ampInfoCat]
-
-        ampMeans = {key: [] for key in ampNames}  # these get turned into np.arrays later
-        ampCoVariances = {key: [] for key in ampNames}
-        ampVariances = {key: [] for key in ampNames}
-
-        # Loop over the amps in the detector,
-        # calculating a PTC for each amplifier.
-        # The amplifier iteration is performed in _calcMeansAndVars()
-        # NB: no gain correction is applied
-        for visPairNum, visPair in enumerate(visitPairs):
-            _means, _vars, _covars = self._calcMeansAndVars(dataRef, visPair[0], visPair[1])
-
-            # Do sanity checks; if these are failed more investigation is needed
-            breaker = 0
-            for amp in detector:
-                ampName = amp.getName()
-                if _means[ampName]*10 < _vars[ampName] or _means[ampName]*10 < _covars[ampName]:
-                    msg = 'Sanity check failed; check visit pair %s amp %s' % (visPair, ampName)
-                    self.log.warn(msg)
-                    breaker += 1
-            if breaker:
-                continue
-
-            # having made sanity checks
-            # pull the values out into the respective dicts
-            for k in _means.keys():  # keys are necessarily the same
-                if _vars[k]*1.3 < _covars[k] or _vars[k]*0.7 > _covars[k]:
-                    self.log.warn('Dropped a value')
-                    continue
-                ampMeans[k].append(_means[k])
-                ampVariances[k].append(_vars[k])
-                ampCoVariances[k].append(_covars[k])
 
         gains = {}
-        nomGains = {}
+        new_means = {}
+        new_xcorrs = {}
         for amp in detector:
             ampName = amp.getName()
-            nomGains[ampName] = amp.getGain()
-            slopeRaw, interceptRaw, rVal, pVal, stdErr = \
-                stats.linregress(np.asarray(ampMeans[ampName]), np.asarray(ampCoVariances[ampName]))
-            slopeFix, _ = self._iterativeRegression(np.asarray(ampMeans[ampName]),
-                                                    np.asarray(ampCoVariances[ampName]),
-                                                    fixThroughOrigin=True)
-            slopeUnfix, intercept = self._iterativeRegression(np.asarray(ampMeans[ampName]),
-                                                              np.asarray(ampCoVariances[ampName]),
-                                                              fixThroughOrigin=False)
-            self.log.info("Slope of     raw fit: %s, intercept: %s p value: %s" % (slopeRaw,
-                                                                                   interceptRaw, pVal))
-            self.log.info("slope of   fixed fit: %s, difference vs raw:%s" % (slopeFix,
-                                                                              slopeFix - slopeRaw))
-            self.log.info("slope of unfixed fit: %s, difference vs fix:%s" % (slopeUnfix,
-                                                                              slopeFix - slopeUnfix))
-            if self.config.fixPtcThroughOrigin:
-                slopeToUse = slopeFix
-            else:
-                slopeToUse = slopeUnfix
+            print("Doing Amp ", ampName)                                
+            ampMeans = []
+            ampVariances = []
+            for i in range(len(means[ampName])):
+                # The division by 2 below is to calculate the average flux from the two visits
+                ampMeans.append((means[ampName][i][0] + means[ampName][i][1]) / 2.0)
+                # The division by 2 below is because the variance of a difference is twice the variance of each visit
+                ampVariances.append(xcorrs[ampName][i][0,0] / 2.0)
+            # Now fit a cubic polynomial to the PTC
+            # and use the linear part as the gain
+            ptc_coefs = np.polyfit(ampMeans, ampVariances, 3)
+            slopeToUse = ptc_coefs[2]
+            gain = 1.0 / slopeToUse
+            #if self.debug.enabled:
+            fig = plt.figure()
+            ax = fig.add_subplot(111)
+            ax.set_title("Photon Transfer Curve %s"%ampName,fontsize=24)
+            x_values = np.asarray(ampMeans)
+            ax.plot(x_values,
+                    np.asarray(ampVariances), linestyle='None', color = 'green', marker='x', label='data')
+            cubic_fit = ptc_coefs[0]*x_values*x_values*x_values + ptc_coefs[1]*x_values*x_values +\
+                        ptc_coefs[2]*x_values + ptc_coefs[3]
+            ax.plot(x_values,
+                    cubic_fit, linestyle='--', color='green', label='Cubic fit')
+            ax.plot(x_values,
+                    x_values*slopeToUse, color='red', label='Linear fit')
+            ax.set_xlabel("Flux(ADU)", fontsize=18)
+            ax.set_ylabel("Variance(ADU^2)",fontsize=18)
+            ax.legend()
+            dataRef.put(fig, "plotBrighterFatterPtc", amp=ampName)
+            self.log.info('Saved PTC for detector %s amp %s' % (detector.getId(), ampName))
+            gains[ampName] = gain
+            print("Doing Amp ", ampName, ptc_coefs)                                                        
+            print("Doing Amp ", ampName, "Gain = ", gain)                                            
+            new_means[ampName] = [[i*gain for i in pair] for pair in means[ampName]]
+            new_xcorrs[ampName] = [arr*gain*gain for arr in xcorrs[ampName]]
 
-            if self.debug.enabled:
-                fig = plt.figure()
-                ax = fig.add_subplot(111)
-                ax.plot(np.asarray(ampMeans[ampName]),
-                        np.asarray(ampCoVariances[ampName]), linestyle='None', marker='x', label='data')
-                if self.config.fixPtcThroughOrigin:
-                    ax.plot(np.asarray(ampMeans[ampName]),
-                            np.asarray(ampMeans[ampName])*slopeToUse, label='Fit through origin')
-                else:
-                    ax.plot(np.asarray(ampMeans[ampName]),
-                            np.asarray(ampMeans[ampName])*slopeToUse + intercept,
-                            label='Fit (intercept unconstrained')
-
-                dataRef.put(fig, "plotBrighterFatterPtc", amp=ampName)
-                self.log.info('Saved PTC for detector %s amp %s' % (detector.getId(), ampName))
-            gains[ampName] = 1.0/slopeToUse
-        return gains, nomGains
+        dataRef.put(gains, datasetType='brighterFatterGain')
+        return new_means, new_xcorrs
 
     @staticmethod
     def _checkExpLengthEqual(exp1, exp2, v1=None, v2=None):
@@ -821,137 +808,6 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
                 msg += " for visit pair %s, %s" % (v1, v2)
             raise RuntimeError(msg)
 
-    def _calcMeansAndVars(self, dataRef, v1, v2):
-        """Calculate the means, vars, covars, and retrieve the nominal gains,
-        for each amp in each detector.
-
-        This code runs using two visit numbers, and for the detector specified.
-        It calculates the correlations in the individual amps without
-        rescaling any gains. This allows a photon transfer curve
-        to be generated and the gains measured.
-
-        Images are assembled with use the isrTask, and basic isr is performed.
-
-        Parameters:
-        -----------
-        dataRef : `lsst.daf.persistence.butler.Butler.dataRef`
-            dataRef for the detector for the repo containg the flats to be used
-        v1 : `int`
-            First visit of the visit pair
-        v2 : `int`
-            Second visit of the visit pair
-
-        Returns
-        -------
-        means, vars, covars : `tuple` of `dicts`
-            Three dicts, keyed by ampName,
-            containing the sum of the image-means,
-            the variance, and the quarter-image of the xcorr.
-        """
-        sigma = self.config.nSigmaClipGainCalc
-        maxLag = self.config.maxLag
-        border = self.config.nPixBorderGainCalc
-        biasCorr = self.config.biasCorr
-
-        # NB: don't use dataRef.get('raw_detector') due to composites
-        detector = dataRef.get('camera')[dataRef.dataId[self.config.ccdKey]]
-
-        ampMeans = {}
-
-        # manipulate the dataId to get a postISR exposure for each visit
-        # from the detector obj, restoring its original state afterwards
-        originalDataId = dataRef.dataId.copy()
-        dataRef.dataId['visit'] = v1
-        exp1 = self.isr.runDataRef(dataRef).exposure
-        dataRef.dataId['visit'] = v2
-        exp2 = self.isr.runDataRef(dataRef).exposure
-        dataRef.dataId = originalDataId
-        exps = [exp1, exp2]
-        self._checkExpLengthEqual(exp1, exp2, v1, v2)
-
-        detector = exps[0].getDetector()
-        ims = [self._convertImagelikeToFloatImage(exp) for exp in exps]
-
-        if self.debug.display:
-            self.disp1.mtv(ims[0], title=str(v1))
-            self.disp2.mtv(ims[1], title=str(v2))
-
-        sctrl = afwMath.StatisticsControl()
-        sctrl.setNumSigmaClip(sigma)
-        for imNum, im in enumerate(ims):
-
-            # calculate the sigma-clipped mean, excluding the borders
-            # safest to apply borders to all amps regardless of edges
-            # easier, camera-agnostic, and mitigates potentially dodgy
-            # overscan-biases around edges as well
-            for amp in detector:
-                ampName = amp.getName()
-                ampIm = im[amp.getBBox()]
-                mean = afwMath.makeStatistics(ampIm[border: -border, border: -border, afwImage.LOCAL],
-                                              afwMath.MEANCLIP, sctrl).getValue()
-                if ampName not in ampMeans.keys():
-                    ampMeans[ampName] = []
-                ampMeans[ampName].append(mean)
-                ampIm -= mean
-
-        diff = ims[0].clone()
-        diff -= ims[1]
-
-        temp = diff[border: -border, border: -border, afwImage.LOCAL]
-
-        # Subtract background. It should be a constant,
-        # but it isn't always (e.g. some SuprimeCam flats)
-        # TODO: Check how this looks, and if this is the "right" way to do this
-        binsize = self.config.backgroundBinSize
-        nx = temp.getWidth()//binsize
-        ny = temp.getHeight()//binsize
-        bctrl = afwMath.BackgroundControl(nx, ny, sctrl, afwMath.MEANCLIP)
-        bkgd = afwMath.makeBackground(temp, bctrl)
-
-        box = diff.getBBox()
-        box.grow(-border)
-        diff[box, afwImage.LOCAL] -= bkgd.getImageF(afwMath.Interpolate.CUBIC_SPLINE,
-                                                    afwMath.REDUCE_INTERP_ORDER)
-
-        variances = {}
-        coVars = {}
-        for amp in detector:
-            ampName = amp.getName()
-
-            diffAmpIm = diff[amp.getBBox()].clone()
-            diffAmpImCrop = diffAmpIm[border: -border - maxLag, border: -border - maxLag, afwImage.LOCAL]
-            diffAmpImCrop -= afwMath.makeStatistics(diffAmpImCrop, afwMath.MEANCLIP, sctrl).getValue()
-            w, h = diffAmpImCrop.getDimensions()
-            xcorr = np.zeros((maxLag + 1, maxLag + 1), dtype=np.float64)
-
-            # calculate the cross-correlation
-            for xlag in range(maxLag + 1):
-                for ylag in range(maxLag + 1):
-                    dim_xy = diffAmpIm[border + xlag: border + xlag + w,
-                                       border + ylag: border + ylag + h,
-                                       afwImage.LOCAL].clone()
-                    dim_xy -= afwMath.makeStatistics(dim_xy, afwMath.MEANCLIP, sctrl).getValue()
-                    dim_xy *= diffAmpImCrop
-                    xcorr[xlag, ylag] = afwMath.makeStatistics(dim_xy,
-                                                               afwMath.MEANCLIP, sctrl).getValue()/(biasCorr)
-
-            variances[ampName] = xcorr[0, 0]
-            xcorr_full = self._tileArray(xcorr)
-            coVars[ampName] = np.sum(xcorr_full)
-
-            msg = "M1: " + str(ampMeans[ampName][0])
-            msg += " M2 " + str(ampMeans[ampName][1])
-            msg += " M_sum: " + str((ampMeans[ampName][0]) + ampMeans[ampName][1])
-            msg += " Var " + str(variances[ampName])
-            msg += " coVar: " + str(coVars[ampName])
-            self.log.debug(msg)
-
-            means = {}
-            for amp in detector:
-                ampName = amp.getName()
-                means[ampName] = ampMeans[ampName][0] + ampMeans[ampName][1]
-
-        return means, variances, coVars
 
     def _plotXcorr(self, xcorr, mean, zmax=0.05, title=None, fig=None, saveToFileName=None):
         """Plot the correlation functions."""
