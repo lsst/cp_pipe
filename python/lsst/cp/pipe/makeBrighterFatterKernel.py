@@ -480,12 +480,13 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
                 # This is position 1 for the removed code.
         # Can't get this to work.  Pickling the data instead.
         # I tried adding these to obs_lsstCam/policy/lsstCamMapper.yaml, but that still didn't work.
-        dataRef.put(means, "brighterFatterMeans")
-        dataRef.put(xcorrs, "brighterFatterXcorrs")        
-        #corr_pickle = {'xcorrs':xcorrs, 'means': means}
-        #filename ='corr_data_%s_full.pkl'%detNum
-        #with open(filename, 'wb') as f:
-        #    pkl.dump(corr_pickle, f)
+        # Also added them to obs_base/policy/datasets.yaml, but it still doesn't work.
+        #dataRef.put(means, "brighterFatterMeans")
+        #dataRef.put(xcorrs, "brighterFatterXcorrs")        
+        corr_pickle = {'xcorrs':xcorrs, 'means': means}
+        filename ='corr_data_%s_full.pkl'%detNum
+        with open(filename, 'wb') as f:
+            pkl.dump(corr_pickle, f)
 
         if self.config.doCalcGains:
             # Now we calculate and apply the gains to the calculated
@@ -735,8 +736,8 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         detector = dataRef.get('camera')[dataRef.dataId[self.config.ccdKey]]
 
         gains = {}
-        new_means = {}
-        new_xcorrs = {}
+        gain_adjusted_means = {}
+        gain_adjusted_xcorrs = {}
         for amp in detector:
             ampName = amp.getName()
             print("Doing Amp ", ampName)                                
