@@ -480,12 +480,12 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
                 # This is position 1 for the removed code.
         # Can't get this to work.  Pickling the data instead.
         # I tried adding these to obs_lsstCam/policy/lsstCamMapper.yaml, but that still didn't work.
-        #dataRef.put(means, datasetType='brighterFatterMeans')
-        #dataRef.put(xcorrs, datasetType='brighterFatterXcorrs')        
-        corr_pickle = {'xcorrs':xcorrs, 'means': means}
-        filename ='corr_data_%s_full.pkl'%detNum
-        with open(filename, 'wb') as f:
-            pkl.dump(corr_pickle, f)
+        dataRef.put(means, "brighterFatterMeans")
+        dataRef.put(xcorrs, "brighterFatterXcorrs")        
+        #corr_pickle = {'xcorrs':xcorrs, 'means': means}
+        #filename ='corr_data_%s_full.pkl'%detNum
+        #with open(filename, 'wb') as f:
+        #    pkl.dump(corr_pickle, f)
 
         if self.config.doCalcGains:
             # Now we calculate and apply the gains to the calculated
@@ -773,11 +773,11 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
             gains[ampName] = gain
             print("Doing Amp ", ampName, ptc_coefs)                                                        
             print("Doing Amp ", ampName, "Gain = ", gain)                                            
-            new_means[ampName] = [[i*gain for i in pair] for pair in means[ampName]]
-            new_xcorrs[ampName] = [arr*gain*gain for arr in xcorrs[ampName]]
-
+            gain_adjusted_means[ampName] = [[i*gain for i in pair] for pair in means[ampName]]
+            gain_adjusted_xcorrs[ampName] = [arr*gain*gain for arr in xcorrs[ampName]]
+        plt.close('all')
         dataRef.put(gains, datasetType='brighterFatterGain')
-        return new_means, new_xcorrs
+        return gain_adjusted_means, gain_adjusted_xcorrs
 
     @staticmethod
     def _checkExpLengthEqual(exp1, exp2, v1=None, v2=None):
