@@ -481,12 +481,12 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         # Can't get this to work.  Pickling the data instead.
         # I tried adding these to obs_lsstCam/policy/lsstCamMapper.yaml, but that still didn't work.
         # Also added them to obs_base/policy/datasets.yaml, but it still doesn't work.
-        #dataRef.put(means, "brighterFatterMeans")
-        #dataRef.put(xcorrs, "brighterFatterXcorrs")        
-        corr_pickle = {'xcorrs':xcorrs, 'means': means}
-        filename ='corr_data_%s_full.pkl'%detNum
-        with open(filename, 'wb') as f:
-            pkl.dump(corr_pickle, f)
+        dataRef.put(means, "brighterFatterMeans")
+        dataRef.put(xcorrs, "brighterFatterXcorrs")        
+        #corr_pickle = {'xcorrs':xcorrs, 'means': means}
+        #filename ='corr_data_%s_full.pkl'%detNum
+        #with open(filename, 'wb') as f:
+        #    pkl.dump(corr_pickle, f)
 
         if self.config.doCalcGains:
             # Now we calculate and apply the gains to the calculated
@@ -500,9 +500,15 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         for det_object in xcorrs.keys():  # looping over either detectors or amps
             if self.config.level == 'DETECTOR':
                 objId = 'detector %s' % det_object
+                kernels[det_object] = self.generateKernel(xcorrs[det_object], means[det_object], objId)
             elif self.config.level == 'AMP':
                 objId = 'detector %s AMP %s' % (detNum, det_object)
-            kernels[det_object] = self.generateKernel(xcorrs[det_object], means[det_object], objId)
+                try:
+                    kernels[det_object] = self.generateKernel(xcorrs[det_object], means[det_object], objId)
+                except RuntimeError:
+                    # If we are generating by amp, we want to continue on failure.
+                    continue
+
         dataRef.put(BrighterFatterKernel(self.config.level, kernels))
         
         self.log.info('Finished generating kernel(s) for %s' % detNum)
