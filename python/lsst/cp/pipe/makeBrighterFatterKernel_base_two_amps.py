@@ -32,7 +32,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 # the following import is required for 3d projection
 from mpl_toolkits.mplot3d import axes3d   # noqa: F401
-import pickle as pkl
 
 import lsstDebug
 import lsst.afw.image as afwImage
@@ -71,22 +70,6 @@ class MakeBrighterFatterKernelTaskConfig(pexConfig.Config):
         dtype=bool,
         doc="Measure the per-amplifier gains (using the photon transfer curve method)?",
         default=True,
-    )
-    # Lage 08-Feb-19 Added the three options below.
-    forceZeroSum = pexConfig.Field(
-        dtype=bool,
-        doc="Force the correlation matrix to have zero sum by adjusting the (0,0) value?",
-        default=False,
-    )
-    correlationQuadraticFit = pexConfig.Field(
-        dtype=bool,
-        doc="Use a quadratic fit to find the correlationsinstead of simple averaging?",
-        default=False,
-    )
-    buildCorrelationModel = pexConfig.Field(
-        dtype=int,
-        doc="Build a model of the correlation coefficients for radius large than this value in pixels?",
-        default=100,
     )
     ccdKey = pexConfig.Field(
         dtype=str,
@@ -161,7 +144,12 @@ class MakeBrighterFatterKernelTaskConfig(pexConfig.Config):
         doc="Size of the background bins",
         default=128
     )
-    # Lage 08-Feb-19 - Removed the option fixPtcThroughOrigin, since it is no longer relevant
+    fixPtcThroughOrigin = pexConfig.Field(
+        dtype=bool,
+        doc="Constrain the fit of the photon transfer curve to go through the origin when measuring" +
+        "the gain?",
+        default=True
+    )
     level = pexConfig.ChoiceField(
         doc="The level at which to calculate the brighter-fatter kernels",
         dtype=str, default="DETECTOR",
@@ -245,7 +233,6 @@ class BrighterFatterKernelTaskDataIdContainer(pipeBase.DataIdContainer):
                 namespace.log.warn("No data found for dataId=%s", dataId)
                 continue
             self.refList += refList
-
 
 class BrighterFatterKernel:
     """A (very) simple class to hold the kernel(s) generated.
@@ -376,7 +363,6 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         parser.add_id_argument("--id", datasetType="brighterFatterKernel",
                                ContainerClass=BrighterFatterKernelTaskDataIdContainer,
                                help="The ccds to use, e.g. --id ccd=0..100")
-        
         return parser
 
     def validateIsrConfig(self):
@@ -431,7 +417,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         visitPairs : `iterable` of `tuple` of `int`
             Pairs of visit numbers to be processed together
         """
-        self.log.info("Starting BF kernel task: Lage code - 13-Jan-19")
+        self.log.info("Starting BF kernel task - base with logging 13-Feb-19")
         # setup necessary objects
         detNum = dataRef.dataId[self.config.ccdKey]
         detector = dataRef.get('camera')[dataRef.dataId[self.config.ccdKey]]
@@ -461,28 +447,21 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
 
         # calculate or retrieve the gains
         if self.config.doCalcGains:
-            # Lage 08-Feb-19 Modified method of calculating gain.
-            # In this case, we set the gains = 1.0 for now, and calculate them later after
-            # the cross-corrrelations have been calculated. This is only supported when the
-            # level is by AMP.
-            if self.config.level == 'DETECTOR':
-                raise RuntimeError('doCalcGains = True is inconsistent with config.level = DETECTOR')                
-
-            self.log.info('Setting gain to 1.0 for detector %s' % detNum)
-            gains = {key: 1.0 for key in ampNames}
+            self.log.info('Compute gains for detector %s' % detNum)
+            gains, nomGains = self.estimateGains(dataRef, visitPairs)
             dataRef.put(gains, datasetType='brighterFatterGain')
-
+            self.log.debug('Finished gain estimation for detector %s' % detNum)
         else:
             gains = dataRef.get('brighterFatterGain')
             if not gains:
-                raise RuntimeError('Failed to retrieve gains for detector %s' % detNum)
+                raise RuntimeError('Failed to retrieved gains for detector %s' % detNum)
             self.log.info('Retrieved stored gain for detector %s' % detNum)
         self.log.debug('Detector %s has gains %s' % (detNum, gains))
 
-        
         # Loop over pairs of visits
         # calculating the cross-correlations at the required level
         for (v1, v2) in visitPairs:
+
             dataRef.dataId['visit'] = v1
             exp1 = self.isr.runDataRef(dataRef).exposure
             dataRef.dataId['visit'] = v2
@@ -501,7 +480,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
             # - "AMP": n_amp keys, comparing each amplifier of one visit
             #          to the same amplifier in the visit its paired with
             for det_object in ['C04', 'C14']:#_scaledMaskedIms1.keys():
-                _xcorr, _mean = self._crossCorrelate(_scaledMaskedIms1[det_object],
+                _xcorr, _ = self._crossCorrelate(_scaledMaskedIms1[det_object],
                                                  _scaledMaskedIms2[det_object])
                 xcorrs[det_object].append(_xcorr)
                 means[det_object].append([_means1[det_object], _means2[det_object]])
@@ -509,21 +488,15 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
                 # TODO: DM-15305 improve debug functionality here.
                 # This is position 1 for the removed code.
 
-        if self.config.doCalcGains:
-            # Lage 08-Feb-19 Modified method of calculating gain.            
-            # Now we calculate and apply the gains to the calculated
-            # means and cross-correlations
-            self.log.info('Calculating gains for detector %s' % detNum)
-            self._calculateAndApplyGains(dataRef, means, xcorrs)                       
-            self.log.debug('Finished gain estimation for detector %s' % detNum)
-
         # generate the kernel(s)
-        # Lage 08-Feb-19 Modified method of calculating gain.        
+        self.log.info('Generating kernel(s) for %s' % detNum)
         for det_object in ['C04', 'C14']:#xcorrs.keys():  # looping over either detectors or amps
             if self.config.level == 'DETECTOR':
                 objId = 'detector %s' % det_object
+                meanXcorr, kernel = self.generateKernel(xcorrs[det_object], means[det_object], objId)
                 kernels[det_object] = kernel
                 meanXcorrs[det_object] = meanXcorr
+
             elif self.config.level == 'AMP':
                 objId = 'detector %s AMP %s' % (detNum, det_object)
                 try:
@@ -533,9 +506,10 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
                 except RuntimeError:
                     # If we are generating by amp, we want to continue on failure.
                     continue
+
         # Lage 08-Feb-19 Added storage of means and correlations.
         dataRef.put(BrighterFatterKernel(self.config.level, kernels, means, xcorrs, meanXcorrs))
-        
+
         self.log.info('Finished generating kernel(s) for %s' % detNum)
         return pipeBase.Struct(exitStatus=0)
 
@@ -598,6 +572,9 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         # NB these are views modifying the image in-place
         for amp in ampInfoCat:
             ampName = amp.getName()
+            if ampName not in ['C04', 'C14']:
+                continue
+            
             rescaleIm = mi[amp.getBBox()]  # the soon-to-be scaled, mean subtractedm, amp image
             rescaleTemp = temp[amp.getBBox()]
             mean = afwMath.makeStatistics(rescaleIm, afwMath.MEANCLIP, sctrl).getValue()
@@ -736,85 +713,126 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
 
         return xcorr, mean
 
-    
-    def _calculateAndApplyGains(self, dataRef, means, xcorrs):
-        """ Lage - 08-Feb-19
-        Estimate the amplifier gains using the calculated means and variances.
+    def estimateGains(self, dataRef, visitPairs):
+        """Estimate the amplifier gains using the specified visits.
 
-        Given a dataRef and the calculated means and variances,
+        Given a dataRef and list of flats of varying intensity,
         calculate the gain for each amplifier in the detector
         using the photon transfer curve (PTC) method.
 
-        The gain is calculated as the linear part of the 
-        photon transfer curve only.
+        The config.fixPtcThroughOrigin option determines whether the iterative
+        fitting is forced to go through the origin or not.
+        This defaults to True, fitting var=1/gain * mean.
+        If set to False then var=1/g * mean + const is fitted.
 
-        The means and xcorrs are then adjusted for the resulting gain.
+        This is really a photo transfer curve (PTC) gain measurement task.
+        See DM-14063 for results from of a comparison between
+        this task's numbers and the gain values in the HSC camera model,
+        and those measured by the PTC task in eotest.
 
         Parameters
         ----------
         dataRef : `lsst.daf.persistence.butler.Butler.dataRef`
             dataRef for the detector for the flats to be used
-        means : `list` of mean values of the two visit pairs
-        xcorrs : `list` of cross-correlations values of the two visit pairs
+        visitPairs : `list` of `tuple`
+            List of visit-pairs to use, as [(v1,v2), (v3,v4)...]
 
         Returns
         -------
-        means : `list` of mean values of the two visit pairs
-        xcorrs : `list` of cross-correlations values of the two visit pairs
-
-        eog fl        Both of these have been corrected for the measured gains
-        The gains are also stored in dataRef datasetType='brighterFatterGain'.
-
+        gains : `dict` of `float`
+            Dict of the as-calculated amplifier gain values,
+            keyed by amplifier name
+        nominalGains : `dict` of `float`
+            Dict of the amplifier gains, as reported by the `detector` object,
+            keyed by amplifier name
         """
         # NB: don't use dataRef.get('raw_detector') due to composites
         detector = dataRef.get('camera')[dataRef.dataId[self.config.ccdKey]]
+        ampInfoCat = detector.getAmpInfoCatalog()
+        ampNames = [amp.getName() for amp in ampInfoCat]
+
+        ampMeans = {key: [] for key in ampNames}  # these get turned into np.arrays later
+        ampCoVariances = {key: [] for key in ampNames}
+        ampVariances = {key: [] for key in ampNames}
+
+        # Loop over the amps in the detector,
+        # calculating a PTC for each amplifier.
+        # The amplifier iteration is performed in _calcMeansAndVars()
+        # NB: no gain correction is applied
+        for visPairNum, visPair in enumerate(visitPairs):
+            _means, _vars, _covars = self._calcMeansAndVars(dataRef, visPair[0], visPair[1])
+
+            # Do sanity checks; if these are failed more investigation is needed
+            breaker = 0
+            for amp in detector:
+                ampName = amp.getName()
+                if ampName not in ['C04', 'C14']:
+                    continue
+                
+                if _means[ampName]*10 < _vars[ampName] or _means[ampName]*10 < _covars[ampName]:
+                    msg = 'Sanity check failed; check visit pair %s amp %s' % (visPair, ampName)
+                    self.log.warn(msg)
+                    breaker += 1
+            if breaker:
+                continue
+
+            # having made sanity checks
+            # pull the values out into the respective dicts
+            for k in _means.keys():  # keys are necessarily the same
+                if _vars[k]*1.3 < _covars[k] or _vars[k]*0.7 > _covars[k]:
+                    self.log.warn('Dropped a value')
+                    continue
+                ampMeans[k].append(_means[k])
+                ampVariances[k].append(_vars[k])
+                ampCoVariances[k].append(_covars[k])
 
         gains = {}
+        nomGains = {}
         for amp in detector:
             ampName = amp.getName()
             if ampName not in ['C04', 'C14']:
                 continue
-            ampMeans = []
-            ampVariances = []
-            for i in range(len(means[ampName])):
-                # The division by 2 below is to calculate the average flux from the two visits
-                ampMeans.append((means[ampName][i][0] + means[ampName][i][1]) / 2.0)
-                # The division by 2 below is because the variance of a difference is twice the variance of each visit
-                ampVariances.append(xcorrs[ampName][i][0,0] / 2.0)
-            # Now fit a cubic polynomial to the PTC
-            # and use the linear part as the gain
-            ptc_coefs = np.polyfit(ampMeans, ampVariances, 3)
-            slopeToUse = ptc_coefs[2]
-            gain = 1.0 / slopeToUse
-            #if self.debug.enabled:
-            fig = plt.figure()
-            ax = fig.add_subplot(111)
-            ax.set_title("Photon Transfer Curve %s"%ampName,fontsize=24)
-            x_values = np.asarray(ampMeans)
-            ax.plot(x_values,
-                    np.asarray(ampVariances), linestyle='None', color = 'green', marker='x', label='data')
-            cubic_fit = ptc_coefs[0]*x_values*x_values*x_values + ptc_coefs[1]*x_values*x_values +\
-                        ptc_coefs[2]*x_values + ptc_coefs[3]
-            ax.plot(x_values,
-                    cubic_fit, linestyle='--', color='green', label='Cubic fit')
-            ax.plot(x_values,
-                    x_values*slopeToUse, color='red', label='Linear fit. Gain = %.3f'%gain)
-            ax.set_xlabel("Flux(ADU)", fontsize=18)
-            ax.set_ylabel("Variance(ADU^2)",fontsize=18)
-            ax.legend()
-            dataRef.put(fig, "plotBrighterFatterPtc", amp=ampName)
-            self.log.info('Saved PTC for detector %s amp %s' % (detector.getId(), ampName))
-            gains[ampName] = gain
-            self.log.info("Calculating gain for Amp %s, Gain = %f"%(ampName,gain)) 
-            # Now subtract off the constant and linear terms from the variance (xcorrs[0,0]) term.
-            for i in range(len(means[ampName])):
-                xcorrs[ampName][i][0,0] -= 2.0 * (ampMeans[i] * ptc_coefs[2] + ptc_coefs[3])
-                # Now adjust the means and xcorrs for the calculated gain
-            means[ampName] = [[value*gain for value in pair] for pair in means[ampName]]
-            xcorrs[ampName] = [arr*gain*gain for arr in xcorrs[ampName]]
-        plt.close('all')
-        dataRef.put(gains, datasetType='brighterFatterGain')
-        return
+
+            nomGains[ampName] = amp.getGain()
+            try:
+                slopeRaw, interceptRaw, rVal, pVal, stdErr = \
+                    stats.linregress(np.asarray(ampMeans[ampName]), np.asarray(ampCoVariances[ampName]))
+                slopeFix, _ = self._iterativeRegression(np.asarray(ampMeans[ampName]),
+                                                        np.asarray(ampCoVariances[ampName]),
+                                                        fixThroughOrigin=True)
+                slopeUnfix, intercept = self._iterativeRegression(np.asarray(ampMeans[ampName]),
+                                                                  np.asarray(ampCoVariances[ampName]),
+                                                                  fixThroughOrigin=False)
+                self.log.info("Slope of     raw fit: %s, intercept: %s p value: %s" % (slopeRaw,
+                                                                                       interceptRaw, pVal))
+                self.log.info("slope of   fixed fit: %s, difference vs raw:%s" % (slopeFix,
+                                                                                  slopeFix - slopeRaw))
+                self.log.info("slope of unfixed fit: %s, difference vs fix:%s" % (slopeUnfix,
+                                                                                  slopeFix - slopeUnfix))
+                if self.config.fixPtcThroughOrigin:
+                    slopeToUse = slopeFix
+                else:
+                    slopeToUse = slopeUnfix
+
+                #if self.debug.enabled:
+                fig = plt.figure()
+                ax = fig.add_subplot(111)
+                ax.plot(np.asarray(ampMeans[ampName]),
+                        np.asarray(ampCoVariances[ampName]), linestyle='None', marker='x', label='data')
+                if self.config.fixPtcThroughOrigin:
+                    ax.plot(np.asarray(ampMeans[ampName]),
+                            np.asarray(ampMeans[ampName])*slopeToUse, label='Fit through origin')
+                else:
+                    ax.plot(np.asarray(ampMeans[ampName]),
+                            np.asarray(ampMeans[ampName])*slopeToUse + intercept,
+                            label='Fit (intercept unconstrained')
+
+                dataRef.put(fig, "plotBrighterFatterPtc", amp=ampName)
+                self.log.info('Saved PTC for detector %s amp %s' % (detector.getId(), ampName))
+                gains[ampName] = 1.0/slopeToUse
+            except ValueError:
+                gains[ampName] = 1.0;
+        return gains, nomGains
 
     @staticmethod
     def _checkExpLengthEqual(exp1, exp2, v1=None, v2=None):
@@ -845,6 +863,145 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
                 msg += " for visit pair %s, %s" % (v1, v2)
             raise RuntimeError(msg)
 
+    def _calcMeansAndVars(self, dataRef, v1, v2):
+        """Calculate the means, vars, covars, and retrieve the nominal gains,
+        for each amp in each detector.
+
+        This code runs using two visit numbers, and for the detector specified.
+        It calculates the correlations in the individual amps without
+        rescaling any gains. This allows a photon transfer curve
+        to be generated and the gains measured.
+
+        Images are assembled with use the isrTask, and basic isr is performed.
+
+        Parameters:
+        -----------
+        dataRef : `lsst.daf.persistence.butler.Butler.dataRef`
+            dataRef for the detector for the repo containg the flats to be used
+        v1 : `int`
+            First visit of the visit pair
+        v2 : `int`
+            Second visit of the visit pair
+
+        Returns
+        -------
+        means, vars, covars : `tuple` of `dicts`
+            Three dicts, keyed by ampName,
+            containing the sum of the image-means,
+            the variance, and the quarter-image of the xcorr.
+        """
+        sigma = self.config.nSigmaClipGainCalc
+        maxLag = self.config.maxLag
+        border = self.config.nPixBorderGainCalc
+        biasCorr = self.config.biasCorr
+
+        # NB: don't use dataRef.get('raw_detector') due to composites
+        detector = dataRef.get('camera')[dataRef.dataId[self.config.ccdKey]]
+
+        ampMeans = {}
+
+        # manipulate the dataId to get a postISR exposure for each visit
+        # from the detector obj, restoring its original state afterwards
+        originalDataId = dataRef.dataId.copy()
+        dataRef.dataId['visit'] = v1
+        exp1 = self.isr.runDataRef(dataRef).exposure
+        dataRef.dataId['visit'] = v2
+        exp2 = self.isr.runDataRef(dataRef).exposure
+        dataRef.dataId = originalDataId
+        exps = [exp1, exp2]
+        self._checkExpLengthEqual(exp1, exp2, v1, v2)
+
+        detector = exps[0].getDetector()
+        ims = [self._convertImagelikeToFloatImage(exp) for exp in exps]
+
+        if self.debug.display:
+            self.disp1.mtv(ims[0], title=str(v1))
+            self.disp2.mtv(ims[1], title=str(v2))
+
+        sctrl = afwMath.StatisticsControl()
+        sctrl.setNumSigmaClip(sigma)
+        for imNum, im in enumerate(ims):
+
+            # calculate the sigma-clipped mean, excluding the borders
+            # safest to apply borders to all amps regardless of edges
+            # easier, camera-agnostic, and mitigates potentially dodgy
+            # overscan-biases around edges as well
+            for amp in detector:
+                ampName = amp.getName()
+                if ampName not in ['C04', 'C14']:
+                    continue
+                
+                ampIm = im[amp.getBBox()]
+                mean = afwMath.makeStatistics(ampIm[border: -border, border: -border, afwImage.LOCAL],
+                                              afwMath.MEANCLIP, sctrl).getValue()
+                if ampName not in ampMeans.keys():
+                    ampMeans[ampName] = []
+                ampMeans[ampName].append(mean)
+                ampIm -= mean
+
+        diff = ims[0].clone()
+        diff -= ims[1]
+
+        temp = diff[border: -border, border: -border, afwImage.LOCAL]
+
+        # Subtract background. It should be a constant,
+        # but it isn't always (e.g. some SuprimeCam flats)
+        # TODO: Check how this looks, and if this is the "right" way to do this
+        binsize = self.config.backgroundBinSize
+        nx = temp.getWidth()//binsize
+        ny = temp.getHeight()//binsize
+        bctrl = afwMath.BackgroundControl(nx, ny, sctrl, afwMath.MEANCLIP)
+        bkgd = afwMath.makeBackground(temp, bctrl)
+
+        box = diff.getBBox()
+        box.grow(-border)
+        diff[box, afwImage.LOCAL] -= bkgd.getImageF(afwMath.Interpolate.CUBIC_SPLINE,
+                                                    afwMath.REDUCE_INTERP_ORDER)
+
+        variances = {}
+        coVars = {}
+        for amp in detector:
+            ampName = amp.getName()
+            if ampName not in ['C04', 'C14']:
+                continue
+
+            diffAmpIm = diff[amp.getBBox()].clone()
+            diffAmpImCrop = diffAmpIm[border: -border - maxLag, border: -border - maxLag, afwImage.LOCAL]
+            diffAmpImCrop -= afwMath.makeStatistics(diffAmpImCrop, afwMath.MEANCLIP, sctrl).getValue()
+            w, h = diffAmpImCrop.getDimensions()
+            xcorr = np.zeros((maxLag + 1, maxLag + 1), dtype=np.float64)
+
+            # calculate the cross-correlation
+            for xlag in range(maxLag + 1):
+                for ylag in range(maxLag + 1):
+                    dim_xy = diffAmpIm[border + xlag: border + xlag + w,
+                                       border + ylag: border + ylag + h,
+                                       afwImage.LOCAL].clone()
+                    dim_xy -= afwMath.makeStatistics(dim_xy, afwMath.MEANCLIP, sctrl).getValue()
+                    dim_xy *= diffAmpImCrop
+                    xcorr[xlag, ylag] = afwMath.makeStatistics(dim_xy,
+                                                               afwMath.MEANCLIP, sctrl).getValue()/(biasCorr)
+
+            variances[ampName] = xcorr[0, 0]
+            xcorr_full = self._tileArray(xcorr)
+            coVars[ampName] = np.sum(xcorr_full)
+
+            msg = "M1: " + str(ampMeans[ampName][0])
+            msg += " M2 " + str(ampMeans[ampName][1])
+            msg += " M_sum: " + str((ampMeans[ampName][0]) + ampMeans[ampName][1])
+            msg += " Var " + str(variances[ampName])
+            msg += " coVar: " + str(coVars[ampName])
+            self.log.debug(msg)
+
+            means = {}
+            for amp in detector:
+                ampName = amp.getName()
+                if ampName not in ['C04', 'C14']:
+                    continue
+                
+                means[ampName] = ampMeans[ampName][0] + ampMeans[ampName][1]
+
+        return means, variances, coVars
 
     def _plotXcorr(self, xcorr, mean, zmax=0.05, title=None, fig=None, saveToFileName=None):
         """Plot the correlation functions."""
@@ -993,97 +1150,43 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         kernel : `numpy.ndarray`, (Ny, Nx)
             The output kernel
         """
-        self.log.info('Calculating kernel for %s'%objId)                       
         if not rejectLevel:
             rejectLevel = self.config.xcorrCheckRejectLevel
-        if self.config.correlationQuadraticFit:
-            # Lage 08-Feb-19 added this method
-            xcorrList = []
-            fluxList = []
 
-            for corrNum, ((mean1, mean2), corr) in enumerate(zip(means, corrs)):
-                self.log.info('For item %s, initial corr[0,0] = %g, corr[1,0] = %g'%(corrNum, corr[0,0], corr[1,0]))
-                #corr[0, 0] -= (mean1 + mean2)  This is now done in calculate And Apply Gains
-                fullCorr = self._tileArray(corr)
-                # Lage - I don't understand the negative sign, but it needs to be there.                
-                xcorrList.append(-fullCorr / 2.0)
-                flux = (mean1 + mean2) / 2.0
-                fluxList.append(flux * flux)
-                # We're using the linear fit algorithm to find a quadratic fit, so we square the x-axis.
-                # The step below does not need to be done, but is included so that correlations can be compared
-                # directly to existing code.  We might want to take it out.
-                corr /= -1.0*(mean1**2 + mean2**2)
-                
-            if not xcorrList:
-                raise RuntimeError("Cannot generate kernel because all inputs were discarded. "
-                                   "Either the data is bad, or config.xcorrCheckRejectLevel is too low")
+        # Try to average over a set of possible inputs.
+        # This generates a simple function of the kernel that
+        # should be constant across the images, and averages that.
+        xcorrList = []
+        sctrl = afwMath.StatisticsControl()
+        sctrl.setNumSigmaClip(self.config.nSigmaClipKernelGen)
 
-            # This method fits a quadratic vs flux and keeps only the quadratic term.
-            meanXcorr = np.zeros_like(fullCorr)
-            xcorrList = np.asarray(xcorrList)
+        for corrNum, ((mean1, mean2), corr) in enumerate(zip(means, corrs)):
+            self.log.info('For item %s, mean1 = %f, mean2 = %f, initial corr[0,0] = %g, corr[1,0] = %g'%(corrNum, mean1, mean2, corr[0,0], corr[1,0]))
+            corr[0, 0] -= (mean1 + mean2)
+            if corr[0, 0] > 0:
+                self.log.warn('Skipped item %s due to unexpected value of (variance-mean)' % corrNum)
+                continue
+            corr /= -1.0*(mean1**2 + mean2**2)
 
-            for i in range(np.shape(meanXcorr)[0]):
-                for j in range(np.shape(meanXcorr)[1]):
-                    # Lage: Note the i,j inversion.  This serves the same function as the transpose step in
-                    # the base code.  I don't understand why it is there, but I put it in to be consistent.
-                    slopeRaw, interceptRaw, rVal, pVal, stdErr = stats.linregress(np.asarray(fluxList), xcorrList[:,j,i])
-                    try:
-                        slope, intercept = self._iterativeRegression(np.asarray(fluxList),
-                                                                     xcorrList[:,j,i], fixThroughOrigin=True)
-                        self.log.info("(%s,%s):Slope of raw fit: %s, intercept: %s p value: %s" % (i,j,slopeRaw,
-                                                                                               interceptRaw, pVal))
-                        self.log.info("(%s,%s):Slope of fixed fit: %s" % (i,j,slope))
- 
-                        meanXcorr[i, j] = slope
-                    except ValueError:
-                        meanXcorr[i,j] = slopeRaw
-            self.log.info('Quad Fit meanXcorr[0,0] = %g, meanXcorr[1,0] = %g'%(meanXcorr[8,8],meanXcorr[9,8]))               
-            
-        else:
-            # Lage 08-Feb-19 This was the existing method
-            # Try to average over a set of possible inputs.
-            # This generates a simple function of the kernel that
-            # should be constant across the images, and averages that.
-            xcorrList = []
-            sctrl = afwMath.StatisticsControl()
-            sctrl.setNumSigmaClip(self.config.nSigmaClipKernelGen)
+            fullCorr = self._tileArray(corr)
 
-            for corrNum, ((mean1, mean2), corr) in enumerate(zip(means, corrs)):
-                self.log.info('For item %s, mean1 = %f, mean2 = %f, initial corr[0,0] = %g, corr[1,0] = %g'%(corrNum, mean1, mean2, corr[0,0], corr[1,0]))
-                #corr[0, 0] -= (mean1 + mean2)   This is now done in calculate And Apply Gains
-                if corr[0, 0] > 0:
-                    self.log.warn('Skipped item %s due to unexpected value of (variance-mean)' % corrNum)
-                    continue
-                corr /= -1.0*(mean1**2 + mean2**2)
-                fullCorr = self._tileArray(corr)
+            xcorrCheck = np.abs(np.sum(fullCorr))/np.sum(np.abs(fullCorr))
+            if xcorrCheck > rejectLevel:
+                self.log.warn("Sum of the xcorr is unexpectedly high. Investigate item num %s for %s. \n"
+                              "value = %s" % (corrNum, objId, xcorrCheck))
+                continue
+            xcorrList.append(fullCorr)
 
-                xcorrCheck = np.abs(np.sum(fullCorr))/np.sum(np.abs(fullCorr))
-                if xcorrCheck > rejectLevel:
-                    self.log.warn("Sum of the xcorr is unexpectedly high. Investigate item num %s for %s. \n"
-                                  "value = %s" % (corrNum, objId, xcorrCheck))
-                    continue
-                xcorrList.append(fullCorr)
+        if not xcorrList:
+            raise RuntimeError("Cannot generate kernel because all inputs were discarded. "
+                               "Either the data is bad, or config.xcorrCheckRejectLevel is too low")
 
-            if not xcorrList:
-                raise RuntimeError("Cannot generate kernel because all inputs were discarded. "
-                                   "Either the data is bad, or config.xcorrCheckRejectLevel is too low")
-
-            # stack the individual xcorrs and apply a per-pixel clipped-mean
-            meanXcorr = np.zeros_like(fullCorr)
-            xcorrList = np.transpose(xcorrList) # Lage - Why does this need to be here??
-            for i in range(np.shape(meanXcorr)[0]):
-                for j in range(np.shape(meanXcorr)[1]):
-                    meanXcorr[i, j] = afwMath.makeStatistics(xcorrList[i, j], afwMath.MEANCLIP, sctrl).getValue()
-            self.log.info('Simple Ave meanXcorr[0,0] = %g, meanXcorr[1,0] = %g'%(meanXcorr[8,8],meanXcorr[9,8]))               
-
-        # Lage 08-Feb-19 Added these two options 
-        if self.config.buildCorrelationModel < (meanXcorr.shape[0] - 1) / 2:
-            sum_to_infinity = self._buildCorrelationModel(meanXcorr, self.config.buildCorrelationModel)
-            self.log.info("Sum_to_infinity =  %s" % sum_to_infinity)
-        else:
-            sum_to_infinity = 0.0
-        if self.config.forceZeroSum:
-            meanXcorr = self._forceZeroSum(meanXcorr, sum_to_infinity)
+        # stack the individual xcorrs and apply a per-pixel clipped-mean
+        meanXcorr = np.zeros_like(fullCorr)
+        xcorrList = np.transpose(xcorrList)
+        for i in range(np.shape(meanXcorr)[0]):
+            for j in range(np.shape(meanXcorr)[1]):
+                meanXcorr[i, j] = afwMath.makeStatistics(xcorrList[i, j], afwMath.MEANCLIP, sctrl).getValue()
 
         return meanXcorr, self.successiveOverRelax(meanXcorr)
 
@@ -1213,88 +1316,6 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         return output
 
     @staticmethod
-    def _forceZeroSum(in_array, sum_to_infinity):
-        """
-        Lage 08-Feb-19
-        Given an array of correlations, adjust the
-        central value to force the sum of the array to be zero.
-
-        Parameters:
-        -----------
-        input : `np.array`
-            The square input array, assumed square and with
-            shape (2n+1) x (2n+1)
-
-        Returns:
-        --------
-        output : `np.array`
-            The same array, with the value of the central value
-            in_array[n,n] adjusted to force the array sum to be zero.
-        """
-        assert(in_array.shape[0] == in_array.shape[1])
-        assert(in_array.shape[0] % 2 == 1)
-        center = int((in_array.shape[0] - 1) / 2)
-        out_array = np.copy(in_array)
-        out_array[center, center] -= in_array.sum() - sum_to_infinity
-        return out_array
-
-    @staticmethod    
-    def _buildCorrelationModel(array, n_replace):
-        """
-        Lage 08-Feb-19
-        Given an array of correlations, build a model
-        for correlations beyond n_replace pixels from the center
-        and replace the measured values with the model.
-
-        Parameters:
-        -----------
-        input : `np.array`
-            The square input array, assumed square and with
-            shape (2n+1) x (2n+1)
-
-        Returns:
-        --------
-        output : `np.array`
-            The same array, with the outer values
-            replaced with a smoothed model.
-        """
-        assert(array.shape[0] == array.shape[1])
-        assert(array.shape[0] % 2 == 1)
-        assert(n_replace > 1)
-        center = int((array.shape[0] - 1) / 2)
-        fitrs = []
-        fitcs = []
-        for i in range(array.shape[0]):
-            for j in range(array.shape[1]):
-                r2 = float((i-center)*(i-center) + (j-center)*(j-center))
-                c_value = array[i, j]
-                if r2 > 1.1 and r2 < 20.0 and c_value < 0:
-                    fitrs.append(np.log10(r2))
-                    fitcs.append(np.log10(-c_value))
-
-        slope, intercept, r_value, p_value, std_err = stats.linregress(fitrs,fitcs)
-        # This step is a bit of a hack. |slope| should be 1.35 or greater, so I force it.
-        slope = min(slope, -1.35)
-        print("Model correlation fit, slope =%f"%slope)
-        pre_factor = 10**intercept
-        slope_factor = 2.0*abs(slope) - 2.0
-        sum_to_infinity = 2.0*np.pi*pre_factor / (slope_factor*(float(center)+0.5)**slope_factor)
-        # sum_to_ininity is the integral of the model beyond what is measured.
-        # It is used to adjust C00 in the case of forcing zero sum
-
-        # Now replace the pixels beyong n_replace with the model values 
-        for i in range(array.shape[0]):
-            for j in range(array.shape[1]):
-                r2 = float((i-center)*(i-center) + (j-center)*(j-center))
-                if abs(i-center) < n_replace and abs(j-center) < n_replace:
-                    continue
-                else:
-                    new_c_value = -pre_factor * r2**slope
-                    array[i, j] = new_c_value
-        return sum_to_infinity
-
-    
-    @staticmethod
     def _convertImagelikeToFloatImage(imagelikeObject):
         """Turn an exposure or masked image of any type into an ImageF."""
         for attr in ("getMaskedImage", "getImage"):
@@ -1397,6 +1418,3 @@ def calcBiasCorr(fluxLevels, imageShape, repeats=1, seed=0, addCorrelations=Fals
             biases[flux].append(bias)
 
     return biases, means, xcorrs
-
-
-
