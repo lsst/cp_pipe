@@ -500,7 +500,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
             # - "DETECTOR": one key, so compare the two visits to each other
             # - "AMP": n_amp keys, comparing each amplifier of one visit
             #          to the same amplifier in the visit its paired with
-            for det_object in ['C04', 'C14']:#_scaledMaskedIms1.keys():
+            for det_object in _scaledMaskedIms1.keys():
                 _xcorr, _mean = self._crossCorrelate(_scaledMaskedIms1[det_object],
                                                  _scaledMaskedIms2[det_object])
                 xcorrs[det_object].append(_xcorr)
@@ -519,7 +519,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
 
         # generate the kernel(s)
         # Lage 08-Feb-19 Modified method of calculating gain.        
-        for det_object in ['C04', 'C14']:#xcorrs.keys():  # looping over either detectors or amps
+        for det_object in xcorrs.keys():  # looping over either detectors or amps
             if self.config.level == 'DETECTOR':
                 objId = 'detector %s' % det_object
                 kernels[det_object] = kernel
@@ -772,8 +772,6 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         gains = {}
         for amp in detector:
             ampName = amp.getName()
-            if ampName not in ['C04', 'C14']:
-                continue
             ampMeans = []
             ampVariances = []
             for i in range(len(means[ampName])):

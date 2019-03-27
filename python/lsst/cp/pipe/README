@@ -1,9 +1,0 @@
-Craig Lage - 14Feb19
-
-This is by way of explanation of the "makeBrighterFatterKernel.py" files:
-
-(1) makeBrighterFatterKernel_base_two_amps.py - This files uses the baseline functionality, but I have made several changes for debug purposes.  I added code to save the measured correlations and mean fluxes.  I also have restricted it to just two amps, C04 and C14, to speed debug.
-
-(2) makeBrighterFatterKernel.py - This file has all of the options that I have added.  I have also made several changes for debug purposes.  I added code to save the measured correlations and mean fluxes.  I also have restricted it to just two amps, C04 and C14, to speed debug.
-
-(3) makeBrighterFatterKernel_all_amps.py - This file is the same as (2), but without the restriction to two amps.
