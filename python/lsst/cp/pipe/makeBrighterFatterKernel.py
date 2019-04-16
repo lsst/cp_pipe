@@ -71,6 +71,26 @@ class MakeBrighterFatterKernelTaskConfig(pexConfig.Config):
         doc="Measure the per-amplifier gains (using the photon transfer curve method)?",
         default=True,
     )
+    doPlotPtcs = pexConfig.Field(
+        dtype=bool,
+        doc="Plot the PTCs and butler.put() them as defined by the plotBrighterFatterPtc template",
+        default=False,
+    )
+    forceZeroSum = pexConfig.Field(
+        dtype=bool,
+        doc="Force the correlation matrix to have zero sum by adjusting the (0,0) value?",
+        default=False,
+    )
+    correlationQuadraticFit = pexConfig.Field(
+        dtype=bool,
+        doc="Use a quadratic fit to find the correlations instead of simple averaging?",
+        default=False,
+    )
+    correlationModelRadius = pexConfig.Field(
+        dtype=int,
+        doc="Build a model of the correlation coefficients for radii larger than this value in pixels?",
+        default=100,
+    )
     ccdKey = pexConfig.Field(
         dtype=str,
         doc="The key by which to pull a detector from a dataId, e.g. 'ccd' or 'detector'",
@@ -202,28 +222,46 @@ class BrighterFatterKernelTaskDataIdContainer(pipeBase.DataIdContainer):
 
 
 class BrighterFatterKernel:
-    """A (very) simple class to hold the kernel(s) generated.
+    """A simple class to hold the kernel(s) generated and the intermediate
+    data products.
 
     The kernel.kernel is a dictionary holding the kernels themselves.
     One kernel if the level is 'DETECTOR' or,
     nAmps in length, if level is 'AMP'.
     The dict is keyed by either the detector ID or the amplifier IDs.
 
+    XXX add info on the other data products now stored
+
     The level is the level for which the kernel(s) were generated so that one
     can know how to access the kernels without having to query the shape of
     the dictionary holding the kernel(s).
     """
 
-    def __init__(self, level, kernelDict):
-        assert type(level) == str
-        assert type(kernelDict) == dict
-        if level == 'DETECTOR':
-            assert len(kernelDict.keys()) == 1
-        if level == 'AMP':
-            assert len(kernelDict.keys()) > 1
+    def __init__(self, **kwargs):
+        self.__dict__["originalLevel"] = ""
+        self.__dict__["ampwiseKernels"] = {}
+        self.__dict__["detectorKernel"] = {}
+        self.__dict__["means"] = []
+        self.__dict__["xCorrs"] = []
+        self.__dict__["meanXcorrs"] = []
 
-        self.level = level
-        self.kernel = kernelDict
+        for key, value in kwargs.items():
+            if hasattr(self, key):
+                # xxx type check here?
+                setattr(self, key, value)
+
+    def __setattr__(self, attribute, value):
+        """Protect class attributes"""
+        if attribute not in self.__dict__:
+            print(f"Cannot set {attribute}")
+        else:
+            self.__dict__[attribute] = value
+
+    def replaceDetectorKernelWithAmpKernel(self, ampName, detectorName):
+        self.detectorKernel[detectorName] = self.ampwiseKernels[ampName]
+
+    def createDetectorKernelFromAmpwiseKernels(self, ampwiseKernels):
+        return -1  # xxx write averaging code here
 
 
 class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
