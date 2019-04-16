@@ -71,7 +71,11 @@ class MakeBrighterFatterKernelTaskConfig(pexConfig.Config):
         doc="Measure the per-amplifier gains (using the photon transfer curve method)?",
         default=True,
     )
-    # Lage 08-Feb-19 Added the three options below.
+    doPlotPtcs = pexConfig.Field(
+        dtype=bool,
+        doc="Plot the PTCs and butler.put() them as defined by the plotBrighterFatterPtc template",
+        default=False,
+    )
     forceZeroSum = pexConfig.Field(
         dtype=bool,
         doc="Force the correlation matrix to have zero sum by adjusting the (0,0) value?",
@@ -79,12 +83,12 @@ class MakeBrighterFatterKernelTaskConfig(pexConfig.Config):
     )
     correlationQuadraticFit = pexConfig.Field(
         dtype=bool,
-        doc="Use a quadratic fit to find the correlationsinstead of simple averaging?",
+        doc="Use a quadratic fit to find the correlations instead of simple averaging?",
         default=False,
     )
-    buildCorrelationModel = pexConfig.Field(
+    correlationModelRadius = pexConfig.Field(
         dtype=int,
-        doc="Build a model of the correlation coefficients for radius large than this value in pixels?",
+        doc="Build a model of the correlation coefficients for radii larger than this value in pixels?",
         default=100,
     )
     ccdKey = pexConfig.Field(
@@ -160,7 +164,6 @@ class MakeBrighterFatterKernelTaskConfig(pexConfig.Config):
         doc="Size of the background bins",
         default=128
     )
-    # Lage 08-Feb-19 - Removed the option fixPtcThroughOrigin, since it is no longer relevant
     level = pexConfig.ChoiceField(
         doc="The level at which to calculate the brighter-fatter kernels",
         dtype=str, default="DETECTOR",
@@ -247,42 +250,89 @@ class BrighterFatterKernelTaskDataIdContainer(pipeBase.DataIdContainer):
 
 
 class BrighterFatterKernel:
-    """A (very) simple class to hold the kernel(s) generated.
+    """A simple class to hold the kernel(s) generated and the intermediate
+    data products.
 
     The kernel.kernel is a dictionary holding the kernels themselves.
     One kernel if the level is 'DETECTOR' or,
     nAmps in length, if level is 'AMP'.
     The dict is keyed by either the detector ID or the amplifier IDs.
 
+    XXX add info on the other data products now stored
+
     The level is the level for which the kernel(s) were generated so that one
     can know how to access the kernels without having to query the shape of
     the dictionary holding the kernel(s).
-
-    Lage 08-Feb-19 Added storage of means and correlations.
     """
 
-    def __init__(self, level, kernelDict, meansDict, xcorrsDict, meanXcorrsDict):
-        assert type(level) == str
-        assert type(kernelDict) == dict
-        assert type(meansDict) == dict
-        assert type(xcorrsDict) == dict
-        assert type(meanXcorrsDict) == dict
-        if level == 'DETECTOR':
-            assert len(kernelDict.keys()) == 1
-            assert len(meansDict.keys()) == 1
-            assert len(xcorrsDict.keys()) == 1
-            assert len(meanXcorrsDict.keys()) == 1
-        if level == 'AMP':
-            assert len(kernelDict.keys()) > 1
-            assert len(meansDict.keys()) > 1
-            assert len(xcorrsDict.keys()) > 1
-            assert len(meanXcorrsDict.keys()) > 1
+    # def __init__(self, level, kernelDict, meansDict, xcorrsDict, meanXcorrsDict):
+    #     assert type(level) == str
+    #     assert type(kernelDict) == dict
+    #     assert type(meansDict) == dict
+    #     assert type(xcorrsDict) == dict
+    #     assert type(meanXcorrsDict) == dict
+    #     if level == 'DETECTOR':
+    #         assert len(kernelDict.keys()) == 1
+    #         assert len(meansDict.keys()) == 1
+    #         assert len(xcorrsDict.keys()) == 1
+    #         assert len(meanXcorrsDict.keys()) == 1
+    #     if level == 'AMP':
+    #         assert len(kernelDict.keys()) > 1
+    #         assert len(meansDict.keys()) > 1
+    #         assert len(xcorrsDict.keys()) > 1
+    #         assert len(meanXcorrsDict.keys()) > 1
 
-        self.level = level
-        self.kernel = kernelDict
-        self.means = meansDict
-        self.xcorrs = xcorrsDict
-        self.meanXcorrs = meanXcorrsDict
+    #     self.level = level
+    #     self.kernel = kernelDict
+    #     self.means = meansDict
+    #     self.xCorrs = xcorrsDict
+    #     self.meanXcorrs = meanXcorrsDict
+
+    def __setattr__(self, attribute, value):
+        """Protect class attributes"""
+        if attribute not in self.__dict__:
+            print(f"Cannot set {attribute}")
+        else:
+            self.__dict__[attribute] = value
+
+    # def __getattr__(self, attribute):
+    #     """Check data was not corrupted by users"""
+    #     if attribute not in self.__dict__:
+    #         return
+
+    #     # check all the list objects are the same length and return if so
+    #     lengths = []
+    #     for k, v in self.__dict__.items():
+    #         if type(v) == list:
+    #             lengths.append(len(v))
+
+    #     lengths = set(lengths)
+    #     if len(lengths) == 1:
+    #         return self.__dict__[attribute]
+    #     elif 0 in lengths and len(lengths)==2:
+    #         return self.__dict__[attribute]
+    #     else:
+    #         print('Corrupted data in BrighterFatterKernel')
+    #         print(f'list items had different lengths {lengths}')
+
+    def __init__(self, **kwargs):
+        self.__dict__["originalLevel"] = ""
+        self.__dict__["ampwiseKernels"] = {}
+        self.__dict__["detectorKernel"] = {}
+        self.__dict__["means"] = []
+        self.__dict__["xCorrs"] = []
+        self.__dict__["meanXcorrs"] = []
+
+        for key, value in kwargs.items():
+            if hasattr(self, key):
+                # xxx type check here?
+                setattr(self, key, value)
+
+    def replaceDetectorKernelWithAmpKernel(self, ampName, detectorName):
+        self.detectorKernel[detectorName] = self.ampwiseKernels[ampName]
+
+    def createDetectorKernelFromAmpwiseKernels(self, ampwiseKernels):
+        return -1  # xxx write averaging code here
 
 
 class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
@@ -375,7 +425,6 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         parser.add_id_argument("--id", datasetType="brighterFatterKernel",
                                ContainerClass=BrighterFatterKernelTaskDataIdContainer,
                                help="The ccds to use, e.g. --id ccd=0..100")
-
         return parser
 
     def validateIsrConfig(self):
@@ -430,36 +479,32 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         visitPairs : `iterable` of `tuple` of `int`
             Pairs of visit numbers to be processed together
         """
-        self.log.info("Starting BF kernel task: Lage code - 13-Jan-19")
         # setup necessary objects
+        # NB: don't use dataRef.get('raw_detector')
+        # this currently doesn't work for composites because of the way
+        # composite objects (i.e. LSST images) are handled/constructed
+        # these need to be retrieved from the camera and dereferenced
+        # rather than accessed directly
         detNum = dataRef.dataId[self.config.ccdKey]
         detector = dataRef.get('camera')[dataRef.dataId[self.config.ccdKey]]
         ampInfoCat = detector.getAmpInfoCatalog()
         ampNames = [amp.getName() for amp in ampInfoCat]
-        # Lage 08-Feb-19 Added storage of means and correlations.
+
         if self.config.level == 'DETECTOR':
             kernels = {detNum: []}
             means = {detNum: []}
             xcorrs = {detNum: []}
             meanXcorrs = {detNum: []}
-
         elif self.config.level == 'AMP':
-            # NB: don't use dataRef.get('raw_detector')
-            # this currently doesn't work for composites because of the way
-            # composite objects (i.e. LSST images) are handled/constructed
-            # these need to be retrieved from the camera and dereferenced
-            # rather than accessed directly
             kernels = {key: [] for key in ampNames}
             means = {key: [] for key in ampNames}
             xcorrs = {key: [] for key in ampNames}
             meanXcorrs = {key: [] for key in ampNames}
-
         else:
             raise RuntimeError("Unsupported level: {}".format(self.config.level))
 
         # calculate or retrieve the gains
         if self.config.doCalcGains:
-            # Lage 08-Feb-19 Modified method of calculating gain.
             # In this case, we set the gains = 1.0 for now, and calculate them later after
             # the cross-corrrelations have been calculated. This is only supported when the
             # level is by AMP.
@@ -507,7 +552,6 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
                 # This is position 1 for the removed code.
 
         if self.config.doCalcGains:
-            # Lage 08-Feb-19 Modified method of calculating gain.
             # Now we calculate and apply the gains to the calculated
             # means and cross-correlations
             self.log.info('Calculating gains for detector %s' % detNum)
@@ -515,23 +559,35 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
             self.log.debug('Finished gain estimation for detector %s' % detNum)
 
         # generate the kernel(s)
-        # Lage 08-Feb-19 Modified method of calculating gain.
         for det_object in xcorrs.keys():  # looping over either detectors or amps
             if self.config.level == 'DETECTOR':
                 objId = 'detector %s' % det_object
-                kernels[det_object] = kernel
-                meanXcorrs[det_object] = meanXcorr
             elif self.config.level == 'AMP':
                 objId = 'detector %s AMP %s' % (detNum, det_object)
-                try:
-                    meanXcorr, kernel = self.generateKernel(xcorrs[det_object], means[det_object], objId)
-                    kernels[det_object] = kernel
-                    meanXcorrs[det_object] = meanXcorr
-                except RuntimeError:
-                    # If we are generating by amp, we want to continue on failure.
-                    continue
-        # Lage 08-Feb-19 Added storage of means and correlations.
-        dataRef.put(BrighterFatterKernel(self.config.level, kernels, means, xcorrs, meanXcorrs))
+
+            try:
+                meanXcorr, kernel = self.generateKernel(xcorrs[det_object], means[det_object], objId)
+                kernels[det_object] = kernel
+                meanXcorrs[det_object] = meanXcorr
+            except RuntimeError:
+                # bad amps will cause failures here which we want to ignore
+                self.log.warn('RuntimeError during kernel generation for %s' % objId)
+                continue
+
+        bfKernel = BrighterFatterKernel()
+        bfKernel.originalLevel = self.config.level
+        bfKernel.means = means
+        bfKernel.xCorrs = xcorrs
+        bfKernel.meanXcorrs = meanXcorrs
+        if self.config.level == 'AMP':
+            bfKernel.ampwiseKernels = kernels
+            bfKernel.detectorKernel = bfKernel.createDetectorKernelFromAmpwiseKernels(kernels)
+
+        if self.config.level == 'DETECTOR':
+            bfKernel.detectorKernel = kernels
+
+        # dataRef.put(BrighterFatterKernel(self.config.level, kernels, means, xcorrs, meanXcorrs))
+        dataRef.put(bfKernel)
 
         self.log.info('Finished generating kernel(s) for %s' % detNum)
         return pipeBase.Struct(exitStatus=0)
@@ -734,8 +790,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         return xcorr, mean
 
     def _calculateAndApplyGains(self, dataRef, means, xcorrs):
-        """ Lage - 08-Feb-19
-        Estimate the amplifier gains using the calculated means and variances.
+        """Estimate the amplifier gains using calculated means and variances.
 
         Given a dataRef and the calculated means and variances,
         calculate the gain for each amplifier in the detector
@@ -758,7 +813,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         means : `list` of mean values of the two visit pairs
         xcorrs : `list` of cross-correlations values of the two visit pairs
 
-        eog fl        Both of these have been corrected for the measured gains
+        Both of these have been corrected for the measured gains
         The gains are also stored in dataRef datasetType='brighterFatterGain'.
 
         """
@@ -778,36 +833,39 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
                 ampVariances.append(xcorrs[ampName][i][0, 0] / 2.0)
             # Now fit a cubic polynomial to the PTC
             # and use the linear part as the gain
-            ptc_coefs = np.polyfit(ampMeans, ampVariances, 3)
-            slopeToUse = ptc_coefs[2]
+            ptcCoefs = np.polyfit(ampMeans, ampVariances, 3)
+            slopeToUse = ptcCoefs[2]
             gain = 1.0 / slopeToUse
-            # if self.debug.enabled:
-            fig = plt.figure()
-            ax = fig.add_subplot(111)
-            ax.set_title("Photon Transfer Curve %s"%ampName, fontsize=24)
-            x_values = np.asarray(ampMeans)
-            ax.plot(x_values,
-                    np.asarray(ampVariances), linestyle='None', color='green', marker='x', label='data')
-            cubic_fit = ptc_coefs[0]*x_values*x_values*x_values + ptc_coefs[1]*x_values*x_values +\
-                ptc_coefs[2]*x_values + ptc_coefs[3]
-            ax.plot(x_values,
-                    cubic_fit, linestyle='--', color='green', label='Cubic fit')
-            ax.plot(x_values,
-                    x_values*slopeToUse, color='red', label='Linear fit. Gain = %.3f'%gain)
-            ax.set_xlabel("Flux(ADU)", fontsize=18)
-            ax.set_ylabel("Variance(ADU^2)", fontsize=18)
-            ax.legend()
-            dataRef.put(fig, "plotBrighterFatterPtc", amp=ampName)
+            if self.config.doPlotPtcs:
+                fig = plt.figure()
+                ax = fig.add_subplot(111)
+                ax.set_title("Photon Transfer Curve %s"%ampName, fontsize=24)
+                x_values = np.asarray(ampMeans)
+                ax.plot(x_values,
+                        np.asarray(ampVariances), linestyle='None', color='green', marker='x', label='data')
+                cubicFit = ptcCoefs[0]*x_values*x_values*x_values + ptcCoefs[1]*x_values*x_values +\
+                    ptcCoefs[2]*x_values + ptcCoefs[3]
+                ax.plot(x_values, cubicFit,
+                        linestyle='--', color='green', label='Cubic fit')
+                ax.plot(x_values, x_values*slopeToUse,
+                        color='red', label='Linear fit. Gain = %.3f'%gain)
+                ax.set_xlabel("Flux(ADU)", fontsize=18)
+                ax.set_ylabel("Variance(ADU^2)", fontsize=18)
+                ax.legend()
+                dataRef.put(fig, "plotBrighterFatterPtc", amp=ampName)
             self.log.info('Saved PTC for detector %s amp %s' % (detector.getId(), ampName))
             gains[ampName] = gain
             self.log.info("Calculating gain for Amp %s, Gain = %f"%(ampName, gain))
             # Now subtract off the constant and linear terms from the variance (xcorrs[0,0]) term.
             for i in range(len(means[ampName])):
-                xcorrs[ampName][i][0, 0] -= 2.0 * (ampMeans[i] * ptc_coefs[2] + ptc_coefs[3])
+                xcorrs[ampName][i][0, 0] -= 2.0 * (ampMeans[i] * ptcCoefs[2] + ptcCoefs[3])
                 # Now adjust the means and xcorrs for the calculated gain
             means[ampName] = [[value*gain for value in pair] for pair in means[ampName]]
             xcorrs[ampName] = [arr*gain*gain for arr in xcorrs[ampName]]
-        plt.close('all')
+
+        if self.config.doPlotPtcs:
+            plt.close('all')
+
         dataRef.put(gains, datasetType='brighterFatterGain')
         return
 
@@ -1082,8 +1140,8 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
             self.log.info(msg)
 
         # Lage 08-Feb-19 Added these two options
-        if self.config.buildCorrelationModel < (meanXcorr.shape[0] - 1) / 2:
-            sum_to_infinity = self._buildCorrelationModel(meanXcorr, self.config.buildCorrelationModel)
+        if self.config.correlationModelRadius < (meanXcorr.shape[0] - 1) / 2:
+            sum_to_infinity = self._buildCorrelationModel(meanXcorr, self.config.correlationModelRadius)
             self.log.info("Sum_to_infinity =  %s" % sum_to_infinity)
         else:
             sum_to_infinity = 0.0
