@@ -408,26 +408,27 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         visitPairs : `iterable` of `tuple` of `int`
             Pairs of visit numbers to be processed together
         """
-        xcorrs = {}  # dict of lists keyed by either amp or detector depending on config.level
-        means = {}
-        kernels = {}
-
         # setup necessary objects
+        # NB: don't use dataRef.get('raw_detector')
+        # this currently doesn't work for composites because of the way
+        # composite objects (i.e. LSST images) are handled/constructed
+        # these need to be retrieved from the camera and dereferenced
+        # rather than accessed directly
         detNum = dataRef.dataId[self.config.ccdKey]
+        detector = dataRef.get('camera')[dataRef.dataId[self.config.ccdKey]]
+        amps = detector.getAmplifiers()
+        ampNames = [amp.getName() for amp in amps]
+
         if self.config.level == 'DETECTOR':
-            xcorrs = {detNum: []}
+            kernels = {detNum: []}
             means = {detNum: []}
+            xcorrs = {detNum: []}
+            meanXcorrs = {detNum: []}
         elif self.config.level == 'AMP':
-            # NB: don't use dataRef.get('raw_detector')
-            # this currently doesn't work for composites because of the way
-            # composite objects (i.e. LSST images) are handled/constructed
-            # these need to be retrieved from the camera and dereferenced
-            # rather than accessed directly
-            detector = dataRef.get('camera')[dataRef.dataId[self.config.ccdKey]]
-            amps = detector.getAmplifiers()
-            ampNames = [amp.getName() for amp in amps]
-            xcorrs = {key: [] for key in ampNames}
+            kernels = {key: [] for key in ampNames}
             means = {key: [] for key in ampNames}
+            xcorrs = {key: [] for key in ampNames}
+            meanXcorrs = {key: [] for key in ampNames}
         else:
             raise RuntimeError("Unsupported level: {}".format(self.config.level))
 
