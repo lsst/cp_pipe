@@ -237,8 +237,8 @@ class BrighterFatterKernel:
     the dictionary holding the kernel(s).
     """
 
-    def __init__(self, **kwargs):
-        self.__dict__["originalLevel"] = ""
+    def __init__(self, originalLevel, **kwargs):
+        self.__dict__["originalLevel"] = originalLevel
         self.__dict__["ampwiseKernels"] = {}
         self.__dict__["detectorKernel"] = {}
         self.__dict__["means"] = []
