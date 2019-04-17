@@ -432,23 +432,26 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         else:
             raise RuntimeError("Unsupported level: {}".format(self.config.level))
 
-        # calculate or retrieve the gains
-        if self.config.doCalcGains:
-            self.log.info('Compute gains for detector %s' % detNum)
-            gains, nomGains = self.estimateGains(dataRef, visitPairs)
-            dataRef.put(gains, datasetType='brighterFatterGain')
-            self.log.debug('Finished gain estimation for detector %s' % detNum)
-        else:
-            gains = dataRef.get('brighterFatterGain')
-            if not gains:
-                raise RuntimeError('Failed to retrieved gains for detector %s' % detNum)
-            self.log.info('Retrieved stored gain for detector %s' % detNum)
-        self.log.debug('Detector %s has gains %s' % (detNum, gains))
+        # if the level is DETECTOR we have to have the gains first so that each
+        # amp can be gain corrected on order to treat the detector as a sinle
+        # imaging area. However, if the level is AMP we can wait, calculate
+        # the correlations and correct for the gains afterwards
+        if self.config.level == 'DETECTOR':
+            if self.config.doCalcGains:
+                self.log.info('Computing gains for detector %s' % detNum)
+                gains, nomGains = self.estimateGains(dataRef, visitPairs)
+                dataRef.put(gains, datasetType='brighterFatterGain')
+                self.log.debug('Finished gain estimation for detector %s' % detNum)
+            else:
+                gains = dataRef.get('brighterFatterGain')
+                if not gains:
+                    raise RuntimeError('Failed to retrieved gains for detector %s' % detNum)
+                self.log.info('Retrieved stored gain for detector %s' % detNum)
+            self.log.debug('Detector %s has gains %s' % (detNum, gains))
 
         # Loop over pairs of visits
         # calculating the cross-correlations at the required level
         for (v1, v2) in visitPairs:
-
             dataRef.dataId['visit'] = v1
             exp1 = self.isr.runDataRef(dataRef).exposure
             dataRef.dataId['visit'] = v2
