@@ -260,8 +260,16 @@ class BrighterFatterKernel:
     def replaceDetectorKernelWithAmpKernel(self, ampName, detectorName):
         self.detectorKernel[detectorName] = self.ampwiseKernels[ampName]
 
-    def createDetectorKernelFromAmpwiseKernels(self, ampwiseKernels):
-        return -1  # xxx write averaging code here
+    def createDetectorKernelFromAmpwiseKernels(self, ampwiseKernels, ampsToExclude=[]):
+        ampNames = self.ampwiseKernels.keys()
+        ampsToAverage = [amp for amp in ampNames if amp not in ampsToExclude]
+        avgKernel = np.zeros_like(list(self.ampwiseKernels.items())[0])
+
+        for ampName in ampsToAverage:
+            avgKernel += self.ampwiseKernels[ampName]
+        avgKernel /= len(ampsToAverage)
+
+        return avgKernel
 
 
 class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
