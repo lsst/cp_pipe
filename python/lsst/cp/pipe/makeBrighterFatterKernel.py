@@ -176,7 +176,15 @@ class MakeBrighterFatterKernelTaskConfig(pexConfig.Config):
         allowed={
             "AMP": "Every amplifier treated separately",
             "DETECTOR": "One kernel per detector",
+            "DETECTOR_FROM_AMPS": "Every amplifier calculated separately, and averaged together" +
+            " to make a single kernel for the detector, optionally ignoring certain amplifiers",
         }
+    )
+    ignoreAmpsForAveraging = pexConfig.ListField(
+        dtype=str,
+        doc="List of amp names to ignore when averaging the amplifier kernels into the detector" +
+        " kernel. Only relevant for level = DETECTOR_FROM_AMPS",
+        default=[]
     )
     backgroundWarnLevel = pexConfig.Field(
         dtype=float,
@@ -241,6 +249,7 @@ class BrighterFatterKernel:
         self.__dict__["originalLevel"] = originalLevel
         self.__dict__["ampwiseKernels"] = {}
         self.__dict__["detectorKernel"] = {}
+        self.__dict__["detectorKernelFromAmpKernels"] = {}
         self.__dict__["means"] = []
         self.__dict__["xCorrs"] = []
         self.__dict__["meanXcorrs"] = []
@@ -261,10 +270,10 @@ class BrighterFatterKernel:
         self.detectorKernel[detectorName] = self.ampwiseKernels[ampName]
 
     def makeDetectorKernelFromAmpwiseKernels(self, detectorName, ampsToExclude=[], overwrite=False):
-        if detectorName not in self.detectorKernel.keys():
-            self.detectorKernel[detectorName] = {}
+        if detectorName not in self.detectorKernelFromAmpKernels.keys():
+            self.detectorKernelFromAmpKernels[detectorName] = {}
 
-        if self.detectorKernel[detectorName] != {} and overwrite is False:
+        if self.detectorKernelFromAmpKernels[detectorName] != {} and overwrite is False:
             raise RuntimeError('Was told to replace existing detector kernel with overwrite==False')
 
         ampNames = self.ampwiseKernels.keys()
@@ -275,7 +284,7 @@ class BrighterFatterKernel:
             avgKernel += self.ampwiseKernels[ampName]
         avgKernel /= len(ampsToAverage)
 
-        self.detectorKernel[detectorName] = avgKernel
+        self.detectorKernelFromAmpKernels[detectorName] = avgKernel
 
 
 class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
