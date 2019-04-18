@@ -260,16 +260,22 @@ class BrighterFatterKernel:
     def replaceDetectorKernelWithAmpKernel(self, ampName, detectorName):
         self.detectorKernel[detectorName] = self.ampwiseKernels[ampName]
 
-    def createDetectorKernelFromAmpwiseKernels(self, ampwiseKernels, ampsToExclude=[]):
+    def makeDetectorKernelFromAmpwiseKernels(self, detectorName, ampsToExclude=[], overwrite=False):
+        if detectorName not in self.detectorKernel.keys():
+            self.detectorKernel[detectorName] = {}
+
+        if self.detectorKernel[detectorName] != {} and overwrite is False:
+            raise RuntimeError('Was told to replace existing detector kernel with overwrite==False')
+
         ampNames = self.ampwiseKernels.keys()
         ampsToAverage = [amp for amp in ampNames if amp not in ampsToExclude]
-        avgKernel = np.zeros_like(list(self.ampwiseKernels.items())[0])
+        avgKernel = np.zeros_like(list(self.ampwiseKernels.values())[0])
 
         for ampName in ampsToAverage:
             avgKernel += self.ampwiseKernels[ampName]
         avgKernel /= len(ampsToAverage)
 
-        return avgKernel
+        self.detectorKernel[detectorName] = avgKernel
 
 
 class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
