@@ -479,6 +479,10 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
                     raise RuntimeError('Failed to retrieved gains for detector %s' % detNum)
                 self.log.info('Retrieved stored gain for detector %s' % detNum)
             self.log.debug('Detector %s has gains %s' % (detNum, gains))
+        else:  # we fake the gains as 1 for now, and correct later
+            gains = BrighterFatterGain({}, {})
+            for ampName in ampNames:
+                gains.gains[ampName] = 1.0
 
         # Loop over pairs of visits
         # calculating the cross-correlations at the required level
@@ -646,12 +650,12 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         assert set(xcorrs.keys()) == set(ampNames)
 
         for ampName in ampNames:
-            ampMeans = means[ampName]
             gain = gains.gains[ampName]
             ptcCoefs = gains.ptcResults[ampName]
 
             for i in range(len(means[ampName])):
-                xcorrs[ampName][i][0, 0] -= 2.0 * (ampMeans[i] * ptcCoefs[2] + ptcCoefs[3])
+                ampMean = np.mean(means[ampName][i])
+                xcorrs[ampName][i][0, 0] -= 2.0 * (ampMean * ptcCoefs[2] + ptcCoefs[3])
                 # Now adjust the means and xcorrs for the calculated gain
             means[ampName] = [[value*gain for value in pair] for pair in means[ampName]]
             xcorrs[ampName] = [arr*gain*gain for arr in xcorrs[ampName]]
@@ -1290,7 +1294,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
             for j in range(np.shape(meanXcorr)[1]):
                 meanXcorr[i, j] = afwMath.makeStatistics(xcorrList[i, j], afwMath.MEANCLIP, sctrl).getValue()
 
-        return self.successiveOverRelax(meanXcorr)
+        return meanXcorr, self.successiveOverRelax(meanXcorr)
 
     def successiveOverRelax(self, source, maxIter=None, eLevel=None):
         """An implementation of the successive over relaxation (SOR) method.
