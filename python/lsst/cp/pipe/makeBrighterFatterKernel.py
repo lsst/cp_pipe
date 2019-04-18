@@ -31,6 +31,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 # the following import is required for 3d projection
 from mpl_toolkits.mplot3d import axes3d   # noqa: F401
+from dataclasses import dataclass
 
 import lsstDebug
 import lsst.afw.image as afwImage
@@ -287,6 +288,13 @@ class BrighterFatterKernel:
         self.detectorKernelFromAmpKernels[detectorName] = avgKernel
 
 
+@dataclass
+class BrighterFatterGain:
+    '''The gains and the results of the PTC fits.'''
+    gains: dict
+    ptcResults: dict
+
+
 class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
     """Brighter-fatter effect correction-kernel calculation task.
 
@@ -462,7 +470,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         if self.config.level == 'DETECTOR':
             if self.config.doCalcGains:
                 self.log.info('Computing gains for detector %s' % detNum)
-                gains, nomGains = self.estimateGains(dataRef, visitPairs)
+                gains, nomGains = self.estimateGains(dataRef, visitPairs)  # xxx need to change this to be BrighterFatterGain
                 dataRef.put(gains, datasetType='brighterFatterGain')
                 self.log.debug('Finished gain estimation for detector %s' % detNum)
             else:
@@ -507,11 +515,12 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         if self.config.level != 'DETECTOR':
             if self.config.doCalcGains:
                 self.log.info('Calculating gains for detector %s' % detNum)
-                gains = self._calculateGains(dataRef, means, xcorrs)  # xxx write this, adapting
+                gains = self._calculateGains(dataRef, means, xcorrs)
+                dataRef.put(gains, datasetType='brighterFatterGain')
                 self.log.debug('Finished gain estimation for detector %s' % detNum)
             else:
                 gains = dataRef.get('brighterFatterGain')
-            self._applyGains(means, xcorrs)  # xxx write this, adapting
+            self._applyGains(means, xcorrs, gains)  # xxx write this, adapting
 
         # having calculated and applied the gains for all code-paths we can now
         # generate the kernel(s)
@@ -549,6 +558,103 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
 
         self.log.info('Finished generating kernel(s) for %s' % detNum)
         return pipeBase.Struct(exitStatus=0)
+
+    def _calculateGains(self, dataRef, means, xcorrs):
+        """Estimate the amplifier gains using calculated means and variances.
+
+        Given a dataRef and the calculated means and variances,
+        calculate the gain for each amplifier in the detector
+        using the photon transfer curve (PTC) method.
+
+        The gain is calculated as the linear part of the
+        photon transfer curve only.
+
+        The means and xcorrs are then adjusted for the resulting gain.
+
+        Parameters
+        ----------
+        dataRef : `lsst.daf.persistence.butler.Butler.dataRef`
+            dataRef for the detector for the flats to be used
+        means : `list` of mean values of the two visit pairs
+        xcorrs : `list` of cross-correlations values of the two visit pairs
+
+        Returns
+        -------
+        means : `list` of mean values of the two visit pairs
+        xcorrs : `list` of cross-correlations values of the two visit pairs
+
+        Both of these have been corrected for the measured gains
+        The gains are also stored in dataRef datasetType='brighterFatterGain'.
+
+        """
+        # NB: don't use dataRef.get('raw_detector') due to composites
+        detector = dataRef.get('camera')[dataRef.dataId[self.config.ccdKey]]
+        ptcResults = {}
+
+        gains = {}
+        for amp in detector:
+            ampName = amp.getName()
+            ampMeans = []
+            ampVariances = []
+            for i in range(len(means[ampName])):
+                # The division by 2 below is to calculate the average flux from the two visits
+                ampMeans.append((means[ampName][i][0] + means[ampName][i][1]) / 2.0)
+                # The division by 2 below is because the variance of a
+                # difference is twice the variance of each visit
+                ampVariances.append(xcorrs[ampName][i][0, 0] / 2.0)
+            # Now fit a cubic polynomial to the PTC
+            # and use the linear part as the gain
+            ptcCoefs = np.polyfit(ampMeans, ampVariances, 3)
+            ptcResults[ampName] = ptcCoefs
+            slopeToUse = ptcCoefs[2]
+            gain = 1.0 / slopeToUse
+            if self.config.doPlotPtcs:
+                fig = plt.figure()
+                ax = fig.add_subplot(111)
+                ax.set_title("Photon Transfer Curve %s"%ampName, fontsize=24)
+                x_values = np.asarray(ampMeans)
+                ax.plot(x_values,
+                        np.asarray(ampVariances), linestyle='None', color='green', marker='x', label='data')
+                cubicFit = ptcCoefs[0]*x_values*x_values*x_values + ptcCoefs[1]*x_values*x_values +\
+                    ptcCoefs[2]*x_values + ptcCoefs[3]
+                ax.plot(x_values, cubicFit,
+                        linestyle='--', color='green', label='Cubic fit')
+                ax.plot(x_values, x_values*slopeToUse,
+                        color='red', label='Linear fit. Gain = %.3f'%gain)
+                ax.set_xlabel("Flux(ADU)", fontsize=18)
+                ax.set_ylabel("Variance(ADU^2)", fontsize=18)
+                ax.legend()
+                dataRef.put(fig, "plotBrighterFatterPtc", amp=ampName)
+            self.log.info('Saved PTC for detector %s amp %s' % (detector.getId(), ampName))
+            gains[ampName] = gain
+            self.log.info("Calculating gain for Amp %s, Gain = %f"%(ampName, gain))
+            # Now subtract off the constant and linear terms from the variance (xcorrs[0,0]) term.
+            # for i in range(len(means[ampName])):
+            #     xcorrs[ampName][i][0, 0] -= 2.0 * (ampMeans[i] * ptcCoefs[2] + ptcCoefs[3])
+            #     # Now adjust the means and xcorrs for the calculated gain
+            # means[ampName] = [[value*gain for value in pair] for pair in means[ampName]]
+            # xcorrs[ampName] = [arr*gain*gain for arr in xcorrs[ampName]]
+
+        if self.config.doPlotPtcs:
+            plt.close('all')
+
+        dataRef.put(gains, datasetType='brighterFatterGain')
+        return BrighterFatterGain(gains, ptcResults)
+
+    def _applyGains(self, means, xcorrs, gains):
+        ampNames = means.keys()
+        assert set(xcorrs.keys()) == set(ampNames)
+
+        for ampName in ampNames:
+            ampMeans = means[ampName]
+            gain = gains.gains[ampName]
+            ptcCoefs = gains.ptcResults[ampName]
+
+            for i in range(len(means[ampName])):
+                xcorrs[ampName][i][0, 0] -= 2.0 * (ampMeans[i] * ptcCoefs[2] + ptcCoefs[3])
+                # Now adjust the means and xcorrs for the calculated gain
+            means[ampName] = [[value*gain for value in pair] for pair in means[ampName]]
+            xcorrs[ampName] = [arr*gain*gain for arr in xcorrs[ampName]]
 
     def _makeCroppedExposures(self, exp, gains, level):
         """Prepare exposure for cross-correlation calculation.
@@ -819,6 +925,8 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
 
         gains = {}
         nomGains = {}
+        ptcResults = {}
+        import ipdb as pdb; pdb.set_trace()
         for amp in detector:
             ampName = amp.getName()
             nomGains[ampName] = amp.getGain()
@@ -857,7 +965,10 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
                 dataRef.put(fig, "plotBrighterFatterPtc", amp=ampName)
                 self.log.info('Saved PTC for detector %s amp %s' % (detector.getId(), ampName))
             gains[ampName] = 1.0/slopeToUse
-        return gains, nomGains
+            # change the fit to use a cubic and match parameters with Lage method
+            ptcResults[ampName] = (0, 0, 1, 0)
+
+        return BrighterFatterGain(gains, ptcResults), nomGains
 
     def _calcMeansAndVars(self, dataRef, v1, v2):
         """Calculate the means, vars, covars, and retrieve the nominal gains,
