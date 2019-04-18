@@ -493,14 +493,27 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
             # - "AMP": n_amp keys, comparing each amplifier of one visit
             #          to the same amplifier in the visit its paired with
             for det_object in _scaledMaskedIms1.keys():
-                _xcorr, _ = self._crossCorrelate(_scaledMaskedIms1[det_object],
-                                                 _scaledMaskedIms2[det_object])
+                _xcorr, _mean = self._crossCorrelate(_scaledMaskedIms1[det_object],
+                                                     _scaledMaskedIms2[det_object])
                 xcorrs[det_object].append(_xcorr)
                 means[det_object].append([_means1[det_object], _means2[det_object]])
 
                 # TODO: DM-15305 improve debug functionality here.
                 # This is position 1 for the removed code.
 
+        # gains are always and only pre-applied for DETECTOR
+        # so for all other levels we now calculate them from the correlations
+        # and apply them
+        if self.config.level != 'DETECTOR':
+            if self.config.doCalcGains:
+                self.log.info('Calculating gains for detector %s' % detNum)
+                gains = self._calculateGains(dataRef, means, xcorrs)  # xxx write this, adapting
+                self.log.debug('Finished gain estimation for detector %s' % detNum)
+            else:
+                gains = dataRef.get('brighterFatterGain')
+            self._applyGains(means, xcorrs)  # xxx write this, adapting
+
+        # having calculated and applied the gains for all code-paths we can now
         # generate the kernel(s)
         self.log.info('Generating kernel(s) for %s' % detNum)
         for det_object in xcorrs.keys():  # looping over either detectors or amps
@@ -508,8 +521,31 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
                 objId = 'detector %s' % det_object
             elif self.config.level == 'AMP':
                 objId = 'detector %s AMP %s' % (detNum, det_object)
-            kernels[det_object] = self.generateKernel(xcorrs[det_object], means[det_object], objId)
-        dataRef.put(BrighterFatterKernel(self.config.level, kernels))
+
+            try:
+                meanXcorr, kernel = self.generateKernel(xcorrs[det_object], means[det_object], objId)
+                kernels[det_object] = kernel
+                meanXcorrs[det_object] = meanXcorr
+            except RuntimeError:
+                # bad amps will cause failures here which we want to ignore
+                self.log.warn('RuntimeError during kernel generation for %s' % objId)
+                continue
+
+        bfKernel = BrighterFatterKernel(self.config.level)
+        bfKernel.means = means
+        bfKernel.xCorrs = xcorrs
+        bfKernel.meanXcorrs = meanXcorrs
+        if self.config.level == 'AMP':
+            bfKernel.ampwiseKernels = kernels
+
+        elif self.config.level == 'DETECTOR':
+            bfKernel.detectorKernel = kernels
+
+        elif self.config.level == 'DETECTOR_FROM_AMPS':
+            ex = self.config.ignoreAmpsForAveraging
+            bfKernel.detectorKernel = bfKernel.makeDetectorKernelFromAmpwiseKernels(kernels, ampsToExclude=ex)
+
+        dataRef.put(bfKernel)
 
         self.log.info('Finished generating kernel(s) for %s' % detNum)
         return pipeBase.Struct(exitStatus=0)
