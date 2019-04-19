@@ -173,18 +173,17 @@ class MakeBrighterFatterKernelTaskConfig(pexConfig.Config):
     )
     level = pexConfig.ChoiceField(
         doc="The level at which to calculate the brighter-fatter kernels",
-        dtype=str, default="DETECTOR",
+        dtype=str,
+        default="DETECTOR",
         allowed={
             "AMP": "Every amplifier treated separately",
             "DETECTOR": "One kernel per detector",
-            "DETECTOR_FROM_AMPS": "Every amplifier calculated separately, and averaged together" +
-            " to make a single kernel for the detector, optionally ignoring certain amplifiers",
         }
     )
     ignoreAmpsForAveraging = pexConfig.ListField(
         dtype=str,
         doc="List of amp names to ignore when averaging the amplifier kernels into the detector" +
-        " kernel. Only relevant for level = DETECTOR_FROM_AMPS",
+        " kernel. Only relevant for level = AMP",
         default=[]
     )
     backgroundWarnLevel = pexConfig.Field(
@@ -463,14 +462,14 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         else:
             raise RuntimeError("Unsupported level: {}".format(self.config.level))
 
-        # if the level is DETECTOR we have to have the gains first so that each
-        # amp can be gain corrected on order to treat the detector as a sinle
+        # if the level is DETECTOR we need to have the gains first so that each
+        # amp can be gain corrected in order to treat the detector as a single
         # imaging area. However, if the level is AMP we can wait, calculate
         # the correlations and correct for the gains afterwards
         if self.config.level == 'DETECTOR':
             if self.config.doCalcGains:
                 self.log.info('Computing gains for detector %s' % detNum)
-                gains, nomGains = self.estimateGains(dataRef, visitPairs)  # xxx need to change this to be BrighterFatterGain
+                gains, nomGains = self.estimateGains(dataRef, visitPairs)
                 dataRef.put(gains, datasetType='brighterFatterGain')
                 self.log.debug('Finished gain estimation for detector %s' % detNum)
             else:
@@ -550,13 +549,14 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         bfKernel.meanXcorrs = meanXcorrs
         if self.config.level == 'AMP':
             bfKernel.ampwiseKernels = kernels
+            ex = self.config.ignoreAmpsForAveraging
+            bfKernel.detectorKernel = bfKernel.makeDetectorKernelFromAmpwiseKernels(detNum, ampsToExclude=ex)
 
         elif self.config.level == 'DETECTOR':
-            bfKernel.detectorKernel = kernels
-
-        elif self.config.level == 'DETECTOR_FROM_AMPS':
-            ex = self.config.ignoreAmpsForAveraging
-            bfKernel.detectorKernel = bfKernel.makeDetectorKernelFromAmpwiseKernels(kernels, ampsToExclude=ex)
+            bfKernel.detectorKernel = kernels  # xxx add name here
+            # bfKernel.detectorKernel[detName] = kernels[whateverKeyIsRelevant]
+        else:
+            raise RuntimeError('IOnvalid level for kernel calculation; this should not be possible.')
 
         dataRef.put(bfKernel)
 
@@ -973,7 +973,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
                 dataRef.put(fig, "plotBrighterFatterPtc", amp=ampName)
                 self.log.info('Saved PTC for detector %s amp %s' % (detector.getId(), ampName))
             gains[ampName] = 1.0/slopeToUse
-            # change the fit to use a cubic and match parameters with Lage method
+            # change the fit to use a cubic and match parameters with Lage method xxx
             ptcResults[ampName] = (0, 0, 1, 0)
 
         return BrighterFatterGain(gains, ptcResults), nomGains
@@ -1257,42 +1257,105 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         kernel : `numpy.ndarray`, (Ny, Nx)
             The output kernel
         """
+        self.log.info('Calculating kernel for %s'%objId)
+
         if not rejectLevel:
             rejectLevel = self.config.xcorrCheckRejectLevel
 
-        # Try to average over a set of possible inputs.
-        # This generates a simple function of the kernel that
-        # should be constant across the images, and averages that.
-        xcorrList = []
-        sctrl = afwMath.StatisticsControl()
-        sctrl.setNumSigmaClip(self.config.nSigmaClipKernelGen)
+        if self.config.correlationQuadraticFit:
+            xcorrList = []
+            fluxList = []
 
-        for corrNum, ((mean1, mean2), corr) in enumerate(zip(means, corrs)):
-            corr[0, 0] -= (mean1 + mean2)
-            if corr[0, 0] > 0:
-                self.log.warn('Skipped item %s due to unexpected value of (variance-mean)' % corrNum)
-                continue
-            corr /= -1.0*(mean1**2 + mean2**2)
+            for corrNum, ((mean1, mean2), corr) in enumerate(zip(means, corrs)):
+                msg = 'For item %s, initial corr[0,0] = %g, corr[1,0] = %g'%(corrNum, corr[0, 0], corr[1, 0])
+                self.log.info(msg)
+                # if self.config.level == 'DETECTOR':  # xxx check this
+                #     #  This is now done in calculate And Apply Gains, but only if level is not DETECTOR
+                #     corr[0, 0] -= (mean1 + mean2)
+                fullCorr = self._tileArray(corr)
+                # Craig Lage says he doesn't understand the negative sign, but it needs to be there
+                xcorrList.append(-fullCorr / 2.0)
+                flux = (mean1 + mean2) / 2.0
+                fluxList.append(flux * flux)
+                # We're using the linear fit algorithm to find a quadratic fit,
+                # so we square the x-axis.
+                # The step below does not need to be done, but is included
+                # so that correlations can be compared
+                # directly to existing code.  We might want to take it out.
+                corr /= -1.0*(mean1**2 + mean2**2)
 
-            fullCorr = self._tileArray(corr)
+            if not xcorrList:
+                raise RuntimeError("Cannot generate kernel because all inputs were discarded. "
+                                   "Either the data is bad, or config.xcorrCheckRejectLevel is too low")
 
-            xcorrCheck = np.abs(np.sum(fullCorr))/np.sum(np.abs(fullCorr))
-            if xcorrCheck > rejectLevel:
-                self.log.warn("Sum of the xcorr is unexpectedly high. Investigate item num %s for %s. \n"
-                              "value = %s" % (corrNum, objId, xcorrCheck))
-                continue
-            xcorrList.append(fullCorr)
+            # This method fits a quadratic vs flux and keeps only the quadratic term.
+            meanXcorr = np.zeros_like(fullCorr)
+            xcorrList = np.asarray(xcorrList)
 
-        if not xcorrList:
-            raise RuntimeError("Cannot generate kernel because all inputs were discarded. "
-                               "Either the data is bad, or config.xcorrCheckRejectLevel is too low")
+            for i in range(np.shape(meanXcorr)[0]):
+                for j in range(np.shape(meanXcorr)[1]):
+                    # Note the i,j inversion.  This serves the same function as the transpose step in
+                    # the base code.  I don't understand why it is there, but I put it in to be consistent.
+                    slopeRaw, interceptRaw, rVal, pVal, stdErr = stats.linregress(np.asarray(fluxList),
+                                                                                  xcorrList[:, j, i])
+                    try:
+                        slope, intercept = self._iterativeRegression(np.asarray(fluxList),
+                                                                     xcorrList[:, j, i],
+                                                                     fixThroughOrigin=True)
+                        msg = "(%s,%s):Slope of raw fit: %s, intercept: %s p value: %s" % (i, j, slopeRaw,
+                                                                                           interceptRaw, pVal)
+                        self.log.info(msg)
+                        self.log.info("(%s,%s):Slope of fixed fit: %s" % (i, j, slope))
 
-        # stack the individual xcorrs and apply a per-pixel clipped-mean
-        meanXcorr = np.zeros_like(fullCorr)
-        xcorrList = np.transpose(xcorrList)
-        for i in range(np.shape(meanXcorr)[0]):
-            for j in range(np.shape(meanXcorr)[1]):
-                meanXcorr[i, j] = afwMath.makeStatistics(xcorrList[i, j], afwMath.MEANCLIP, sctrl).getValue()
+                        meanXcorr[i, j] = slope
+                    except ValueError:
+                        meanXcorr[i, j] = slopeRaw
+            self.log.info('Quad Fit meanXcorr[0,0] = %g, meanXcorr[1,0] = %g'%(meanXcorr[8, 8],
+                                                                               meanXcorr[9, 8]))
+
+        else:
+            # Try to average over a set of possible inputs.
+            # This generates a simple function of the kernel that
+            # should be constant across the images, and averages that.
+            xcorrList = []
+            sctrl = afwMath.StatisticsControl()
+            sctrl.setNumSigmaClip(self.config.nSigmaClipKernelGen)
+
+            for corrNum, ((mean1, mean2), corr) in enumerate(zip(means, corrs)):
+                corr[0, 0] -= (mean1 + mean2)
+                if corr[0, 0] > 0:
+                    self.log.warn('Skipped item %s due to unexpected value of (variance-mean)' % corrNum)
+                    continue
+                corr /= -1.0*(mean1**2 + mean2**2)
+
+                fullCorr = self._tileArray(corr)
+
+                xcorrCheck = np.abs(np.sum(fullCorr))/np.sum(np.abs(fullCorr))
+                if xcorrCheck > rejectLevel:
+                    self.log.warn("Sum of the xcorr is unexpectedly high. Investigate item num %s for %s. \n"
+                                  "value = %s" % (corrNum, objId, xcorrCheck))
+                    continue
+                xcorrList.append(fullCorr)
+
+            if not xcorrList:
+                raise RuntimeError("Cannot generate kernel because all inputs were discarded. "
+                                   "Either the data is bad, or config.xcorrCheckRejectLevel is too low")
+
+            # stack the individual xcorrs and apply a per-pixel clipped-mean
+            meanXcorr = np.zeros_like(fullCorr)
+            xcorrList = np.transpose(xcorrList)
+            for i in range(np.shape(meanXcorr)[0]):
+                for j in range(np.shape(meanXcorr)[1]):
+                    meanXcorr[i, j] = afwMath.makeStatistics(xcorrList[i, j],
+                                                             afwMath.MEANCLIP, sctrl).getValue()
+
+        if self.config.correlationModelRadius < (meanXcorr.shape[0] - 1) / 2:
+            sumToInfinity = self._buildCorrelationModel(meanXcorr, self.config.correlationModelRadius)
+            self.log.info("SumToInfinity = %s" % sumToInfinity)
+        else:
+            sumToInfinity = 0.0
+        if self.config.forceZeroSum:
+            meanXcorr = self._forceZeroSum(meanXcorr, sumToInfinity)
 
         return meanXcorr, self.successiveOverRelax(meanXcorr)
 
@@ -1420,6 +1483,83 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
                 output[i + length, -j + length] = in_array[i, j]
                 output[-i + length, -j + length] = in_array[i, j]
         return output
+
+    @staticmethod
+    def _forceZeroSum(inputArray, sumToInfinity):
+        """Given an array of correlations, adjust the
+        central value to force the sum of the array to be zero.
+
+        Parameters:
+        -----------
+        input : `np.array`
+            The square input array, assumed square and with
+            shape (2n+1) x (2n+1)
+
+        Returns:
+        --------
+        output : `np.array`
+            The same array, with the value of the central value
+            inputArray[n,n] adjusted to force the array sum to be zero.
+        """
+        assert(inputArray.shape[0] == inputArray.shape[1])
+        assert(inputArray.shape[0] % 2 == 1)
+        center = int((inputArray.shape[0] - 1) / 2)
+        outputArray = np.copy(inputArray)
+        outputArray[center, center] -= inputArray.sum() - sumToInfinity
+        return outputArray
+
+    @staticmethod
+    def _buildCorrelationModel(array, replacementRadius):
+        """Given an array of correlations, build a model
+        for correlations beyond replacementRadius pixels from the center
+        and replace the measured values with the model.
+
+        Parameters:
+        -----------
+        input : `np.array`
+            The square input array, assumed square and with
+            shape (2n+1) x (2n+1)
+
+        Returns:
+        --------
+        output : `np.array`
+            The same array, with the outer values
+            replaced with a smoothed model.
+        """
+        assert(array.shape[0] == array.shape[1])
+        assert(array.shape[0] % 2 == 1)
+        assert(replacementRadius > 1)
+        center = int((array.shape[0] - 1) / 2)
+        fitrs = []
+        fitcs = []
+        for i in range(array.shape[0]):
+            for j in range(array.shape[1]):
+                r2 = float((i-center)*(i-center) + (j-center)*(j-center))
+                cValue = array[i, j]
+                if r2 > 1.1 and r2 < 20.0 and cValue < 0:
+                    fitrs.append(np.log10(r2))
+                    fitcs.append(np.log10(-cValue))
+
+        slope, intercept, rValue, pValue, stdErr = stats.linregress(fitrs, fitcs)
+        # This step is a bit of a hack. |slope| should be 1.35 or greater, so I force it.
+        slope = min(slope, -1.35)
+        print("Model correlation fit, slope =%f"%slope)  # xxx log message?
+        preFactor = 10**intercept
+        slopeFactor = 2.0*abs(slope) - 2.0
+        sumToInfinity = 2.0*np.pi*preFactor / (slopeFactor*(float(center)+0.5)**slopeFactor)
+        # sum_to_ininity is the integral of the model beyond what is measured.
+        # It is used to adjust C00 in the case of forcing zero sum
+
+        # Now replace the pixels beyond replacementRadius with the model values
+        for i in range(array.shape[0]):
+            for j in range(array.shape[1]):
+                r2 = float((i-center)*(i-center) + (j-center)*(j-center))
+                if abs(i-center) < replacementRadius and abs(j-center) < replacementRadius:
+                    continue
+                else:
+                    newCvalue = -preFactor * r2**slope
+                    array[i, j] = newCvalue
+        return sumToInfinity
 
     @staticmethod
     def _convertImagelikeToFloatImage(imagelikeObject):
