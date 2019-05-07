@@ -658,7 +658,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
                 # The division by 2 below is to calculate the average flux from the two visits
                 mean = (means[ampName][i][0] + means[ampName][i][1]) / 2.0
                 if mean < leastMean:
-                    mean = leastMean
+                    leastMean = mean
             # Now we fit a line to the first few points to determine an approximate gain
             ampMeans = []
             ampVariances = []
@@ -680,7 +680,6 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
             # but I wanted to try this out first before adding all that
             max_deviation = 0.40 # Allowable deviation from linear curve
             sat_level = 120000.0 # Throw out points with more flux than this
-
             ampMeans = []
             ampVariances = []
             bad_indices = []
@@ -692,7 +691,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
                     ampVariances.append(var)
                 else:
                     bad_indices.append(i)
-            # Now delete the failing indices so they don't impact the covaraiances later
+            # Now delete the failing indices so they don't impact the covariances later
             means[ampName] = np.delete(means[ampName], bad_indices)
             xcorrs[ampName] = np.delete(xcorrs[ampName], bad_indices)
             # Now fit a cubic polynomial to the PTC
@@ -705,7 +704,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
                 fig = plt.figure()
                 ax = fig.add_subplot(111)
                 ax.set_title("Photon Transfer Curve %s"%ampName, fontsize=24)
-                x_values = np.asarray(ampMeans)
+                x_values = np.asarray(np.sort(ampMeans))
                 ax.plot(x_values,
                         np.asarray(ampVariances), linestyle='None', color='green', marker='x', label='data')
                 cubicFit = ptcCoefs[0]*x_values*x_values*x_values + ptcCoefs[1]*x_values*x_values +\
