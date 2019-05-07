@@ -705,7 +705,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
                 ax = fig.add_subplot(111)
                 ax.set_title("Photon Transfer Curve %s"%ampName, fontsize=24)
                 x_values = np.asarray(np.sort(ampMeans))
-                ax.plot(x_values,
+                ax.plot(np.asarray(ampMeans),
                         np.asarray(ampVariances), linestyle='None', color='green', marker='x', label='data')
                 cubicFit = ptcCoefs[0]*x_values*x_values*x_values + ptcCoefs[1]*x_values*x_values +\
                     ptcCoefs[2]*x_values + ptcCoefs[3]
