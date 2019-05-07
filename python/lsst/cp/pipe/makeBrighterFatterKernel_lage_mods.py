@@ -692,8 +692,8 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
                 else:
                     bad_indices.append(i)
             # Now delete the failing indices so they don't impact the covariances later
-            means[ampName] = np.delete(means[ampName], bad_indices)
-            xcorrs[ampName] = np.delete(xcorrs[ampName], bad_indices)
+            means[ampName] = np.delete(means[ampName], bad_indices, axis=0)
+            xcorrs[ampName] = np.delete(xcorrs[ampName], bad_indices, axis=0)
             # Now fit a cubic polynomial to the PTC
             # and use the linear part as the gain
             ptcCoefs = np.polyfit(ampMeans, ampVariances, 3)
@@ -740,7 +740,6 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         for ampName in ampNames:
             gain = gains.gains[ampName]
             ptcCoefs = gains.ptcResults[ampName]
-
             for i in range(len(means[ampName])):
                 ampMean = np.mean(means[ampName][i])
                 xcorrs[ampName][i][0, 0] -= 2.0 * (ampMean * ptcCoefs[2] + ptcCoefs[3])
