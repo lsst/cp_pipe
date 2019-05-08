@@ -286,6 +286,7 @@ class BrighterFatterKernel:
         self.__dict__["detectorKernel"] = {}
         self.__dict__["detectorKernelFromAmpKernels"] = {}
         self.__dict__["means"] = []
+        self.__dict__["rawXcorrs"] = []        
         self.__dict__["xCorrs"] = []
         self.__dict__["meanXcorrs"] = []
 
@@ -562,7 +563,8 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
 
                 # TODO: DM-15305 improve debug functionality here.
                 # This is position 1 for the removed code.
-
+        # Save the raw xcorrs so we can look at them before any modifications
+        rawXcorrs = np.copy(xcorrs)
         # gains are always and only pre-applied for DETECTOR
         # so for all other levels we now calculate them from the correlations
         # and apply them
@@ -596,6 +598,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
 
         bfKernel = BrighterFatterKernel(self.config.level)
         bfKernel.means = means
+        bfKernel.rawXcorrs = rawXcorrs        
         bfKernel.xCorrs = xcorrs
         bfKernel.meanXcorrs = meanXcorrs
         if self.config.level == 'AMP':
