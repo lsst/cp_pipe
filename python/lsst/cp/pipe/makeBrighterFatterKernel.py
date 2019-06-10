@@ -40,7 +40,7 @@ import lsst.afw.display as afwDisp
 from lsst.ip.isr import IsrTask
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
-from .utils import PairedVisitTaskRunner
+from .utils import PairedVisitListTaskRunner
 
 
 class MakeBrighterFatterKernelTaskConfig(pexConfig.Config):
@@ -273,7 +273,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
       TODO: DM-15277 update this part of the docstring once the ticket is done.
     """
 
-    RunnerClass = PairedVisitTaskRunner
+    RunnerClass = PairedVisitListTaskRunner
     ConfigClass = MakeBrighterFatterKernelTaskConfig
     _DefaultName = "makeBrighterFatterKernel"
 
@@ -760,7 +760,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         return gains, nomGains
 
     @staticmethod
-    def _checkExpLengthEqual(exp1, exp2, v1=None, v2=None):
+    def _checkExpLengthEqual(exp1, exp2, v1=None, v2=None):  # TODO: refactor this to use the utils version
         """Check the exposure lengths of two exposures are equal.
 
         Parameters:
