@@ -34,7 +34,7 @@ import lsst.afw.math as afwMath
 import lsst.log as lsstLog
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
-from lsst.atmospec.utils import gainFromFlatPair
+#from lsst.atmospec.utils import gainFromFlatPair
 from lsst.ip.isr import IsrTask
 from .utils import NonexistentDatasetTaskDataIdContainer, PairedVisitListTaskRunner, checkExpLengthEqual, \
     validateIsrConfig
