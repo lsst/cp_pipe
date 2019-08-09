@@ -19,3 +19,4 @@ tests/.tests
 version.py
 .coverage
 bin
+.pytest*

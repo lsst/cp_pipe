@@ -1,10 +1,10 @@
+# This file is part of cp_pipe.
 #
-# LSST Data Management System
-#
-# Copyright 2008-2017  AURA/LSST.
-#
-# This product includes software developed by the
-# LSST Project (http://www.lsst.org/).
+# Developed for the LSST Data Management System.
+# This product includes software developed by the LSST Project
+# (https://www.lsst.org).
+# See the COPYRIGHT file at the top-level directory of this distribution
+# for details of code ownership.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -16,9 +16,8 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 #
-# You should have received a copy of the LSST License Statement and
-# the GNU General Public License along with this program.  If not,
-# see <https://www.lsstcorp.org/LegalNotices/>.
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Calculation of brighter-fatter effect correlations and kernels."""
 
@@ -40,7 +39,7 @@ import lsst.afw.display as afwDisp
 from lsst.ip.isr import IsrTask
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
-from .utils import PairedVisitTaskRunner
+from .utils import PairedVisitListTaskRunner, checkExpLengthEqual
 
 
 class MakeBrighterFatterKernelTaskConfig(pexConfig.Config):
@@ -273,7 +272,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
       TODO: DM-15277 update this part of the docstring once the ticket is done.
     """
 
-    RunnerClass = PairedVisitTaskRunner
+    RunnerClass = PairedVisitListTaskRunner
     ConfigClass = MakeBrighterFatterKernelTaskConfig
     _DefaultName = "makeBrighterFatterKernel"
 
@@ -416,7 +415,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
             dataRef.dataId['visit'] = v2
             exp2 = self.isr.runDataRef(dataRef).exposure
             del dataRef.dataId['visit']
-            self._checkExpLengthEqual(exp1, exp2, v1, v2)
+            checkExpLengthEqual(exp1, exp2, v1, v2, raiseWithMessage=True)
 
             self.log.info('Preparing images for cross-correlation calculation for detector %s' % detNum)
             # note the shape of these returns depends on level
@@ -759,35 +758,6 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
             gains[ampName] = 1.0/slopeToUse
         return gains, nomGains
 
-    @staticmethod
-    def _checkExpLengthEqual(exp1, exp2, v1=None, v2=None):
-        """Check the exposure lengths of two exposures are equal.
-
-        Parameters:
-        -----------
-        exp1 : `lsst.afw.image.exposure.ExposureF`
-            First exposure to check
-        exp2 : `lsst.afw.image.exposure.ExposureF`
-            Second exposure to check
-        v1 : `int` or `str`, optional
-            First visit of the visit pair
-        v2 : `int` or `str`, optional
-            Second visit of the visit pair
-
-        Raises:
-        -------
-        RuntimeError
-            Raised if the exposure lengths of the two exposures are not equal
-        """
-        expTime1 = exp1.getInfo().getVisitInfo().getExposureTime()
-        expTime2 = exp2.getInfo().getVisitInfo().getExposureTime()
-        if expTime1 != expTime2:
-            msg = "Exposure lengths for visit pairs must be equal. " + \
-                  "Found %s and %s" % (expTime1, expTime2)
-            if v1 and v2:
-                msg += " for visit pair %s, %s" % (v1, v2)
-            raise RuntimeError(msg)
-
     def _calcMeansAndVars(self, dataRef, v1, v2):
         """Calculate the means, vars, covars, and retrieve the nominal gains,
         for each amp in each detector.
@@ -834,7 +804,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         exp2 = self.isr.runDataRef(dataRef).exposure
         dataRef.dataId = originalDataId
         exps = [exp1, exp2]
-        self._checkExpLengthEqual(exp1, exp2, v1, v2)
+        checkExpLengthEqual(exp1, exp2, v1, v2, raiseWithMessage=True)
 
         detector = exps[0].getDetector()
         ims = [self._convertImagelikeToFloatImage(exp) for exp in exps]
