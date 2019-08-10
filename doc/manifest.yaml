@@ -11,5 +11,5 @@ modules:
 
 # Name of the static content directories (subdirectories of `_static`).
 # Static content directories are usually named after the package.
-statics:
-  - "_static/cp_pipe"
+# statics:
+#  - "_static/cp_pipe"
