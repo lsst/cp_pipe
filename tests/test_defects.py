@@ -33,16 +33,16 @@ import lsst.utils.tests
 import lsst.cp.pipe as cpPipe
 from lsst.cp.pipe.utils import countMaskedPixels
 from lsst.ip.isr import isrMock
-from lsst.afw.geom import Box2I, Point2I, Extent2I
+from lsst.geom import Box2I, Point2I, Extent2I
 
 
-class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
+class FindDefectsMasterTaskTestCase(lsst.utils.tests.TestCase):
     """A test case for the defect finding task."""
 
     def setUp(self):
-        self.defaultConfig = cpPipe.defects.FindDefectsTask.ConfigClass()
+        self.defaultMasterConfig = cpPipe.defects.FindDefectsMasterTask.ConfigClass()
 
-        for config in [self.defaultConfig.isrForDarks, self.defaultConfig.isrForFlats]:
+        for config in [self.defaultMasterConfig.isrForDarks, self.defaultMasterConfig.isrForFlats]:
             config.doCrosstalk = False
             config.doAddDistortionModel = False
             config.doUseOpticsTransmission = False
@@ -50,6 +50,15 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
             config.doUseSensorTransmission = False
             config.doUseAtmosphereTransmission = False
             config.doAttachTransmissionCurve = False
+
+        self.defaultMasterTask = cpPipe.defects.FindDefectsMasterTask(config=self.defaultMasterConfig)
+
+
+class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
+    """A test case for the defect finding task."""
+
+    def setUp(self):
+        self.defaultConfig = cpPipe.defects.FindDefectsTask.ConfigClass()
 
         self.flatMean = 2000
         self.darkMean = 1
@@ -109,7 +118,7 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         config.nPixBorderLeftRight = 0
         task = cpPipe.defects.FindDefectsTask(config=config)
 
-        defects = task.findHotAndColdPixels(self.flatExp, 'flat')
+        defects = task.run({0: self.darkExp}, {666: self.flatExp}).defects
 
         allBBoxes = self.darkBBoxes + self.brightBBoxes
 
@@ -118,7 +127,7 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
 
     def test_defectFindingEdgeIgnore(self):
         task = cpPipe.defects.FindDefectsTask(config=self.defaultConfig)
-        defects = task.findHotAndColdPixels(self.flatExp, 'flat')
+        defects = task.run({0: self.darkExp}, {666: self.flatExp}).defects
 
         shouldBeFound = self.darkBBoxes[self.noEdges] + self.brightBBoxes[self.noEdges]
         for defect in defects:
