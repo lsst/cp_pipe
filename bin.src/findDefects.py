@@ -22,6 +22,6 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 
-from lsst.cp.pipe.defects import FindDefectsTask
+from lsst.cp.pipe.defects import FindDefectsMasterTask
 
-FindDefectsTask.parseAndRun()
+FindDefectsMasterTask.parseAndRun()
