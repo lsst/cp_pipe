@@ -198,8 +198,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         # setup necessary objects
         detNum = dataRef.dataId[self.config.ccdKey]
         detector = dataRef.get('camera')[dataRef.dataId[self.config.ccdKey]]
-        ampInfoCat = detector.getAmpInfoCatalog()
-        ampNames = [amp.getName() for amp in ampInfoCat]
+        amps = detector.getAmplifiers()
+        ampNames = [amp.getName() for amp in amps]
         dataDict = {key: {} for key in ampNames}
         fitVectorsDict = {key: ([], [], []) for key in ampNames}
 

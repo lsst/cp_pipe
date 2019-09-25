@@ -386,8 +386,8 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
             # these need to be retrieved from the camera and dereferenced
             # rather than accessed directly
             detector = dataRef.get('camera')[dataRef.dataId[self.config.ccdKey]]
-            ampInfoCat = detector.getAmpInfoCatalog()
-            ampNames = [amp.getName() for amp in ampInfoCat]
+            amps = detector.getAmplifiers()
+            ampNames = [amp.getName() for amp in amps]
             xcorrs = {key: [] for key in ampNames}
             means = {key: [] for key in ampNames}
         else:
@@ -499,14 +499,14 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         returnAreas = {}
 
         detector = local_exp.getDetector()
-        ampInfoCat = detector.getAmpInfoCatalog()
+        amps = detector.getAmplifiers()
 
         mi = local_exp.getMaskedImage()  # makeStatistics does not seem to take exposures
         temp = mi.clone()
 
         # Rescale each amp by the appropriate gain and subtract the mean.
         # NB these are views modifying the image in-place
-        for amp in ampInfoCat:
+        for amp in amps:
             ampName = amp.getName()
             rescaleIm = mi[amp.getBBox()]  # the soon-to-be scaled, mean subtractedm, amp image
             rescaleTemp = temp[amp.getBBox()]
@@ -681,8 +681,8 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         """
         # NB: don't use dataRef.get('raw_detector') due to composites
         detector = dataRef.get('camera')[dataRef.dataId[self.config.ccdKey]]
-        ampInfoCat = detector.getAmpInfoCatalog()
-        ampNames = [amp.getName() for amp in ampInfoCat]
+        amps = detector.getAmplifiers()
+        ampNames = [amp.getName() for amp in amps]
 
         ampMeans = {key: [] for key in ampNames}  # these get turned into np.arrays later
         ampCoVariances = {key: [] for key in ampNames}
