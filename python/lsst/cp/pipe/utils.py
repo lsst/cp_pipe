@@ -142,8 +142,8 @@ class NonexistentDatasetTaskDataIdContainer(pipeBase.DataIdContainer):
         -----
         Not called if ``add_id_argument`` called
         with ``doMakeDataRefList=False``.
-        Note that this is almost a copy-and-paste of the vanilla implementation,
-        but without checking if the datasets already exist,
+        Note that this is almost a copy-and-paste of the vanilla
+        implementation, but without checking if the datasets already exist,
         as this task exists to make them.
         """
         if self.datasetType is None:
