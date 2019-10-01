@@ -35,6 +35,7 @@ import lsst.afw.math as afwMath
 import lsst.afw.detection as afwDetection
 import lsst.afw.display as afwDisplay
 from lsst.afw import cameraGeom
+from lsst.afw.geom import Box2I, Point2I
 
 from lsst.ip.isr import IsrTask
 from .utils import NonexistentDatasetTaskDataIdContainer, SingleVisitListTaskRunner, countMaskedPixels, \
@@ -128,6 +129,16 @@ class FindDefectsTaskConfig(pexConfig.Config):
         dtype=int,
         doc="Number of pixels to exclude from left & right of image when looking for defects.",
         default=7,
+    )
+    colThreshold = pexConfig.Field(
+        dtype=int,
+        doc="Minimum number of bad pixels in a column.",
+        default=50,
+    )
+    gapThreshold = pexConfig.Field(
+        dtype=int,
+        doc="Size, in pixels, of usable pixels in a column with on and off bad pixels.",
+        default=30,
     )
     edgesAsDefects = pexConfig.Field(
         dtype=bool,
@@ -305,7 +316,6 @@ class FindDefectsTask(pipeBase.CmdLineTask):
                 imageType = butler.queryMetadata('raw', self.config.imageTypeKey, dataId={'visit': visit})[0]
                 imageType = imageType.lower()
                 dataRef.dataId['visit'] = visit
-
                 if imageType == 'flat':  # note different isr tasks
                     exp = self.isrForFlats.runDataRef(dataRef).exposure
                     defects = self.findHotAndColdPixels(exp, imageType)
@@ -529,6 +539,48 @@ class FindDefectsTask(pipeBase.CmdLineTask):
             footprintList += mergedSet.getFootprints()
 
         defects = measAlg.Defects.fromFootprintList(footprintList)
+
+        # If there's a column with on and off defects, mask all the pixels in between.
+        # Get the x, y values of the defects.
+        x, y = [], []
+        for defect in defects:
+            bbox = defect.getBBox()
+            x.append(bbox.getMinX())
+            y.append(bbox.getMinY())
+        x = np.array(x)
+        y = np.array(y)
+
+        # Find the defects with same "x" (vertical) coordinate (column).
+        unique, counts = np.unique(x, return_counts=True)
+        colThreshold = self.config.colThreshold
+        gapThreshold = self.config.gapThreshold  # (not "bad" pixels, see below).
+        multipleX = []
+        for (a, b) in zip(unique, counts):
+            if b > colThreshold:
+                multipleX.append(a)
+        if len(multipleX) != 0:
+            for x0 in multipleX:
+                index = np.where(x == x0)
+                multipleY = y[index]  # multipleY and multipleX are in 1-1 correspondence.
+                minY, maxY = np.min(multipleY), np.max(multipleY)
+
+                # Next few lines: don't mask pixels in column if gap between
+                # two consecutive bad pixels is too large.
+                diffIndex = np.where(np.diff(multipleY) > gapThreshold)[0]
+                if len(diffIndex) != 0:
+                    limits = [minY]  # put the minimum first
+                    for gapIndex in diffIndex:
+                        limits.append(multipleY[gapIndex])
+                        limits.append(multipleY[gapIndex+1])
+                    limits.append(maxY)  # maximum last
+                    assert (len(limits)%2 == 0)  # `limits` it's even by design, but check anyways
+                    for i in np.arange(0, len(limits)-1, 2):
+                        s = Box2I(minimum = Point2I(x0, limits[i]), maximum = Point2I(x0, limits[i+1]))
+                        defects.append(s)
+                else:  # No gaps large enough
+                    s = Box2I(minimum = Point2I(x0, minY), maximum = Point2I(x0, maxY))
+                    defects.append(s)
+
         return defects
 
     def _setEdgeBits(self, exposureOrMaskedImage, maskplaneToSet='EDGE'):
@@ -717,7 +769,7 @@ class FindDefectsTask(pipeBase.CmdLineTask):
             # Put v-lines and textboxes in
             a.axvline(thrUpper, c='k')
             a.axvline(thrLower, c='k')
-            msg = f"{amp.getName()}\nmean:{mean: .1f}\n$\\sigma$:{sigma: .1f}"
+            msg = f"{amp.getName()}\nmean:{mean: .2f}\n$\\sigma$:{sigma: .2f}"
             a.text(0.65, 0.6, msg, transform=a.transAxes, fontsize=11)
             msg = f"nLeft:{nLeft}\nnRight:{nRight}\nnOverflow:{nOverflow}\nnUnderflow:{nUnderflow}"
             a.text(0.03, 0.6, msg, transform=a.transAxes, fontsize=11.5)
