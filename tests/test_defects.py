@@ -33,7 +33,8 @@ import lsst.utils.tests
 import lsst.cp.pipe as cpPipe
 from lsst.cp.pipe.utils import countMaskedPixels
 from lsst.ip.isr import isrMock
-from lsst.afw.geom import Box2I, Point2I, Extent2I
+from lsst.geom import Box2I, Point2I, Extent2I
+import lsst.meas.algorithms as measAlg
 
 
 class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
@@ -67,16 +68,56 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         self.flatExp = isrMock.FlatMock(config=mockImageConfig).run()
         (shapeY, shapeX) = self.flatExp.getDimensions()
 
-        # x, y, size tuples - NOTE: currently all are therefore square
+        # x, y, size tuples
         # always put edge defects at the start and change the value of nEdge
-        self.brightDefects = [(0, 15, 3), (100, 123, 1), (77, 90, 3)]
-        self.darkDefects = [(25, 0, 1), (33, 62, 2), (52, 21, 2)]
+
+        # There are 10 (greater or equal than config.badOnAndOffPixelColumnThreshold = 10
+        # in "test_maskBlocksIfIntermitentBadPixelsInColumn" below)
+        # on-and-off bad pixels in a column, with size 1 pixel in x and y.
+        # These are the boxes with x coordinate = 50. From (50, 26, 1, 1) to
+        # (50, 60, 1, 1) there are 34 consecutive good pixels (greater or equal than
+        # config.goodPixelColumnGapThreshold = 10  in
+        # test_maskBlocksIfIntermitentBadPixelsInColumn below) in that column.
+        # Therefore, after running, the function maskBlocksIfIntermitentBadPixelsInColumn
+        # should create the masked blocks (50,11,1,1)->(50,26,1,1) and (50,60,1,1)->(50,70,1,1).
+        # If the box with bad pixels in a column has an extension greater than 1 in x, that
+        # width will be used in the final mask. The boxes with x=50 and extensions
+        # 2 and 1 in x and y were created for this. The code should produce the masked blocks
+        # (85,11,2,1)->(85,26,2,1) and (85,60,2,1)->(85,70,2,1).
+        self.brightDefects = [(0, 15, 3, 3), (100, 123, 1, 1), (77, 90, 3, 3),
+                              (50, 11, 1, 1), (50, 14, 1, 1),
+                              (50, 17, 1, 1), (50, 20, 1, 1),
+                              (50, 23, 1, 1), (50, 26, 1, 1),
+                              (50, 60, 1, 1), (50, 63, 1, 1),
+                              (50, 67, 1, 1), (50, 70, 1, 1),
+                              (85, 11, 2, 1), (85, 14, 2, 1),
+                              (85, 17, 2, 1), (85, 20, 2, 1),
+                              (85, 23, 2, 1), (85, 26, 2, 1),
+                              (85, 60, 2, 1), (85, 63, 2, 1),
+                              (85, 67, 2, 1), (85, 70, 2, 1)]
+        # Like above, but with slightly different coordinates.
+        # The masked blocks that shoudl be produced after running
+        # maskBlocksIfIntermitentBadPixelsInColumn should be
+        # (45,11,1,1)->(45,26,1,1) and (45,60,1,1)->(45,70,1,1)
+        # and (75,11,2,1)->(75,26,2,1) and (75,60,2,1)->(75,70,2,1).
+        self.darkDefects = [(25, 0, 1, 1), (33, 62, 2, 2), (52, 21, 2, 2),
+                            (45, 11, 1, 1), (45, 14, 1, 1),
+                            (45, 17, 1, 1), (45, 20, 1, 1),
+                            (45, 23, 1, 1), (45, 26, 1, 1),
+                            (45, 60, 1, 1), (45, 63, 1, 1),
+                            (45, 67, 1, 1), (45, 70, 1, 1),
+                            (75, 11, 2, 1), (75, 14, 2, 1),
+                            (75, 17, 2, 1), (75, 20, 2, 1),
+                            (75, 23, 2, 1), (75, 26, 2, 1),
+                            (75, 60, 2, 1), (75, 63, 2, 1),
+                            (75, 67, 2, 1), (75, 70, 2, 1)]
+
         nEdge = 1  # NOTE: update if more edge defects are included
         self.noEdges = slice(nEdge, None)
         self.onlyEdges = slice(0, nEdge)
 
-        self.darkBBoxes = [Box2I(Point2I(x, y), Extent2I(s, s)) for (x, y, s) in self.darkDefects]
-        self.brightBBoxes = [Box2I(Point2I(x, y), Extent2I(s, s)) for (x, y, s) in self.brightDefects]
+        self.darkBBoxes = [Box2I(Point2I(x, y), Extent2I(sx, sy)) for (x, y, sx, sy) in self.darkDefects]
+        self.brightBBoxes = [Box2I(Point2I(x, y), Extent2I(sx, sy)) for (x, y, sx, sy) in self.brightDefects]
 
         flatWidth = np.sqrt(self.flatMean) + self.readNoiseAdu
         darkWidth = self.readNoiseAdu
@@ -86,14 +127,16 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
 
         # NOTE: darks and flats have same defects applied deliberately to both
         for defect in self.brightDefects:
-            y, x, s = defect
-            flatData[x:x+s, y:y+s] += self.nSigmaBright * flatWidth  # are these actually the numbers we want?
-            darkData[x:x+s, y:y+s] += self.nSigmaBright * darkWidth  # are these actually the numbers we want?
+            y, x, sy, sx = defect
+            # are these actually the numbers we want?
+            flatData[x:x+sx, y:y+sy] += self.nSigmaBright * flatWidth
+            darkData[x:x+sx, y:y+sy] += self.nSigmaBright * darkWidth
 
         for defect in self.darkDefects:
-            y, x, s = defect
-            flatData[x:x+s, y:y+s] -= self.nSigmaDark * flatWidth  # are these actually the numbers we want?
-            darkData[x:x+s, y:y+s] -= self.nSigmaDark * darkWidth  # are these actually the numbers we want?
+            y, x, sy, sx = defect
+            # are these actually the numbers we want?
+            flatData[x:x+sx, y:y+sy] -= self.nSigmaDark * flatWidth
+            darkData[x:x+sx, y:y+sy] -= self.nSigmaDark * darkWidth
 
         self.darkExp = self.flatExp.clone()
         self.spareImage = self.flatExp.clone()  # for testing edge bits and misc
@@ -103,9 +146,43 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
 
         self.defaultTask = cpPipe.defects.FindDefectsTask(config=self.defaultConfig)
 
+        self.brightDefectsList = measAlg.Defects()
+        for d in self.brightBBoxes:
+            self.brightDefectsList.append(d)
+
+    def test_maskBlocksIfIntermitentBadPixelsInColumn(self):
+        config = copy.copy(self.defaultConfig)
+        config.badOnAndOffPixelColumnThreshold = 10
+        config.goodPixelColumnGapThreshold = 10
+        task = cpPipe.defects.FindDefectsTask(config=config)
+
+        defects = self.brightDefectsList
+        defects = task.findHotAndColdPixels(self.flatExp, 'flat')
+        defectsWithColumns = task.maskBlocksIfIntermitentBadPixelsInColumn(defects)
+
+        # (50,11,1,1)->(50,26,1,1) and (50,60,1,1)->(50,70,1,1)
+        # (85,11,2,1)->(85,26,2,1) and (85,60,2,1)->(85,70,2,1)
+        # (45,11,1,1)->(45,26,1,1) and (45,60,1,1)->(45,70,1,1)
+        # (75,11,2,1)->(75,26,2,1) and (75,60,2,1)->(75,70,2,1)
+        defectsBlocksInputTrue = [Box2I(minimum = Point2I(50, 11), maximum = Point2I(50, 26)),
+                                  Box2I(minimum = Point2I(50, 60), maximum = Point2I(50, 70)),
+                                  Box2I(minimum = Point2I(85, 11), maximum = Point2I(86, 26)),
+                                  Box2I(minimum = Point2I(85, 60), maximum = Point2I(86, 70)),
+                                  Box2I(minimum = Point2I(45, 11), maximum = Point2I(45, 26)),
+                                  Box2I(minimum = Point2I(45, 60), maximum = Point2I(45, 70)),
+                                  Box2I(minimum = Point2I(75, 11), maximum = Point2I(76, 26)),
+                                  Box2I(minimum = Point2I(75, 60), maximum = Point2I(76, 70))]
+
+        boxesMeasured = []
+        for defect in defectsWithColumns:
+            boxesMeasured.append(defect.getBBox())
+
+        for boxInput in defectsBlocksInputTrue:
+            self.assertIn(boxInput, boxesMeasured)
+
     def test_defectFindingAllSensor(self):
         config = copy.copy(self.defaultConfig)
-        config.nPixBorderUpDown = 0
+        config.goodPixelColumnGapThreshold = 0
         config.nPixBorderLeftRight = 0
         task = cpPipe.defects.FindDefectsTask(config=config)
 
@@ -189,10 +266,10 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
             defectArea += defect.getBBox().getArea()
 
         crossCheck = 0
-        for x, y, s in self.brightDefects:
-            crossCheck += s**2
-        for x, y, s in self.darkDefects:
-            crossCheck += s**2
+        for x, y, sx, sy in self.brightDefects:
+            crossCheck += sx*sy
+        for x, y, sx, sy in self.darkDefects:
+            crossCheck += sx*sy
 
         # Test the result of _nPixFromDefects()
         # via two different ways of calculating area.
