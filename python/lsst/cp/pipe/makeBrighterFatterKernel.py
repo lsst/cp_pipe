@@ -25,12 +25,11 @@ __all__ = ['MakeBrighterFatterKernelTaskConfig',
            'MakeBrighterFatterKernelTask',
            'calcBiasCorr']
 
-import os
+import os, copy
 from scipy import stats
 import numpy as np
 import matplotlib.pyplot as plt
-# the following import is required for 3d projection
-from mpl_toolkits.mplot3d import axes3d   # noqa: F401
+from matplotlib.backends.backend_pdf import PdfPages
 from dataclasses import dataclass
 
 import lsstDebug
@@ -42,6 +41,7 @@ import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 from .utils import PairedVisitListTaskRunner, checkExpLengthEqual
 import lsst.daf.persistence.butlerExceptions as butlerExceptions
+from lsst.cp.pipe.ptc import MeasurePhotonTransferCurveTaskConfig, MeasurePhotonTransferCurveTask
 
 
 class MakeBrighterFatterKernelTaskConfig(pexConfig.Config):
@@ -93,15 +93,30 @@ class MakeBrighterFatterKernelTaskConfig(pexConfig.Config):
         doc="Build a model of the correlation coefficients for radii larger than this value in pixels?",
         default=100,
     )
+    correlationModelSlope = pexConfig.Field(
+        dtype=float,
+        doc="Slope of the correlation model for radii larger than correlationModelRadius",
+        default=-1.35,
+    )
     ccdKey = pexConfig.Field(
         dtype=str,
         doc="The key by which to pull a detector from a dataId, e.g. 'ccd' or 'detector'",
         default='ccd',
     )
+    minMeanSignal = pexConfig.Field(
+        dtype=float,
+        doc="Minimum value of mean signal (in ADU) to consider.",
+        default=0,
+    )
+    maxMeanSignal = pexConfig.Field(
+        dtype=float,
+        doc="Maximum value to of mean signal (in ADU) to consider.",
+        default=9e6,
+    )
     maxIterRegression = pexConfig.Field(
         dtype=int,
         doc="Maximum number of iterations for the regression fitter",
-        default=10
+        default=2
     )
     nSigmaClipGainCalc = pexConfig.Field(
         dtype=int,
@@ -111,7 +126,7 @@ class MakeBrighterFatterKernelTaskConfig(pexConfig.Config):
     nSigmaClipRegression = pexConfig.Field(
         dtype=int,
         doc="Number of sigma to clip outliers from the line of best fit to during iterative regression",
-        default=3
+        default=4
     )
     xcorrCheckRejectLevel = pexConfig.Field(
         dtype=float,
@@ -252,6 +267,8 @@ class BrighterFatterKernel:
         self.__dict__["detectorKernel"] = {}
         self.__dict__["detectorKernelFromAmpKernels"] = {}
         self.__dict__["means"] = []
+        self.__dict__["rawMeans"] = []                
+        self.__dict__["rawXcorrs"] = []        
         self.__dict__["xCorrs"] = []
         self.__dict__["meanXcorrs"] = []
 
@@ -279,8 +296,9 @@ class BrighterFatterKernel:
 
         ampNames = self.ampwiseKernels.keys()
         ampsToAverage = [amp for amp in ampNames if amp not in ampsToExclude]
-        avgKernel = np.zeros_like(list(self.ampwiseKernels.values())[0])
-
+        # Lage - original code can fail if index zero was an excluded amp
+        # modified code to force it to use a good amp
+        avgKernel = np.zeros_like(self.ampwiseKernels[ampsToAverage[0]])            
         for ampName in ampsToAverage:
             avgKernel += self.ampwiseKernels[ampName]
         avgKernel /= len(ampsToAverage)
@@ -460,6 +478,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
             means = {key: [] for key in ampNames}
             xcorrs = {key: [] for key in ampNames}
             meanXcorrs = {key: [] for key in ampNames}
+            ptcFitVectorsDict = {key:([], [], []) for key in ampNames}
         else:
             raise RuntimeError("Unsupported level: {}".format(self.config.level))
 
@@ -491,6 +510,13 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
             gains = BrighterFatterGain({}, {})
             for ampName in ampNames:
                 gains.gains[ampName] = 1.0
+            # We'll use the ptc.py code to calculate the gains, so we set this up
+            ptcConfig = MeasurePhotonTransferCurveTaskConfig()
+            ptcConfig.isrForbiddenSteps = []
+            ptcConfig.doFitBootstrap = True
+            ptcConfig.minMeanSignal = self.config.minMeanSignal
+            ptcConfig.maxMeanSignal = self.config.maxMeanSignal
+            ptcTask = MeasurePhotonTransferCurveTask(config=ptcConfig)
 
         # Loop over pairs of visits
         # calculating the cross-correlations at the required level
@@ -513,26 +539,49 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
             # - "AMP": n_amp keys, comparing each amplifier of one visit
             #          to the same amplifier in the visit its paired with
             for det_object in _scaledMaskedIms1.keys():
+                print("Calculating correlations for ", det_object)
                 _xcorr, _mean = self._crossCorrelate(_scaledMaskedIms1[det_object],
                                                      _scaledMaskedIms2[det_object])
                 xcorrs[det_object].append(_xcorr)
                 means[det_object].append([_means1[det_object], _means2[det_object]])
+                if self.config.level != 'DETECTOR':
+                    # Populate the fitVectorsDict for running ptc.py
+                    expTime = exp1.getInfo().getVisitInfo().getExposureTime()
+                    ptcFitVectorsDict[det_object][0].append(expTime)
+                    ptcFitVectorsDict[det_object][1].append((_means1[det_object] + _means2[det_object]) / 2.0)
+                    ptcFitVectorsDict[det_object][2].append(_xcorr[0,0] / 2.0)
 
                 # TODO: DM-15305 improve debug functionality here.
                 # This is position 1 for the removed code.
-
+        # Save the raw means and xcorrs so we can look at them before any modifications
+        rawMeans = copy.deepcopy(means)
+        rawXcorrs = copy.deepcopy(xcorrs)
         # gains are always and only pre-applied for DETECTOR
         # so for all other levels we now calculate them from the correlations
         # and apply them
         if self.config.level != 'DETECTOR':
             if self.config.doCalcGains:
+                # We call the code in ptc.py for calculating the gains
                 self.log.info('Calculating gains for detector %s' % detNum)
-                gains = self._calculateGains(dataRef, means, xcorrs)
-                dataRef.put(gains, datasetType='brighterFatterGain')
+                fitPtcDict, nlDict, gainDict, noiseDict, goodIndexDict = ptcTask.fitPtcAndNl(ptcFitVectorsDict)
+                gainsAndPtcCoefs = self._applyGains(means, xcorrs, gainDict, fitPtcDict, goodIndexDict)
+                gains = gainsAndPtcCoefs.gains
+                dataRef.put(gainsAndPtcCoefs, datasetType='brighterFatterGain')
+                if self.config.doPlotPtcs:
+                    dirname = dataRef.getUri(datasetType='cpPipePlotRoot', write=True)
+                    if not os.path.exists(dirname):
+                        os.makedirs(dirname)
+                    detNum = dataRef.dataId[self.config.ccdKey]
+                    filename = f"PTC_det{detNum}.pdf"
+                    filenameFull = os.path.join(dirname, filename)
+                    with PdfPages(filenameFull) as pdfPages:
+                        ptcTask._plotPtc(fitPtcDict, nlDict, 'POLYNOMIAL', pdfPages)
+
                 self.log.debug('Finished gain estimation for detector %s' % detNum)
             else:
                 gains = dataRef.get('brighterFatterGain')
-            self._applyGains(means, xcorrs, gains)  # xxx write this, adapting
+
+
 
         # having calculated and applied the gains for all code-paths we can now
         # generate the kernel(s)
@@ -554,6 +603,8 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
 
         bfKernel = BrighterFatterKernel(self.config.level)
         bfKernel.means = means
+        bfKernel.rawMeans = rawMeans                
+        bfKernel.rawXcorrs = rawXcorrs        
         bfKernel.xCorrs = xcorrs
         bfKernel.meanXcorrs = meanXcorrs
         if self.config.level == 'AMP':
@@ -565,109 +616,33 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
             bfKernel.detectorKernel = kernels  # xxx add name here
             # bfKernel.detectorKernel[detName] = kernels[whateverKeyIsRelevant]
         else:
-            raise RuntimeError('IOnvalid level for kernel calculation; this should not be possible.')
+            raise RuntimeError('Invalid level for kernel calculation; this should not be possible.')
 
         dataRef.put(bfKernel)
 
         self.log.info('Finished generating kernel(s) for %s' % detNum)
         return pipeBase.Struct(exitStatus=0)
 
-    def _calculateGains(self, dataRef, means, xcorrs):
-        """Estimate the amplifier gains using calculated means and variances.
-
-        Given a dataRef and the calculated means and variances,
-        calculate the gain for each amplifier in the detector
-        using the photon transfer curve (PTC) method.
-
-        The gain is calculated as the linear part of the
-        photon transfer curve only.
-
-        The means and xcorrs are then adjusted for the resulting gain.
-
-        Parameters
-        ----------
-        dataRef : `lsst.daf.persistence.butler.Butler.dataRef`
-            dataRef for the detector for the flats to be used
-        means : `list` of mean values of the two visit pairs
-        xcorrs : `list` of cross-correlations values of the two visit pairs
-
-        Returns
-        -------
-        means : `list` of mean values of the two visit pairs
-        xcorrs : `list` of cross-correlations values of the two visit pairs
-
-        Both of these have been corrected for the measured gains
-        The gains are also stored in dataRef datasetType='brighterFatterGain'.
-
-        """
-        # NB: don't use dataRef.get('raw_detector') due to composites
-        detector = dataRef.get('camera')[dataRef.dataId[self.config.ccdKey]]
-        ptcResults = {}
-
-        gains = {}
-        for amp in detector:
-            ampName = amp.getName()
-            ampMeans = []
-            ampVariances = []
-            for i in range(len(means[ampName])):
-                # The division by 2 below is to calculate the average flux from the two visits
-                ampMeans.append((means[ampName][i][0] + means[ampName][i][1]) / 2.0)
-                # The division by 2 below is because the variance of a
-                # difference is twice the variance of each visit
-                ampVariances.append(xcorrs[ampName][i][0, 0] / 2.0)
-            # Now fit a cubic polynomial to the PTC
-            # and use the linear part as the gain
-            ptcCoefs = np.polyfit(ampMeans, ampVariances, 3)
-            ptcResults[ampName] = ptcCoefs
-            slopeToUse = ptcCoefs[2]
-            gain = 1.0 / slopeToUse
-            if self.config.doPlotPtcs:
-                fig = plt.figure()
-                ax = fig.add_subplot(111)
-                ax.set_title("Photon Transfer Curve %s"%ampName, fontsize=24)
-                x_values = np.asarray(ampMeans)
-                ax.plot(x_values,
-                        np.asarray(ampVariances), linestyle='None', color='green', marker='x', label='data')
-                cubicFit = ptcCoefs[0]*x_values*x_values*x_values + ptcCoefs[1]*x_values*x_values +\
-                    ptcCoefs[2]*x_values + ptcCoefs[3]
-                ax.plot(x_values, cubicFit,
-                        linestyle='--', color='green', label='Cubic fit')
-                ax.plot(x_values, x_values*slopeToUse,
-                        color='red', label='Linear fit. Gain = %.3f'%gain)
-                ax.set_xlabel("Flux(ADU)", fontsize=18)
-                ax.set_ylabel("Variance(ADU^2)", fontsize=18)
-                ax.legend()
-                dataRef.put(fig, "plotBrighterFatterPtc", amp=ampName)
-            self.log.info('Saved PTC for detector %s amp %s' % (detector.getId(), ampName))
-            gains[ampName] = gain
-            self.log.info("Calculating gain for Amp %s, Gain = %f"%(ampName, gain))
-            # Now subtract off the constant and linear terms from the variance (xcorrs[0,0]) term.
-            # for i in range(len(means[ampName])):
-            #     xcorrs[ampName][i][0, 0] -= 2.0 * (ampMeans[i] * ptcCoefs[2] + ptcCoefs[3])
-            #     # Now adjust the means and xcorrs for the calculated gain
-            # means[ampName] = [[value*gain for value in pair] for pair in means[ampName]]
-            # xcorrs[ampName] = [arr*gain*gain for arr in xcorrs[ampName]]
-
-        if self.config.doPlotPtcs:
-            plt.close('all')
-
-        dataRef.put(gains, datasetType='brighterFatterGain')
-        return BrighterFatterGain(gains, ptcResults)
-
-    def _applyGains(self, means, xcorrs, gains):
+    def _applyGains(self, means, xcorrs, gainDict, fitPtcDict, goodIndexDict):
+        # This applies the gains calculated by ptc.py, and
+        # removes datapoints that were thrown out in the ptc.py algorithm
         ampNames = means.keys()
         assert set(xcorrs.keys()) == set(ampNames)
-
+        gains = {}
+        ptcCoefs = {}
         for ampName in ampNames:
-            gain = gains.gains[ampName]
-            ptcCoefs = gains.ptcResults[ampName]
-
+            gain = gainDict[ampName][0]
+            gains[ampName] = gain
+            ptcFit = fitPtcDict[ampName][6]
+            ptcCoefs[ampName] = ptcFit
+            # Adjust xcorrs[0,0] to remove the linear gain part, leaving just the second order part
             for i in range(len(means[ampName])):
                 ampMean = np.mean(means[ampName][i])
-                xcorrs[ampName][i][0, 0] -= 2.0 * (ampMean * ptcCoefs[2] + ptcCoefs[3])
-                # Now adjust the means and xcorrs for the calculated gain
-            means[ampName] = [[value*gain for value in pair] for pair in means[ampName]]
-            xcorrs[ampName] = [arr*gain*gain for arr in xcorrs[ampName]]
+                xcorrs[ampName][i][0, 0] -= 2.0 * (ampMean * ptcFit[1] + ptcFit[0])
+            # Now adjust the means and xcorrs for the calculated gain and remove the bad indices
+            means[ampName] = [[value*gain for value in pair] for pair in np.array(means[ampName])[goodIndexDict[ampName]]]
+            xcorrs[ampName] = [arr*gain*gain for arr in np.array(xcorrs[ampName])[goodIndexDict[ampName]]]
+        return BrighterFatterGain(gains, ptcCoefs)
 
     def _makeCroppedExposures(self, exp, gains, level):
         """Prepare exposure for cross-correlation calculation.
@@ -1083,7 +1058,6 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         coVars = {}
         for amp in detector:
             ampName = amp.getName()
-
             diffAmpIm = diff[amp.getBBox()].clone()
             diffAmpImCrop = diffAmpIm[border: -border - maxLag, border: -border - maxLag, afwImage.LOCAL]
             diffAmpImCrop -= afwMath.makeStatistics(diffAmpImCrop, afwMath.MEANCLIP, sctrl).getValue()
@@ -1206,7 +1180,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
                 TEST = x[:, np.newaxis]
                 slope, _, _, _ = np.linalg.lstsq(TEST, y)
                 slope = slope[0]
-                res = y - slope * x
+                res = (y - slope * x) / x
                 resMean = afwMath.makeStatistics(res, afwMath.MEANCLIP, sctrl).getValue()
                 resStd = np.sqrt(afwMath.makeStatistics(res, afwMath.VARIANCECLIP, sctrl).getValue())
                 index = np.where((res > (resMean + nSigmaClip*resStd)) |
@@ -1319,6 +1293,8 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
                         meanXcorr[i, j] = slope
                     except ValueError:
                         meanXcorr[i, j] = slopeRaw
+                    #meanXcorr[i, j] = slopeRaw
+                    print("i=%d, j=%d, slope = %.6g, slopeRaw = %.6g"%(i,j,slope, slopeRaw))
             self.log.info('Quad Fit meanXcorr[0,0] = %g, meanXcorr[1,0] = %g'%(meanXcorr[8, 8],
                                                                                meanXcorr[9, 8]))
 
@@ -1359,7 +1335,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
                                                              afwMath.MEANCLIP, sctrl).getValue()
 
         if self.config.correlationModelRadius < (meanXcorr.shape[0] - 1) / 2:
-            sumToInfinity = self._buildCorrelationModel(meanXcorr, self.config.correlationModelRadius)
+            sumToInfinity = self._buildCorrelationModel(meanXcorr, self.config.correlationModelRadius, self.config.correlationModelSlope)
             self.log.info("SumToInfinity = %s" % sumToInfinity)
         else:
             sumToInfinity = 0.0
@@ -1518,7 +1494,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         return outputArray
 
     @staticmethod
-    def _buildCorrelationModel(array, replacementRadius):
+    def _buildCorrelationModel(array, replacementRadius, slope):
         """Given an array of correlations, build a model
         for correlations beyond replacementRadius pixels from the center
         and replace the measured values with the model.
@@ -1539,20 +1515,13 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         assert(array.shape[0] % 2 == 1)
         assert(replacementRadius > 1)
         center = int((array.shape[0] - 1) / 2)
-        fitrs = []
-        fitcs = []
-        for i in range(array.shape[0]):
-            for j in range(array.shape[1]):
-                r2 = float((i-center)*(i-center) + (j-center)*(j-center))
-                cValue = array[i, j]
-                if r2 > 1.1 and r2 < 20.0 and cValue < 0:
-                    fitrs.append(np.log10(r2))
-                    fitcs.append(np.log10(-cValue))
+        # First we check if either the [0,1] or [1,0] correlation is positive.
+        # If so, the data is seriously screwed up.  This has happened in some bad amplifiers.
+        # In this case, we just return the input array unchanged.
+        if (array[center, center + 1] >=0.0) or (array[center + 1, center] >=0.0):
+            return 0.0
 
-        slope, intercept, rValue, pValue, stdErr = stats.linregress(fitrs, fitcs)
-        # This step is a bit of a hack. |slope| should be 1.35 or greater, so I force it.
-        slope = min(slope, -1.35)
-        print("Model correlation fit, slope =%f"%slope)  # xxx log message?
+        intercept = (np.log10(-array[center, center + 1]) + np.log10(-array[center + 1, center])) / 2.0
         preFactor = 10**intercept
         slopeFactor = 2.0*abs(slope) - 2.0
         sumToInfinity = 2.0*np.pi*preFactor / (slopeFactor*(float(center)+0.5)**slopeFactor)
