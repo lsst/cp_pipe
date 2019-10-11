@@ -35,7 +35,8 @@ import lsst.afw.math as afwMath
 import lsst.afw.detection as afwDetection
 import lsst.afw.display as afwDisplay
 from lsst.afw import cameraGeom
-from lsst.afw.geom import Box2I, Point2I
+#from lsst.afw.geom import Box2I, Point2I
+from lsst.geom import Box2I, Point2I
 
 from lsst.ip.isr import IsrTask
 from .utils import NonexistentDatasetTaskDataIdContainer, SingleVisitListTaskRunner, countMaskedPixels, \
