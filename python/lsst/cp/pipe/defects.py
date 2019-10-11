@@ -296,6 +296,9 @@ class FindDefectsTask(pipeBase.CmdLineTask):
             for datasetType in defectLists.keys():
                 exp = dataRef.get(datasetType)
                 defects = self.findHotAndColdPixels(exp, datasetType)
+                if len(defects) == 0:
+                    self.log.info(f"Found 0 defects in master {datasetType}")
+                    continue
 
                 msg = "Found %s defects containing %s pixels in master %s"
                 self.log.info(msg, len(defects), self._nPixFromDefects(defects), datasetType)
@@ -328,6 +331,10 @@ class FindDefectsTask(pipeBase.CmdLineTask):
 
                 else:
                     raise RuntimeError(f"Failed on imageType {imageType}. Only flats and darks supported")
+
+                if len(defects) == 0:
+                    self.log.info(f"Found 0 defects in visit {visit}")
+                    continue
 
                 msg = "Found %s defects containing %s pixels in visit %s"
                 self.log.info(msg, len(defects), self._nPixFromDefects(defects), visit)
