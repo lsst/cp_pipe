@@ -25,7 +25,8 @@ __all__ = ['MakeBrighterFatterKernelTaskConfig',
            'MakeBrighterFatterKernelTask',
            'calcBiasCorr']
 
-import os, copy
+import os
+import copy
 from scipy import stats
 import numpy as np
 import matplotlib.pyplot as plt
@@ -267,8 +268,8 @@ class BrighterFatterKernel:
         self.__dict__["detectorKernel"] = {}
         self.__dict__["detectorKernelFromAmpKernels"] = {}
         self.__dict__["means"] = []
-        self.__dict__["rawMeans"] = []                
-        self.__dict__["rawXcorrs"] = []        
+        self.__dict__["rawMeans"] = []
+        self.__dict__["rawXcorrs"] = []
         self.__dict__["xCorrs"] = []
         self.__dict__["meanXcorrs"] = []
 
@@ -298,7 +299,7 @@ class BrighterFatterKernel:
         ampsToAverage = [amp for amp in ampNames if amp not in ampsToExclude]
         # Lage - original code can fail if index zero was an excluded amp
         # modified code to force it to use a good amp
-        avgKernel = np.zeros_like(self.ampwiseKernels[ampsToAverage[0]])            
+        avgKernel = np.zeros_like(self.ampwiseKernels[ampsToAverage[0]])
         for ampName in ampsToAverage:
             avgKernel += self.ampwiseKernels[ampName]
         avgKernel /= len(ampsToAverage)
@@ -478,7 +479,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
             means = {key: [] for key in ampNames}
             xcorrs = {key: [] for key in ampNames}
             meanXcorrs = {key: [] for key in ampNames}
-            ptcFitVectorsDict = {key:([], [], []) for key in ampNames}
+            ptcFitVectorsDict = {key: ([], [], []) for key in ampNames}
         else:
             raise RuntimeError("Unsupported level: {}".format(self.config.level))
 
@@ -549,7 +550,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
                     expTime = exp1.getInfo().getVisitInfo().getExposureTime()
                     ptcFitVectorsDict[det_object][0].append(expTime)
                     ptcFitVectorsDict[det_object][1].append((_means1[det_object] + _means2[det_object]) / 2.0)
-                    ptcFitVectorsDict[det_object][2].append(_xcorr[0,0] / 2.0)
+                    ptcFitVectorsDict[det_object][2].append(_xcorr[0, 0] / 2.0)
 
                 # TODO: DM-15305 improve debug functionality here.
                 # This is position 1 for the removed code.
@@ -563,7 +564,8 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
             if self.config.doCalcGains:
                 # We call the code in ptc.py for calculating the gains
                 self.log.info('Calculating gains for detector %s' % detNum)
-                fitPtcDict, nlDict, gainDict, noiseDict, goodIndexDict = ptcTask.fitPtcAndNl(ptcFitVectorsDict)
+                returnValues = ptcTask.fitPtcAndNl(ptcFitVectorsDict)
+                fitPtcDict, nlDict, gainDict, noiseDict, goodIndexDict = returnValues
                 gainsAndPtcCoefs = self._applyGains(means, xcorrs, gainDict, fitPtcDict, goodIndexDict)
                 gains = gainsAndPtcCoefs.gains
                 dataRef.put(gainsAndPtcCoefs, datasetType='brighterFatterGain')
@@ -580,8 +582,6 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
                 self.log.debug('Finished gain estimation for detector %s' % detNum)
             else:
                 gains = dataRef.get('brighterFatterGain')
-
-
 
         # having calculated and applied the gains for all code-paths we can now
         # generate the kernel(s)
@@ -603,8 +603,8 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
 
         bfKernel = BrighterFatterKernel(self.config.level)
         bfKernel.means = means
-        bfKernel.rawMeans = rawMeans                
-        bfKernel.rawXcorrs = rawXcorrs        
+        bfKernel.rawMeans = rawMeans
+        bfKernel.rawXcorrs = rawXcorrs
         bfKernel.xCorrs = xcorrs
         bfKernel.meanXcorrs = meanXcorrs
         if self.config.level == 'AMP':
@@ -640,7 +640,8 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
                 ampMean = np.mean(means[ampName][i])
                 xcorrs[ampName][i][0, 0] -= 2.0 * (ampMean * ptcFit[1] + ptcFit[0])
             # Now adjust the means and xcorrs for the calculated gain and remove the bad indices
-            means[ampName] = [[value*gain for value in pair] for pair in np.array(means[ampName])[goodIndexDict[ampName]]]
+            means[ampName] = [[value*gain for value in pair] for pair
+                              in np.array(means[ampName])[goodIndexDict[ampName]]]
             xcorrs[ampName] = [arr*gain*gain for arr in np.array(xcorrs[ampName])[goodIndexDict[ampName]]]
         return BrighterFatterGain(gains, ptcCoefs)
 
@@ -1293,8 +1294,8 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
                         meanXcorr[i, j] = slope
                     except ValueError:
                         meanXcorr[i, j] = slopeRaw
-                    #meanXcorr[i, j] = slopeRaw
-                    print("i=%d, j=%d, slope = %.6g, slopeRaw = %.6g"%(i,j,slope, slopeRaw))
+                    # meanXcorr[i, j] = slopeRaw
+                    print("i=%d, j=%d, slope = %.6g, slopeRaw = %.6g"%(i, j, slope, slopeRaw))
             self.log.info('Quad Fit meanXcorr[0,0] = %g, meanXcorr[1,0] = %g'%(meanXcorr[8, 8],
                                                                                meanXcorr[9, 8]))
 
@@ -1335,7 +1336,8 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
                                                              afwMath.MEANCLIP, sctrl).getValue()
 
         if self.config.correlationModelRadius < (meanXcorr.shape[0] - 1) / 2:
-            sumToInfinity = self._buildCorrelationModel(meanXcorr, self.config.correlationModelRadius, self.config.correlationModelSlope)
+            sumToInfinity = self._buildCorrelationModel(meanXcorr, self.config.correlationModelRadius,
+                                                        self.config.correlationModelSlope)
             self.log.info("SumToInfinity = %s" % sumToInfinity)
         else:
             sumToInfinity = 0.0
@@ -1518,7 +1520,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         # First we check if either the [0,1] or [1,0] correlation is positive.
         # If so, the data is seriously screwed up.  This has happened in some bad amplifiers.
         # In this case, we just return the input array unchanged.
-        if (array[center, center + 1] >=0.0) or (array[center + 1, center] >=0.0):
+        if (array[center, center + 1] >= 0.0) or (array[center + 1, center] >= 0.0):
             return 0.0
 
         intercept = (np.log10(-array[center, center + 1]) + np.log10(-array[center + 1, center])) / 2.0
