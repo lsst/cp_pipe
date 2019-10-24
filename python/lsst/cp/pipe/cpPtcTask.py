@@ -31,7 +31,7 @@ import lsst.pipe.base as pipeBase
 import lsst.pipe.base.connectionTypes as cT
 import lsst.afw.math as afwMath
 from lsst.ip.isr import IsrTask
-from .utils import  validateIsrConfig
+from .utils import validateIsrConfig
 from scipy.optimize import leastsq
 import numpy.polynomial.polynomial as poly
 
@@ -163,7 +163,7 @@ class CpPtcTask(pipeBase.PipelineTask,
     args : `list`
     kwargs : `dict`
     """
-    ConfigClass = CpSkyTaskConfig
+    ConfigClass = CpPtcTaskConfig
     _DefaultName = "cpPtc"
 
     def __init__(self, **kwargs):
@@ -195,7 +195,8 @@ class CpPtcTask(pipeBase.PipelineTask,
         pairs = self.makePairs(inputData)
 
         # setup necessary objects
-        detector = inputsData[0].getDetector()
+        detector = inputData[0].getDetector()
+        ampInfoCat = detector.getAmpInfoCatalog()
         ampNames = [amp.getName() for amp in ampInfoCat]
         dataDict = {key: {} for key in ampNames}
         fitVectorsDict = {key: ([], [], []) for key in ampNames}
@@ -205,7 +206,7 @@ class CpPtcTask(pipeBase.PipelineTask,
                 mu, varDiff = self.measureMeanVarPair(exp1, exp2, region=amp.getBBox())
                 data = dict(expTime=expTime, meanClip=mu, varClip=varDiff)
                 ampName = amp.getName()
-                dataDict[ampName][(v1, v2)] = data
+                dataDict[ampName][(exp1, exp2)] = data
                 fitVectorsDict[ampName][0].append(expTime)
                 fitVectorsDict[ampName][1].append(mu)
                 fitVectorsDict[ampName][2].append(varDiff)
@@ -217,7 +218,7 @@ class CpPtcTask(pipeBase.PipelineTask,
         gainNoiseNlDict = {"gain": gainDict, "noise": noiseDict, "nl": nlDict}
 
         if self.config.makePlots:
-            self.plot(dataRef, fitPtcDict, nlDict, ptcFitType=self.config.ptcFitType)
+            self.plot(fitPtcDict, nlDict, ptcFitType=self.config.ptcFitType)
 
         return pipeBase.Struct(
             outputDataGainNoise=gainNoiseNlDict,
@@ -502,13 +503,14 @@ class CpPtcTask(pipeBase.PipelineTask,
 
         return fitPtcDict, nlDict, gainDict, noiseDict
 
-    def plot(self, dataRef, fitPtcDict, nlDict, ptcFitType='POLYNOMIAL'):
-        dirname = dataRef.getUri(datasetType='cpPipePlotRoot', write=True)
+    def plot(self, fitPtcDict, nlDict, ptcFitType='POLYNOMIAL'):
+        # dirname = dataRef.getUri(datasetType='cpPipePlotRoot', write=True)
+        dirname = "./plots_ptc_TEMP"
         if not os.path.exists(dirname):
             os.makedirs(dirname)
 
-        detNum = dataRef.dataId[self.config.ccdKey]
-        filename = f"PTC_det{detNum}.pdf"
+        # detNum = dataRef.dataId[self.config.ccdKey]
+        filename = f"PTC.pdf"
         filenameFull = os.path.join(dirname, filename)
         with PdfPages(filenameFull) as pdfPages:
             self._plotPtc(fitPtcDict, nlDict, ptcFitType, pdfPages)
