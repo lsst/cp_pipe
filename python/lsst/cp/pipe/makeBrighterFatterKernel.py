@@ -309,7 +309,7 @@ class BrighterFatterKernel:
 
 @dataclass
 class BrighterFatterGain:
-    '''The gains and the results of the PTC fits.'''
+    """The gains and the results of the PTC fits."""
     gains: dict
     ptcResults: dict
 
