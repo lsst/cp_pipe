@@ -299,8 +299,6 @@ class BrighterFatterKernel:
 
         ampNames = self.ampwiseKernels.keys()
         ampsToAverage = [amp for amp in ampNames if amp not in ampsToExclude]
-        # Lage - original code can fail if index zero was an excluded amp
-        # modified code to force it to use a good amp
         avgKernel = np.zeros_like(self.ampwiseKernels[ampsToAverage[0]])
         for ampName in ampsToAverage:
             avgKernel += self.ampwiseKernels[ampName]
