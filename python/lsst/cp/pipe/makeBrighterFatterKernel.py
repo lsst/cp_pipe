@@ -30,6 +30,8 @@ import copy
 from scipy import stats
 import numpy as np
 import matplotlib.pyplot as plt
+# the following import is required for 3d projection
+from mpl_toolkits.mplot3d import axes3d   # noqa: F401
 from matplotlib.backends.backend_pdf import PdfPages
 from dataclasses import dataclass
 
