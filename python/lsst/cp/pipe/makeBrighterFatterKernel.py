@@ -423,12 +423,12 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         for configParam in self.config.isrMandatorySteps:
             if configDict[configParam] is False:
                 raise RuntimeError('Must set config.isr.%s to True '
-                                   'for brighter-fatter kernel calulation' % configParam)
+                                   'for brighter-fatter kernel calculation' % configParam)
 
         for configParam in self.config.isrForbiddenSteps:
             if configDict[configParam] is True:
                 raise RuntimeError('Must set config.isr.%s to False '
-                                   'for brighter-fatter kernel calulation' % configParam)
+                                   'for brighter-fatter kernel calculation' % configParam)
 
         for configParam in self.config.isrDesirableSteps:
             if configParam not in configDict:
@@ -436,7 +436,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
                               'to set the equivalent for your obs_package to True.' % configParam)
                 continue
             if configDict[configParam] is False:
-                self.log.warn('Found config.isr.%s set to False for brighter-fatter kernel calulation. '
+                self.log.warn('Found config.isr.%s set to False for brighter-fatter kernel calculation. '
                               'It is probably desirable to have this set to True' % configParam)
 
         # subtask settings
@@ -448,7 +448,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         """Run the brighter-fatter measurement task.
 
         For a dataRef (which is each detector here),
-        and given a list of visit pairs, calulate the
+        and given a list of visit pairs, calculate the
         brighter-fatter kernel for the detector.
 
         Parameters
