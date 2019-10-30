@@ -546,7 +546,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
                 xcorrs[det_object].append(_xcorr)
                 means[det_object].append([_means1[det_object], _means2[det_object]])
                 if self.config.level != 'DETECTOR':
-                    # Populate the fitVectorsDict for running ptc.py
+                    # Populate the fitVectorsDict for running fitting in the PTC task
                     expTime = exp1.getInfo().getVisitInfo().getExposureTime()
                     ptcFitVectorsDict[det_object][0].append(expTime)
                     ptcFitVectorsDict[det_object][1].append((_means1[det_object] + _means2[det_object]) / 2.0)
@@ -554,15 +554,17 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
 
                 # TODO: DM-15305 improve debug functionality here.
                 # This is position 1 for the removed code.
+
         # Save the raw means and xcorrs so we can look at them before any modifications
         rawMeans = copy.deepcopy(means)
         rawXcorrs = copy.deepcopy(xcorrs)
+
         # gains are always and only pre-applied for DETECTOR
         # so for all other levels we now calculate them from the correlations
         # and apply them
         if self.config.level != 'DETECTOR':
             if self.config.doCalcGains:
-                # We call the code in ptc.py for calculating the gains
+                # We call the code the PTC task for calculating the gains
                 self.log.info('Calculating gains for detector %s' % detNum)
                 returnValues = ptcTask.fitPtcAndNl(ptcFitVectorsDict)
                 fitPtcDict, nlDict, gainDict, noiseDict, goodIndexDict = returnValues
