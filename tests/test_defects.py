@@ -71,46 +71,32 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         # x, y, size tuples
         # always put edge defects at the start and change the value of nEdge
 
-        # There are 10 (greater or equal than config.badOnAndOffPixelColumnThreshold = 10
-        # in "test_maskBlocksIfIntermitentBadPixelsInColumn" below)
-        # on-and-off bad pixels in a column, with size 1 pixel in x and y.
-        # These are the boxes with x coordinate = 50. From (50, 26, 1, 1) to
-        # (50, 60, 1, 1) there are 34 consecutive good pixels (greater or equal than
-        # config.goodPixelColumnGapThreshold = 10  in
-        # test_maskBlocksIfIntermitentBadPixelsInColumn below) in that column.
-        # Therefore, after running, the function maskBlocksIfIntermitentBadPixelsInColumn
-        # should create the masked blocks (50,11,1,1)->(50,26,1,1) and (50,60,1,1)->(50,70,1,1).
-        # If the box with bad pixels in a column has an extension greater than 1 in x, that
-        # width will be used in the final mask. The boxes with x=50 and extensions
-        # 2 and 1 in x and y were created for this. The code should produce the masked blocks
-        # (85,11,2,1)->(85,26,2,1) and (85,60,2,1)->(85,70,2,1).
+        # Boxes (50, 11, 3, 1), (50, 14, 3, 1), (50, 20, 5, 1), (50, 26, 7, 1),
+        # (50, 33, 10, 1),(50, 55, 3, 1), (50, 60, 3, 1), (50, 63, 5, 1),
+        # (50, 67, 7, 1), (50, 74, 10, 1) will produce multiple columns,
+        # and in some of them there are more or equal than config.badOnAndOffPixelColumnThreshold = 10
+        # bad pixels per column. In addition, there will be more or equal than
+        # config.goodPixelColumnGapThreshold = 10 consecutive good pixels those
+        # columns that should not be masked as bad pixels. The blocks that should
+        # be marked after running "maskBlocksIfIntermitentBadPixelsInColumn"
+        # are listed in defectsBlocksInputTrue below.
+
         self.brightDefects = [(0, 15, 3, 3), (100, 123, 1, 1), (77, 90, 3, 3),
-                              (50, 11, 1, 1), (50, 14, 1, 1),
-                              (50, 17, 1, 1), (50, 20, 1, 1),
-                              (50, 23, 1, 1), (50, 26, 1, 1),
-                              (50, 60, 1, 1), (50, 63, 1, 1),
-                              (50, 67, 1, 1), (50, 70, 1, 1),
-                              (85, 11, 2, 1), (85, 14, 2, 1),
-                              (85, 17, 2, 1), (85, 20, 2, 1),
-                              (85, 23, 2, 1), (85, 26, 2, 1),
-                              (85, 60, 2, 1), (85, 63, 2, 1),
-                              (85, 67, 2, 1), (85, 70, 2, 1)]
-        # Like above, but with slightly different coordinates.
-        # The masked blocks that shoudl be produced after running
-        # maskBlocksIfIntermitentBadPixelsInColumn should be
-        # (45,11,1,1)->(45,26,1,1) and (45,60,1,1)->(45,70,1,1)
-        # and (75,11,2,1)->(75,26,2,1) and (75,60,2,1)->(75,70,2,1).
-        self.darkDefects = [(25, 0, 1, 1), (33, 62, 2, 2), (52, 21, 2, 2),
-                            (45, 11, 1, 1), (45, 14, 1, 1),
-                            (45, 17, 1, 1), (45, 20, 1, 1),
-                            (45, 23, 1, 1), (45, 26, 1, 1),
-                            (45, 60, 1, 1), (45, 63, 1, 1),
-                            (45, 67, 1, 1), (45, 70, 1, 1),
-                            (75, 11, 2, 1), (75, 14, 2, 1),
-                            (75, 17, 2, 1), (75, 20, 2, 1),
-                            (75, 23, 2, 1), (75, 26, 2, 1),
-                            (75, 60, 2, 1), (75, 63, 2, 1),
-                            (75, 67, 2, 1), (75, 70, 2, 1)]
+                              (50, 11, 3, 1), (50, 14, 3, 1),
+                              (50, 20, 5, 1), (50, 26, 7, 1),
+                              (50, 33, 10, 1), (50, 55, 3, 1),
+                              (50, 60, 3, 1), (50, 63, 5, 1),
+                              (50, 67, 7, 1), (50, 74, 10, 1)]
+        # Like above, but with slightly different coordinates for the boxes:
+        # (25, 11, 3, 1), (25, 14, 3, 1), (25, 20, 5, 1), (25, 26, 7, 1),
+        # (25, 33, 10, 1),(25, 55, 3, 1), (25, 60, 3, 1), (25, 63, 5, 1),
+        # (25, 67, 7, 1), (25, 74, 10, 1)
+        self.darkDefects = [(15, 0, 1, 1), (33, 62, 2, 2), (95, 21, 2, 2),
+                            (25, 11, 3, 1), (25, 14, 3, 1),
+                            (25, 20, 5, 1), (25, 26, 7, 1),
+                            (25, 33, 10, 1), (25, 55, 3, 1),
+                            (25, 60, 3, 1), (25, 63, 5, 1),
+                            (25, 67, 7, 1), (25, 74, 10, 1)]
 
         nEdge = 1  # NOTE: update if more edge defects are included
         self.noEdges = slice(nEdge, None)
@@ -146,9 +132,17 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
 
         self.defaultTask = cpPipe.defects.FindDefectsTask(config=self.defaultConfig)
 
+        self.allDefectsList = measAlg.Defects()
+
         self.brightDefectsList = measAlg.Defects()
         for d in self.brightBBoxes:
             self.brightDefectsList.append(d)
+            self.allDefectsList.append(d)
+
+        self.darkDefectsList = measAlg.Defects()
+        for d in self.darkBBoxes:
+            self.darkDefectsList.append(d)
+            self.allDefectsList.append(d)
 
     def test_maskBlocksIfIntermitentBadPixelsInColumn(self):
         config = copy.copy(self.defaultConfig)
@@ -156,22 +150,21 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         config.goodPixelColumnGapThreshold = 10
         task = cpPipe.defects.FindDefectsTask(config=config)
 
-        defects = self.brightDefectsList
-        defects = task.findHotAndColdPixels(self.flatExp, 'flat')
+        defects = self.allDefectsList
         defectsWithColumns = task.maskBlocksIfIntermitentBadPixelsInColumn(defects)
 
-        # (50,11,1,1)->(50,26,1,1) and (50,60,1,1)->(50,70,1,1)
-        # (85,11,2,1)->(85,26,2,1) and (85,60,2,1)->(85,70,2,1)
-        # (45,11,1,1)->(45,26,1,1) and (45,60,1,1)->(45,70,1,1)
-        # (75,11,2,1)->(75,26,2,1) and (75,60,2,1)->(75,70,2,1)
-        defectsBlocksInputTrue = [Box2I(minimum = Point2I(50, 11), maximum = Point2I(50, 26)),
-                                  Box2I(minimum = Point2I(50, 60), maximum = Point2I(50, 70)),
-                                  Box2I(minimum = Point2I(85, 11), maximum = Point2I(86, 26)),
-                                  Box2I(minimum = Point2I(85, 60), maximum = Point2I(86, 70)),
-                                  Box2I(minimum = Point2I(45, 11), maximum = Point2I(45, 26)),
-                                  Box2I(minimum = Point2I(45, 60), maximum = Point2I(45, 70)),
-                                  Box2I(minimum = Point2I(75, 11), maximum = Point2I(76, 26)),
-                                  Box2I(minimum = Point2I(75, 60), maximum = Point2I(76, 70))]
+        defectsBlocksInputTrue = [Box2I(minimum = Point2I(50, 11), maximum = Point2I(50, 33)),
+                                  Box2I(minimum = Point2I(51, 11), maximum = Point2I(51, 33)),
+                                  Box2I(minimum = Point2I(52, 11), maximum = Point2I(52, 33)),
+                                  Box2I(minimum = Point2I(50, 55), maximum = Point2I(50, 74)),
+                                  Box2I(minimum = Point2I(51, 55), maximum = Point2I(51, 74)),
+                                  Box2I(minimum = Point2I(52, 55), maximum = Point2I(52, 74)),
+                                  Box2I(minimum = Point2I(25, 11), maximum = Point2I(25, 33)),
+                                  Box2I(minimum = Point2I(26, 11), maximum = Point2I(26, 33)),
+                                  Box2I(minimum = Point2I(27, 11), maximum = Point2I(27, 33)),
+                                  Box2I(minimum = Point2I(25, 55), maximum = Point2I(25, 74)),
+                                  Box2I(minimum = Point2I(26, 55), maximum = Point2I(26, 74)),
+                                  Box2I(minimum = Point2I(27, 55), maximum = Point2I(27, 74))]
 
         boxesMeasured = []
         for defect in defectsWithColumns:

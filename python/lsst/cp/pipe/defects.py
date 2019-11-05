@@ -571,18 +571,23 @@ class FindDefectsTask(pipeBase.CmdLineTask):
             the defects list returned will include boxes that mask blocks of on-and-of
             pixels.
         """
-        # Get the x, y values of the defects.
-        x, y = [], []
-        extensionX = []
+        # Get the (x, y) values of each bad pixel in amp.
+        coordinates = []
         for defect in defects:
             bbox = defect.getBBox()
-            x.append(bbox.getMinX())
-            y.append(bbox.getMinY())
-            dimensions = bbox.getDimensions()
-            extensionX.append(dimensions[0])
+            x0, y0 = bbox.getMinX(), bbox.getMinY()
+            deltaX0, deltaY0 = bbox.getDimensions()
+            for j in np.arange(y0, y0+deltaY0):
+                for i in np.arange(x0, x0 + deltaX0):
+                    coordinates.append((i, j))
+
+        x, y = [], []
+        for coordinatePair in coordinates:
+            x.append(coordinatePair[0])
+            y.append(coordinatePair[1])
+
         x = np.array(x)
         y = np.array(y)
-        extensionX = np.array(extensionX)
         # Find the defects with same "x" (vertical) coordinate (column).
         unique, counts = np.unique(x, return_counts=True)
         multipleX = []
@@ -590,42 +595,15 @@ class FindDefectsTask(pipeBase.CmdLineTask):
             if b >= self.config.badOnAndOffPixelColumnThreshold:
                 multipleX.append(a)
         if len(multipleX) != 0:
-            defects = self._markBlocksInBadColumn(x, y, extensionX, multipleX, defects)
+            defects = self._markBlocksInBadColumn(x, y, multipleX, defects)
 
         return defects
 
-    def _markBlocksInBadColumn(self, x, y, extensionX, multipleX, defects):
+    def _markBlocksInBadColumn(self, x, y, multipleX, defects):
         """Mask blocks in a column if number of on-and-off bad pixels is above threshold.
 
         This function is called if the number of on-and-off bad pixels in a column
         is larger or equal than self.config.badOnAndOffPixelColumnThreshold.
-
-        Example: Let self.config.badOnAndOffPixelColumnThreshold = 10 and
-        self.config.goodPixelColumnGapThreshold = 10. Let the defect boxes found so far
-        in an image be of the form (with (x, ,y extension in x, extension in y)):
-        defects = [(0, 15, 3, 3), (100, 123, 1, 1), (77, 90, 3, 3),
-                              (50, 11, 1, 1), (50, 14, 1, 1),
-                              (50, 17, 1, 1), (50, 20, 1, 1),
-                              (50, 23, 1, 1), (50, 26, 1, 1),
-                              (50, 60, 1, 1), (50, 63, 1, 1),
-                              (50, 67, 1, 1), (50, 70, 1, 1),
-                              (85, 11, 2, 1), (85, 14, 2, 1),
-                              (85, 17, 2, 1), (85, 20, 2, 1),
-                              (85, 23, 2, 1), (85, 26, 2, 1),
-                              (85, 60, 2, 1), (85, 63, 2, 1),
-                              (85, 67, 2, 1), (85, 70, 2, 1)]
-
-        There are 10 on-and-off bad pixels in a column (with size 1 pixel in x and y),
-        which is greater or equal than config.badOnAndOffPixelColumnThreshold = 10
-        These are the boxes with x coordinate = 50. From (50, 26, 1, 1) to
-        (50, 60, 1, 1) there are 34 consecutive good pixels (which is greater or equal than
-        config.goodPixelColumnGapThreshold = 10) in that column.
-        Therefore, after running, this function should create the masked blocks
-        (50,11,1,1)->(50,26,1,1) and (50,60,1,1)->(50,70,1,1) and incluide then in the defects list.
-        If the box with bad pixels in a column has an extension greater than 1 in x, that
-        width will be used in the final mask. The boxes with x=50 and extensions
-        2 and 1 in x and y were created for this. The code should produce the masked blocks
-        (85,11,2,1)->(85,26,2,1) and (85,60,2,1)->(85,70,2,1).
 
         Parameters
         ---------
@@ -634,9 +612,6 @@ class FindDefectsTask(pipeBase.CmdLineTask):
 
             y: list
                 Lower left y coordinate of defect box. x coordinate is along the long axis if amp.
-
-            extensionX: list
-                List with the pixel exntension in X of the defect box.
 
             multipleX: list
                 List of x coordinates in amp. with multiple bad pixels (i.e., columns with defects).
@@ -654,16 +629,8 @@ class FindDefectsTask(pipeBase.CmdLineTask):
         for x0 in multipleX:
             index = np.where(x == x0)
             multipleY = y[index]  # multipleY and multipleX are in 1-1 correspondence.
-            multipleXextension = extensionX[index]
             minY, maxY = np.min(multipleY), np.max(multipleY)
 
-            # If there are adjacent column blocks of bad pixels with an extension larger than 1 pixel
-            # use that extension as a width of the final mask.
-            uniqueMultipleXextension, countsMultipleXextension = np.unique(multipleXextension,
-                                                                           return_counts=True)
-            widthMask = np.max(uniqueMultipleXextension[np.where(countsMultipleXextension >=
-                               self.config.badOnAndOffPixelColumnThreshold)[0]])
-            widthMask -= 1  # Off by one
             # Next few lines: don't mask pixels in column if gap of good pixels between
             # two consecutive bad pixels is larger or equal than 'goodPixelColumnGapThreshold'.
             diffIndex = np.where(np.diff(multipleY) >= goodPixelColumnGapThreshold)[0]
@@ -675,11 +642,10 @@ class FindDefectsTask(pipeBase.CmdLineTask):
                 limits.append(maxY)  # maximum last
                 assert len(limits)%2 == 0, 'limits is even by design, but check anyways'
                 for i in np.arange(0, len(limits)-1, 2):
-                    s = Box2I(minimum = Point2I(x0, limits[i]), maximum = Point2I(x0 + widthMask,
-                                                                                  limits[i+1]))
+                    s = Box2I(minimum = Point2I(x0, limits[i]), maximum = Point2I(x0, limits[i+1]))
                     defects.append(s)
             else:  # No gap is large enough
-                s = Box2I(minimum = Point2I(x0, minY), maximum = Point2I(x0 + widthMask, maxY))
+                s = Box2I(minimum = Point2I(x0, minY), maximum = Point2I(x0, maxY))
                 defects.append(s)
         return defects
 
