@@ -40,6 +40,7 @@ import lsst.afw.image as afwImage
 import lsst.afw.math as afwMath
 import lsst.afw.display as afwDisp
 from lsst.ip.isr import IsrTask
+import lsst.log as lsstLog
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 from .utils import PairedVisitListTaskRunner, checkExpLengthEqual
@@ -540,7 +541,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
             # - "AMP": n_amp keys, comparing each amplifier of one visit
             #          to the same amplifier in the visit its paired with
             for det_object in _scaledMaskedIms1.keys():
-                print("Calculating correlations for ", det_object)
+                self.log.debug("Calculating correlations for %s" % det_object)
                 _xcorr, _mean = self._crossCorrelate(_scaledMaskedIms1[det_object],
                                                      _scaledMaskedIms2[det_object])
                 xcorrs[det_object].append(_xcorr)
@@ -1297,7 +1298,8 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
                     except ValueError:
                         meanXcorr[i, j] = slopeRaw
                     # meanXcorr[i, j] = slopeRaw
-                    print("i=%d, j=%d, slope = %.6g, slopeRaw = %.6g"%(i, j, slope, slopeRaw))
+                    msg = f"i={i}, j={j}, slope = {slope:.6g}, slopeRaw = {slopeRaw:.6g}"
+                    self.log.debug(msg)
             self.log.info('Quad Fit meanXcorr[0,0] = %g, meanXcorr[1,0] = %g'%(meanXcorr[8, 8],
                                                                                meanXcorr[9, 8]))
 
@@ -1557,7 +1559,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
 
 
 def calcBiasCorr(fluxLevels, imageShape, repeats=1, seed=0, addCorrelations=False,
-                 correlationStrength=0.1, maxLag=10, nSigmaClip=5, border=10):
+                 correlationStrength=0.1, maxLag=10, nSigmaClip=5, border=10, logger=None):
     """Calculate the bias induced when sigma-clipping non-Gassian distributions.
 
     Fill image-pairs of the specified size with Poisson-distributed values,
@@ -1590,6 +1592,8 @@ def calcBiasCorr(fluxLevels, imageShape, repeats=1, seed=0, addCorrelations=Fals
         Number of sigma to clip to when calculating the sigma-clipped mean.
     border : `int`, optional
         Number of border pixels to mask
+    logger : `lsst.log.Log`, optional
+        Logger to use. Instantiated anew if not provided.
 
     Returns:
     --------
@@ -1604,6 +1608,9 @@ def calcBiasCorr(fluxLevels, imageShape, repeats=1, seed=0, addCorrelations=Fals
         A dictionary, keyed by flux level, containing a list of the xcorr
         images for the image pairs at that flux level
     """
+    if logger is None:
+        logger = lsstLog.Log.getDefaultLogger()
+
     means = {f: [] for f in fluxLevels}
     xcorrs = {f: [] for f in fluxLevels}
     biases = {f: [] for f in fluxLevels}
@@ -1637,12 +1644,14 @@ def calcBiasCorr(fluxLevels, imageShape, repeats=1, seed=0, addCorrelations=Fals
             xcorrs[flux].append(_xcorr)
             if addCorrelations:
                 bias = xcorrs[flux][-1][1, 1]/means[flux][-1]*(1 + correlationStrength)/correlationStrength
-                print("Simulated/expected avg. flux: %.1f, %.1f" % (flux, means[flux][-1]/2))
-                print("Bias: %.6f" % bias)
+                msg = f"Simulated/expected avg. flux: {flux:.1f}, {(means[flux][-1]/2):.1f}"
+                logger.info(msg)
+                logger.info(f"Bias: {bias:.6f}")
             else:
                 bias = xcorrs[flux][-1][0, 0]/means[flux][-1]
-                print("Simulated/expected avg. flux: %.1f, %.1f" % (flux, means[flux][-1]/2))
-                print("Bias: %.6f" % bias)
+                msg = f"Simulated/expected avg. flux: {flux:.1f}, {(means[flux][-1]/2):.1f}"
+                logger.info(msg)
+                logger.info(f"Bias: {bias:.6f}")
             biases[flux].append(bias)
 
     return biases, means, xcorrs
