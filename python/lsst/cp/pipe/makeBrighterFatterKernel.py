@@ -177,7 +177,7 @@ class MakeBrighterFatterKernelTaskConfig(pexConfig.Config):
     biasCorr = pexConfig.Field(
         dtype=float,
         doc="An empirically determined correction factor, used to correct for the sigma-clipping of" +
-        " a non-Gaussian distribution. Post DM-15277, code will exist here to calulate appropriate values",
+        " a non-Gaussian distribution. Post DM-15277, code will exist here to calculate appropriate values",
         default=0.9241
     )
     backgroundBinSize = pexConfig.Field(
@@ -454,7 +454,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
 
         Parameters
         ----------
-        dataRef : list of lsst.daf.persistence.ButlerDataRef
+        dataRef : `list` of `lsst.daf.persistence.ButlerDataRef`
             dataRef for the detector for the visits to be fit.
         visitPairs : `iterable` of `tuple` of `int`
             Pairs of visit numbers to be processed together
@@ -707,7 +707,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         # NB these are views modifying the image in-place
         for amp in amps:
             ampName = amp.getName()
-            rescaleIm = mi[amp.getBBox()]  # the soon-to-be scaled, mean subtractedm, amp image
+            rescaleIm = mi[amp.getBBox()]  # the soon-to-be scaled, mean subtracted, amp image
             rescaleTemp = temp[amp.getBBox()]
             mean = afwMath.makeStatistics(rescaleIm, afwMath.MEANCLIP, sctrl).getValue()
             gain = gains.gains[ampName]
@@ -980,7 +980,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         Parameters:
         -----------
         dataRef : `lsst.daf.persistence.butler.Butler.dataRef`
-            dataRef for the detector for the repo containg the flats to be used
+            dataRef for the detector for the repo containing the flats to be used
         v1 : `int`
             First visit of the visit pair
         v2 : `int`
@@ -1359,16 +1359,17 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         Parameters:
         -----------
         source : `numpy.ndarray`
-            The input array
+            The input array.
         maxIter : `int`, optional
-            Maximum number of iterations to attempt before aborting
+            Maximum number of iterations to attempt before aborting.
         eLevel : `float`, optional
-            The target error level at which we deem convergence to have occured
+            The target error level at which we deem convergence to have
+        occurred.
 
         Returns:
         --------
         output : `numpy.ndarray`
-            The solution
+            The solution.
         """
         if not maxIter:
             maxIter = self.config.maxIterSuccessiveOverRelaxation
@@ -1376,10 +1377,10 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
             eLevel = self.config.eLevelSuccessiveOverRelaxation
 
         assert source.shape[0] == source.shape[1], "Input array must be square"
-        # initialise, and set boundary conditions
+        # initialize, and set boundary conditions
         func = np.zeros([source.shape[0] + 2, source.shape[1] + 2])
         resid = np.zeros([source.shape[0] + 2, source.shape[1] + 2])
-        rhoSpe = np.cos(np.pi/source.shape[0])  # Here a square grid is assummed
+        rhoSpe = np.cos(np.pi/source.shape[0])  # Here a square grid is assumed
 
         # Calculate the initial error
         for i in range(1, func.shape[0] - 1):
@@ -1560,7 +1561,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
 
 def calcBiasCorr(fluxLevels, imageShape, repeats=1, seed=0, addCorrelations=False,
                  correlationStrength=0.1, maxLag=10, nSigmaClip=5, border=10, logger=None):
-    """Calculate the bias induced when sigma-clipping non-Gassian distributions.
+    """Calculate the bias induced when sigma-clipping non-Gaussian distributions.
 
     Fill image-pairs of the specified size with Poisson-distributed values,
     adding correlations as necessary. Then calculate the cross correlation,
@@ -1570,7 +1571,7 @@ def calcBiasCorr(fluxLevels, imageShape, repeats=1, seed=0, addCorrelations=Fals
     Parameters:
     -----------
     fluxLevels : `list` of `int`
-        The mean flux levels at which to simiulate.
+        The mean flux levels at which to simulate.
         Nominal values might be something like [70000, 90000, 110000]
     imageShape : `tuple` of `int`
         The shape of the image array to simulate, nx by ny pixels.
