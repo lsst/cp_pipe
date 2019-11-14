@@ -27,6 +27,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 from matplotlib.backends.backend_pdf import PdfPages
+from sqlite3 import OperationalError
 
 import lsst.afw.math as afwMath
 import lsst.pex.config as pexConfig
@@ -198,6 +199,19 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         # setup necessary objects
         detNum = dataRef.dataId[self.config.ccdKey]
         detector = dataRef.get('camera')[dataRef.dataId[self.config.ccdKey]]
+        # expand some missing fields that we need for lsstCam.  This is a work-around
+        # for Gen2 problems that I (RHL) don't feel like solving.  The calibs pipelines
+        # (which inherit from CalibTask) use addMissingKeys() to do basically the same thing
+        #
+        # Basically, the butler's trying to look up the fields in `raw_visit` which won't work
+        for name in dataRef.getButler().getKeys('bias'):
+            if name not in dataRef.dataId:
+                try:
+                    dataRef.dataId[name] = \
+                        dataRef.getButler().queryMetadata('raw', [name], detector=detNum)[0]
+                except OperationalError:
+                    pass
+
         amps = detector.getAmplifiers()
         ampNames = [amp.getName() for amp in amps]
         dataDict = {key: {} for key in ampNames}
