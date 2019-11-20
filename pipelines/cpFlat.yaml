@@ -1,0 +1,29 @@
+description: cp_pipe SKY calibration construction
+tasks:
+  isr:
+    class: lsst.ip.isr.isrTask.IsrTask
+    config:
+      connections.ccdExposure: 'raw'
+      connections.outputExposure: 'cpFlatProc'
+      doBias: True
+      doVariance: True
+      doLinearize: True
+      doCrosstalk: True
+      doDefect: True
+      doNanMasking: True
+      doInterpolate: True
+      doDark: True
+      doBrighterFatter: False
+      doFlat: False
+      doApplyGains: False
+      doFringe: False
+  cpCombine:
+    class: lsst.cp.pipe.cpFunctions.CalibCombineTask
+    config:
+      connections.inputExps: 'cpFlatProc'
+      connections.outputData: 'flatProposal'
+      calibrationType: 'flat'
+      calibrationDimensions: ['physical_filter']
+      nIter: 10
+      exposureScaling: "ExposureTime"
+      outputScaling: 1.0

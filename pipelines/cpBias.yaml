@@ -1,0 +1,26 @@
+description: cp_pipe BIAS calibration construction
+tasks:
+  isr:
+    class: lsst.ip.isr.isrTask.IsrTask
+    config:
+      connections.ccdExposure: 'raw'
+      connections.outputExposure: 'cpBiasProc'
+      doBias: False
+      doDark: False
+      doFlat: False
+      doApplyGains: False
+      doFringe: False
+      doBrighterFatter: False
+      doVariance: True
+      doLinearize: True
+      doCrosstalk: True
+      doDefect: True
+      doNanMasking: True
+      doInterpolate: True
+  cpCombine:
+    class: lsst.cp.pipe.cpFunctions.CalibCombineTask
+    config:
+      connections.inputExps: 'cpBiasProc'
+      connections.outputData: 'biasProposal'
+      calibrationType: 'bias'
+      exposureScaling: "ExposureTime"
