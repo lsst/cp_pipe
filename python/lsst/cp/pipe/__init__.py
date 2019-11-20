@@ -30,3 +30,4 @@ except ImportError:
 from .makeBrighterFatterKernel import *
 from .defects import *
 from .ptc import *
+from .cpFunctions import *
