@@ -91,15 +91,6 @@ class BlessCalibration(pipeBase.Task):
                                                self.inputCollection)
         self.instrument = self.inputValues[0].dataId['instrument']
 
-        try:
-            existingValues = list(self.registry.queryDimensions(['calibration_label'],
-                                                                instrument=self.instrument,
-                                                                calibration_label=self.calibrationLabel))
-            if len(existingValues) != 0:
-                raise RuntimeError(f"Existing entries for calibration_label {self.calibrationLabel}")
-        except LookupError:
-            pass
-
         # Prepare combination of new data ids and object data:
         self.newDataId = []
         self.objects = []
@@ -124,6 +115,12 @@ class BlessCalibration(pipeBase.Task):
         self.butler.collection = None
 
         for newId, data in zip(self.newDataId, self.objects):
+            # Special case known special storageClasses.
+            if datasetTypeName in ('bias', 'dark'):
+                data = data.getImage()
+            elif datasetTypeName in ('flat'):
+                data = data.getMaskedImage()
+
             self.butler.put(data, datasetTypeName, dataId=newId,
                             calibration_label=self.calibrationLabel,
                             producer=None)
@@ -151,15 +148,20 @@ class BlessCalibration(pipeBase.Task):
         beginY, beginM, beginD = beginDate.split("-")
         endY, endM, endD = endDate.split("-")
 
-        self.butler.registry.insertDimensionData(
-            "calibration_label",
-            {
-                "name": name,
-                "instrument": instrument,
-                "datetime_begin": datetime.datetime(int(beginY), int(beginM), int(beginD), 0, 0, 0),
-                "datetime_end": datetime.datetime(int(endY), int(endM), int(endD), 0, 0, 0)
-            }
-        )
+        try:
+            self.registry.queryDimensions(['calibration_label'],
+                                          instrument=self.instrument,
+                                          calibration_label=self.calibrationLabel)
+        except LookupError:
+            self.butler.registry.insertDimensionData(
+                "calibration_label",
+                {
+                    "name": name,
+                    "instrument": instrument,
+                    "datetime_begin": datetime.datetime(int(beginY), int(beginM), int(beginD), 0, 0, 0),
+                    "datetime_end": datetime.datetime(int(endY), int(endM), int(endD), 0, 0, 0)
+                }
+            )
 
 
 class CalibStatsConfig(pexConfig.Config):
