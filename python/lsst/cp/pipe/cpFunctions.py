@@ -148,11 +148,12 @@ class BlessCalibration(pipeBase.Task):
 
         beginY, beginM, beginD = beginDate.split("-")
         endY, endM, endD = endDate.split("-")
-
         try:
-            self.registry.queryDimensions(['calibration_label'],
-                                          instrument=self.instrument,
-                                          calibration_label=self.calibrationLabel)
+            existingValues = self.registry.queryDimensions(['calibration_label'],
+                                                           instrument=self.instrument,
+                                                           calibration_label=self.calibrationLabel)
+            existingValues = [a for a in existingValues]
+            print(f"Found {len(existingValues)} Entries for {self.calibrationLabel}")
         except LookupError:
             self.butler.registry.insertDimensionData(
                 "calibration_label",
