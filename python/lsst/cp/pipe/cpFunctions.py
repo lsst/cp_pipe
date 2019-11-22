@@ -30,7 +30,8 @@ import lsst.pipe.base as pipeBase
 import lsst.pipe.base.connectionTypes as cT
 import lsst.afw.math as afwMath
 import lsst.afw.image as afwImage
-import lsst.daf.base as dafBase
+from astro_metadata_translator import merge_headers, ObservationGroup
+from astro_metadata_translator.serialize import dates_to_fits
 
 
 class BlessCalibration(pipeBase.Task):
@@ -395,8 +396,8 @@ class CalibCombineTask(pipeBase.PipelineTask,
         self.interpolateNans(combined)
 
         # Combine headers
-        header = self.combineHeaders(inputExps, calibType=self.config.calibrationType, scales=expScales)
-        combinedExp.getMetadata().update(header)
+        self.combineHeaders(inputExps, combinedExp,
+                            calibType=self.config.calibrationType, scales=expScales)
 
         # Return
         return pipeBase.Struct(
@@ -464,30 +465,70 @@ class CalibCombineTask(pipeBase.PipelineTask,
 
         afwMath.statisticsStack(target, images, afwMath.Property(self.config.combine), stats)
 
-    def combineHeaders(self, expList, calibType="CALIB", scales=None):
+    def combineHeaders(self, expList, calib, calibType="CALIB", scales=None):
         """
         """
         # Header
-        header = dafBase.PropertySet()
+        header = calib.getMetadata()
         header.set("OBSTYPE", calibType)
 
         # Creation date
         now = time.localtime()
-        header.set("CALIB_CREATE_DATE", time.strftime("%Y-%m-%d", now))
-        header.set("CALIB_CREATE_TIME", time.strftime("%X %Z", now))
+        calibDate = time.strftime("%Y-%m-%d", now)
+        calibTime = time.strftime("%X %Z", now)
+        header.set("CALIB_CREATE_DATE", calibDate)
+        header.set("CALIB_CREATE_TIME", calibTime)
 
-        # Inputs
-        for i, exp in enumerate(expList):
-            visit = exp.getInfo().getVisitInfo()
+        # Merge input headers
+
+        inputHeaders = [exp.getMetadata() for exp in expList if exp is not None]
+        merged = merge_headers(inputHeaders, mode='drop')
+        for k, v in merged.items():
+            if k not in header:
+                md = expList[0].getMetadata()
+                comment = md.getComment(k) if k in md else None
+                header.set(k, v, comment=comment)
+
+        # Construct list of visits
+        visitInfoList = [exp.getInfo().getVisitInfo() for exp in expList if exp is not None]
+        for i, visit in enumerate(visitInfoList):
             if visit is None:
                 continue
             header.set("CPP_INPUT_%d" % (i,), visit.getExposureId())
-            # header.set("CPP_INPUT_DATE_%d" % (i,), visit.getDate())
+            header.set("CPP_INPUT_DATE_%d" % (i,), str(visit.getDate()))
             header.set("CPP_INPUT_EXPT_%d" % (i,), visit.getExposureTime())
             if scales is not None:
                 header.set("CPP_INPUT_SCALE_%d" % (i,), scales[i])
 
-        # XYZ?
+        # Not yet working: DM-22302
+        # Create an observation group so we can add some standard headers
+        # independent of the form in the input files.
+        # Use try block in case we are dealing with unexpected data headers
+        try:
+            group = ObservationGroup(visitInfoList, pedantic=False)
+        except Exception:
+            print("Had exception making obs group")
+            group = None
+
+        comments = {"TIMESYS": "Time scale for all dates",
+                    "DATE-OBS": "Start date of earliest input observation",
+                    "MJD-OBS": "[d] Start MJD of earliest input observation",
+                    "DATE-END": "End date of oldest input observation",
+                    "MJD-END": "[d] End MJD of oldest input observation",
+                    "MJD-AVG": "[d] MJD midpoint of all input observations",
+                    "DATE-AVG": "Midpoint date of all input observations"}
+
+        if group is not None:
+            oldest, newest = group.extremes()
+            dateCards = dates_to_fits(oldest.datetime_begin, newest.datetime_end)
+        else:
+            # Fall back to setting a DATE-OBS from the calibDate
+            dateCards = {"DATE-OBS": "{}T00:00:00.00".format(calibDate)}
+            comments["DATE-OBS"] = "Date of start of day of calibration midpoint"
+
+        for k, v in dateCards.items():
+            header.set(k, v, comment=comments.get(k, None))
+
         return header
 
     def interpolateNans(self, exp):
