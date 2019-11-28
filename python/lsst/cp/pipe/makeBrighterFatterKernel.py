@@ -570,7 +570,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
                 returnValues = ptcTask.fitPtcAndNl(ptcFitVectorsDict)
                 fitPtcDict, nlDict, gainDict, noiseDict, goodIndexDict = returnValues
                 gainsAndPtcCoefs = self._applyGains(means, xcorrs, gainDict, fitPtcDict, goodIndexDict)
-                gains = gainsAndPtcCoefs.gains
+                gains = gainsAndPtcCoefs.gains  # xxx need to check this is the same object on all code paths
                 dataRef.put(gainsAndPtcCoefs, datasetType='brighterFatterGain')
                 if self.config.doPlotPtcs:
                     dirname = dataRef.getUri(datasetType='cpPipePlotRoot', write=True)
@@ -626,13 +626,20 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         self.log.info('Finished generating kernel(s) for %s' % detNum)
         return pipeBase.Struct(exitStatus=0)
 
-    def _applyGains(self, means, xcorrs, gainDict, fitPtcDict, goodIndexDict):
-        # This applies the gains calculated by ptc.py, and
-        # removes datapoints that were thrown out in the ptc.py algorithm
+    def _applyGains(self, means, xcorrs, gainDict, fitPtcDict, goodIndexDict=None):
+        """ This applies the gains calculated by the PtcTask
+
+        It also removes datapoints that were thrown out in the PTC algorithm"""
         ampNames = means.keys()
         assert set(xcorrs.keys()) == set(ampNames)
         gains = {}
         ptcCoefs = {}
+
+        # make dict of ampNames with lists of [True, True...] the length of the entry in the fitDict
+        if not goodIndexDict:
+            numEntries = len(fitPtcDict[ampNames[0]][0])
+            goodIndexDict = {k: [True]*numEntries for k in ampNames}
+
         for ampName in ampNames:
             gain = gainDict[ampName][0]
             gains[ampName] = gain
@@ -822,8 +829,8 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
 
         self.log.debug("Median and variance of diff:")
         self.log.debug("%s" % afwMath.makeStatistics(diff, afwMath.MEDIAN, sctrl).getValue())
-        self.log.debug("%s" % afwMath.makeStatistics(diff, afwMath.VARIANCECLIP,
-                                                     sctrl).getValue(), np.var(diff.getImage().getArray()))
+        self.log.debug("%s, %s" % (afwMath.makeStatistics(diff, afwMath.VARIANCECLIP, sctrl).getValue(),
+                                   np.var(diff.getImage().getArray())))
 
         # Measure the correlations
         dim0 = diff[0: -maxLag, : -maxLag, afwImage.LOCAL]
@@ -1291,8 +1298,8 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
                                                                      fixThroughOrigin=True)
                         msg = "(%s,%s):Slope of raw fit: %s, intercept: %s p value: %s" % (i, j, slopeRaw,
                                                                                            interceptRaw, pVal)
-                        self.log.info(msg)
-                        self.log.info("(%s,%s):Slope of fixed fit: %s" % (i, j, slope))
+                        self.log.debug(msg)
+                        self.log.debug("(%s,%s):Slope of fixed fit: %s" % (i, j, slope))
 
                         meanXcorr[i, j] = slope
                     except ValueError:
@@ -1523,7 +1530,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         assert(replacementRadius > 1)
         center = int((array.shape[0] - 1) / 2)
         # First we check if either the [0,1] or [1,0] correlation is positive.
-        # If so, the data is seriously screwed up.  This has happened in some bad amplifiers.
+        # If so, the data is seriously messed up. This has happened in some bad amplifiers.
         # In this case, we just return the input array unchanged.
         if (array[center, center + 1] >= 0.0) or (array[center + 1, center] >= 0.0):
             return 0.0
