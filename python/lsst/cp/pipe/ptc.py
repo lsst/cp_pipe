@@ -316,7 +316,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         optimize.leastsq returns the fractional covariance matrix. To estimate the
         standard deviation of the fit parameters, multiply the entries of this matrix
-        by the reduced chi squared and take the square root of the diagon al elements.
+        by the reduced chi squared and take the square root of the diagonal elements.
 
         Parameters
         ----------
@@ -468,6 +468,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         def errFunc(p, x, y):
             return ptcFunc(p, x) - y
 
+        sigmaCutPtcOutliers = self.config.sigmaCutPtcOutliers
         maxIterationsPtcOutliers = self.config.maxIterationsPtcOutliers
         for amp in fitVectorsDict:
             timeVec, meanVec, varVec = fitVectorsDict[amp]
@@ -478,7 +479,6 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                       (meanVecOriginal <= self.config.maxMeanSignal))
             #  Before bootstrap fit, do an iterative fit to get rid of outliers in PTC
             count = 1
-            sigmaCutPtcOutliers = self.config.sigmaCutPtcOutliers
             maxIterationsPtcOutliers = self.config.maxIterationsPtcOutliers
             timeTempVec = timeVecOriginal[index0]
             meanTempVec = meanVecOriginal[index0]
@@ -502,7 +502,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
             if (len(meanVecFinal) < len(parsIniPtc)):
                 raise RuntimeError(f"Not enough data points ({len(meanVecFinal)}) compared to the number of" +
-                                   "parameters of the PTC model({len(parsIniPtc)}).")
+                                   f"parameters of the PTC model({len(parsIniPtc)}).")
             # Fit the PTC
             if self.config.doFitBootstrap:
                 parsFit, parsFitErr = self._fitBootstrap(parsIniPtc, meanVecFinal, varVecFinal, ptcFunc)
