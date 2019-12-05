@@ -352,7 +352,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             reducedChiSq = (errFunc(pFit, dataX, dataY)**2).sum()/(len(dataY)-len(initialParams))
             pCov *= reducedChiSq
         else:
-            pCov = np.inf
+            pCov[:, :] = np.inf
 
         errorVec = []
         for i in range(len(pFit)):
