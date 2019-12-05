@@ -680,7 +680,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             meanVecFinal, linRes = nlDict[amp][1], nlDict[amp][2]
             a.scatter(meanVecFinal, linRes)
             a.axhline(y=0, color='k')
-            a.axvline(x=timeVecFinal[self.config.linResidualTimeIndex], color ='g', linestyle = '--')
+            a.axvline(x=timeVecFinal[self.config.linResidualTimeIndex], color='g', linestyle='--')
             a.set_xlabel(r'Mean signal ($\mu$, ADU)', fontsize=labelFontSize)
             a.set_xticks(meanVecFinal)
             a.set_ylabel('LR (%)', fontsize=labelFontSize)
