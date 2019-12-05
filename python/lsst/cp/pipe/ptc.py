@@ -76,7 +76,7 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
     )
     makePlots = pexConfig.Field(
         dtype=bool,
-        doc="Plot the PTC curves?.",
+        doc="Plot the PTC curves?",
         default=False,
     )
     ptcFitType = pexConfig.ChoiceField(
