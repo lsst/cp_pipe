@@ -182,10 +182,6 @@ class MeasurePhotonTransferCurveDatasetTestCase(lsst.utils.tests.TestCase):
         with self.assertRaises(AttributeError):
             test.newItem = 1
 
-        with self.assertRaises(RuntimeError):
-            test.freeze()
-            test.inputVisitPairs = {'C12': (345, 456)}
-
 
 class TestMemory(lsst.utils.tests.MemoryTestCase):
     pass

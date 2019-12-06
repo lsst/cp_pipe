@@ -153,45 +153,40 @@ class PhotonTransferCurveDataset:
     and rawVars, and is a list of bools, which are incrementally set to False
     as points are discarded from the fits.
     """
-    def __init__(self, ampNames, **kwargs):
+    def __init__(self, ampNames):
+        # add items to __dict__ directly because __setattr__ is overridden
+
+        # instance variables
+        self.__dict__["ampNames"] = ampNames
+
+        # raw data variables
         self.__dict__["inputVisitPairs"] = {ampName: [] for ampName in ampNames}
         self.__dict__["visitMask"] = {ampName: [] for ampName in ampNames}
-
-        self.__dict__["gain"] = {ampName: [] for ampName in ampNames}
-        self.__dict__["gainErr"] = {ampName: [] for ampName in ampNames}
-        self.__dict__["noise"] = {ampName: [] for ampName in ampNames}
-        self.__dict__["noiseErr"] = {ampName: [] for ampName in ampNames}
-
-        self.__dict__["ptcFitPars"] = {ampName: [] for ampName in ampNames}
-        self.__dict__["ptcFitParsError"] = {ampName: [] for ampName in ampNames}
-        self.__dict__["ptcFitType"] = {ampName: [] for ampName in ampNames}
-        self.__dict__["nonLinearity"] = {ampName: [] for ampName in ampNames}
-        self.__dict__["nonLinearityError"] = {ampName: [] for ampName in ampNames}
-        self.__dict__["nonLinearityResiduals"] = {ampName: [] for ampName in ampNames}
-
         self.__dict__["rawExpTimes"] = {ampName: [] for ampName in ampNames}
         self.__dict__["rawMeans"] = {ampName: [] for ampName in ampNames}
         self.__dict__["rawVars"] = {ampName: [] for ampName in ampNames}
 
-        self.__dict__["ampNames"] = ampNames
-        self.__dict__["frozen"] = False
+        # fit information
+        self.__dict__["ptcFitType"] = {ampName: "" for ampName in ampNames}
+        self.__dict__["ptcFitPars"] = {ampName: [] for ampName in ampNames}
+        self.__dict__["ptcFitParsError"] = {ampName: [] for ampName in ampNames}
+        self.__dict__["nonLinearity"] = {ampName: [] for ampName in ampNames}
+        self.__dict__["nonLinearityError"] = {ampName: [] for ampName in ampNames}
+        self.__dict__["nonLinearityResiduals"] = {ampName: [] for ampName in ampNames}
 
-        for key, value in kwargs.items():
-            if hasattr(self, key):
-                setattr(self, key, value)
+        # final results
+        self.__dict__["gain"] = {ampName: -1. for ampName in ampNames}
+        self.__dict__["gainErr"] = {ampName: -1. for ampName in ampNames}
+        self.__dict__["noise"] = {ampName: -1. for ampName in ampNames}
+        self.__dict__["noiseErr"] = {ampName: -1. for ampName in ampNames}
 
     def __setattr__(self, attribute, value):
         """Protect class attributes"""
-        if self.frozen:
-            raise RuntimeError("Cannot modify frozen dataset.")
         if attribute not in self.__dict__:
             raise AttributeError(f"{attribute} is not already a member of PhotonTransferCurveDataset, which"
                                  " does not support setting of new attributes.")
         else:
             self.__dict__[attribute] = value
-
-    def freeze(self):
-        self.frozen = True
 
 
 class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
