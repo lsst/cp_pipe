@@ -17,10 +17,7 @@
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program.  If
-
-# Utility tasks/methods copied from pipe_drivers/constructCalibs.py
-
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import datetime
 import numpy as np
 import time
@@ -62,23 +59,24 @@ class BlessCalibration(pipeBase.Task):
         self.calibrationLabel = ''
         self.instrument = ''
 
-    def findInputs(self, datasetTypeName, inputTypeString=None):
+    def findInputs(self, datasetTypeName, inputDatasetTypeName=None):
         """Find and prepare inputs for blessing.
 
         Parameters
         ----------
         datasetTypeName : `str`
             Dataset that will be blessed.
-        inputTypeString : `str`
-            Dataset name for the input datasets.
+        inputDatasetTypeName : `str`, optional
+            Dataset name for the input datasets.  Default to
+            datasetTypeName + "Proposal".
 
         Raises
         ------
-        RuntimeError :
+        RuntimeError
             Raised if no input datasets found or if the calibration
             label exists and is not empty.
         """
-        if inputTypeString is None:
+        if inputDatasetTypeName is None:
             inputDatasetTypeName = datasetTypeName + "Proposal"
 
         self.inputValues = list(self.registry.queryDatasets(inputDatasetTypeName,
@@ -88,16 +86,12 @@ class BlessCalibration(pipeBase.Task):
                                f"in {self.inputCollection}")
 
         # Construct calibration label and choose instrument to use.
-        self.calibrationLabel = "{}/{}".format(datasetTypeName,
-                                               self.inputCollection)
+        self.calibrationLabel = f"{datasetTypeName}/{self.inputCollection}"
         self.instrument = self.inputValues[0].dataId['instrument']
 
         # Prepare combination of new data ids and object data:
-        self.newDataId = []
-        self.objects = []
-        for input in self.inputValues:
-            self.newDataId.append(input.dataId)
-            self.objects.append(self.butler.get(input))
+        self.newDataId = [value.dataId for value in self.inputValues]
+        self.objects = [self.butler.get(value) for value in self.inputValues]
 
     def registerCalibrations(self, datasetTypeName):
         """Add blessed inputs to the output collection.
@@ -107,7 +101,6 @@ class BlessCalibration(pipeBase.Task):
         datasetTypeName : `str`
             Dataset type these calibrations will be registered for.
         """
-
         # Find/make the run we will use for the output
         run = self.registry.getRun(collection=self.outputCollection)
         if run is None:
@@ -137,17 +130,15 @@ class BlessCalibration(pipeBase.Task):
         instrument : `str`
             Instrument this calibration is for.
         beginDate : `str`
-            A hyphen delineated date string for the beginning of the valid date range.
+            An ISO 8601 date string for the beginning of the valid date range.
         endDate : `str`
-            A hyphen delineated date string for the end of the valid date range.
+            An ISO 8601 date string for the end of the valid date range.
         """
         if name is None:
             name = self.calibrationLabel
         if instrument is None:
             instrument = self.instrument
 
-        beginY, beginM, beginD = beginDate.split("-")
-        endY, endM, endD = endDate.split("-")
         try:
             existingValues = self.registry.queryDimensions(['calibration_label'],
                                                            instrument=self.instrument,
@@ -160,12 +151,13 @@ class BlessCalibration(pipeBase.Task):
                 {
                     "name": name,
                     "instrument": instrument,
-                    "datetime_begin": datetime.datetime(int(beginY), int(beginM), int(beginD), 0, 0, 0),
-                    "datetime_end": datetime.datetime(int(endY), int(endM), int(endD), 0, 0, 0)
+                    "datetime_begin": datetime.fromisoformat(beginDate),
+                    "datetime_end": datetime.fromisoformat(endDate),
                 }
             )
 
 
+# CalibStatsConfig/CalibStatsTask from pipe_base/constructCalibs.py
 class CalibStatsConfig(pexConfig.Config):
     """Parameters controlling the measurement of background statistics.
     """
@@ -204,7 +196,7 @@ class CalibStatsTask(pipeBase.Task):
     ConfigClass = CalibStatsConfig
 
     def run(self, exposureOrImage):
-        """!Measure a particular statistic on an image (of some sort).
+        """Measure a particular statistic on an image (of some sort).
 
         Parameters
         ----------
@@ -213,8 +205,8 @@ class CalibStatsTask(pipeBase.Task):
 
         Returns
         -------
-        results : `lsst.afw.math.statistics`
-           Resulting statistics.
+        results : float
+           Resulting statistic value.
         """
         stats = afwMath.StatisticsControl(self.config.clip, self.config.nIter,
                                           afwImage.Mask.getPlaneBitMask(self.config.mask))
@@ -245,14 +237,13 @@ class CalibCombineConnections(pipeBase.PipelineTaskConnections,
         name="cpProposal",
         doc="Output combined proposed calibration.",
         storageClass="ExposureF",
-        dimensions=("instrument", "detector"),  # , "calibration_label"),
+        dimensions=("instrument", "detector"),
     )
 
     def __init__(self, *, config=None):
         super().__init__(config=config)
 
         if config and len(config.calibrationDimensions) != 0:
-            # CZW: this seems fake, but ok.
             newOutputData = cT.Output(
                 name=self.outputData.name,
                 doc=self.outputData.doc,
@@ -263,6 +254,7 @@ class CalibCombineConnections(pipeBase.PipelineTaskConnections,
             self.outputData = newOutputData
 
 
+# CalibCombineConfig/CalibCombineTask from pipe_base/constructCalibs.py
 class CalibCombineConfig(pipeBase.PipelineTaskConfig,
                          pipelineConnections=CalibCombineConnections):
     """Configuration for combining calib exposures.
@@ -284,6 +276,7 @@ class CalibCombineConfig(pipeBase.PipelineTaskConfig,
             "None": "No scaling used.",
             "ExposureTime": "Scale inputs by their exposure time.",
             "DarkTime": "Scale inputs by their dark time.",
+            "MeanStats": "Scale inputs based on their mean values.",
         },
         default=None,
         doc="Scaling to be applied to each input exposure.",
@@ -337,11 +330,11 @@ class CalibCombineTask(pipeBase.PipelineTask,
         self.makeSubtask("stats")
 
     def run(self, inputExps=None):
-        """!Combine calib exposures for a single detector.
+        """Combine calib exposures for a single detector.
 
         Parameters
         ----------
-        inputExps : `List` [`lsst.afw.image.Exposure`]
+        inputExps : `list` [`lsst.afw.image.Exposure`]
             Input list of exposures to combine.
 
         Returns
@@ -374,12 +367,11 @@ class CalibCombineTask(pipeBase.PipelineTask,
             elif self.config.exposureScaling == "DarkTime":
                 scale = exp.getInfo().getVisitInfo().getDarkTime()
             elif self.config.exposureScaling == "MeanStats":
-                image = exp.getImage()
+                image = exp.getMaskedImage()
                 scale = afwMath.makeStatistics(image, self.config.stat, stats).getValue()
 
             expScales.append(scale)
-            self.log.info("Scaling input %d by %f" %
-                          (index, scale))
+            self.log.info("Scaling input %d by %f", index, scale)
             if scale != 1.0 and scale != 0.0 and np.isfinite(scale):
                 # Assume cases with bad scales are equivalent to no scaling.
                 self.applyScale(exp, scale)
@@ -410,25 +402,36 @@ class CalibCombineTask(pipeBase.PipelineTask,
 
         Parameters
         ----------
-        expList : `List` [`lsst.afw.image.Exposure`]
+        expList : `list` [`lsst.afw.image.Exposure`]
             Exps to check the sizes of.
 
         Returns
         -------
-        w, h : `int`
+        width, height : `int`
             Unique set of input dimensions.
         """
-        dimList = []
-        for exp in expList:
-            if exp is None:
-                continue
-            dimList.append(exp.getDimensions())
+        dimList = [exp.getDimensions() for exp in expList if exp is not None]
         return self.getSize(dimList)
 
     def getSize(self, dimList):
-        """Determine a consistent size, given a list of image sizes"""
+        """Determine a consistent size, given a list of image sizes.
+
+        Parameters
+        -----------
+        dimList : iterable of `tuple` (`int`, `int`)
+            List of dimensions.
+
+        Raises
+        ------
+        RuntimeError
+            If input dimensions are inconsistent.
+
+        Returns
+        --------
+        width, height : `int`
+            Common dimensions.
+        """
         dim = set((w, h) for w, h in dimList)
-        dim.discard(None)
         if len(dim) != 1:
             raise RuntimeError("Inconsistent dimensions: %s" % dim)
         return dim.pop()
@@ -451,23 +454,39 @@ class CalibCombineTask(pipeBase.PipelineTask,
             mi /= scale
 
     def combine(self, target, expList, stats):
-        """!Combine multiple images.
+        """Combine multiple images.
 
         Parameters
         ----------
         target : `lsst.afw.image.Exposure`
             Output exposure to construct.
-        expList : `List` [`lsst.afw.image.Exposures`]
+        expList : `list` [`lsst.afw.image.Exposures`]
             Input exposures to combine.
         stats : `lsst.afw.math.statisticsControl`
             Control explaining how to combine the input images.
         """
         images = [img.getMaskedImage() for img in expList if img is not None]
-
         afwMath.statisticsStack(target, images, afwMath.Property(self.config.combine), stats)
 
     def combineHeaders(self, expList, calib, calibType="CALIB", scales=None):
-        """
+        """Combine input headers to determine the set of common headers,
+        supplemented by calibration inputs.
+
+        Parameters
+        ----------
+        expList : `list` of `lsst.afw.image.Exposure`
+            Input list of exposures to combine.
+        calib : `lsst.afw.image.Exposure`
+            Output calibration to construct headers for.
+        calibType: `str`, optional
+            OBSTYPE the output should claim.
+        scales: `list` of `float`, optional
+            Scale values applied to each input to record.
+
+        Returns
+        -------
+        header : `lsst.daf.base.PropertyList`
+            Constructed header.
         """
         # Header
         header = calib.getMetadata()
@@ -481,7 +500,6 @@ class CalibCombineTask(pipeBase.PipelineTask,
         header.set("CALIB_CREATE_TIME", calibTime)
 
         # Merge input headers
-
         inputHeaders = [exp.getMetadata() for exp in expList if exp is not None]
         merged = merge_headers(inputHeaders, mode='drop')
         for k, v in merged.items():
@@ -542,13 +560,6 @@ class CalibCombineTask(pipeBase.PipelineTask,
         ----------
         exp : `lsst.afw.image.Exposure`
             Exp to check for NaNs.
-
-        Returns
-        -------
-        median : `float`
-            Value used to replace NaN values.
-        count : `int`
-            Number of NaNs replaced.
         """
         array = exp.getImage().getArray()
         bad = np.isnan(array)
@@ -557,4 +568,4 @@ class CalibCombineTask(pipeBase.PipelineTask,
         count = np.sum(np.logical_not(bad))
         array[bad] = median
         if count > 0:
-            self.log.warn("Found %s NAN pixels" % (count, ))
+            self.log.warn("Found %s NAN pixels", count)
