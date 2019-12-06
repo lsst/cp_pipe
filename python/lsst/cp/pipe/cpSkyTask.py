@@ -17,7 +17,7 @@
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program.  If
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import numpy as np
 
 import lsst.pex.config as pexConfig
@@ -56,9 +56,6 @@ class CpSkyConnections(pipeBase.PipelineTaskConnections,
         storageClass="ExposureF",
         dimensions=("instrument", "physical_filter", "detector", "visit"),
     )
-
-    def __init__(self, *, config=None):
-        super().__init__(config=config)
 
 
 class CpSkyTaskConfig(pipeBase.PipelineTaskConfig,
@@ -114,7 +111,7 @@ class CpSkyTask(pipeBase.PipelineTask,
         inputExp : `lsst.afw.image.Exposure`
             Pre-processed sky frame data to combine.
         camera : `lsst.afw.cameraGeom.Camera`
-            CZW confirm this is needed before merge.
+            Camera to use for focal-plane geometry.
 
         Returns
         -------
@@ -161,7 +158,7 @@ class CpSkyTask(pipeBase.PipelineTask,
             afwMath.stringToInterpStyle(self.config.background.algorithm),
             afwMath.stringToUndersampleStyle("REDUCE_INTERP_ORDER"),
             afwMath.ApproximateControl.UNKNOWN,
-            0, 0, False  # CZW: It'd be nice to have some idea what these are.
+            0, 0, False
         ))
 
         bgExp = afwImage.makeExposure(icExpBkg[0][0].getStatsImage())

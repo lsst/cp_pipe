@@ -17,7 +17,7 @@
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program.  If
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import math
 import numpy as np
 
@@ -50,9 +50,6 @@ class CpDarkConnections(pipeBase.PipelineTaskConnections,
         storageClass="ExposureF",
         dimensions=("instrument", "detector", "visit"),
     )
-
-    def __init__(self, *, config=None):
-        super().__init__(config=config)
 
 
 class CpDarkTaskConfig(pipeBase.PipelineTaskConfig,
@@ -99,15 +96,12 @@ class CpDarkTask(pipeBase.PipelineTask,
         ----------
         inputExp : `lsst.afw.image.Exposure`
             Pre-processed dark frame data to combine.
-        camera : `lsst.afw.cameraGeom.Camera`
-            CZW confirm this is needed before merge.
 
         Returns
         -------
         outputExp : `lsst.afw.image.Exposure`
             CR rejected, ISR processed Dark Frame."
         """
-        # Repair CRs:
         psf = measAlg.DoubleGaussianPsf(self.config.psfSize,
                                         self.config.psfSize,
                                         self.config.psfFwhm/(2*math.sqrt(2*math.log(2))))
@@ -121,13 +115,10 @@ class CpDarkTask(pipeBase.PipelineTask,
         if self.config.crGrow > 0:
             mask = inputExp.getMaskedImage().getMask().clone()
             mask &= mask.getPlaneBitMask("CR")
-            fpSet = afwDet.FootprintSet(
-                mask, afwDet.Threshold(0.5))
-            fpSet = afwDet.FootprintSet(
-                fpSet, self.config.crGrow, True)
+            fpSet = afwDet.FootprintSet(mask, afwDet.Threshold(0.5))
+            fpSet = afwDet.FootprintSet(fpSet, self.config.crGrow, True)
             fpSet.setMask(inputExp.getMaskedImage().getMask(), "CR")
 
-        # Return
         return pipeBase.Struct(
             outputExp=inputExp,
         )

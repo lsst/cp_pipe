@@ -17,7 +17,7 @@
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program.  If
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 import lsst.pipe.base.connectionTypes as cT
@@ -48,9 +48,6 @@ class CpFringeConnections(pipeBase.PipelineTaskConnections,
         dimensions=("instrument", "detector", "physical_filter", "visit"),
     )
 
-    def __init__(self, *, config=None):
-        super().__init__(config=config)
-
 
 class CpFringeTaskConfig(pipeBase.PipelineTaskConfig,
                          pipelineConnections=CpFringeConnections):
@@ -69,7 +66,7 @@ class CpFringeTaskConfig(pipeBase.PipelineTaskConfig,
     detectSigma = pexConfig.Field(
         dtype=float,
         default=1.0,
-        doc="Detection psf gaussian sigma.  CZW: Is this not in detection?",
+        doc="Detection psf gaussian sigma.",
     )
 
     def setDefaults(self):
@@ -100,18 +97,11 @@ class CpFringeTask(pipeBase.PipelineTask,
         ----------
         inputExp : `lsst.afw.image.Exposure`
             Pre-processed fringe frame data to combine.
-        camera : `lsst.afw.cameraGeom.Camera`
-            CZW confirm this is needed before merge.
 
         Returns
         -------
         outputExp : `lsst.afw.image.Exposure`
             Fringe pre-processed frame.
-
-        """
-
-        """Detect +/-1 sigma sources/pixels, and mask them from the input
-        fringes.
 
         """
         bg = self.stats.run(inputExp)
@@ -124,8 +114,7 @@ class CpFringeTask(pipeBase.PipelineTask,
         detected = 1 << mask.addMaskPlane("DETECTED")
         for fpSet in (fpSets.positive, fpSets.negative):
             if fpSet is not None:
-                afwDet.setMaskFromFootprintList(
-                    mask, fpSet.getFootprints(), detected)
+                afwDet.setMaskFromFootprintList(mask, fpSet.getFootprints(), detected)
 
         # Return
         return pipeBase.Struct(
