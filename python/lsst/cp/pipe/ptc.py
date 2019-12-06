@@ -689,6 +689,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         labelFontSize = 8
         titleFontSize = 10
         supTitleFontSize = 18
+        markerSize = 25
 
         # General determination of the size of the plot grid
         nAmps = len(dataset.ampNames)
@@ -741,8 +742,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
             a.plot(meanVecFit, ptcFunc(pars, meanVecFit), color='red')
             a.plot(meanVecFinal, pars[0] + pars[1]*meanVecFinal, color='green', linestyle='--')
-            a.scatter(meanVecFinal, varVecFinal, c='blue', marker='o')
-            a.scatter(meanVecOutliers, varVecOutliers, c='magenta', marker='s')
+            a.scatter(meanVecFinal, varVecFinal, c='blue', marker='o', s=markerSize)
+            a.scatter(meanVecOutliers, varVecOutliers, c='magenta', marker='s', s=markerSize)
             a.set_xlabel(r'Mean signal ($\mu$, ADU)', fontsize=labelFontSize)
             a.set_xticks(meanVecOriginal)
             a.set_ylabel(r'Variance (ADU$^2$)', fontsize=labelFontSize)
@@ -755,8 +756,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
             # Same, but in log-scale
             a2.plot(meanVecFit, ptcFunc(pars, meanVecFit), color='red')
-            a2.scatter(meanVecFinal, varVecFinal, c='blue', marker='o')
-            a2.scatter(meanVecOutliers, varVecOutliers, c='magenta', marker='s')
+            a2.scatter(meanVecFinal, varVecFinal, c='blue', marker='o', s=markerSize)
+            a2.scatter(meanVecOutliers, varVecOutliers, c='magenta', marker='s', s=markerSize)
             a2.set_xlabel(r'Mean Signal ($\mu$, ADU)', fontsize=labelFontSize)
             a2.set_ylabel(r'Variance (ADU$^2$)', fontsize=labelFontSize)
             a2.tick_params(labelsize=11)
