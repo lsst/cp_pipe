@@ -707,11 +707,13 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         f2, ax2 = plt.subplots(nrows=nRows, ncols=nCols, sharex='col', sharey='row', figsize=(13, 10))
 
         for i, (amp, a, a2) in enumerate(zip(dataset.ampNames, ax.flatten(), ax2.flatten())):
-            meanVecOriginal, varVecOriginal = dataset.rawMeans[amp], dataset.rawVars[amp]
-            meanVecFinal = np.array(dataset.rawMeans[amp])[dataset.visitMask[amp]]
-            varVecFinal = np.array(dataset.rawVars[amp])[dataset.visitMask[amp]]
-            meanVecOutliers = np.setdiff1d(meanVecOriginal, meanVecFinal)
-            varVecOutliers = np.setdiff1d(varVecOriginal, varVecFinal)
+            meanVecOriginal = np.array(dataset.rawMeans[amp])
+            varVecOriginal = np.array(dataset.rawVars[amp])
+            mask = dataset.visitMask[amp]
+            meanVecFinal = meanVecOriginal[mask]
+            varVecFinal = varVecOriginal[mask]
+            meanVecOutliers = meanVecOriginal[np.invert(mask)]
+            varVecOutliers = varVecOriginal[np.invert(mask)]
             pars, parsErr = dataset.ptcFitPars[amp], dataset.ptcFitParsError[amp]
 
             if ptcFitType == 'ASTIERAPPROXIMATION':
