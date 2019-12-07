@@ -22,7 +22,6 @@
 #
 """Test cases for lsst.cp.pipe.FindDefectsTask."""
 
-from __future__ import absolute_import, division, print_function
 import unittest
 import numpy as np
 import copy
@@ -71,32 +70,32 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         # x, y, size tuples
         # always put edge defects at the start and change the value of nEdge
 
-        # Boxes (50, 11, 3, 1), (50, 14, 3, 1), (50, 20, 5, 1), (50, 26, 7, 1),
-        # (50, 33, 10, 1),(50, 55, 3, 1), (50, 60, 3, 1), (50, 63, 5, 1),
-        # (50, 67, 7, 1), (50, 74, 10, 1) will produce multiple columns,
-        # and in some of them there are more or equal than config.badOnAndOffPixelColumnThreshold = 10
-        # bad pixels per column. In addition, there will be more or equal than
-        # config.goodPixelColumnGapThreshold = 10 consecutive good pixels those
-        # columns that should not be masked as bad pixels. The blocks that should
-        # be marked after running "maskBlocksIfIntermitentBadPixelsInColumn"
-        # are listed in defectsBlocksInputTrue below.
+        self.brightDefects = [(0, 15, 3, 3), (100, 123, 1, 1),
+                              (15, 1, 1, 50),
+                              (20, 1, 1, 25),
+                              (25, 1, 1, 8),
+                              (30, 1, 1, 2), (30, 5, 1, 3), (30, 11, 1, 5), (30, 19, 1, 5),
+                              (30, 27, 1, 4), (30, 34, 1, 15),
+                              (35, 1, 1, 2), (35, 5, 1, 3), (35, 11, 1, 2),
+                              (40, 1, 1, 2), (40, 5, 1, 3), (40, 19, 1, 5), (40, 27, 1, 4), (40, 34, 1, 15),
+                              (45, 10, 1, 2), (45, 30, 1, 3),
+                              [50, 10, 1, 1], [50, 12, 1, 1], [50, 14, 1, 1], [50, 16, 1, 1],
+                              [50, 18, 1, 1], [50, 20, 1, 1], [50, 22, 1, 1], [50, 24, 1, 1],
+                              [50, 26, 1, 1], [50, 28, 1, 1], [50, 30, 1, 1], [50, 32, 1, 1],
+                              [50, 34, 1, 1], [50, 36, 1, 1], [50, 38, 1, 1], [50, 40, 1, 1],
+                              [55, 20, 1, 1], [55, 22, 1, 1], [55, 24, 1, 1], [55, 26, 1, 1],
+                              [55, 28, 1, 1], [55, 30, 1, 1],
+                              (60, 1, 1, 18), (60, 20, 1, 10), (61, 2, 2, 2), (61, 6, 2, 8),
+                              (70, 1, 1, 18), (70, 20, 1, 10), (68, 2, 2, 2), (68, 6, 2, 8),
+                              (75, 1, 1, 18), (75, 20, 1, 10), (73, 2, 2, 2), (73, 6, 2, 8), (76, 2, 2, 2),
+                              (76, 6, 2, 8),
+                              (80, 1, 1, 18), (80, 20, 1, 10), (81, 2, 2, 2), (81, 8, 2, 8),
+                              (87, 1, 1, 18), (87, 20, 1, 10), (85, 2, 2, 2), (85, 8, 2, 8),
+                              (93, 1, 1, 12), (93, 15, 1, 20), (91, 2, 2, 2), (91, 7, 2, 2),
+                              (94, 2, 2, 2), (94, 7, 2, 2),
+                              (91, 18, 2, 3), (91, 24, 2, 3), (94, 18, 2, 3), (94, 24, 2, 3)]
 
-        self.brightDefects = [(0, 15, 3, 3), (100, 123, 1, 1), (77, 90, 3, 3),
-                              (50, 11, 3, 1), (50, 14, 3, 1),
-                              (50, 20, 5, 1), (50, 26, 7, 1),
-                              (50, 33, 10, 1), (50, 55, 3, 1),
-                              (50, 60, 3, 1), (50, 63, 5, 1),
-                              (50, 67, 7, 1), (50, 74, 10, 1)]
-        # Like above, but with slightly different coordinates for the boxes:
-        # (25, 11, 3, 1), (25, 14, 3, 1), (25, 20, 5, 1), (25, 26, 7, 1),
-        # (25, 33, 10, 1),(25, 55, 3, 1), (25, 60, 3, 1), (25, 63, 5, 1),
-        # (25, 67, 7, 1), (25, 74, 10, 1)
-        self.darkDefects = [(15, 0, 1, 1), (33, 62, 2, 2), (95, 21, 2, 2),
-                            (25, 11, 3, 1), (25, 14, 3, 1),
-                            (25, 20, 5, 1), (25, 26, 7, 1),
-                            (25, 33, 10, 1), (25, 55, 3, 1),
-                            (25, 60, 3, 1), (25, 63, 5, 1),
-                            (25, 67, 7, 1), (25, 74, 10, 1)]
+        self.darkDefects = [(5, 0, 1, 1), (7, 62, 2, 2)]
 
         nEdge = 1  # NOTE: update if more edge defects are included
         self.noEdges = slice(nEdge, None)
@@ -144,59 +143,430 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
             self.darkDefectsList.append(d)
             self.allDefectsList.append(d)
 
-    def test_maskBlocksIfIntermitentBadPixelsInColumn(self):
+    def test_maskBlocksIfIntermitentBadPixelsInColumnTest1(self):
+        # continuous bad column
+
         config = copy.copy(self.defaultConfig)
         config.badOnAndOffPixelColumnThreshold = 10
-        config.goodPixelColumnGapThreshold = 10
+        config.goodPixelColumnGapThreshold = 5
+        config.nPixBorderUpDown = 0
+        config.nPixBorderLeftRight = 0
+
         task = cpPipe.defects.FindDefectsTask(config=config)
 
+        expectedDefects = [Box2I(corner = Point2I(15, 1), dimensions = Extent2I(1, 50))]
         defects = self.allDefectsList
-        defectsWithColumns = task.maskBlocksIfIntermitentBadPixelsInColumn(defects)
 
-        defectsBlocksInputTrue = [Box2I(minimum = Point2I(50, 11), maximum = Point2I(50, 33)),
-                                  Box2I(minimum = Point2I(51, 11), maximum = Point2I(51, 33)),
-                                  Box2I(minimum = Point2I(52, 11), maximum = Point2I(52, 33)),
-                                  Box2I(minimum = Point2I(50, 55), maximum = Point2I(50, 74)),
-                                  Box2I(minimum = Point2I(51, 55), maximum = Point2I(51, 74)),
-                                  Box2I(minimum = Point2I(52, 55), maximum = Point2I(52, 74)),
-                                  Box2I(minimum = Point2I(25, 11), maximum = Point2I(25, 33)),
-                                  Box2I(minimum = Point2I(26, 11), maximum = Point2I(26, 33)),
-                                  Box2I(minimum = Point2I(27, 11), maximum = Point2I(27, 33)),
-                                  Box2I(minimum = Point2I(25, 55), maximum = Point2I(25, 74)),
-                                  Box2I(minimum = Point2I(26, 55), maximum = Point2I(26, 74)),
-                                  Box2I(minimum = Point2I(27, 55), maximum = Point2I(27, 74))]
+        defectsWithColumns = task.maskBlocksIfIntermitentBadPixelsInColumn(defects)
 
         boxesMeasured = []
         for defect in defectsWithColumns:
             boxesMeasured.append(defect.getBBox())
 
-        for boxInput in defectsBlocksInputTrue:
+        for boxInput in expectedDefects:
+            self.assertIn(boxInput, boxesMeasured)
+
+    def test_maskBlocksIfIntermitentBadPixelsInColumnTest2(self):
+        # Test 2: n contiguous bad pixels in a column where n >= threshold
+
+        config = copy.copy(self.defaultConfig)
+        config.badOnAndOffPixelColumnThreshold = 10
+        config.goodPixelColumnGapThreshold = 5
+        config.nPixBorderUpDown = 0
+        config.nPixBorderLeftRight = 0
+
+        task = cpPipe.defects.FindDefectsTask(config=config)
+
+        expectedDefects = [Box2I(corner = Point2I(20, 1), dimensions = Extent2I(1, 25))]
+        defects = self.allDefectsList
+
+        defectsWithColumns = task.maskBlocksIfIntermitentBadPixelsInColumn(defects)
+
+        boxesMeasured = []
+        for defect in defectsWithColumns:
+            boxesMeasured.append(defect.getBBox())
+
+        for boxInput in expectedDefects:
+            self.assertIn(boxInput, boxesMeasured)
+
+    def test_maskBlocksIfIntermitentBadPixelsInColumnTest3(self):
+        # Test 3: n contiguous bad pixels in a column where n < threshold
+
+        config = copy.copy(self.defaultConfig)
+        config.badOnAndOffPixelColumnThreshold = 10
+        config.goodPixelColumnGapThreshold = 5
+        config.nPixBorderUpDown = 0
+        config.nPixBorderLeftRight = 0
+
+        task = cpPipe.defects.FindDefectsTask(config=config)
+
+        expectedDefects = [Box2I(corner = Point2I(25, 1), dimensions = Extent2I(1, 8))]
+        defects = self.allDefectsList
+
+        defectsWithColumns = task.maskBlocksIfIntermitentBadPixelsInColumn(defects)
+
+        boxesMeasured = []
+        for defect in defectsWithColumns:
+            boxesMeasured.append(defect.getBBox())
+
+        for boxInput in expectedDefects:
+            self.assertIn(boxInput, boxesMeasured)
+
+    def test_maskBlocksIfIntermitentBadPixelsInColumnTest4(self):
+        # Test 4: n discontiguous bad pixels in a column where n >= threshold,
+        # gap < "good" threshold  (n=34 >= 10)
+
+        config = copy.copy(self.defaultConfig)
+        config.badOnAndOffPixelColumnThreshold = 10
+        config.goodPixelColumnGapThreshold = 5
+        config.nPixBorderUpDown = 0
+        config.nPixBorderLeftRight = 0
+
+        task = cpPipe.defects.FindDefectsTask(config=config)
+
+        expectedDefects = [Box2I(corner = Point2I(30, 1), dimensions = Extent2I(1, 48))]
+        defects = self.allDefectsList
+
+        defectsWithColumns = task.maskBlocksIfIntermitentBadPixelsInColumn(defects)
+
+        boxesMeasured = []
+        for defect in defectsWithColumns:
+            boxesMeasured.append(defect.getBBox())
+
+        for boxInput in expectedDefects:
+            self.assertIn(boxInput, boxesMeasured)
+
+    def test_maskBlocksIfIntermitentBadPixelsInColumnTest5(self):
+        # Test 5: n discontiguous bad pixels in a column where n < threshold,
+        # gap < "good" threshold (n=7<10)
+        # bad_test5 = np.array([(35, 1, 1, 2), (35, 5, 1, 3), (35, 11, 1, 2)])
+
+        config = copy.copy(self.defaultConfig)
+        config.badOnAndOffPixelColumnThreshold = 10
+        config.goodPixelColumnGapThreshold = 5
+        config.nPixBorderUpDown = 0
+        config.nPixBorderLeftRight = 0
+
+        task = cpPipe.defects.FindDefectsTask(config=config)
+
+        expectedDefects = [Box2I(corner = Point2I(35, 1), dimensions = Extent2I(1, 2)),
+                           Box2I(corner = Point2I(35, 5), dimensions = Extent2I(1, 3)),
+
+                           Box2I(corner = Point2I(35, 11), dimensions = Extent2I(1, 2))]
+        defects = self.allDefectsList
+
+        defectsWithColumns = task.maskBlocksIfIntermitentBadPixelsInColumn(defects)
+
+        boxesMeasured = []
+        for defect in defectsWithColumns:
+            boxesMeasured.append(defect.getBBox())
+
+        for boxInput in expectedDefects:
+            self.assertIn(boxInput, boxesMeasured)
+
+    def test_maskBlocksIfIntermitentBadPixelsInColumnTest6(self):
+        # Test 6: n discontiguous bad pixels in a column where n >= threshold, gap >= "good" threshold
+        # n=34 bad pixels total, 1 "good" gap big enough (13>=5 good pixels, from y=6 (1+5) to y=19)
+
+        config = copy.copy(self.defaultConfig)
+        config.badOnAndOffPixelColumnThreshold = 10
+        config.goodPixelColumnGapThreshold = 5
+        config.nPixBorderUpDown = 0
+        config.nPixBorderLeftRight = 0
+
+        task = cpPipe.defects.FindDefectsTask(config=config)
+
+        expectedDefects = [Box2I(corner = Point2I(40, 1), dimensions = Extent2I(1, 7)),
+                           Box2I(corner = Point2I(40, 19), dimensions = Extent2I(1, 30))]
+        defects = self.allDefectsList
+
+        defectsWithColumns = task.maskBlocksIfIntermitentBadPixelsInColumn(defects)
+
+        boxesMeasured = []
+        for defect in defectsWithColumns:
+            boxesMeasured.append(defect.getBBox())
+
+        for boxInput in expectedDefects:
+            self.assertIn(boxInput, boxesMeasured)
+
+    def test_maskBlocksIfIntermitentBadPixelsInColumnTest7(self):
+        # Test 7: n discontiguous bad pixels in a column where n < threshold, gap >= "good" threshold
+        # 5<10 bad pixels total, 1 "good" gap big enough (29>=5 good pixels, from y =12 (10+2) to y=30)
+
+        config = copy.copy(self.defaultConfig)
+        config.badOnAndOffPixelColumnThreshold = 10
+        config.goodPixelColumnGapThreshold = 5
+        config.nPixBorderUpDown = 0
+        config.nPixBorderLeftRight = 0
+
+        task = cpPipe.defects.FindDefectsTask(config=config)
+
+        expectedDefects = [Box2I(corner = Point2I(45, 10), dimensions = Extent2I(1, 2)),
+                           Box2I(corner = Point2I(45, 30), dimensions = Extent2I(1, 3))]
+        defects = self.allDefectsList
+
+        defectsWithColumns = task.maskBlocksIfIntermitentBadPixelsInColumn(defects)
+
+        boxesMeasured = []
+        for defect in defectsWithColumns:
+            boxesMeasured.append(defect.getBBox())
+
+        for boxInput in expectedDefects:
+            self.assertIn(boxInput, boxesMeasured)
+
+    def test_maskBlocksIfIntermitentBadPixelsInColumnTest8(self):
+        # Test 8: n discontiguous bad pixels, every other pixel is bad, n >= threshold
+        # n discontiguous bad pixels, every other pixel is bad, n >= threshold (n = 15  >= 10)
+
+        config = copy.copy(self.defaultConfig)
+        config.badOnAndOffPixelColumnThreshold = 10
+        config.goodPixelColumnGapThreshold = 5
+        config.nPixBorderUpDown = 0
+        config.nPixBorderLeftRight = 0
+
+        task = cpPipe.defects.FindDefectsTask(config=config)
+
+        expectedDefects = [Box2I(corner = Point2I(50, 10), dimensions = Extent2I(1, 31))]
+        defects = self.allDefectsList
+
+        defectsWithColumns = task.maskBlocksIfIntermitentBadPixelsInColumn(defects)
+
+        boxesMeasured = []
+        for defect in defectsWithColumns:
+            boxesMeasured.append(defect.getBBox())
+
+        for boxInput in expectedDefects:
+            self.assertIn(boxInput, boxesMeasured)
+
+    def test_maskBlocksIfIntermitentBadPixelsInColumnTest9(self):
+        # Test 9: n discontiguous bad pixels, every other pixel is bad, n < threshold
+        # n discontiguous bad pixels, every other pixel is bad, n < threshold (n = 5 < 10)
+
+        config = copy.copy(self.defaultConfig)
+        config.badOnAndOffPixelColumnThreshold = 10
+        config.goodPixelColumnGapThreshold = 5
+        config.nPixBorderUpDown = 0
+        config.nPixBorderLeftRight = 0
+
+        task = cpPipe.defects.FindDefectsTask(config=config)
+
+        expectedDefects = [Box2I(corner = Point2I(55, 20), dimensions = Extent2I(1, 1)),
+                           Box2I(corner = Point2I(55, 22), dimensions = Extent2I(1, 1)),
+                           Box2I(corner = Point2I(55, 24), dimensions = Extent2I(1, 1)),
+                           Box2I(corner = Point2I(55, 26), dimensions = Extent2I(1, 1)),
+                           Box2I(corner = Point2I(55, 28), dimensions = Extent2I(1, 1)),
+                           Box2I(corner = Point2I(55, 30), dimensions = Extent2I(1, 1))]
+        defects = self.allDefectsList
+
+        defectsWithColumns = task.maskBlocksIfIntermitentBadPixelsInColumn(defects)
+
+        boxesMeasured = []
+        for defect in defectsWithColumns:
+            boxesMeasured.append(defect.getBBox())
+
+        for boxInput in expectedDefects:
+            self.assertIn(boxInput, boxesMeasured)
+
+    def test_maskBlocksIfIntermitentBadPixelsInColumnTest10(self):
+        # Test 10: n discontiguous bad pixels in column with "blobs" of "m" bad pixels to one side, m >
+        # threshold, # gaps between blobs < "good" threshold.
+        # expected_test10 = np.array([(60,1,1,31), (61, 2, 2, 14)])
+
+        config = copy.copy(self.defaultConfig)
+        config.badOnAndOffPixelColumnThreshold = 10
+        config.goodPixelColumnGapThreshold = 5
+        config.nPixBorderUpDown = 0
+        config.nPixBorderLeftRight = 0
+
+        task = cpPipe.defects.FindDefectsTask(config=config)
+
+        expectedDefects = [Box2I(corner = Point2I(60, 1), dimensions = Extent2I(1, 29)),
+                           Box2I(corner = Point2I(61, 2), dimensions = Extent2I(1, 12))]
+        defects = self.allDefectsList
+
+        defectsWithColumns = task.maskBlocksIfIntermitentBadPixelsInColumn(defects)
+
+        boxesMeasured = []
+        for defect in defectsWithColumns:
+            boxesMeasured.append(defect.getBBox())
+
+        for boxInput in expectedDefects:
+            self.assertIn(boxInput, boxesMeasured)
+
+    def test_maskBlocksIfIntermitentBadPixelsInColumnTest11(self):
+        # Test 11: n discontiguous bad pixels in column with "blobs" of "m" bad pixels to other side, m >
+        # threshold, gaps between blobs < "good" threshold.
+        # bad_test11 = np.array([(70, 1, 1, 16), (70, 20, 1, 10), (68, 2, 2, 2), (68, 6, 2, 8) ])
+        # expected_test11 = np.array([(70,1,1,31), (68, 2, 2, 14)])
+
+        config = copy.copy(self.defaultConfig)
+        config.badOnAndOffPixelColumnThreshold = 10
+        config.goodPixelColumnGapThreshold = 5
+        config.nPixBorderUpDown = 0
+        config.nPixBorderLeftRight = 0
+
+        task = cpPipe.defects.FindDefectsTask(config=config)
+
+        expectedDefects = [Box2I(corner = Point2I(70, 1), dimensions = Extent2I(1, 29)),
+                           Box2I(corner = Point2I(68, 2), dimensions = Extent2I(1, 12))]
+        defects = self.allDefectsList
+
+        defectsWithColumns = task.maskBlocksIfIntermitentBadPixelsInColumn(defects)
+
+        boxesMeasured = []
+        for defect in defectsWithColumns:
+            boxesMeasured.append(defect.getBBox())
+
+        for boxInput in expectedDefects:
+            self.assertIn(boxInput, boxesMeasured)
+
+    def test_maskBlocksIfIntermitentBadPixelsInColumnTest12(self):
+        # Test 12: n discontiguous bad pixels in column with "blobs" of "m" bad pixels to both sides, m >
+        # threshold, gaps between blobs < "good" threshold.
+
+        config = copy.copy(self.defaultConfig)
+        config.badOnAndOffPixelColumnThreshold = 10
+        config.goodPixelColumnGapThreshold = 5
+        config.nPixBorderUpDown = 0
+        config.nPixBorderLeftRight = 0
+
+        task = cpPipe.defects.FindDefectsTask(config=config)
+
+        expectedDefects = [Box2I(corner = Point2I(75, 1), dimensions = Extent2I(1, 29)),
+                           Box2I(corner = Point2I(73, 2), dimensions = Extent2I(1, 12)),
+                           Box2I(corner = Point2I(76, 2), dimensions = Extent2I(1, 12))]
+        defects = self.allDefectsList
+
+        defectsWithColumns = task.maskBlocksIfIntermitentBadPixelsInColumn(defects)
+
+        boxesMeasured = []
+        for defect in defectsWithColumns:
+            boxesMeasured.append(defect.getBBox())
+
+        for boxInput in expectedDefects:
+            self.assertIn(boxInput, boxesMeasured)
+
+    def test_maskBlocksIfIntermitentBadPixelsInColumnTest13(self):
+        # Tests 13, 14, 15: same as tests 10, 11, 12 but with gaps between blobs > = "good" threshold.
+        # bad_test13 = np.array([(80, 1, 1, 12), (80, 20, 1, 10), (81, 2, 2, 2), (81, 8, 2, 2) ])
+        # expected_test13 = np.array([(80, 1, 1, 30), (81, 2, 2, 2), (81, 8, 2, 2) ])
+
+        config = copy.copy(self.defaultConfig)
+        config.badOnAndOffPixelColumnThreshold = 10
+        config.goodPixelColumnGapThreshold = 5
+        config.nPixBorderUpDown = 0
+        config.nPixBorderLeftRight = 0
+
+        task = cpPipe.defects.FindDefectsTask(config=config)
+
+        expectedDefects = [Box2I(corner = Point2I(80, 1), dimensions = Extent2I(1, 29)),
+                           Box2I(corner = Point2I(81, 2), dimensions = Extent2I(1, 2)),
+                           Box2I(corner = Point2I(81, 8), dimensions = Extent2I(1, 8))]
+        defects = self.allDefectsList
+
+        defectsWithColumns = task.maskBlocksIfIntermitentBadPixelsInColumn(defects)
+
+        boxesMeasured = []
+        for defect in defectsWithColumns:
+            boxesMeasured.append(defect.getBBox())
+
+        for boxInput in expectedDefects:
+            self.assertIn(boxInput, boxesMeasured)
+
+    def test_maskBlocksIfIntermitentBadPixelsInColumnTest14(self):
+        # Tests 13, 14, 15: same as tests 10, 11, 12 but with gaps between blobs > = "good" threshold.
+        # bad_test14 = np.array([(87, 1, 1, 12), (87, 20, 1, 10), (85, 2, 2, 2), (85, 8, 2, 2) ])
+        # expected_test14 = np.array([(87, 1, 1, 30), (85, 2, 2, 2), (85, 8, 2, 2) ])
+
+        config = copy.copy(self.defaultConfig)
+        config.badOnAndOffPixelColumnThreshold = 10
+        config.goodPixelColumnGapThreshold = 5
+        config.nPixBorderUpDown = 0
+        config.nPixBorderLeftRight = 0
+
+        task = cpPipe.defects.FindDefectsTask(config=config)
+
+        expectedDefects = [Box2I(corner = Point2I(87, 1), dimensions = Extent2I(1, 29)),
+                           Box2I(corner = Point2I(85, 2), dimensions = Extent2I(1, 2)),
+                           Box2I(corner = Point2I(85, 8), dimensions = Extent2I(1, 8))]
+        defects = self.allDefectsList
+
+        defectsWithColumns = task.maskBlocksIfIntermitentBadPixelsInColumn(defects)
+
+        boxesMeasured = []
+        for defect in defectsWithColumns:
+            boxesMeasured.append(defect.getBBox())
+
+        for boxInput in expectedDefects:
+            self.assertIn(boxInput, boxesMeasured)
+
+    def test_maskBlocksIfIntermitentBadPixelsInColumnTest15(self):
+        # Tests 13, 14, 15: same as tests 10, 11, 12 but with gaps between blobs > = "good" threshold.
+        # bad_test15 = np.array([ (93, 1, 1, 12), (93, 15, 1, 20), (91, 2, 2, 2), (91, 8, 2, 2), (94, 2, 2,
+        # 2), (94, 8, 2, 2),(91, 18, 2, 3), (91, 24, 2, 3), (94, 18, 2, 3), (94, 24, 2, 3)])
+        # expected_test15 = np.array([ (93, 1, 1, 35), (91, 2, 2, 10), (91, 18, 2, 27), (94,
+        #                       2, 2, 10), (94, 18, 2, 27)  ])
+
+        config = copy.copy(self.defaultConfig)
+        config.badOnAndOffPixelColumnThreshold = 10
+        config.goodPixelColumnGapThreshold = 5
+        config.nPixBorderUpDown = 0
+        config.nPixBorderLeftRight = 0
+
+        task = cpPipe.defects.FindDefectsTask(config=config)
+
+        expectedDefects = [Box2I(corner = Point2I(93, 1), dimensions = Extent2I(1, 34)),
+                           Box2I(corner = Point2I(91, 2), dimensions = Extent2I(1, 7)),
+                           Box2I(corner = Point2I(91, 18), dimensions = Extent2I(1, 9)),
+                           Box2I(corner = Point2I(94, 2), dimensions = Extent2I(1, 7)),
+                           Box2I(corner = Point2I(94, 18), dimensions = Extent2I(1, 9))]
+        defects = self.allDefectsList
+
+        defectsWithColumns = task.maskBlocksIfIntermitentBadPixelsInColumn(defects)
+
+        boxesMeasured = []
+        for defect in defectsWithColumns:
+            boxesMeasured.append(defect.getBBox())
+
+        for boxInput in expectedDefects:
             self.assertIn(boxInput, boxesMeasured)
 
     def test_defectFindingAllSensor(self):
         config = copy.copy(self.defaultConfig)
-        config.goodPixelColumnGapThreshold = 0
         config.nPixBorderLeftRight = 0
+        config.nPixBorderUpDown = 0
+
         task = cpPipe.defects.FindDefectsTask(config=config)
 
         defects = task.findHotAndColdPixels(self.flatExp, 'flat')
 
         allBBoxes = self.darkBBoxes + self.brightBBoxes
 
+        boxesMeasured = []
         for defect in defects:
-            self.assertIn(defect.getBBox(), allBBoxes)
+            boxesMeasured.append(defect.getBBox())
+
+        for expectedBBox in allBBoxes:
+            self.assertIn(expectedBBox, boxesMeasured)
 
     def test_defectFindingEdgeIgnore(self):
-        task = cpPipe.defects.FindDefectsTask(config=self.defaultConfig)
+        config = copy.copy(self.defaultConfig)
+        config.nPixBorderUpDown = 0
+        task = cpPipe.defects.FindDefectsTask(config=config)
         defects = task.findHotAndColdPixels(self.flatExp, 'flat')
 
         shouldBeFound = self.darkBBoxes[self.noEdges] + self.brightBBoxes[self.noEdges]
+
+        boxesMeasured = []
         for defect in defects:
-            self.assertIn(defect.getBBox(), shouldBeFound)
+            boxesMeasured.append(defect.getBBox())
+
+        for expectedBBox in shouldBeFound:
+            self.assertIn(expectedBBox, boxesMeasured)
 
         shouldBeMissed = self.darkBBoxes[self.onlyEdges] + self.brightBBoxes[self.onlyEdges]
-        for defect in defects:
-            self.assertNotIn(defect.getBBox(), shouldBeMissed)
+        for boxMissed in shouldBeMissed:
+            self.assertNotIn(boxMissed, boxesMeasured)
 
     def test_postProcessDefectSets(self):
         """Tests the way in which the defect sets merge.
@@ -258,6 +628,10 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         for defect in defects:
             defectArea += defect.getBBox().getArea()
 
+        # The columnar code will cover blocks of a column
+        # with on-and-off pixels, thus creating more bad pixels
+        # that what initially placed in self.brightDefects and self.darkDefects.
+        # Thus, defectArea should be >= crossCheck.
         crossCheck = 0
         for x, y, sx, sy in self.brightDefects:
             crossCheck += sx*sy
@@ -267,7 +641,8 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         # Test the result of _nPixFromDefects()
         # via two different ways of calculating area.
         self.assertEqual(defectArea, task._nPixFromDefects(defects))
-        self.assertEqual(defectArea, crossCheck)
+        # defectArea should be >= crossCheck
+        self.assertGreaterEqual(defectArea, crossCheck)
 
     def test_getNumGoodPixels(self):
         """Test the the number of pixels in the image not masked is as expected."""
