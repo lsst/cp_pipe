@@ -132,18 +132,18 @@ class FindDefectsTaskConfig(pexConfig.Config):
     )
     badOnAndOffPixelColumnThreshold = pexConfig.Field(
         dtype=int,
-        doc=("If BPC is the set of all the bad pixels in a given column (not necessarily consecutive)",
-             "and the size of BPC is at least 'badOnAndOffPixelColumnThreshold', all the pixels between the",
-             "pixels that satisfy minY (BPC) and maxY (BPC) will be marked as bad, with 'Y' being the long",
-             "axis of the amplifier (and 'X' the other axis, which for a column is a constant for all pixels",
-             "in the set BPC). If there are more than 'goodPixelColumnGapThreshold' consecutive non-bad",
-             "pixels in BPC, an exception to the above is made and those consecutive",
+        doc=("If BPC is the set of all the bad pixels in a given column (not necessarily consecutive) ",
+             "and the size of BPC is at least 'badOnAndOffPixelColumnThreshold', all the pixels between the ",
+             "pixels that satisfy minY (BPC) and maxY (BPC) will be marked as bad, with 'Y' being the long ",
+             "axis of the amplifier (and 'X' the other axis, which for a column is a constant for all ",
+             "pixels in the set BPC). If there are more than 'goodPixelColumnGapThreshold' consecutive ",
+             "non-bad pixels in BPC, an exception to the above is made and those consecutive ",
              "'goodPixelColumnGapThreshold' are not marked as bad."),
         default=50,
     )
     goodPixelColumnGapThreshold = pexConfig.Field(
         dtype=int,
-        doc=("Size, in pixels, of usable consecutive pixels in a column with on and off bad pixels (see",
+        doc=("Size, in pixels, of usable consecutive pixels in a column with on and off bad pixels (see ",
              "'badOnAndOffPixelColumnThreshold')."),
         default=30,
     )
@@ -165,9 +165,9 @@ class FindDefectsTaskConfig(pexConfig.Config):
         dtype=str,
         default="FRACTION",
         allowed={
-            "AND": "Logical AND the pixels found in each visit to form set",
-            "OR": "Logical OR the pixels found in each visit to form set",
-            "FRACTION": "Use pixels found in more than config.combinationFraction of visits",
+            "AND": "Logical AND the pixels found in each visit to form set ",
+            "OR": "Logical OR the pixels found in each visit to form set ",
+            "FRACTION": "Use pixels found in more than config.combinationFraction of visits ",
         }
     )
     combinationFraction = pexConfig.RangeField(
@@ -546,7 +546,6 @@ class FindDefectsTask(pipeBase.CmdLineTask):
             footprintList += mergedSet.getFootprints()
 
         defects = measAlg.Defects.fromFootprintList(footprintList)
-
         defects = self.maskBlocksIfIntermitentBadPixelsInColumn(defects)
 
         return defects
@@ -561,7 +560,7 @@ class FindDefectsTask(pipeBase.CmdLineTask):
         Parameters
         ---------
         defects: `lsst.meas.algorithms.Defect`
-            The defcts found in the image so far
+            The defects found in the image so far
 
         Returns
         ------
@@ -630,7 +629,6 @@ class FindDefectsTask(pipeBase.CmdLineTask):
             index = np.where(x == x0)
             multipleY = y[index]  # multipleY and multipleX are in 1-1 correspondence.
             minY, maxY = np.min(multipleY), np.max(multipleY)
-
             # Next few lines: don't mask pixels in column if gap of good pixels between
             # two consecutive bad pixels is larger or equal than 'goodPixelColumnGapThreshold'.
             diffIndex = np.where(np.diff(multipleY) >= goodPixelColumnGapThreshold)[0]
@@ -643,10 +641,12 @@ class FindDefectsTask(pipeBase.CmdLineTask):
                 assert len(limits)%2 == 0, 'limits is even by design, but check anyways'
                 for i in np.arange(0, len(limits)-1, 2):
                     s = Box2I(minimum = Point2I(x0, limits[i]), maximum = Point2I(x0, limits[i+1]))
-                    defects.append(s)
+                    if s not in defects:
+                        defects.append(s)
             else:  # No gap is large enough
                 s = Box2I(minimum = Point2I(x0, minY), maximum = Point2I(x0, maxY))
-                defects.append(s)
+                if s not in defects:
+                    defects.append(s)
         return defects
 
     def _setEdgeBits(self, exposureOrMaskedImage, maskplaneToSet='EDGE'):
