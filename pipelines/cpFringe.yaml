@@ -29,3 +29,7 @@ tasks:
       calibrationType: 'fringe'
       calibrationDimensions: ['physical_filter']
       exposureScaling: "None"
+contracts:
+  - isr.doFringe == False
+  - cpCombine.calibrationType == "fringe"
+  - cpCombine.exposureScaling == "None"

@@ -1,4 +1,4 @@
-description: cp_pipe SKY calibration construction
+description: cp_pipe FLAT calibration construction
 tasks:
   isr:
     class: lsst.ip.isr.isrTask.IsrTask
@@ -24,6 +24,9 @@ tasks:
       connections.outputData: 'flatProposal'
       calibrationType: 'flat'
       calibrationDimensions: ['physical_filter']
-      nIter: 10
       exposureScaling: "ExposureTime"
       outputScaling: 1.0
+contracts:
+  - isr.doFlat == False
+  - cpCombine.calibrationType == "flat"
+  - cpCombine.exposureScaling == "ExposureTime"

@@ -29,3 +29,6 @@ tasks:
       calibrationType: 'sky'
       calibrationDimensions: ['physical_filter']
       exposureScaling: "ExposureTime"
+contracts:
+  - cpCombine.calibrationType == "sky"
+  - cpCombine.exposureScaling == "ExposureTime"

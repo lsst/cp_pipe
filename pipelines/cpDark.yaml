@@ -30,3 +30,7 @@ tasks:
       calibrationType: 'dark'
       exposureScaling: "DarkTime"
       python: config.mask.append("CR")
+contracts:
+  - isr.doDark == False
+  - cpCombine.calibrationType == "dark"
+  - cpCombine.exposureScaling == "DarkTime"
