@@ -99,15 +99,18 @@ class CpDarkTask(pipeBase.PipelineTask,
         outputExp : `lsst.afw.image.Exposure`
             CR rejected, ISR processed Dark Frame."
         """
-        psf = measAlg.DoubleGaussianPsf(self.config.psfSize,
+        psf = measAlg.SingleGaussianPsf(self.config.psfSize,
                                         self.config.psfSize,
                                         self.config.psfFwhm/(2*math.sqrt(2*math.log(2))))
         inputExp.setPsf(psf)
         scaleExp = inputExp.clone()
         mi = scaleExp.getMaskedImage()
+
+        # Darktime scaling necessary for repair.run() to ID CRs correctly.
         scale = inputExp.getInfo().getVisitInfo().getDarkTime()
         if np.isfinite(scale) and scale != 0.0:
             mi /= scale
+
         self.repair.run(scaleExp, keepCRs=False)
         if self.config.crGrow > 0:
             mask = inputExp.getMaskedImage().getMask().clone()
@@ -115,6 +118,10 @@ class CpDarkTask(pipeBase.PipelineTask,
             fpSet = afwDet.FootprintSet(mask, afwDet.Threshold(0.5))
             fpSet = afwDet.FootprintSet(fpSet, self.config.crGrow, True)
             fpSet.setMask(inputExp.getMaskedImage().getMask(), "CR")
+
+        # Undo scaling.
+        if np.isfinite(scale) and scale != 0.0:
+            mi *= scale
 
         return pipeBase.Struct(
             outputExp=inputExp,
