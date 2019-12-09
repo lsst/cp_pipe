@@ -30,22 +30,19 @@ __all__ = ["CpFringeTask", "CpFringeTaskConfig"]
 
 
 class CpFringeConnections(pipeBase.PipelineTaskConnections,
-                          dimensions=("instrument", "detector", "physical_filter", "visit"),
-                          defaultTemplates={}):
+                          dimensions=("instrument", "visit", "detector")):
     inputExp = cT.Input(
         name="cpFringeISR",
         doc="Input pre-processed exposures to combine.",
         storageClass="ExposureF",
         dimensions=("instrument", "visit", "detector"),
-        deferLoad=False,
-        multiple=False,
     )
 
     outputExp = cT.Output(
         name="cpFringeProc",
         doc="Output combined proposed calibration.",
         storageClass="ExposureF",
-        dimensions=("instrument", "detector", "physical_filter", "visit"),
+        dimensions=("instrument", "visit", "detector"),
     )
 
 
@@ -116,7 +113,6 @@ class CpFringeTask(pipeBase.PipelineTask,
             if fpSet is not None:
                 afwDet.setMaskFromFootprintList(mask, fpSet.getFootprints(), detected)
 
-        # Return
         return pipeBase.Struct(
             outputExp=inputExp,
         )

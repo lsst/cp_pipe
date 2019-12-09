@@ -245,14 +245,12 @@ class CalibStatsTask(pipeBase.Task):
 
 
 class CalibCombineConnections(pipeBase.PipelineTaskConnections,
-                              dimensions=("instrument", "detector"),
-                              defaultTemplates={}):
+                              dimensions=("instrument", "detector")):
     inputExps = cT.Input(
         name="cpInputs",
         doc="Input pre-processed exposures to combine.",
         storageClass="ExposureF",
         dimensions=("instrument", "detector", "visit"),
-        deferLoad=False,
         multiple=True,
     )
 

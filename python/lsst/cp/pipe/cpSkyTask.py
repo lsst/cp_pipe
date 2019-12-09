@@ -33,15 +33,12 @@ __all__ = ["CpSkyTask", "CpSkyTaskConfig"]
 
 
 class CpSkyConnections(pipeBase.PipelineTaskConnections,
-                       dimensions=("instrument", "physical_filter", "detector", "visit"),
-                       defaultTemplates={}):
+                       dimensions=("instrument", "visit", "detector")):
     inputExp = cT.Input(
         name="cpSkyISR",
         doc="Input pre-processed exposures to combine.",
         storageClass="ExposureF",
         dimensions=("instrument", "visit", "detector"),
-        deferLoad=False,
-        multiple=False,
     )
     camera = cT.PrerequisiteInput(
         name="camera",
@@ -54,7 +51,7 @@ class CpSkyConnections(pipeBase.PipelineTaskConnections,
         name="cpSkyProc",
         doc="Output combined proposed calibration.",
         storageClass="ExposureF",
-        dimensions=("instrument", "physical_filter", "detector", "visit"),
+        dimensions=("instrument", "visit", "detector"),
     )
 
 

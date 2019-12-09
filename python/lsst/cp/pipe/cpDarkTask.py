@@ -33,22 +33,19 @@ __all__ = ["CpDarkTask", "CpDarkTaskConfig"]
 
 
 class CpDarkConnections(pipeBase.PipelineTaskConnections,
-                        dimensions=("instrument", "detector", "visit"),
-                        defaultTemplates={}):
+                        dimensions=("instrument", "visit", "detector")):
     inputExp = cT.Input(
         name="cpDarkISR",
         doc="Input pre-processed exposures to combine.",
         storageClass="ExposureF",
         dimensions=("instrument", "visit", "detector"),
-        deferLoad=False,
-        multiple=False,
     )
 
     outputExp = cT.Output(
         name="cpDarkProc",  # "dark",
         doc="Output combined proposed calibration.",
         storageClass="ExposureF",
-        dimensions=("instrument", "detector", "visit"),
+        dimensions=("instrument", "visit", "detector"),
     )
 
 
