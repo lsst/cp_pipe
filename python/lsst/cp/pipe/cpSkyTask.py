@@ -103,6 +103,8 @@ class CpSkyTask(pipeBase.PipelineTask,
     def run(self, inputExp, camera):
         """Preprocess ISR processed exposures for combination to final SKY calibration.
 
+        DM-22534: This isn't scaling correctly, and needs fixing.
+
         Parameters
         ----------
         inputExp : `lsst.afw.image.Exposure`
@@ -119,8 +121,6 @@ class CpSkyTask(pipeBase.PipelineTask,
         self.maskObjects.run(inputExp, self.config.mask)
 
         # As constructCalibs SkyTask.measureBackground
-        self.config.largeScaleBackground.xSize = 256
-        self.config.largeScaleBackground.ySize = 256
         bgModel = FocalPlaneBackground.fromCamera(self.config.largeScaleBackground,
                                                   camera)
         bgModel.addCcd(inputExp)
