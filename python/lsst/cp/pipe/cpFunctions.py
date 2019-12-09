@@ -39,25 +39,29 @@ class BlessCalibration(pipeBase.Task):
 
     Parameters
     ----------
-    kwargs : `dict`
-        Parameters to initialize the blessing process.  Keys:
-
-        ``"butler"``
-            Data butler to use.
-        ``"inputCollection"``
-            Data collection to pull calibrations from.
-        ``"outputCollection"``
-            Data collection to store final calibrations.
+    butler : `lsst.daf.butler.Butler`
+        Butler repository to use.
+    inputCollection : `str`
+        Data collection to pull calibrations from.
+    outputCollection : `str`
+        Data collection to store final calibrations.
     """
-    def __init__(self, **kwargs):
-        self.butler = kwargs['butler']
-        self.registry = self.butler.registry
+    _DefaultName = 'BlessCalibration'
+    ConfigClass = pexConfig.Config
 
-        self.inputCollection = kwargs['inputCollection']
-        self.outputCollection = kwargs['outputCollection']
+    def __init__(self, *, butler=None, inputCollection=None, outputCollection=None,
+                 **kwargs):
+        super().__init__(**kwargs)
+        if butler is not None:
+            self.butler = butler
+            self.registry = self.butler.registry
+        if inputCollection is not None:
+            self.inputCollection = inputCollection
+        if outputCollection is not None:
+            self.outputCollection = outputCollection
 
-        self.calibrationLabel = ''
-        self.instrument = ''
+        self.calibrationLabel = None
+        self.instrument = None
 
     def findInputs(self, datasetTypeName, inputDatasetTypeName=None):
         """Find and prepare inputs for blessing.
@@ -108,16 +112,35 @@ class BlessCalibration(pipeBase.Task):
         self.butler.run = run
         self.butler.collection = None
 
-        for newId, data in zip(self.newDataId, self.objects):
-            # Special case known special storageClasses.
-            if datasetTypeName in ('bias', 'dark'):
-                data = data.getImage()
-            elif datasetTypeName in ('flat'):
-                data = data.getMaskedImage()
+        with self.butler.transaction():
+            for newId, data in zip(self.newDataId, self.objects):
+                data = self.convertStorageClass(data, datasetTypeName)
+                self.butler.put(data, datasetTypeName, dataId=newId,
+                                calibration_label=self.calibrationLabel,
+                                producer=None)
 
-            self.butler.put(data, datasetTypeName, dataId=newId,
-                            calibration_label=self.calibrationLabel,
-                            producer=None)
+    def convertStorageClass(self, data, datasetTypeName):
+        """Switch from an exposure to the image type expected.
+
+        Parameters
+        ----------
+        data : `lsst.afw.image.Exposure`
+            Input exposure data to convert.
+        datasetTypeName : `str`
+            Dataset type that will be registered
+
+        Returns
+        -------
+        data : `lsst.afw.image.Image` or `lsst.afw.image.MaskedImage`
+            Converted image data to register.
+        """
+        if datasetTypeName in ('bias', 'dark'):
+            data = data.getImage()
+        elif datasetTypeName in ('flat', ):
+            data = data.getMaskedImage()
+        else:
+            pass
+        return data
 
     def addCalibrationLabel(self, name=None, instrument=None,
                             beginDate="1970-01-01", endDate="2038-12-31"):
@@ -151,8 +174,8 @@ class BlessCalibration(pipeBase.Task):
                 {
                     "name": name,
                     "instrument": instrument,
-                    "datetime_begin": datetime.fromisoformat(beginDate),
-                    "datetime_end": datetime.fromisoformat(endDate),
+                    "datetime_begin": datetime.datetime.fromisoformat(beginDate),
+                    "datetime_end": datetime.datetime.fromisoformat(endDate),
                 }
             )
 

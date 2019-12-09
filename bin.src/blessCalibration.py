@@ -21,7 +21,9 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-
+"""Mark cp_pipe generated calibrations as valid, and register them with
+the butler with an appropriate use date range.
+"""
 from lsst.cp.pipe.cpFunctions import BlessCalibration
 
 import argparse
@@ -34,7 +36,8 @@ from lsst.daf.butler import Butler
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Bless a calibration for use in a given collection."
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument("root", help="Path to butler to use")
     parser.add_argument("inputCollection", help="Input collection to pull from.")
@@ -56,6 +59,7 @@ if __name__ == "__main__":
     log = Log.getLogger("lsst.daf.butler")
     log.setLevel(args.logLevel)
 
+    # DM-22527: Clean up syntax/log handling in gen3 repo scripts.
     lgr = logging.getLogger("lsst.daf.butler")
     lgr.setLevel(logging.INFO if args.logLevel == Log.INFO else logging.DEBUG)
     lgr.addHandler(lsst.log.LogHandler())
@@ -65,8 +69,7 @@ if __name__ == "__main__":
     # Do the thing.
     crozier = BlessCalibration(butler=butler,
                                inputCollection=args.inputCollection,
-                               outputCollection=args.outputCollection,
-                               verbose=args.logLevel)
+                               outputCollection=args.outputCollection)
 
     crozier.findInputs(args.datasetTypeName)
     if not args.skipCL:
