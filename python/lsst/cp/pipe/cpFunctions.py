@@ -156,16 +156,23 @@ class BlessCalibration(pipeBase.Task):
             An ISO 8601 date string for the beginning of the valid date range.
         endDate : `str`
             An ISO 8601 date string for the end of the valid date range.
+
+        Raises
+        ------
+        RuntimeError :
+            Raised if the instrument or calibration_label name are not set.
         """
         if name is None:
             name = self.calibrationLabel
         if instrument is None:
             instrument = self.instrument
+        if name is None or instrument is None:
+            raise RuntimeError("Instrument and calibration_label name not set.")
 
         try:
             existingValues = self.registry.queryDimensions(['calibration_label'],
                                                            instrument=self.instrument,
-                                                           calibration_label=self.calibrationLabel)
+                                                           calibration_label=name)
             existingValues = [a for a in existingValues]
             print(f"Found {len(existingValues)} Entries for {self.calibrationLabel}")
         except LookupError:
@@ -308,12 +315,6 @@ class CalibCombineConfig(pipeBase.PipelineTaskConfig,
         doc="Scaling value to apply to the output combined product.",
     )
 
-    rows = pexConfig.Field(
-        dtype=int,
-        default=512,
-        doc="Number of rows to read at a time",
-    )
-
     mask = pexConfig.ListField(
         dtype=str,
         default=["SAT", "DETECTED", "INTRP"],
@@ -381,6 +382,7 @@ class CalibCombineTask(pipeBase.PipelineTask,
         for index, exp in enumerate(inputExps):
             scale = 1.0
             if exp is None:
+                self.log.warn("Input %d is None.  Continuing.", index)
                 continue
 
             if self.config.exposureScaling == "ExposureTime":
@@ -388,8 +390,7 @@ class CalibCombineTask(pipeBase.PipelineTask,
             elif self.config.exposureScaling == "DarkTime":
                 scale = exp.getInfo().getVisitInfo().getDarkTime()
             elif self.config.exposureScaling == "MeanStats":
-                image = exp.getMaskedImage()
-                scale = afwMath.makeStatistics(image, self.config.stat, stats).getValue()
+                scale = self.stats.run(exp)
 
             expScales.append(scale)
             self.log.info("Scaling input %d by %f", index, scale)
@@ -547,7 +548,7 @@ class CalibCombineTask(pipeBase.PipelineTask,
         try:
             group = ObservationGroup(visitInfoList, pedantic=False)
         except Exception:
-            print("Had exception making obs group")
+            self.log.warn("Exception making an obs group for headers. Continuing.")
             group = None
 
         comments = {"TIMESYS": "Time scale for all dates",
