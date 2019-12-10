@@ -102,19 +102,23 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
     )
     minMeanSignal = pexConfig.Field(
         dtype=float,
-        doc="Minimum value of mean signal (in ADU) to consider.",
+        doc="Minimum value (inclusive) of mean signal (in ADU) above which to consider.",
         default=0,
     )
     maxMeanSignal = pexConfig.Field(
         dtype=float,
-        doc="Maximum value to of mean signal (in ADU) to consider.",
+        doc="Maximum value (inclusive) of mean signal (in ADU) below which to consider.",
         default=9e6,
     )
-    initialNonLinearityExclusionThreshold = pexConfig.Field(
+    initialNonLinearityExclusionThreshold = pexConfig.RangeField(
         dtype=float,
-        doc="Initially exclude data points that are more than a factor of this from being linear from"
-        " the iterative fit.",
+        doc="Initially exclude data points with a variance that are more than a factor of this from being"
+            " linear, from the PTC fit. Note that these points will also be excluded from the non-linearity"
+            " fit. This is done before the iterative outlier rejection, to allow an accurate determination"
+            " of the sigmas for said iterative fit.",
         default=0.25,
+        min=0.0,
+        max=1.0,
     )
     sigmaCutPtcOutliers = pexConfig.Field(
         dtype=float,
@@ -526,7 +530,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
     def fitPtcAndNl(self, dataset, ptcFitType):
         """Fit the photon transfer curve and calculate linearity and residuals.
 
-        Fit the photon transfer curve with either a polynomial of order
+        Fit the photon transfer curve with either a polynomial of the order
         specified in the task config, or using the Astier approximation.
 
         Sigma clipping is performed iteratively for the fit, as well as an
@@ -558,7 +562,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             meanVecOriginal = np.array(dataset.rawMeans[ampName])
             varVecOriginal = np.array(dataset.rawVars[ampName])
 
-            mask = ((meanVecOriginal > self.config.minMeanSignal) &
+            mask = ((meanVecOriginal >= self.config.minMeanSignal) &
                     (meanVecOriginal <= self.config.maxMeanSignal))
 
             goodPoints = self._getInitialGoodPoints(meanVecOriginal, varVecOriginal,
