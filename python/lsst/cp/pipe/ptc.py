@@ -21,13 +21,15 @@
 #
 
 __all__ = ['MeasurePhotonTransferCurveTask',
-           'MeasurePhotonTransferCurveTaskConfig', ]
+           'MeasurePhotonTransferCurveTaskConfig',
+           'PhotonTransferCurveDataset']
 
 import numpy as np
 import matplotlib.pyplot as plt
 import os
 from matplotlib.backends.backend_pdf import PdfPages
 from sqlite3 import OperationalError
+from collections import Counter
 
 import lsst.afw.math as afwMath
 import lsst.pex.config as pexConfig
@@ -35,7 +37,7 @@ import lsst.pipe.base as pipeBase
 from lsst.ip.isr import IsrTask
 from .utils import (NonexistentDatasetTaskDataIdContainer, PairedVisitListTaskRunner,
                     checkExpLengthEqual, validateIsrConfig)
-from scipy.optimize import leastsq
+from scipy.optimize import leastsq, least_squares
 import numpy.polynomial.polynomial as poly
 
 
@@ -76,7 +78,7 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
     )
     makePlots = pexConfig.Field(
         dtype=bool,
-        doc="Plot the PTC curves?.",
+        doc="Plot the PTC curves?",
         default=False,
     )
     ptcFitType = pexConfig.ChoiceField(
@@ -100,13 +102,23 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
     )
     minMeanSignal = pexConfig.Field(
         dtype=float,
-        doc="Minimum value of mean signal (in ADU) to consider.",
+        doc="Minimum value (inclusive) of mean signal (in ADU) above which to consider.",
         default=0,
     )
     maxMeanSignal = pexConfig.Field(
         dtype=float,
-        doc="Maximum value to of mean signal (in ADU) to consider.",
+        doc="Maximum value (inclusive) of mean signal (in ADU) below which to consider.",
         default=9e6,
+    )
+    initialNonLinearityExclusionThreshold = pexConfig.RangeField(
+        dtype=float,
+        doc="Initially exclude data points with a variance that are more than a factor of this from being"
+            " linear, from the PTC fit. Note that these points will also be excluded from the non-linearity"
+            " fit. This is done before the iterative outlier rejection, to allow an accurate determination"
+            " of the sigmas for said iterative fit.",
+        default=0.25,
+        min=0.0,
+        max=1.0,
     )
     sigmaCutPtcOutliers = pexConfig.Field(
         dtype=float,
@@ -128,6 +140,57 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
         doc="Index position in time array for reference time in linearity residual calculation.",
         default=2,
     )
+
+
+class PhotonTransferCurveDataset:
+    """A simple class to hold the output data from the PTC task.
+
+    The dataset is made up of a dictionary for each item, keyed by the
+    amplifiers' names, which much be supplied at construction time.
+
+    New items cannot be added to the class to save accidentally saving to the
+    wrong property, and the class can be frozen if desired.
+
+    inputVisitPairs records the visits used to produce the data.
+    When fitPtcAndNl() is run, a mask is built up, which is by definition
+    always the same length as inputVisitPairs, rawExpTimes, rawMeans
+    and rawVars, and is a list of bools, which are incrementally set to False
+    as points are discarded from the fits.
+    """
+    def __init__(self, ampNames):
+        # add items to __dict__ directly because __setattr__ is overridden
+
+        # instance variables
+        self.__dict__["ampNames"] = ampNames
+
+        # raw data variables
+        self.__dict__["inputVisitPairs"] = {ampName: [] for ampName in ampNames}
+        self.__dict__["visitMask"] = {ampName: [] for ampName in ampNames}
+        self.__dict__["rawExpTimes"] = {ampName: [] for ampName in ampNames}
+        self.__dict__["rawMeans"] = {ampName: [] for ampName in ampNames}
+        self.__dict__["rawVars"] = {ampName: [] for ampName in ampNames}
+
+        # fit information
+        self.__dict__["ptcFitType"] = {ampName: "" for ampName in ampNames}
+        self.__dict__["ptcFitPars"] = {ampName: [] for ampName in ampNames}
+        self.__dict__["ptcFitParsError"] = {ampName: [] for ampName in ampNames}
+        self.__dict__["nonLinearity"] = {ampName: [] for ampName in ampNames}
+        self.__dict__["nonLinearityError"] = {ampName: [] for ampName in ampNames}
+        self.__dict__["nonLinearityResiduals"] = {ampName: [] for ampName in ampNames}
+
+        # final results
+        self.__dict__["gain"] = {ampName: -1. for ampName in ampNames}
+        self.__dict__["gainErr"] = {ampName: -1. for ampName in ampNames}
+        self.__dict__["noise"] = {ampName: -1. for ampName in ampNames}
+        self.__dict__["noiseErr"] = {ampName: -1. for ampName in ampNames}
+
+    def __setattr__(self, attribute, value):
+        """Protect class attributes"""
+        if attribute not in self.__dict__:
+            raise AttributeError(f"{attribute} is not already a member of PhotonTransferCurveDataset, which"
+                                 " does not support setting of new attributes.")
+        else:
+            self.__dict__[attribute] = value
 
 
 class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
@@ -175,7 +238,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         parser = pipeBase.ArgumentParser(name=cls._DefaultName)
         parser.add_argument("--visit-pairs", dest="visitPairs", nargs="*",
                             help="Visit pairs to use. Each pair must be of the form INT,INT e.g. 123,456")
-        parser.add_id_argument("--id", datasetType="measurePhotonTransferCurveGainAndNoise",
+        parser.add_id_argument("--id", datasetType="photonTransferCurveDataset",
                                ContainerClass=NonexistentDatasetTaskDataIdContainer,
                                help="The ccds to use, e.g. --id ccd=0..100")
         return parser
@@ -214,8 +277,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         amps = detector.getAmplifiers()
         ampNames = [amp.getName() for amp in amps]
-        dataDict = {key: {} for key in ampNames}
-        fitVectorsDict = {key: ([], [], []) for key in ampNames}
+        dataset = PhotonTransferCurveDataset(ampNames)
 
         self.log.info('Measuring PTC using %s visits for detector %s' % (visitPairs, detNum))
 
@@ -232,26 +294,21 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
             for amp in detector:
                 mu, varDiff = self.measureMeanVarPair(exp1, exp2, region=amp.getBBox())
-                data = dict(expTime=expTime, meanClip=mu, varClip=varDiff)
                 ampName = amp.getName()
-                dataDict[ampName][(v1, v2)] = data
-                fitVectorsDict[ampName][0].append(expTime)
-                fitVectorsDict[ampName][1].append(mu)
-                fitVectorsDict[ampName][2].append(varDiff)
+
+                dataset.rawExpTimes[ampName].append(expTime)
+                dataset.rawMeans[ampName].append(mu)
+                dataset.rawVars[ampName].append(varDiff)
 
         # Fit PTC and (non)linearity of signal vs time curve
-        fitPtcDict, nlDict, gainDict, noiseDict = self.fitPtcAndNl(fitVectorsDict,
-                                                                   ptcFitType=self.config.ptcFitType)
-        allDict = {"data": dataDict, "ptc": fitPtcDict, "nl": nlDict}
-        gainNoiseNlDict = {"gain": gainDict, "noise": noiseDict, "nl": nlDict}
+        self.fitPtcAndNl(dataset, ptcFitType=self.config.ptcFitType)
 
         if self.config.makePlots:
-            self.plot(dataRef, fitPtcDict, nlDict, ptcFitType=self.config.ptcFitType)
+            self.plot(dataRef, dataset, ptcFitType=self.config.ptcFitType)
 
         # Save data, PTC fit, and NL fit dictionaries
         self.log.info(f"Writing PTC and NL data to {dataRef.getUri(write=True)}")
-        dataRef.put(gainNoiseNlDict, datasetType="measurePhotonTransferCurveGainAndNoise")
-        dataRef.put(allDict, datasetType="measurePhotonTransferCurveDatasetAll")
+        dataRef.put(dataset, datasetType="photonTransferCurveDataset")
 
         self.log.info('Finished measuring PTC for in detector %s' % detNum)
 
@@ -316,7 +373,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         optimize.leastsq returns the fractional covariance matrix. To estimate the
         standard deviation of the fit parameters, multiply the entries of this matrix
-        by the reduced chi squared and take the square root of the diagon al elements.
+        by the reduced chi squared and take the square root of the diagonal elements.
 
         Parameters
         ----------
@@ -352,7 +409,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             reducedChiSq = (errFunc(pFit, dataX, dataY)**2).sum()/(len(dataY)-len(initialParams))
             pCov *= reducedChiSq
         else:
-            pCov = np.inf
+            pCov[:, :] = np.inf
 
         errorVec = []
         for i in range(len(pFit)):
@@ -432,85 +489,141 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         a00, gain, noise = pars
         return 0.5/(a00*gain*gain)*(np.exp(2*a00*x*gain)-1) + noise/(gain*gain)
 
-    def fitPtcAndNl(self, fitVectorsDict, ptcFitType='POLYNOMIAL'):
-        """Function to fit PTC, and calculate linearity and linearity residual
+    @staticmethod
+    def _initialParsForPolynomial(order):
+        assert(order >= 2)
+        pars = np.zeros(order, dtype=np.float)
+        pars[0] = 10
+        pars[1] = 1
+        pars[2:] = 0.0001
+        return pars
+
+    @staticmethod
+    def _boundsForPolynomial(initialPars):
+        lowers = [np.NINF for p in initialPars]
+        uppers = [np.inf for p in initialPars]
+        lowers[1] = 0  # no negative gains
+        return (lowers, uppers)
+
+    @staticmethod
+    def _boundsForAstier(initialPars):
+        lowers = [np.NINF for p in initialPars]
+        uppers = [np.inf for p in initialPars]
+        return (lowers, uppers)
+
+    @staticmethod
+    def _getInitialGoodPoints(means, variances, maxDeviation):
+        """Return a boolean array to mask bad points.
+
+        A linear function has a constant ratio, so find the median
+        value of the ratios, and exclude the points that deviate
+        from that by more than a factor of maxDeviation.
+
+        Too high and points that are so bad that fit will fail will be included
+        Too low and the non-linear points will be excluded, biasing the NL fit."""
+        ratios = [b/a for (a, b) in zip(means, variances)]
+        medianRatio = np.median(ratios)
+        ratioDeviations = [r/medianRatio for r in ratios]
+        goodPoints = [abs(1-r) < maxDeviation for r in ratioDeviations]
+        return np.array(goodPoints)
+
+    def fitPtcAndNl(self, dataset, ptcFitType):
+        """Fit the photon transfer curve and calculate linearity and residuals.
+
+        Fit the photon transfer curve with either a polynomial of the order
+        specified in the task config, or using the Astier approximation.
+
+        Sigma clipping is performed iteratively for the fit, as well as an
+        initial clipping of data points that are more than
+        config.initialNonLinearityExclusionThreshold away from lying on a
+        straight line. This other step is necessary because the photon transfer
+        curve turns over catastrophically at very high flux (because saturation
+        drops the variance to ~0) and these far outliers cause the initial fit
+        to fail, meaning the sigma cannot be calculated to perform the
+        sigma-clipping.
 
         Parameters
         ----------
-        fitVectorsDicti : `dict`
-            Dictionary with exposure time, mean, and variance vectors in a tuple
+        dataset : `lsst.cp.pipe.ptc.PhotonTransferCurveDataset`
+            The dataset containing the means, variances and exposure times
         ptcFitType : `str`
-            Fit a 'POLYNOMIAL' (degree: 'polynomialFitDegree') or '
-            ASTIERAPPROXIMATION' to the PTC
-
-        Returns
-        -------
-        fitPtcDict : `dict`
-            Dictionary of the form fitPtcDict[amp] =
-            (meanVec, varVec, parsFit, parsFitErr, index)
-        nlDict : `dict`
-            Dictionary of the form nlDict[amp] =
-            (timeVec, meanVec, linResidual, parsFit, parsFitErr)
+            Fit a 'POLYNOMIAL' (degree: 'polynomialFitDegree') or
+            'ASTIERAPPROXIMATION' to the PTC
         """
-        if ptcFitType == 'ASTIERAPPROXIMATION':
-            ptcFunc = self.funcAstier
-            parsIniPtc = [-1e-9, 1.0, 10.]  # a00, gain, noise
-        if ptcFitType == 'POLYNOMIAL':
-            ptcFunc = self.funcPolynomial
-            parsIniPtc = np.repeat(1., self.config.polynomialFitDegree + 1)
-
-        parsIniNl = [1., 1., 1.]
-        fitPtcDict = {key: {} for key in fitVectorsDict}
-        nlDict = {key: {} for key in fitVectorsDict}
-        gainDict = {key: {} for key in fitVectorsDict}
-        noiseDict = {key: {} for key in fitVectorsDict}
 
         def errFunc(p, x, y):
             return ptcFunc(p, x) - y
 
+        sigmaCutPtcOutliers = self.config.sigmaCutPtcOutliers
         maxIterationsPtcOutliers = self.config.maxIterationsPtcOutliers
-        for amp in fitVectorsDict:
-            timeVec, meanVec, varVec = fitVectorsDict[amp]
-            timeVecOriginal = np.array(timeVec)
-            meanVecOriginal = np.array(meanVec)
-            varVecOriginal = np.array(varVec)
-            index0 = ((meanVecOriginal > self.config.minMeanSignal) &
-                      (meanVecOriginal <= self.config.maxMeanSignal))
-            #  Before bootstrap fit, do an iterative fit to get rid of outliers in PTC
+
+        for ampName in dataset.ampNames:
+            timeVecOriginal = np.array(dataset.rawExpTimes[ampName])
+            meanVecOriginal = np.array(dataset.rawMeans[ampName])
+            varVecOriginal = np.array(dataset.rawVars[ampName])
+
+            mask = ((meanVecOriginal >= self.config.minMeanSignal) &
+                    (meanVecOriginal <= self.config.maxMeanSignal))
+
+            goodPoints = self._getInitialGoodPoints(meanVecOriginal, varVecOriginal,
+                                                    self.config.initialNonLinearityExclusionThreshold)
+            mask = mask & goodPoints
+
+            if ptcFitType == 'ASTIERAPPROXIMATION':
+                ptcFunc = self.funcAstier
+                parsIniPtc = [-1e-9, 1.0, 10.]  # a00, gain, noise
+                bounds = self._boundsForAstier(parsIniPtc)
+            if ptcFitType == 'POLYNOMIAL':
+                ptcFunc = self.funcPolynomial
+                parsIniPtc = self._initialParsForPolynomial(self.config.polynomialFitDegree + 1)
+                bounds = self._boundsForPolynomial(parsIniPtc)
+
+            # Before bootstrap fit, do an iterative fit to get rid of outliers
             count = 1
-            sigmaCutPtcOutliers = self.config.sigmaCutPtcOutliers
-            maxIterationsPtcOutliers = self.config.maxIterationsPtcOutliers
-            timeTempVec = timeVecOriginal[index0]
-            meanTempVec = meanVecOriginal[index0]
-            varTempVec = varVecOriginal[index0]
             while count <= maxIterationsPtcOutliers:
-                pars, cov = leastsq(errFunc, parsIniPtc, args=(meanTempVec,
-                                    varTempVec), full_output=0)
-                sigResids = (varTempVec -
-                             ptcFunc(pars, meanTempVec))/np.sqrt(varTempVec)
-                index = list(np.where(np.abs(sigResids) < sigmaCutPtcOutliers)[0])
-                timeTempVec = timeTempVec[index]
-                meanTempVec = meanTempVec[index]
-                varTempVec = varTempVec[index]
+                # Note that application of the mask actually shrinks the array
+                # to size rather than setting elements to zero (as we want) so
+                # always update mask itself and re-apply to the original data
+                meanTempVec = meanVecOriginal[mask]
+                varTempVec = varVecOriginal[mask]
+                res = least_squares(errFunc, parsIniPtc, bounds=bounds, args=(meanTempVec, varTempVec))
+                pars = res.x
+
+                # change this to the original from the temp because the masks are ANDed
+                # meaning once a point is masked it's always masked, and the masks must
+                # always be the same length for broadcasting
+                sigResids = (varVecOriginal - ptcFunc(pars, meanVecOriginal))/np.sqrt(varVecOriginal)
+                newMask = np.array([True if np.abs(r) < sigmaCutPtcOutliers else False for r in sigResids])
+                mask = mask & newMask
+
+                nDroppedTotal = Counter(mask)[False]
+                self.log.debug(f"Iteration {count}: discarded {nDroppedTotal} points in total for {ampName}")
                 count += 1
+                # objects should never shrink
+                assert (len(mask) == len(timeVecOriginal) == len(meanVecOriginal) == len(varVecOriginal))
+
+            dataset.visitMask[ampName] = mask  # store the final mask
 
             parsIniPtc = pars
-            timeVecFinal, meanVecFinal, varVecFinal = timeTempVec, meanTempVec, varTempVec
-            if (len(meanVecFinal) - len(meanVecOriginal)) > 0:
-                self.log.info((f"Number of points discarded in PTC of amplifier {amp}:" +
-                               "{len(meanVecFinal)-len(meanVecOriginal)} out of {len(meanVecOriginal)}"))
+            timeVecFinal = timeVecOriginal[mask]
+            meanVecFinal = meanVecOriginal[mask]
+            varVecFinal = varVecOriginal[mask]
+
+            if Counter(mask)[False] > 0:
+                self.log.info((f"Number of points discarded in PTC of amplifier {ampName}:" +
+                               f" {Counter(mask)[False]} out of {len(meanVecOriginal)}"))
 
             if (len(meanVecFinal) < len(parsIniPtc)):
                 raise RuntimeError(f"Not enough data points ({len(meanVecFinal)}) compared to the number of" +
-                                   "parameters of the PTC model({len(parsIniPtc)}).")
+                                   f"parameters of the PTC model({len(parsIniPtc)}).")
             # Fit the PTC
             if self.config.doFitBootstrap:
                 parsFit, parsFitErr = self._fitBootstrap(parsIniPtc, meanVecFinal, varVecFinal, ptcFunc)
             else:
                 parsFit, parsFitErr = self._fitLeastSq(parsIniPtc, meanVecFinal, varVecFinal, ptcFunc)
 
-            fitPtcDict[amp] = (timeVecOriginal, meanVecOriginal, varVecOriginal, timeVecFinal,
-                               meanVecFinal, varVecFinal, parsFit, parsFitErr)
+            dataset.ptcFitPars[ampName] = parsFit
+            dataset.ptcFitParsError[ampName] = parsFitErr
 
             if ptcFitType == 'ASTIERAPPROXIMATION':
                 ptcGain = parsFit[1]
@@ -523,11 +636,14 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 ptcNoise = np.sqrt(np.fabs(parsFit[0]))*ptcGain
                 ptcNoiseErr = (0.5*(parsFitErr[0]/np.fabs(parsFit[0]))*(np.sqrt(np.fabs(parsFit[0]))))*ptcGain
 
-            gainDict[amp] = (ptcGain, ptcGainErr)
-            noiseDict[amp] = (ptcNoise, ptcNoiseErr)
+            dataset.gain[ampName] = ptcGain
+            dataset.gainErr[ampName] = ptcGainErr
+            dataset.noise[ampName] = ptcNoise
+            dataset.noiseErr[ampName] = ptcNoiseErr
 
             # Non-linearity residuals (NL of mean vs time curve): percentage, and fit to a quadratic function
             # In this case, len(parsIniNl) = 3 indicates that we want a quadratic fit
+            parsIniNl = [1., 1., 1.]
             if self.config.doFitBootstrap:
                 parsFit, parsFitErr = self._fitBootstrap(parsIniNl, timeVecFinal, meanVecFinal,
                                                          self.funcPolynomial)
@@ -539,11 +655,14 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 raise RuntimeError("Reference time for linearity residual can't be 0.0")
             linResidual = 100*(1 - ((meanVecFinal[linResidualTimeIndex] /
                                      timeVecFinal[linResidualTimeIndex]) / (meanVecFinal/timeVecFinal)))
-            nlDict[amp] = (timeVecFinal, meanVecFinal, linResidual, parsFit, parsFitErr)
 
-        return fitPtcDict, nlDict, gainDict, noiseDict
+            dataset.nonLinearity[ampName] = parsFit
+            dataset.nonLinearityError[ampName] = parsFitErr
+            dataset.nonLinearityResiduals[ampName] = linResidual
 
-    def plot(self, dataRef, fitPtcDict, nlDict, ptcFitType='POLYNOMIAL'):
+        return
+
+    def plot(self, dataRef, dataset, ptcFitType):
         dirname = dataRef.getUri(datasetType='cpPipePlotRoot', write=True)
         if not os.path.exists(dirname):
             os.makedirs(dirname)
@@ -552,9 +671,9 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         filename = f"PTC_det{detNum}.pdf"
         filenameFull = os.path.join(dirname, filename)
         with PdfPages(filenameFull) as pdfPages:
-            self._plotPtc(fitPtcDict, nlDict, ptcFitType, pdfPages)
+            self._plotPtc(dataset, ptcFitType, pdfPages)
 
-    def _plotPtc(self, fitPtcDict, nlDict, ptcFitType, pdfPages):
+    def _plotPtc(self, dataset, ptcFitType, pdfPages):
         """Plot PTC, linearity, and linearity residual per amplifier"""
 
         if ptcFitType == 'ASTIERAPPROXIMATION':
@@ -569,9 +688,10 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         labelFontSize = 8
         titleFontSize = 10
         supTitleFontSize = 18
+        markerSize = 25
 
         # General determination of the size of the plot grid
-        nAmps = len(fitPtcDict)
+        nAmps = len(dataset.ampNames)
         if nAmps == 2:
             nRows, nCols = 2, 1
         nRows = np.sqrt(nAmps)
@@ -586,14 +706,15 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         f, ax = plt.subplots(nrows=nRows, ncols=nCols, sharex='col', sharey='row', figsize=(13, 10))
         f2, ax2 = plt.subplots(nrows=nRows, ncols=nCols, sharex='col', sharey='row', figsize=(13, 10))
 
-        # fitPtcDict[amp] = (timeVecOriginal, meanVecOriginal, varVecOriginal, timeVecFinal,
-        #                    meanVecFinal, varVecFinal, parsFit, parsFitErr)
-        for i, (amp, a, a2) in enumerate(zip(fitPtcDict, ax.flatten(), ax2.flatten())):
-            meanVecOriginal, varVecOriginal = fitPtcDict[amp][1], fitPtcDict[amp][2]
-            meanVecFinal, varVecFinal = fitPtcDict[amp][4], fitPtcDict[amp][5]
-            meanVecOutliers = np.setdiff1d(meanVecOriginal, meanVecFinal)
-            varVecOutliers = np.setdiff1d(varVecOriginal, varVecFinal)
-            pars, parsErr = fitPtcDict[amp][6], fitPtcDict[amp][7]
+        for i, (amp, a, a2) in enumerate(zip(dataset.ampNames, ax.flatten(), ax2.flatten())):
+            meanVecOriginal = np.array(dataset.rawMeans[amp])
+            varVecOriginal = np.array(dataset.rawVars[amp])
+            mask = dataset.visitMask[amp]
+            meanVecFinal = meanVecOriginal[mask]
+            varVecFinal = varVecOriginal[mask]
+            meanVecOutliers = meanVecOriginal[np.invert(mask)]
+            varVecOutliers = varVecOriginal[np.invert(mask)]
+            pars, parsErr = dataset.ptcFitPars[amp], dataset.ptcFitParsError[amp]
 
             if ptcFitType == 'ASTIERAPPROXIMATION':
                 ptcA00, ptcA00error = pars[0], parsErr[0]
@@ -620,8 +741,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
             a.plot(meanVecFit, ptcFunc(pars, meanVecFit), color='red')
             a.plot(meanVecFinal, pars[0] + pars[1]*meanVecFinal, color='green', linestyle='--')
-            a.scatter(meanVecFinal, varVecFinal, c='blue', marker='o')
-            a.scatter(meanVecOutliers, varVecOutliers, c='magenta', marker='s')
+            a.scatter(meanVecFinal, varVecFinal, c='blue', marker='o', s=markerSize)
+            a.scatter(meanVecOutliers, varVecOutliers, c='magenta', marker='s', s=markerSize)
             a.set_xlabel(r'Mean signal ($\mu$, ADU)', fontsize=labelFontSize)
             a.set_xticks(meanVecOriginal)
             a.set_ylabel(r'Variance (ADU$^2$)', fontsize=labelFontSize)
@@ -634,8 +755,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
             # Same, but in log-scale
             a2.plot(meanVecFit, ptcFunc(pars, meanVecFit), color='red')
-            a2.scatter(meanVecFinal, varVecFinal, c='blue', marker='o')
-            a2.scatter(meanVecOutliers, varVecOutliers, c='magenta', marker='s')
+            a2.scatter(meanVecFinal, varVecFinal, c='blue', marker='o', s=markerSize)
+            a2.scatter(meanVecOutliers, varVecOutliers, c='magenta', marker='s', s=markerSize)
             a2.set_xlabel(r'Mean Signal ($\mu$, ADU)', fontsize=labelFontSize)
             a2.set_ylabel(r'Variance (ADU$^2$)', fontsize=labelFontSize)
             a2.tick_params(labelsize=11)
@@ -652,9 +773,11 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         # Plot mean vs time
         f, ax = plt.subplots(nrows=4, ncols=4, sharex='col', sharey='row', figsize=(13, 10))
-        for i, (amp, a) in enumerate(zip(fitPtcDict, ax.flatten())):
-            timeVecFinal, meanVecFinal = nlDict[amp][0], nlDict[amp][1]
-            pars, _ = nlDict[amp][3], nlDict[amp][4]
+        for i, (amp, a) in enumerate(zip(dataset.ampNames, ax.flatten())):
+            meanVecFinal = np.array(dataset.rawMeans[amp])[dataset.visitMask[amp]]
+            timeVecFinal = np.array(dataset.rawExpTimes[amp])[dataset.visitMask[amp]]
+
+            pars, parsErr = dataset.nonLinearity[amp], dataset.nonLinearityError[amp]
             c0, c0Error = pars[0], parsErr[0]
             c1, c1Error = pars[1], parsErr[1]
             c2, c2Error = pars[2], parsErr[2]
@@ -676,11 +799,13 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         # Plot linearity residual
         f, ax = plt.subplots(nrows=4, ncols=4, sharex='col', sharey='row', figsize=(13, 10))
-        for i, (amp, a) in enumerate(zip(fitPtcDict, ax.flatten())):
-            meanVecFinal, linRes = nlDict[amp][1], nlDict[amp][2]
+        for i, (amp, a) in enumerate(zip(dataset.ampNames, ax.flatten())):
+            meanVecFinal = np.array(dataset.rawMeans[amp])[dataset.visitMask[amp]]
+            linRes = np.array(dataset.nonLinearityResiduals[amp])
+
             a.scatter(meanVecFinal, linRes)
             a.axhline(y=0, color='k')
-            a.axvline(x=timeVecFinal[self.config.linResidualTimeIndex], color ='g', linestyle = '--')
+            a.axvline(x=timeVecFinal[self.config.linResidualTimeIndex], color='g', linestyle='--')
             a.set_xlabel(r'Mean signal ($\mu$, ADU)', fontsize=labelFontSize)
             a.set_xticks(meanVecFinal)
             a.set_ylabel('LR (%)', fontsize=labelFontSize)

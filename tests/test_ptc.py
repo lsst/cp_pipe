@@ -34,6 +34,7 @@ import lsst.utils.tests
 
 import lsst.cp.pipe as cpPipe
 import lsst.ip.isr.isrMock as isrMock
+from lsst.cp.pipe.ptc import PhotonTransferCurveDataset
 
 
 class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
@@ -78,71 +79,76 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
         # create fake PTC data to see if fit works, for one amp ('amp')
         flux = 1000  # ADU/sec
-        timeVec = np.arange(0., 201.)
+        timeVec = np.arange(1., 201.)
         muVec = flux*timeVec  # implies that signal-chain non-linearity is zero
         self.gain = 1.5  # e-/ADU
-        c1 = 1./self.gain
+        self.c1 = 1./self.gain
         self.noiseSq = 5*self.gain  # 7.5 (e-)^2
-        a00 = -1.2e-6
-        c2 = -1.5e-6
-        c3 = 1.7e-11
+        self.a00 = -1.2e-6
+        self.c2 = -1.5e-6
+        self.c3 = -4.7e-12  # tuned so that it turns over for 200k mean
 
-        self.fitVectorsQuadDict = {'amp': ([], [], [])}
-        self.fitVectorsCubicDict = {'amp': ([], [], [])}
-        self.fitVectorsAstierDict = {'amp': ([], [], [])}
+        self.ampNames = [amp.getName() for amp in self.flatExp1.getDetector().getAmplifiers()]
+        self.dataset = PhotonTransferCurveDataset(self.ampNames)  # pack raw data for fitting
 
-        for (t, mu) in zip(timeVec, muVec):
-            varQuad = self.noiseSq + c1*mu + c2*mu**2
-            varCubic = self.noiseSq + c1*mu + c2*mu**2 + c3*mu**3
-            varAstier = (0.5/(a00*self.gain*self.gain)*(np.exp(2*a00*mu*self.gain)-1) +
-                         self.noiseSq/(self.gain*self.gain))
-
-            self.fitVectorsQuadDict['amp'][0].append(t)
-            self.fitVectorsQuadDict['amp'][1].append(mu)
-            self.fitVectorsQuadDict['amp'][2].append(varQuad)
-
-            self.fitVectorsCubicDict['amp'][0].append(t)
-            self.fitVectorsCubicDict['amp'][1].append(mu)
-            self.fitVectorsCubicDict['amp'][2].append(varCubic)
-
-            self.fitVectorsAstierDict['amp'][0].append(t)
-            self.fitVectorsAstierDict['amp'][1].append(mu)
-            self.fitVectorsAstierDict['amp'][2].append(varAstier)
+        for ampName in self.ampNames:  # just the expTimes and means here - vars vary per function
+            self.dataset.rawExpTimes[ampName] = timeVec
+            self.dataset.rawMeans[ampName] = muVec
 
     def test_ptcFitQuad(self):
+        localDataset = copy.copy(self.dataset)
+        for ampName in self.ampNames:
+            localDataset.rawVars[ampName] = [self.noiseSq + self.c1*mu + self.c2*mu**2 for
+                                             mu in localDataset.rawMeans[ampName]]
+
         config = copy.copy(self.defaultConfig)
         config.polynomialFitDegree = 2
         task = cpPipe.ptc.MeasurePhotonTransferCurveTask(config=config)
 
-        _, nlDict, gainDict, noiseDict = task.fitPtcAndNl(self.fitVectorsQuadDict,
-                                                          ptcFitType='POLYNOMIAL')
+        task.fitPtcAndNl(localDataset, ptcFitType='POLYNOMIAL')
 
-        self.assertAlmostEqual(self.gain, gainDict['amp'][0])
-        self.assertAlmostEqual(np.sqrt(self.noiseSq)*self.gain, noiseDict['amp'][0])
-        # Linearity residual should be zero
-        # nlDict[amp] = (timeVecFinal, meanVecFinal, linResidual, parsFit, parsFitErr)
-        self.assertTrue(nlDict['amp'][2].all() == 0)
+        for ampName in self.ampNames:
+            self.assertAlmostEqual(self.gain, localDataset.gain[ampName])
+            self.assertAlmostEqual(np.sqrt(self.noiseSq)*self.gain, localDataset.noise[ampName])
+            # Linearity residual should be zero
+            self.assertTrue(localDataset.nonLinearityResiduals[ampName].all() == 0)
 
     def test_ptcFitCubic(self):
+        localDataset = copy.copy(self.dataset)
+        for ampName in self.ampNames:
+            localDataset.rawVars[ampName] = [self.noiseSq + self.c1*mu + self.c2*mu**2 + self.c3*mu**3 for
+                                             mu in localDataset.rawMeans[ampName]]
+
         config = copy.copy(self.defaultConfig)
         config.polynomialFitDegree = 3
+
         task = cpPipe.ptc.MeasurePhotonTransferCurveTask(config=config)
-        _, nlDict, gainDict, noiseDict = task.fitPtcAndNl(self.fitVectorsCubicDict,
-                                                          ptcFitType='POLYNOMIAL')
-        self.assertAlmostEqual(self.gain, gainDict['amp'][0])
-        self.assertAlmostEqual(np.sqrt(self.noiseSq)*self.gain, noiseDict['amp'][0])
-        self.assertTrue(nlDict['amp'][2].all() == 0)
+        task.fitPtcAndNl(localDataset, ptcFitType='POLYNOMIAL')
+
+        for ampName in self.ampNames:
+            self.assertAlmostEqual(self.gain, localDataset.gain[ampName])
+            self.assertAlmostEqual(np.sqrt(self.noiseSq)*self.gain, localDataset.noise[ampName])
+            # Linearity residual should be zero
+            self.assertTrue(localDataset.nonLinearityResiduals[ampName].all() == 0)
 
     def test_ptcFitAstier(self):
-        task = self.defaultTask
+        localDataset = copy.copy(self.dataset)
+        g = self.gain  # next line is too long without this shorthand!
+        for ampName in self.ampNames:
+            localDataset.rawVars[ampName] = [(0.5/(self.a00*g**2)*(np.exp(2*self.a00*mu*g)-1) +
+                                              self.noiseSq/(g*g)) for mu in localDataset.rawMeans[ampName]]
 
-        _, nlDict, gainDict, noiseDict = task.fitPtcAndNl(self.fitVectorsAstierDict,
-                                                          ptcFitType='ASTIERAPPROXIMATION')
+        config = copy.copy(self.defaultConfig)
+        task = cpPipe.ptc.MeasurePhotonTransferCurveTask(config=config)
 
-        self.assertAlmostEqual(self.gain, gainDict['amp'][0])
-        #  noise already comes out of the fit in electrons
-        self.assertAlmostEqual(np.sqrt(self.noiseSq), noiseDict['amp'][0])
-        self.assertTrue(nlDict['amp'][2].all() == 0)
+        task.fitPtcAndNl(localDataset, ptcFitType='ASTIERAPPROXIMATION')
+
+        for ampName in self.ampNames:
+            self.assertAlmostEqual(self.gain, localDataset.gain[ampName])
+            #  noise already comes out of the fit in electrons with Astier
+            self.assertAlmostEqual(np.sqrt(self.noiseSq), localDataset.noise[ampName])
+            # Linearity residual should be zero
+            self.assertTrue(localDataset.nonLinearityResiduals[ampName].all() == 0)
 
     def test_meanVarMeasurement(self):
         task = self.defaultTask
@@ -150,6 +156,31 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
         self.assertLess(self.flatWidth - np.sqrt(varDiff), 1)
         self.assertLess(self.flatMean - mu, 1)
+
+    def test_getInitialGoodPoints(self):
+        xs = [1, 2, 3, 4, 5, 6]
+        ys = [2*x for x in xs]
+        points = self.defaultTask._getInitialGoodPoints(xs, ys, 0.25)
+        assert np.all(points) == np.all(np.array([True for x in xs]))
+
+        ys[-1] = 30
+        points = self.defaultTask._getInitialGoodPoints(xs, ys, 0.25)
+        assert np.all(points) == np.all(np.array([True, True, True, True, False]))
+
+
+class MeasurePhotonTransferCurveDatasetTestCase(lsst.utils.tests.TestCase):
+    def setUp(self):
+        self.ptcData = PhotonTransferCurveDataset(['C00', 'C01'])
+        self.ptcData.inputVisitPairs = {'C00': [(123, 234), (345, 456), (567, 678)],
+                                        'C01': [(123, 234), (345, 456), (567, 678)]}
+
+    def test_generalBehaviour(self):
+        test = PhotonTransferCurveDataset(['C00', 'C01'])
+        test.inputVisitPairs = {'C00': [(123, 234), (345, 456), (567, 678)],
+                                'C01': [(123, 234), (345, 456), (567, 678)]}
+
+        with self.assertRaises(AttributeError):
+            test.newItem = 1
 
 
 class TestMemory(lsst.utils.tests.MemoryTestCase):
