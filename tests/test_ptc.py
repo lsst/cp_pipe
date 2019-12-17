@@ -105,7 +105,11 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         config.polynomialFitDegree = 2
         task = cpPipe.ptc.MeasurePhotonTransferCurveTask(config=config)
 
-        task.fitPtcAndNl(localDataset, ptcFitType='POLYNOMIAL')
+        numberAmps = len(self.ampNames)
+        numberAduValues = config.maxAduForLookupTableLinearizer
+        lookupTableArray = np.zeros((numberAmps, numberAduValues), dtype=np.float32)
+
+        task.fitPtcAndNonLinearity(localDataset, lookupTableArray, ptcFitType='POLYNOMIAL')
 
         for ampName in self.ampNames:
             self.assertAlmostEqual(self.gain, localDataset.gain[ampName])
@@ -123,7 +127,12 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         config.polynomialFitDegree = 3
 
         task = cpPipe.ptc.MeasurePhotonTransferCurveTask(config=config)
-        task.fitPtcAndNl(localDataset, ptcFitType='POLYNOMIAL')
+
+        numberAmps = len(self.ampNames)
+        numberAduValues = config.maxAduForLookupTableLinearizer
+        lookupTableArray = np.zeros((numberAmps, numberAduValues), dtype=np.float32)
+
+        task.fitPtcAndNonLinearity(localDataset, lookupTableArray, ptcFitType='POLYNOMIAL')
 
         for ampName in self.ampNames:
             self.assertAlmostEqual(self.gain, localDataset.gain[ampName])
@@ -141,7 +150,11 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         config = copy.copy(self.defaultConfig)
         task = cpPipe.ptc.MeasurePhotonTransferCurveTask(config=config)
 
-        task.fitPtcAndNl(localDataset, ptcFitType='ASTIERAPPROXIMATION')
+        numberAmps = len(self.ampNames)
+        numberAduValues = config.maxAduForLookupTableLinearizer
+        lookupTableArray = np.zeros((numberAmps, numberAduValues), dtype=np.float32)
+
+        task.fitPtcAndNonLinearity(localDataset, lookupTableArray, ptcFitType='ASTIERAPPROXIMATION')
 
         for ampName in self.ampNames:
             self.assertAlmostEqual(self.gain, localDataset.gain[ampName])
