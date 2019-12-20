@@ -123,7 +123,7 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
     sigmaCutPtcOutliers = pexConfig.Field(
         dtype=float,
         doc="Sigma cut for outlier rejection in PTC.",
-        default=4.0,
+        default=5.0,
     )
     maxIterationsPtcOutliers = pexConfig.Field(
         dtype=int,

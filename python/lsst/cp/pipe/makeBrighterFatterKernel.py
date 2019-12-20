@@ -1385,6 +1385,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         else:
             sumToInfinity = 0.0
         if self.config.forceZeroSum:
+            self.log.info("Forcing sum of correlation matrix to zero")
             meanXcorr = self._forceZeroSum(meanXcorr, sumToInfinity)
 
         return meanXcorr, self.successiveOverRelax(meanXcorr)
