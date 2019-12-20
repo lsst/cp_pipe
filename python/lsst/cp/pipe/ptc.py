@@ -617,6 +617,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             timeVecOriginal = np.array(dataset.rawExpTimes[ampName])
             meanVecOriginal = np.array(dataset.rawMeans[ampName])
             varVecOriginal = np.array(dataset.rawVars[ampName])
+            varVecOriginal = self._makeZeroSafe(varVecOriginal)
 
             mask = ((meanVecOriginal >= self.config.minMeanSignal) &
                     (meanVecOriginal <= self.config.maxMeanSignal))
