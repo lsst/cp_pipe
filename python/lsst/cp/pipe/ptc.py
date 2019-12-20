@@ -301,7 +301,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 dataset.rawVars[ampName].append(varDiff)
 
         # Fit PTC and (non)linearity of signal vs time curve
-        self.fitPtcAndNl(dataset, ptcFitType=self.config.ptcFitType)
+        # dataset is modified in place but also returned for external code
+        dataset = self.fitPtcAndNl(dataset, ptcFitType=self.config.ptcFitType)
 
         if self.config.makePlots:
             self.plot(dataRef, dataset, ptcFitType=self.config.ptcFitType)
@@ -660,7 +661,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             dataset.nonLinearityError[ampName] = parsFitErr
             dataset.nonLinearityResiduals[ampName] = linResidual
 
-        return
+        return dataset
 
     def plot(self, dataRef, dataset, ptcFitType):
         dirname = dataRef.getUri(datasetType='cpPipePlotRoot', write=True)

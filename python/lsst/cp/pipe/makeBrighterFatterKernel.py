@@ -45,7 +45,8 @@ import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 from .utils import PairedVisitListTaskRunner, checkExpLengthEqual
 import lsst.daf.persistence.butlerExceptions as butlerExceptions
-from lsst.cp.pipe.ptc import MeasurePhotonTransferCurveTaskConfig, MeasurePhotonTransferCurveTask
+from lsst.cp.pipe.ptc import (MeasurePhotonTransferCurveTaskConfig, MeasurePhotonTransferCurveTask,
+                              PhotonTransferCurveDataset)
 
 
 class MakeBrighterFatterKernelTaskConfig(pexConfig.Config):
@@ -275,10 +276,13 @@ class BrighterFatterKernel:
         self.__dict__["rawXcorrs"] = []
         self.__dict__["xCorrs"] = []
         self.__dict__["meanXcorrs"] = []
+        self.__dict__["gain"] = None  # will be a dict keyed by amp if set
+        self.__dict__["gainErr"] = None  # will be a dict keyed by amp if set
+        self.__dict__["noise"] = None  # will be a dict keyed by amp if set
+        self.__dict__["noiseErr"] = None  # will be a dict keyed by amp if set
 
         for key, value in kwargs.items():
             if hasattr(self, key):
-                # xxx type check here?
                 setattr(self, key, value)
 
     def __setattr__(self, attribute, value):
@@ -482,17 +486,23 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
             means = {key: [] for key in ampNames}
             xcorrs = {key: [] for key in ampNames}
             meanXcorrs = {key: [] for key in ampNames}
-            ptcFitVectorsDict = {key: ([], [], []) for key in ampNames}
         else:
             raise RuntimeError("Unsupported level: {}".format(self.config.level))
 
         # we must be able to get the gains one way or the other, so check early
         if not self.config.doCalcGains:
+            deleteMe = None
             try:
-                deleteMe = dataRef.get('brighterFatterGain')  # noqa: F841 - this is clearly wrong
-                del deleteMe
+                deleteMe = dataRef.get('photonTransferCurveDataset')
             except butlerExceptions.NoResults:
+                try:
+                    deleteMe = dataRef.get('brighterFatterGain')
+                except butlerExceptions.NoResults:
+                    pass
+            if not deleteMe:
                 raise RuntimeError("doCalcGains == False and gains could not be got from butler") from None
+            else:
+                del deleteMe
 
         # if the level is DETECTOR we need to have the gains first so that each
         # amp can be gain corrected in order to treat the detector as a single
@@ -521,6 +531,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
             ptcConfig.minMeanSignal = self.config.minMeanSignal
             ptcConfig.maxMeanSignal = self.config.maxMeanSignal
             ptcTask = MeasurePhotonTransferCurveTask(config=ptcConfig)
+            ptcDataset = PhotonTransferCurveDataset(ampNames)
 
         # Loop over pairs of visits
         # calculating the cross-correlations at the required level
@@ -542,18 +553,18 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
             # - "DETECTOR": one key, so compare the two visits to each other
             # - "AMP": n_amp keys, comparing each amplifier of one visit
             #          to the same amplifier in the visit its paired with
-            for det_object in _scaledMaskedIms1.keys():
+            for det_object in _scaledMaskedIms1.keys():  # det_object is ampName or detName depending on level
                 self.log.debug("Calculating correlations for %s" % det_object)
                 _xcorr, _mean = self._crossCorrelate(_scaledMaskedIms1[det_object],
                                                      _scaledMaskedIms2[det_object])
                 xcorrs[det_object].append(_xcorr)
                 means[det_object].append([_means1[det_object], _means2[det_object]])
                 if self.config.level != 'DETECTOR':
-                    # Populate the fitVectorsDict for running fitting in the PTC task
+                    # Populate the ptcDataset for running fitting in the PTC task
                     expTime = exp1.getInfo().getVisitInfo().getExposureTime()
-                    ptcFitVectorsDict[det_object][0].append(expTime)
-                    ptcFitVectorsDict[det_object][1].append((_means1[det_object] + _means2[det_object]) / 2.0)
-                    ptcFitVectorsDict[det_object][2].append(_xcorr[0, 0] / 2.0)
+                    ptcDataset.rawExpTimes[det_object].append(expTime)
+                    ptcDataset.rawMeans[det_object].append((_means1[det_object] + _means2[det_object]) / 2.0)
+                    ptcDataset.rawVars[det_object].append(_xcorr[0, 0] / 2.0)
 
                 # TODO: DM-15305 improve debug functionality here.
                 # This is position 1 for the removed code.
@@ -566,27 +577,25 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         # so for all other levels we now calculate them from the correlations
         # and apply them
         if self.config.level != 'DETECTOR':
-            if self.config.doCalcGains:
-                # We call the code the PTC task for calculating the gains
-                self.log.info('Calculating gains for detector %s' % detNum)
-                returnValues = ptcTask.fitPtcAndNl(ptcFitVectorsDict)
-                fitPtcDict, nlDict, gainDict, noiseDict, goodIndexDict = returnValues
-                gainsAndPtcCoefs = self._applyGains(means, xcorrs, gainDict, fitPtcDict, goodIndexDict)
-                gains = gainsAndPtcCoefs.gains  # xxx need to check this is the same object on all code paths
-                dataRef.put(gainsAndPtcCoefs, datasetType='brighterFatterGain')
-                if self.config.doPlotPtcs:
-                    dirname = dataRef.getUri(datasetType='cpPipePlotRoot', write=True)
-                    if not os.path.exists(dirname):
-                        os.makedirs(dirname)
-                    detNum = dataRef.dataId[self.config.ccdKey]
-                    filename = f"PTC_det{detNum}.pdf"
-                    filenameFull = os.path.join(dirname, filename)
-                    with PdfPages(filenameFull) as pdfPages:
-                        ptcTask._plotPtc(fitPtcDict, nlDict, 'POLYNOMIAL', pdfPages)
-
+            if self.config.doCalcGains:  # Run the PTC task for calculating the gains, put results
+                self.log.info('Calculating gains for detector %s using PTC task' % detNum)
+                ptcDataset = ptcTask.fitPtcAndNl(ptcDataset, ptcConfig.ptcFitType)
+                dataRef.put(ptcDataset, datasetType='photonTransferCurveDataset')
                 self.log.debug('Finished gain estimation for detector %s' % detNum)
-            else:
-                gains = dataRef.get('brighterFatterGain')
+            else:  # load results  - confirmed to work much earlier on, so can be relied upon here
+                ptcDataset = dataRef.get('photonTransferCurveDataset')
+
+            self._applyGains(means, xcorrs, ptcDataset)
+
+            if self.config.doPlotPtcs:
+                dirname = dataRef.getUri(datasetType='cpPipePlotRoot', write=True)
+                if not os.path.exists(dirname):
+                    os.makedirs(dirname)
+                detNum = dataRef.dataId[self.config.ccdKey]
+                filename = f"PTC_det{detNum}.pdf"
+                filenameFull = os.path.join(dirname, filename)
+                with PdfPages(filenameFull) as pdfPages:
+                    ptcTask._plotPtc(ptcDataset, ptcConfig.ptcFitType, pdfPages)
 
         # having calculated and applied the gains for all code-paths we can now
         # generate the kernel(s)
@@ -612,6 +621,14 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         bfKernel.rawXcorrs = rawXcorrs
         bfKernel.xCorrs = xcorrs
         bfKernel.meanXcorrs = meanXcorrs
+        try:
+            bfKernel.gain = ptcDataset.gain
+            bfKernel.gainErr = ptcDataset.gainErr
+            bfKernel.noise = ptcDataset.noise
+            bfKernel.noiseErr = ptcDataset.noiseErr
+        except NameError:  # we don't have a ptcDataset to store results from
+            pass
+
         if self.config.level == 'AMP':
             bfKernel.ampwiseKernels = kernels
             ex = self.config.ignoreAmpsForAveraging
@@ -628,34 +645,47 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         self.log.info('Finished generating kernel(s) for %s' % detNum)
         return pipeBase.Struct(exitStatus=0)
 
-    def _applyGains(self, means, xcorrs, gainDict, fitPtcDict, goodIndexDict=None):
-        """ This applies the gains calculated by the PtcTask
+    # def _applyGains(self, means, xcorrs, gainDict, fitPtcDict, goodIndexDict=None):
+    def _applyGains(self, means, xcorrs, ptcData):
+        """Apply the gains calculated by the PtcTask.
 
-        It also removes datapoints that were thrown out in the PTC algorithm"""
+        It also removes datapoints that were thrown out in the PTC algorithm.
+
+        Parameters
+        ----------
+        means : `dict` of `list` of `tuple`
+            Dictionary, keyed by ampName, containing a list of the means for
+        each visit pair.
+
+        xcorrs : `dict` of `list` of `np.array`
+            Dictionary, keyed by ampName, containing a list of the
+        cross-correlations for each visit pair.
+
+        ptcDataset : `lsst.cp.pipe.ptc.PhotonTransferCurveDataset`
+            The results of running the ptcTask.
+
+        Returns
+        -------
+
+
+        """
         ampNames = means.keys()
-        assert set(xcorrs.keys()) == set(ampNames)
-        gains = {}
-        ptcCoefs = {}
-
-        # make dict of ampNames with lists of [True, True...] the length of the entry in the fitDict
-        if not goodIndexDict:
-            numEntries = len(fitPtcDict[ampNames[0]][0])
-            goodIndexDict = {k: [True]*numEntries for k in ampNames}
+        assert set(xcorrs.keys()) == set(ampNames) == set(ptcData.ampNames)
 
         for ampName in ampNames:
-            gain = gainDict[ampName][0]
-            gains[ampName] = gain
-            ptcFit = fitPtcDict[ampName][6]
-            ptcCoefs[ampName] = ptcFit
+            mask = ptcData.visitMask[ampName]
+            gain = ptcData.gain[ampName]
+            ptcFitPars = ptcData.ptcFitPars[ampName]  # TODO: this is not robust to PTC fit type!! xxx
+
             # Adjust xcorrs[0,0] to remove the linear gain part, leaving just the second order part
             for i in range(len(means[ampName])):
                 ampMean = np.mean(means[ampName][i])
-                xcorrs[ampName][i][0, 0] -= 2.0 * (ampMean * ptcFit[1] + ptcFit[0])
+                xcorrs[ampName][i][0, 0] -= 2.0 * (ampMean * ptcFitPars[1] + ptcFitPars[0])
+
             # Now adjust the means and xcorrs for the calculated gain and remove the bad indices
-            means[ampName] = [[value*gain for value in pair] for pair
-                              in np.array(means[ampName])[goodIndexDict[ampName]]]
-            xcorrs[ampName] = [arr*gain*gain for arr in np.array(xcorrs[ampName])[goodIndexDict[ampName]]]
-        return BrighterFatterGain(gains, ptcCoefs)
+            means[ampName] = [[value*gain for value in pair] for pair in np.array(means[ampName])[mask]]
+            xcorrs[ampName] = [arr*gain*gain for arr in np.array(xcorrs[ampName])[mask]]
+        return  # BrighterFatterGain(gains, ptcCoefs)
 
     def _makeCroppedExposures(self, exp, gains, level):
         """Prepare exposure for cross-correlation calculation.
