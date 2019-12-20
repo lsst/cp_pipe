@@ -459,6 +459,8 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         visitPairs : `iterable` of `tuple` of `int`
             Pairs of visit numbers to be processed together
         """
+        np.random.seed(0)  # used in the PTC fit bootstrap
+
         # setup necessary objects
         # NB: don't use dataRef.get('raw_detector')
         # this currently doesn't work for composites because of the way
