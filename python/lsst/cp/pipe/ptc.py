@@ -172,6 +172,7 @@ class PhotonTransferCurveDataset:
 
         # instance variables
         self.__dict__["ampNames"] = ampNames
+        self.__dict__["badAmps"] = []
 
         # raw data variables
         self.__dict__["inputVisitPairs"] = {ampName: [] for ampName in ampNames}
@@ -201,6 +202,25 @@ class PhotonTransferCurveDataset:
                                  " does not support setting of new attributes.")
         else:
             self.__dict__[attribute] = value
+
+    def getVisitsUsed(self, ampName):
+        """Get the visits used, i.e. not discarded, for a given amp.
+
+        If no mask has been created yet, all visits are returned.
+        """
+        if self.visitMask[ampName] == []:
+            return self.inputVisitPairs[ampName]
+
+        # if the mask exists it had better be the same length as the visitPairs
+        assert len(self.visitMask[ampName]) == len(self.inputVisitPairs[ampName])
+
+        pairs = self.inputVisitPairs[ampName]
+        mask = self.visitMask[ampName]
+        # cast to bool required because numpy
+        return [(v1, v2) for ((v1, v2), m) in zip(pairs, mask) if bool(m) is True]
+
+    def getGoodAmps(self):
+        return [amp for amp in self.ampNames if amp not in self.badAmps]
 
 
 class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
@@ -309,6 +329,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 dataset.rawExpTimes[ampName].append(expTime)
                 dataset.rawMeans[ampName].append(mu)
                 dataset.rawVars[ampName].append(varDiff)
+                dataset.inputVisitPairs[ampName].append((v1, v2))
 
         # Fit PTC and (non)linearity of signal vs time curve
         # dataset is modified in place but also returned for external code
@@ -650,8 +671,19 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                                f" {Counter(mask)[False]} out of {len(meanVecOriginal)}"))
 
             if (len(meanVecFinal) < len(parsIniPtc)):
-                raise RuntimeError(f"Not enough data points ({len(meanVecFinal)}) compared to the number of" +
-                                   f"parameters of the PTC model({len(parsIniPtc)}).")
+                msg = (f"\nSERIOUS: Not enough data points ({len(meanVecFinal)}) compared to the number of"
+                       f"parameters of the PTC model({len(parsIniPtc)}). Setting {ampName} to BAD.")
+                self.log.warn(msg)
+                dataset.badAmps.append(ampName)
+                dataset.gain[ampName] = np.nan
+                dataset.gainErr[ampName] = np.nan
+                dataset.noise[ampName] = np.nan
+                dataset.noiseErr[ampName] = np.nan
+                dataset.nonLinearity[ampName] = np.nan
+                dataset.nonLinearityError[ampName] = np.nan
+                dataset.nonLinearityResiduals[ampName] = np.nan
+                continue
+
             # Fit the PTC
             if self.config.doFitBootstrap:
                 parsFit, parsFitErr = self._fitBootstrap(parsIniPtc, meanVecFinal, varVecFinal, ptcFunc)

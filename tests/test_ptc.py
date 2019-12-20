@@ -188,6 +188,14 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         with self.assertRaises(AssertionError):
             localDataset.getVisitsUsed("C:0,0")
 
+    def test_getGoodAmps(self):
+        dataset = self.dataset
+
+        self.assertTrue(dataset.ampNames == self.ampNames)
+        dataset.badAmps.append("C:0,1")
+        self.assertTrue(dataset.getGoodAmps() == [amp for amp in self.ampNames if amp != "C:0,1"])
+
+
 class MeasurePhotonTransferCurveDatasetTestCase(lsst.utils.tests.TestCase):
     def setUp(self):
         self.ptcData = PhotonTransferCurveDataset(['C00', 'C01'])
