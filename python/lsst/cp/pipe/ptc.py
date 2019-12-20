@@ -110,12 +110,22 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
         doc="Maximum value (inclusive) of mean signal (in ADU) below which to consider.",
         default=9e6,
     )
-    initialNonLinearityExclusionThreshold = pexConfig.RangeField(
+    initialNonLinearityExclusionThresholdPositive = pexConfig.RangeField(
         dtype=float,
         doc="Initially exclude data points with a variance that are more than a factor of this from being"
-            " linear, from the PTC fit. Note that these points will also be excluded from the non-linearity"
-            " fit. This is done before the iterative outlier rejection, to allow an accurate determination"
-            " of the sigmas for said iterative fit.",
+            " linear in the positive direction, from the PTC fit. Note that these points will also be"
+            " excluded from the non-linearity fit. This is done before the iterative outlier rejection,"
+            " to allow an accurate determination of the sigmas for said iterative fit.",
+        default=0.12,
+        min=0.0,
+        max=1.0,
+    )
+    initialNonLinearityExclusionThresholdNegative = pexConfig.RangeField(
+        dtype=float,
+        doc="Initially exclude data points with a variance that are more than a factor of this from being"
+            " linear in the negative direction, from the PTC fit. Note that these points will also be"
+            " excluded from the non-linearity fit. This is done before the iterative outlier rejection,"
+            " to allow an accurate determination of the sigmas for said iterative fit.",
         default=0.25,
         min=0.0,
         max=1.0,
@@ -513,20 +523,44 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         return (lowers, uppers)
 
     @staticmethod
-    def _getInitialGoodPoints(means, variances, maxDeviation):
+    def _getInitialGoodPoints(means, variances, maxDeviationPositive, maxDeviationNegative):
         """Return a boolean array to mask bad points.
 
         A linear function has a constant ratio, so find the median
         value of the ratios, and exclude the points that deviate
-        from that by more than a factor of maxDeviation.
+        from that by more than a factor of maxDeviationPositive/negative.
+        Asymmetric deviations are supported as we expect the PTC to turn
+        down as the flux increases, but sometimes it anomalously turns
+        upwards just before turning over, which ruins the fits, so it
+        is wise to be stricter about restricting positive outliers than
+        negative ones.
 
         Too high and points that are so bad that fit will fail will be included
         Too low and the non-linear points will be excluded, biasing the NL fit."""
         ratios = [b/a for (a, b) in zip(means, variances)]
         medianRatio = np.median(ratios)
-        ratioDeviations = [r/medianRatio for r in ratios]
-        goodPoints = [abs(1-r) < maxDeviation for r in ratioDeviations]
-        return np.array(goodPoints)
+        ratioDeviations = [(r/medianRatio)-1 for r in ratios]
+
+        # so that it doesn't matter if the deviation is expressed as positive or negative
+        maxDeviationPositive = abs(maxDeviationPositive)
+        maxDeviationNegative = -1. * abs(maxDeviationNegative)
+
+        goodPoints = np.array([True if (r < maxDeviationPositive and r > maxDeviationNegative)
+                              else False for r in ratioDeviations])
+        return goodPoints
+
+    def _makeZeroSafe(self, array, warn=True, substituteValue=1e-9):
+        """"""
+        nBad = Counter(array)[0]
+        if nBad == 0:
+            return array
+
+        if warn:
+            msg = f"Found {nBad} zeros in array at elements {[x for x in np.where(array==0)[0]]}"
+            self.log.warn(msg)
+
+        array[array == 0] = substituteValue
+        return array
 
     def fitPtcAndNl(self, dataset, ptcFitType):
         """Fit the photon transfer curve and calculate linearity and residuals.
@@ -567,7 +601,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                     (meanVecOriginal <= self.config.maxMeanSignal))
 
             goodPoints = self._getInitialGoodPoints(meanVecOriginal, varVecOriginal,
-                                                    self.config.initialNonLinearityExclusionThreshold)
+                                                    self.config.initialNonLinearityExclusionThresholdPositive,
+                                                    self.config.initialNonLinearityExclusionThresholdNegative)
             mask = mask & goodPoints
 
             if ptcFitType == 'ASTIERAPPROXIMATION':
