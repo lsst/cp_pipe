@@ -166,6 +166,11 @@ class PhotonTransferCurveDataset:
     always the same length as inputVisitPairs, rawExpTimes, rawMeans
     and rawVars, and is a list of bools, which are incrementally set to False
     as points are discarded from the fits.
+
+    PTC fit parameters for polynomials are stored in a list in ascending order
+    of polynomial term, i.e. par[0]*x^0 + par[1]*x + par[2]*x^2 etc
+    with the length of the list corresponding to the order of the polynomial
+    plus one.
     """
     def __init__(self, ampNames):
         # add items to __dict__ directly because __setattr__ is overridden
