@@ -160,12 +160,40 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
     def test_getInitialGoodPoints(self):
         xs = [1, 2, 3, 4, 5, 6]
         ys = [2*x for x in xs]
-        points = self.defaultTask._getInitialGoodPoints(xs, ys, 0.25)
+        points = self.defaultTask._getInitialGoodPoints(xs, ys, 0.1, 0.25)
         assert np.all(points) == np.all(np.array([True for x in xs]))
 
         ys[-1] = 30
-        points = self.defaultTask._getInitialGoodPoints(xs, ys, 0.25)
+        points = self.defaultTask._getInitialGoodPoints(xs, ys, 0.1, 0.25)
         assert np.all(points) == np.all(np.array([True, True, True, True, False]))
+
+        ys = [2*x for x in xs]
+        newYs = copy.copy(ys)
+        results = [False, True, True, False, False]
+        for i, factor in enumerate([-0.5, -0.1, 0, 0.1, 0.5]):
+            newYs[-1] = ys[-1] + (factor*ys[-1])
+            points = self.defaultTask._getInitialGoodPoints(xs, newYs, 0.05, 0.25)
+            assert (np.all(points[0:-1]) == True)  # noqa: E712 - flake8 is wrong here because of numpy.bool
+            assert points[-1] == results[i]
+
+    def test_getVisitsUsed(self):
+        localDataset = copy.copy(self.dataset)
+
+        for pair in [(12, 34), (56, 78), (90, 10)]:
+            localDataset.inputVisitPairs["C:0,0"].append(pair)
+        localDataset.visitMask["C:0,0"] = np.array([True, False, True])
+        self.assertTrue(np.all(localDataset.getVisitsUsed("C:0,0") == [(12, 34), (90, 10)]))
+
+        localDataset.visitMask["C:0,0"] = np.array([True, False, True, True])  # wrong length now
+        with self.assertRaises(AssertionError):
+            localDataset.getVisitsUsed("C:0,0")
+
+    def test_getGoodAmps(self):
+        dataset = self.dataset
+
+        self.assertTrue(dataset.ampNames == self.ampNames)
+        dataset.badAmps.append("C:0,1")
+        self.assertTrue(dataset.getGoodAmps() == [amp for amp in self.ampNames if amp != "C:0,1"])
 
 
 class MeasurePhotonTransferCurveDatasetTestCase(lsst.utils.tests.TestCase):

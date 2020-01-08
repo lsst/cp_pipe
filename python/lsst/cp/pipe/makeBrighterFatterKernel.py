@@ -26,20 +26,27 @@ __all__ = ['MakeBrighterFatterKernelTaskConfig',
            'calcBiasCorr']
 
 import os
+import copy
 from scipy import stats
 import numpy as np
 import matplotlib.pyplot as plt
 # the following import is required for 3d projection
-from mpl_toolkits.mplot3d import axes3d   # noqa: F401
+from mpl_toolkits.mplot3d import axes3d  # noqa: F401
+from matplotlib.backends.backend_pdf import PdfPages
+from dataclasses import dataclass
 
 import lsstDebug
 import lsst.afw.image as afwImage
 import lsst.afw.math as afwMath
 import lsst.afw.display as afwDisp
 from lsst.ip.isr import IsrTask
+import lsst.log as lsstLog
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 from .utils import PairedVisitListTaskRunner, checkExpLengthEqual
+import lsst.daf.persistence.butlerExceptions as butlerExceptions
+from lsst.cp.pipe.ptc import (MeasurePhotonTransferCurveTaskConfig, MeasurePhotonTransferCurveTask,
+                              PhotonTransferCurveDataset)
 
 
 class MakeBrighterFatterKernelTaskConfig(pexConfig.Config):
@@ -71,15 +78,50 @@ class MakeBrighterFatterKernelTaskConfig(pexConfig.Config):
         doc="Measure the per-amplifier gains (using the photon transfer curve method)?",
         default=True,
     )
+    doPlotPtcs = pexConfig.Field(
+        dtype=bool,
+        doc="Plot the PTCs and butler.put() them as defined by the plotBrighterFatterPtc template",
+        default=False,
+    )
+    forceZeroSum = pexConfig.Field(
+        dtype=bool,
+        doc="Force the correlation matrix to have zero sum by adjusting the (0,0) value?",
+        default=False,
+    )
+    correlationQuadraticFit = pexConfig.Field(
+        dtype=bool,
+        doc="Use a quadratic fit to find the correlations instead of simple averaging?",
+        default=False,
+    )
+    correlationModelRadius = pexConfig.Field(
+        dtype=int,
+        doc="Build a model of the correlation coefficients for radii larger than this value in pixels?",
+        default=100,
+    )
+    correlationModelSlope = pexConfig.Field(
+        dtype=float,
+        doc="Slope of the correlation model for radii larger than correlationModelRadius",
+        default=-1.35,
+    )
     ccdKey = pexConfig.Field(
         dtype=str,
         doc="The key by which to pull a detector from a dataId, e.g. 'ccd' or 'detector'",
         default='ccd',
     )
+    minMeanSignal = pexConfig.Field(
+        dtype=float,
+        doc="Minimum value of mean signal (in ADU) to consider.",
+        default=0,
+    )
+    maxMeanSignal = pexConfig.Field(
+        dtype=float,
+        doc="Maximum value to of mean signal (in ADU) to consider.",
+        default=9e6,
+    )
     maxIterRegression = pexConfig.Field(
         dtype=int,
         doc="Maximum number of iterations for the regression fitter",
-        default=10
+        default=2
     )
     nSigmaClipGainCalc = pexConfig.Field(
         dtype=int,
@@ -89,7 +131,7 @@ class MakeBrighterFatterKernelTaskConfig(pexConfig.Config):
     nSigmaClipRegression = pexConfig.Field(
         dtype=int,
         doc="Number of sigma to clip outliers from the line of best fit to during iterative regression",
-        default=3
+        default=4
     )
     xcorrCheckRejectLevel = pexConfig.Field(
         dtype=float,
@@ -136,7 +178,7 @@ class MakeBrighterFatterKernelTaskConfig(pexConfig.Config):
     biasCorr = pexConfig.Field(
         dtype=float,
         doc="An empirically determined correction factor, used to correct for the sigma-clipping of" +
-        " a non-Gaussian distribution. Post DM-15277, code will exist here to calulate appropriate values",
+        " a non-Gaussian distribution. Post DM-15277, code will exist here to calculate appropriate values",
         default=0.9241
     )
     backgroundBinSize = pexConfig.Field(
@@ -152,11 +194,18 @@ class MakeBrighterFatterKernelTaskConfig(pexConfig.Config):
     )
     level = pexConfig.ChoiceField(
         doc="The level at which to calculate the brighter-fatter kernels",
-        dtype=str, default="DETECTOR",
+        dtype=str,
+        default="DETECTOR",
         allowed={
             "AMP": "Every amplifier treated separately",
             "DETECTOR": "One kernel per detector",
         }
+    )
+    ignoreAmpsForAveraging = pexConfig.ListField(
+        dtype=str,
+        doc="List of amp names to ignore when averaging the amplifier kernels into the detector" +
+        " kernel. Only relevant for level = AMP",
+        default=[]
     )
     backgroundWarnLevel = pexConfig.Field(
         dtype=float,
@@ -202,28 +251,73 @@ class BrighterFatterKernelTaskDataIdContainer(pipeBase.DataIdContainer):
 
 
 class BrighterFatterKernel:
-    """A (very) simple class to hold the kernel(s) generated.
+    """A simple class to hold the kernel(s) generated and the intermediate
+    data products.
 
-    The kernel.kernel is a dictionary holding the kernels themselves.
-    One kernel if the level is 'DETECTOR' or,
-    nAmps in length, if level is 'AMP'.
-    The dict is keyed by either the detector ID or the amplifier IDs.
+    kernel.ampwiseKernels are the kernels for each amplifier in the detector,
+    as generated by having LEVEL == 'AMP'
 
-    The level is the level for which the kernel(s) were generated so that one
-    can know how to access the kernels without having to query the shape of
-    the dictionary holding the kernel(s).
+    kernel.detectorKernel is the kernel generated for the detector as a whole,
+    as generated by having LEVEL == 'DETECTOR'
+
+    kernel.detectorKernelFromAmpKernels is the kernel for the detector,
+    generated by averaging together the amps in the detector
+
+    The originalLevel is the level for which the kernel(s) were generated,
+    i.e. the level at which the task was originally run.
     """
 
-    def __init__(self, level, kernelDict):
-        assert type(level) == str
-        assert type(kernelDict) == dict
-        if level == 'DETECTOR':
-            assert len(kernelDict.keys()) == 1
-        if level == 'AMP':
-            assert len(kernelDict.keys()) > 1
+    def __init__(self, originalLevel, **kwargs):
+        self.__dict__["originalLevel"] = originalLevel
+        self.__dict__["ampwiseKernels"] = {}
+        self.__dict__["detectorKernel"] = {}
+        self.__dict__["detectorKernelFromAmpKernels"] = {}
+        self.__dict__["means"] = []
+        self.__dict__["rawMeans"] = []
+        self.__dict__["rawXcorrs"] = []
+        self.__dict__["xCorrs"] = []
+        self.__dict__["meanXcorrs"] = []
+        self.__dict__["gain"] = None  # will be a dict keyed by amp if set
+        self.__dict__["gainErr"] = None  # will be a dict keyed by amp if set
+        self.__dict__["noise"] = None  # will be a dict keyed by amp if set
+        self.__dict__["noiseErr"] = None  # will be a dict keyed by amp if set
 
-        self.level = level
-        self.kernel = kernelDict
+        for key, value in kwargs.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
+
+    def __setattr__(self, attribute, value):
+        """Protect class attributes"""
+        if attribute not in self.__dict__:
+            print(f"Cannot set {attribute}")
+        else:
+            self.__dict__[attribute] = value
+
+    def replaceDetectorKernelWithAmpKernel(self, ampName, detectorName):
+        self.detectorKernel[detectorName] = self.ampwiseKernels[ampName]
+
+    def makeDetectorKernelFromAmpwiseKernels(self, detectorName, ampsToExclude=[], overwrite=False):
+        if detectorName not in self.detectorKernelFromAmpKernels.keys():
+            self.detectorKernelFromAmpKernels[detectorName] = {}
+
+        if self.detectorKernelFromAmpKernels[detectorName] != {} and overwrite is False:
+            raise RuntimeError('Was told to replace existing detector kernel with overwrite==False')
+
+        ampNames = self.ampwiseKernels.keys()
+        ampsToAverage = [amp for amp in ampNames if amp not in ampsToExclude]
+        avgKernel = np.zeros_like(self.ampwiseKernels[ampsToAverage[0]])
+        for ampName in ampsToAverage:
+            avgKernel += self.ampwiseKernels[ampName]
+        avgKernel /= len(ampsToAverage)
+
+        self.detectorKernelFromAmpKernels[detectorName] = avgKernel
+
+
+@dataclass
+class BrighterFatterGain:
+    """The gains and the results of the PTC fits."""
+    gains: dict
+    ptcResults: dict
 
 
 class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
@@ -335,12 +429,12 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         for configParam in self.config.isrMandatorySteps:
             if configDict[configParam] is False:
                 raise RuntimeError('Must set config.isr.%s to True '
-                                   'for brighter-fatter kernel calulation' % configParam)
+                                   'for brighter-fatter kernel calculation' % configParam)
 
         for configParam in self.config.isrForbiddenSteps:
             if configDict[configParam] is True:
                 raise RuntimeError('Must set config.isr.%s to False '
-                                   'for brighter-fatter kernel calulation' % configParam)
+                                   'for brighter-fatter kernel calculation' % configParam)
 
         for configParam in self.config.isrDesirableSteps:
             if configParam not in configDict:
@@ -348,7 +442,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
                               'to set the equivalent for your obs_package to True.' % configParam)
                 continue
             if configDict[configParam] is False:
-                self.log.warn('Found config.isr.%s set to False for brighter-fatter kernel calulation. '
+                self.log.warn('Found config.isr.%s set to False for brighter-fatter kernel calculation. '
                               'It is probably desirable to have this set to True' % configParam)
 
         # subtask settings
@@ -360,56 +454,89 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         """Run the brighter-fatter measurement task.
 
         For a dataRef (which is each detector here),
-        and given a list of visit pairs, calulate the
+        and given a list of visit pairs, calculate the
         brighter-fatter kernel for the detector.
 
         Parameters
         ----------
-        dataRef : list of lsst.daf.persistence.ButlerDataRef
+        dataRef : `list` of `lsst.daf.persistence.ButlerDataRef`
             dataRef for the detector for the visits to be fit.
         visitPairs : `iterable` of `tuple` of `int`
             Pairs of visit numbers to be processed together
         """
-        xcorrs = {}  # dict of lists keyed by either amp or detector depending on config.level
-        means = {}
-        kernels = {}
+        np.random.seed(0)  # used in the PTC fit bootstrap
 
         # setup necessary objects
+        # NB: don't use dataRef.get('raw_detector')
+        # this currently doesn't work for composites because of the way
+        # composite objects (i.e. LSST images) are handled/constructed
+        # these need to be retrieved from the camera and dereferenced
+        # rather than accessed directly
         detNum = dataRef.dataId[self.config.ccdKey]
+        detector = dataRef.get('camera')[dataRef.dataId[self.config.ccdKey]]
+        amps = detector.getAmplifiers()
+        ampNames = [amp.getName() for amp in amps]
+
         if self.config.level == 'DETECTOR':
-            xcorrs = {detNum: []}
+            kernels = {detNum: []}
             means = {detNum: []}
+            xcorrs = {detNum: []}
+            meanXcorrs = {detNum: []}
         elif self.config.level == 'AMP':
-            # NB: don't use dataRef.get('raw_detector')
-            # this currently doesn't work for composites because of the way
-            # composite objects (i.e. LSST images) are handled/constructed
-            # these need to be retrieved from the camera and dereferenced
-            # rather than accessed directly
-            detector = dataRef.get('camera')[dataRef.dataId[self.config.ccdKey]]
-            amps = detector.getAmplifiers()
-            ampNames = [amp.getName() for amp in amps]
-            xcorrs = {key: [] for key in ampNames}
+            kernels = {key: [] for key in ampNames}
             means = {key: [] for key in ampNames}
+            xcorrs = {key: [] for key in ampNames}
+            meanXcorrs = {key: [] for key in ampNames}
         else:
             raise RuntimeError("Unsupported level: {}".format(self.config.level))
 
-        # calculate or retrieve the gains
-        if self.config.doCalcGains:
-            self.log.info('Compute gains for detector %s' % detNum)
-            gains, nomGains = self.estimateGains(dataRef, visitPairs)
-            dataRef.put(gains, datasetType='brighterFatterGain')
-            self.log.debug('Finished gain estimation for detector %s' % detNum)
-        else:
-            gains = dataRef.get('brighterFatterGain')
-            if not gains:
-                raise RuntimeError('Failed to retrieved gains for detector %s' % detNum)
-            self.log.info('Retrieved stored gain for detector %s' % detNum)
-        self.log.debug('Detector %s has gains %s' % (detNum, gains))
+        # we must be able to get the gains one way or the other, so check early
+        if not self.config.doCalcGains:
+            deleteMe = None
+            try:
+                deleteMe = dataRef.get('photonTransferCurveDataset')
+            except butlerExceptions.NoResults:
+                try:
+                    deleteMe = dataRef.get('brighterFatterGain')
+                except butlerExceptions.NoResults:
+                    pass
+            if not deleteMe:
+                raise RuntimeError("doCalcGains == False and gains could not be got from butler") from None
+            else:
+                del deleteMe
+
+        # if the level is DETECTOR we need to have the gains first so that each
+        # amp can be gain corrected in order to treat the detector as a single
+        # imaging area. However, if the level is AMP we can wait, calculate
+        # the correlations and correct for the gains afterwards
+        if self.config.level == 'DETECTOR':
+            if self.config.doCalcGains:
+                self.log.info('Computing gains for detector %s' % detNum)
+                gains, nomGains = self.estimateGains(dataRef, visitPairs)
+                dataRef.put(gains, datasetType='brighterFatterGain')
+                self.log.debug('Finished gain estimation for detector %s' % detNum)
+            else:
+                gains = dataRef.get('brighterFatterGain')
+                if not gains:
+                    raise RuntimeError('Failed to retrieved gains for detector %s' % detNum)
+                self.log.info('Retrieved stored gain for detector %s' % detNum)
+            self.log.debug('Detector %s has gains %s' % (detNum, gains))
+        else:  # we fake the gains as 1 for now, and correct later
+            gains = BrighterFatterGain({}, {})
+            for ampName in ampNames:
+                gains.gains[ampName] = 1.0
+            # We'll use the ptc.py code to calculate the gains, so we set this up
+            ptcConfig = MeasurePhotonTransferCurveTaskConfig()
+            ptcConfig.isrForbiddenSteps = []
+            ptcConfig.doFitBootstrap = True
+            ptcConfig.minMeanSignal = self.config.minMeanSignal
+            ptcConfig.maxMeanSignal = self.config.maxMeanSignal
+            ptcTask = MeasurePhotonTransferCurveTask(config=ptcConfig)
+            ptcDataset = PhotonTransferCurveDataset(ampNames)
 
         # Loop over pairs of visits
         # calculating the cross-correlations at the required level
         for (v1, v2) in visitPairs:
-
             dataRef.dataId['visit'] = v1
             exp1 = self.isr.runDataRef(dataRef).exposure
             dataRef.dataId['visit'] = v2
@@ -427,15 +554,51 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
             # - "DETECTOR": one key, so compare the two visits to each other
             # - "AMP": n_amp keys, comparing each amplifier of one visit
             #          to the same amplifier in the visit its paired with
-            for det_object in _scaledMaskedIms1.keys():
-                _xcorr, _ = self._crossCorrelate(_scaledMaskedIms1[det_object],
-                                                 _scaledMaskedIms2[det_object])
+            for det_object in _scaledMaskedIms1.keys():  # det_object is ampName or detName depending on level
+                self.log.debug("Calculating correlations for %s" % det_object)
+                _xcorr, _mean = self._crossCorrelate(_scaledMaskedIms1[det_object],
+                                                     _scaledMaskedIms2[det_object])
                 xcorrs[det_object].append(_xcorr)
                 means[det_object].append([_means1[det_object], _means2[det_object]])
+                if self.config.level != 'DETECTOR':
+                    # Populate the ptcDataset for running fitting in the PTC task
+                    expTime = exp1.getInfo().getVisitInfo().getExposureTime()
+                    ptcDataset.rawExpTimes[det_object].append(expTime)
+                    ptcDataset.rawMeans[det_object].append((_means1[det_object] + _means2[det_object]) / 2.0)
+                    ptcDataset.rawVars[det_object].append(_xcorr[0, 0] / 2.0)
 
                 # TODO: DM-15305 improve debug functionality here.
                 # This is position 1 for the removed code.
 
+        # Save the raw means and xcorrs so we can look at them before any modifications
+        rawMeans = copy.deepcopy(means)
+        rawXcorrs = copy.deepcopy(xcorrs)
+
+        # gains are always and only pre-applied for DETECTOR
+        # so for all other levels we now calculate them from the correlations
+        # and apply them
+        if self.config.level != 'DETECTOR':
+            if self.config.doCalcGains:  # Run the PTC task for calculating the gains, put results
+                self.log.info('Calculating gains for detector %s using PTC task' % detNum)
+                ptcDataset = ptcTask.fitPtcAndNl(ptcDataset, ptcConfig.ptcFitType)
+                dataRef.put(ptcDataset, datasetType='photonTransferCurveDataset')
+                self.log.debug('Finished gain estimation for detector %s' % detNum)
+            else:  # load results  - confirmed to work much earlier on, so can be relied upon here
+                ptcDataset = dataRef.get('photonTransferCurveDataset')
+
+            self._applyGains(means, xcorrs, ptcDataset)
+
+            if self.config.doPlotPtcs:
+                dirname = dataRef.getUri(datasetType='cpPipePlotRoot', write=True)
+                if not os.path.exists(dirname):
+                    os.makedirs(dirname)
+                detNum = dataRef.dataId[self.config.ccdKey]
+                filename = f"PTC_det{detNum}.pdf"
+                filenameFull = os.path.join(dirname, filename)
+                with PdfPages(filenameFull) as pdfPages:
+                    ptcTask._plotPtc(ptcDataset, ptcConfig.ptcFitType, pdfPages)
+
+        # having calculated and applied the gains for all code-paths we can now
         # generate the kernel(s)
         self.log.info('Generating kernel(s) for %s' % detNum)
         for det_object in xcorrs.keys():  # looping over either detectors or amps
@@ -443,11 +606,88 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
                 objId = 'detector %s' % det_object
             elif self.config.level == 'AMP':
                 objId = 'detector %s AMP %s' % (detNum, det_object)
-            kernels[det_object] = self.generateKernel(xcorrs[det_object], means[det_object], objId)
-        dataRef.put(BrighterFatterKernel(self.config.level, kernels))
+
+            try:
+                meanXcorr, kernel = self.generateKernel(xcorrs[det_object], means[det_object], objId)
+                kernels[det_object] = kernel
+                meanXcorrs[det_object] = meanXcorr
+            except RuntimeError:
+                # bad amps will cause failures here which we want to ignore
+                self.log.warn('RuntimeError during kernel generation for %s' % objId)
+                continue
+
+        bfKernel = BrighterFatterKernel(self.config.level)
+        bfKernel.means = means
+        bfKernel.rawMeans = rawMeans
+        bfKernel.rawXcorrs = rawXcorrs
+        bfKernel.xCorrs = xcorrs
+        bfKernel.meanXcorrs = meanXcorrs
+        bfKernel.originalLevel = self.config.level
+        try:
+            bfKernel.gain = ptcDataset.gain
+            bfKernel.gainErr = ptcDataset.gainErr
+            bfKernel.noise = ptcDataset.noise
+            bfKernel.noiseErr = ptcDataset.noiseErr
+        except NameError:  # we don't have a ptcDataset to store results from
+            pass
+
+        if self.config.level == 'AMP':
+            bfKernel.ampwiseKernels = kernels
+            ex = self.config.ignoreAmpsForAveraging
+            bfKernel.detectorKernel = bfKernel.makeDetectorKernelFromAmpwiseKernels(detNum, ampsToExclude=ex)
+
+        elif self.config.level == 'DETECTOR':
+            bfKernel.detectorKernel = kernels
+        else:
+            raise RuntimeError('Invalid level for kernel calculation; this should not be possible.')
+
+        dataRef.put(bfKernel)
 
         self.log.info('Finished generating kernel(s) for %s' % detNum)
         return pipeBase.Struct(exitStatus=0)
+
+    def _applyGains(self, means, xcorrs, ptcData):
+        """Apply the gains calculated by the PtcTask.
+
+        It also removes datapoints that were thrown out in the PTC algorithm.
+
+        Parameters
+        ----------
+        means : `dict` [`str`, `list` of `tuple`]
+            Dictionary, keyed by ampName, containing a list of the means for
+        each visit pair.
+
+        xcorrs : `dict` [`str`, `list` of `np.array`]
+            Dictionary, keyed by ampName, containing a list of the
+        cross-correlations for each visit pair.
+
+        ptcDataset : `lsst.cp.pipe.ptc.PhotonTransferCurveDataset`
+            The results of running the ptcTask.
+        """
+        ampNames = means.keys()
+        assert set(xcorrs.keys()) == set(ampNames) == set(ptcData.ampNames)
+
+        for ampName in ampNames:
+            mask = ptcData.visitMask[ampName]
+            gain = ptcData.gain[ampName]
+
+            fitType = ptcData.ptcFitType
+            if fitType != 'POLYNOMIAL':
+                raise RuntimeError("Only polynomial fit types supported currently")
+            ptcFitPars = ptcData.ptcFitPars[ampName]
+            # polynomial params go in ascending order, so this is safe w.r.t.
+            # the polynomial order, as the constant term is always first,
+            # the linear term second etc
+
+            # Adjust xcorrs[0,0] to remove the linear gain part, leaving just the second order part
+            for i in range(len(means[ampName])):
+                ampMean = np.mean(means[ampName][i])
+                xcorrs[ampName][i][0, 0] -= 2.0 * (ampMean * ptcFitPars[1] + ptcFitPars[0])
+
+            # Now adjust the means and xcorrs for the calculated gain and remove the bad indices
+            means[ampName] = [[value*gain for value in pair] for pair in np.array(means[ampName])[mask]]
+            xcorrs[ampName] = [arr*gain*gain for arr in np.array(xcorrs[ampName])[mask]]
+        return
 
     def _makeCroppedExposures(self, exp, gains, level):
         """Prepare exposure for cross-correlation calculation.
@@ -465,14 +705,15 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         -----------
         exp : `lsst.afw.image.exposure.ExposureF`
             The exposure to prepare
-        gains : `dict` of `float`
-            Dictionary of the amplifier gain values, keyed by amplifier name
+        gains : `lsst.cp.pipe.makeBrighterFatterKernel.BrighterFatterGain`
+            The object holding the amplifier gains, essentially a
+            dictionary of the amplifier gain values, keyed by amplifier name
         level : `str`
             Either `AMP` or `DETECTOR`
 
         Returns:
         --------
-        scaledMaskedIms : `dict` of `lsst.afw.image.maskedImage.MaskedImageF`
+        scaledMaskedIms : `dict` [`str`, `lsst.afw.image.maskedImage.MaskedImageF`]
             Depending on level, this is either one item, or n_amp items,
             keyed by detectorId or ampName
 
@@ -508,10 +749,10 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         # NB these are views modifying the image in-place
         for amp in amps:
             ampName = amp.getName()
-            rescaleIm = mi[amp.getBBox()]  # the soon-to-be scaled, mean subtractedm, amp image
+            rescaleIm = mi[amp.getBBox()]  # the soon-to-be scaled, mean subtracted, amp image
             rescaleTemp = temp[amp.getBBox()]
             mean = afwMath.makeStatistics(rescaleIm, afwMath.MEANCLIP, sctrl).getValue()
-            gain = gains[ampName]
+            gain = gains.gains[ampName]
             rescaleIm *= gain
             rescaleTemp *= gain
             self.log.debug("mean*gain = %s, clipped mean = %s" %
@@ -623,8 +864,8 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
 
         self.log.debug("Median and variance of diff:")
         self.log.debug("%s" % afwMath.makeStatistics(diff, afwMath.MEDIAN, sctrl).getValue())
-        self.log.debug("%s" % afwMath.makeStatistics(diff, afwMath.VARIANCECLIP,
-                                                     sctrl).getValue(), np.var(diff.getImage().getArray()))
+        self.log.debug("%s, %s" % (afwMath.makeStatistics(diff, afwMath.VARIANCECLIP, sctrl).getValue(),
+                                   np.var(diff.getImage().getArray())))
 
         # Measure the correlations
         dim0 = diff[0: -maxLag, : -maxLag, afwImage.LOCAL]
@@ -672,10 +913,10 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
 
         Returns
         -------
-        gains : `dict` of `float`
-            Dict of the as-calculated amplifier gain values,
-            keyed by amplifier name
-        nominalGains : `dict` of `float`
+        gains : `lsst.cp.pipe.makeBrighterFatterKernel.BrighterFatterGain`
+            Object holding the per-amplifier gains, essentially a
+            dict of the as-calculated amplifier gain values, keyed by amp name
+        nominalGains : `dict` [`str`, `float`]
             Dict of the amplifier gains, as reported by the `detector` object,
             keyed by amplifier name
         """
@@ -718,8 +959,14 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
 
         gains = {}
         nomGains = {}
+        ptcResults = {}
         for amp in detector:
             ampName = amp.getName()
+            if ampMeans[ampName] == []:  # all the data was dropped, amp is presumed bad
+                gains[ampName] = 1.0
+                ptcResults[ampName] = (0, 0, 1, 0)
+                continue
+
             nomGains[ampName] = amp.getGain()
             slopeRaw, interceptRaw, rVal, pVal, stdErr = \
                 stats.linregress(np.asarray(ampMeans[ampName]), np.asarray(ampCoVariances[ampName]))
@@ -756,7 +1003,11 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
                 dataRef.put(fig, "plotBrighterFatterPtc", amp=ampName)
                 self.log.info('Saved PTC for detector %s amp %s' % (detector.getId(), ampName))
             gains[ampName] = 1.0/slopeToUse
-        return gains, nomGains
+            # change the fit to use a cubic and match parameters with Lage method
+            # or better, use the PTC task here too
+            ptcResults[ampName] = (0, 0, 1, 0)
+
+        return BrighterFatterGain(gains, ptcResults), nomGains
 
     def _calcMeansAndVars(self, dataRef, v1, v2):
         """Calculate the means, vars, covars, and retrieve the nominal gains,
@@ -772,7 +1023,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         Parameters:
         -----------
         dataRef : `lsst.daf.persistence.butler.Butler.dataRef`
-            dataRef for the detector for the repo containg the flats to be used
+            dataRef for the detector for the repo containing the flats to be used
         v1 : `int`
             First visit of the visit pair
         v2 : `int`
@@ -780,7 +1031,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
 
         Returns
         -------
-        means, vars, covars : `tuple` of `dicts`
+        means, vars, covars : `tuple` of `dict`
             Three dicts, keyed by ampName,
             containing the sum of the image-means,
             the variance, and the quarter-image of the xcorr.
@@ -854,7 +1105,6 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         coVars = {}
         for amp in detector:
             ampName = amp.getName()
-
             diffAmpIm = diff[amp.getBBox()].clone()
             diffAmpImCrop = diffAmpIm[border: -border - maxLag, border: -border - maxLag, afwImage.LOCAL]
             diffAmpImCrop -= afwMath.makeStatistics(diffAmpImCrop, afwMath.MEANCLIP, sctrl).getValue()
@@ -977,7 +1227,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
                 TEST = x[:, np.newaxis]
                 slope, _, _, _ = np.linalg.lstsq(TEST, y)
                 slope = slope[0]
-                res = y - slope * x
+                res = (y - slope * x) / x
                 resMean = afwMath.makeStatistics(res, afwMath.MEANCLIP, sctrl).getValue()
                 resStd = np.sqrt(afwMath.makeStatistics(res, afwMath.VARIANCECLIP, sctrl).getValue())
                 index = np.where((res > (resMean + nSigmaClip*resStd)) |
@@ -1023,7 +1273,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         -----------
         corrs : `list` of `numpy.ndarray`, (Ny, Nx)
             A list of the quarter-image cross-correlations
-        means : `dict` of `tuples` of `floats`
+        means : `list` of `tuples` of `floats`
             The means of the input images for each corr in corrs
         rejectLevel : `float`, optional
             This is essentially is a sanity check parameter.
@@ -1037,44 +1287,113 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         kernel : `numpy.ndarray`, (Ny, Nx)
             The output kernel
         """
+        self.log.info('Calculating kernel for %s'%objId)
+
         if not rejectLevel:
             rejectLevel = self.config.xcorrCheckRejectLevel
 
-        # Try to average over a set of possible inputs.
-        # This generates a simple function of the kernel that
-        # should be constant across the images, and averages that.
-        xcorrList = []
-        sctrl = afwMath.StatisticsControl()
-        sctrl.setNumSigmaClip(self.config.nSigmaClipKernelGen)
+        if self.config.correlationQuadraticFit:
+            xcorrList = []
+            fluxList = []
 
-        for corrNum, ((mean1, mean2), corr) in enumerate(zip(means, corrs)):
-            corr[0, 0] -= (mean1 + mean2)
-            if corr[0, 0] > 0:
-                self.log.warn('Skipped item %s due to unexpected value of (variance-mean)' % corrNum)
-                continue
-            corr /= -1.0*(mean1**2 + mean2**2)
+            for corrNum, ((mean1, mean2), corr) in enumerate(zip(means, corrs)):
+                msg = 'For item %s, initial corr[0,0] = %g, corr[1,0] = %g'%(corrNum, corr[0, 0], corr[1, 0])
+                self.log.info(msg)
+                if self.config.level == 'DETECTOR':
+                    #  This is now done in _applyGains() but only if level is not DETECTOR
+                    corr[0, 0] -= (mean1 + mean2)
+                fullCorr = self._tileArray(corr)
 
-            fullCorr = self._tileArray(corr)
+                # Craig Lage says he doesn't understand the negative sign, but it needs to be there
+                xcorrList.append(-fullCorr / 2.0)
+                flux = (mean1 + mean2) / 2.0
+                fluxList.append(flux * flux)
+                # We're using the linear fit algorithm to find a quadratic fit,
+                # so we square the x-axis.
+                # The step below does not need to be done, but is included
+                # so that correlations can be compared
+                # directly to existing code.  We might want to take it out.
+                corr /= -1.0*(mean1**2 + mean2**2)
 
-            xcorrCheck = np.abs(np.sum(fullCorr))/np.sum(np.abs(fullCorr))
-            if xcorrCheck > rejectLevel:
-                self.log.warn("Sum of the xcorr is unexpectedly high. Investigate item num %s for %s. \n"
-                              "value = %s" % (corrNum, objId, xcorrCheck))
-                continue
-            xcorrList.append(fullCorr)
+            if not xcorrList:
+                raise RuntimeError("Cannot generate kernel because all inputs were discarded. "
+                                   "Either the data is bad, or config.xcorrCheckRejectLevel is too low")
 
-        if not xcorrList:
-            raise RuntimeError("Cannot generate kernel because all inputs were discarded. "
-                               "Either the data is bad, or config.xcorrCheckRejectLevel is too low")
+            # This method fits a quadratic vs flux and keeps only the quadratic term.
+            meanXcorr = np.zeros_like(fullCorr)
+            xcorrList = np.asarray(xcorrList)
 
-        # stack the individual xcorrs and apply a per-pixel clipped-mean
-        meanXcorr = np.zeros_like(fullCorr)
-        xcorrList = np.transpose(xcorrList)
-        for i in range(np.shape(meanXcorr)[0]):
-            for j in range(np.shape(meanXcorr)[1]):
-                meanXcorr[i, j] = afwMath.makeStatistics(xcorrList[i, j], afwMath.MEANCLIP, sctrl).getValue()
+            for i in range(np.shape(meanXcorr)[0]):
+                for j in range(np.shape(meanXcorr)[1]):
+                    # Note the i,j inversion.  This serves the same function as the transpose step in
+                    # the base code.  I don't understand why it is there, but I put it in to be consistent.
+                    slopeRaw, interceptRaw, rVal, pVal, stdErr = stats.linregress(np.asarray(fluxList),
+                                                                                  xcorrList[:, j, i])
+                    try:
+                        slope, intercept = self._iterativeRegression(np.asarray(fluxList),
+                                                                     xcorrList[:, j, i],
+                                                                     fixThroughOrigin=True)
+                        msg = "(%s,%s):Slope of raw fit: %s, intercept: %s p value: %s" % (i, j, slopeRaw,
+                                                                                           interceptRaw, pVal)
+                        self.log.debug(msg)
+                        self.log.debug("(%s,%s):Slope of fixed fit: %s" % (i, j, slope))
 
-        return self.successiveOverRelax(meanXcorr)
+                        meanXcorr[i, j] = slope
+                    except ValueError:
+                        meanXcorr[i, j] = slopeRaw
+
+                    msg = f"i={i}, j={j}, slope = {slope:.6g}, slopeRaw = {slopeRaw:.6g}"
+                    self.log.debug(msg)
+            self.log.info('Quad Fit meanXcorr[0,0] = %g, meanXcorr[1,0] = %g'%(meanXcorr[8, 8],
+                                                                               meanXcorr[9, 8]))
+
+        else:
+            # Try to average over a set of possible inputs.
+            # This generates a simple function of the kernel that
+            # should be constant across the images, and averages that.
+            xcorrList = []
+            sctrl = afwMath.StatisticsControl()
+            sctrl.setNumSigmaClip(self.config.nSigmaClipKernelGen)
+
+            for corrNum, ((mean1, mean2), corr) in enumerate(zip(means, corrs)):
+                corr[0, 0] -= (mean1 + mean2)
+                if corr[0, 0] > 0:
+                    self.log.warn('Skipped item %s due to unexpected value of (variance-mean)' % corrNum)
+                    continue
+                corr /= -1.0*(mean1**2 + mean2**2)
+
+                fullCorr = self._tileArray(corr)
+
+                xcorrCheck = np.abs(np.sum(fullCorr))/np.sum(np.abs(fullCorr))
+                if xcorrCheck > rejectLevel:
+                    self.log.warn("Sum of the xcorr is unexpectedly high. Investigate item num %s for %s. \n"
+                                  "value = %s" % (corrNum, objId, xcorrCheck))
+                    continue
+                xcorrList.append(fullCorr)
+
+            if not xcorrList:
+                raise RuntimeError("Cannot generate kernel because all inputs were discarded. "
+                                   "Either the data is bad, or config.xcorrCheckRejectLevel is too low")
+
+            # stack the individual xcorrs and apply a per-pixel clipped-mean
+            meanXcorr = np.zeros_like(fullCorr)
+            xcorrList = np.transpose(xcorrList)
+            for i in range(np.shape(meanXcorr)[0]):
+                for j in range(np.shape(meanXcorr)[1]):
+                    meanXcorr[i, j] = afwMath.makeStatistics(xcorrList[i, j],
+                                                             afwMath.MEANCLIP, sctrl).getValue()
+
+        if self.config.correlationModelRadius < (meanXcorr.shape[0] - 1) / 2:
+            sumToInfinity = self._buildCorrelationModel(meanXcorr, self.config.correlationModelRadius,
+                                                        self.config.correlationModelSlope)
+            self.log.info("SumToInfinity = %s" % sumToInfinity)
+        else:
+            sumToInfinity = 0.0
+        if self.config.forceZeroSum:
+            self.log.info("Forcing sum of correlation matrix to zero")
+            meanXcorr = self._forceZeroSum(meanXcorr, sumToInfinity)
+
+        return meanXcorr, self.successiveOverRelax(meanXcorr)
 
     def successiveOverRelax(self, source, maxIter=None, eLevel=None):
         """An implementation of the successive over relaxation (SOR) method.
@@ -1085,16 +1404,17 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         Parameters:
         -----------
         source : `numpy.ndarray`
-            The input array
+            The input array.
         maxIter : `int`, optional
-            Maximum number of iterations to attempt before aborting
+            Maximum number of iterations to attempt before aborting.
         eLevel : `float`, optional
-            The target error level at which we deem convergence to have occured
+            The target error level at which we deem convergence to have
+        occurred.
 
         Returns:
         --------
         output : `numpy.ndarray`
-            The solution
+            The solution.
         """
         if not maxIter:
             maxIter = self.config.maxIterSuccessiveOverRelaxation
@@ -1102,10 +1422,10 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
             eLevel = self.config.eLevelSuccessiveOverRelaxation
 
         assert source.shape[0] == source.shape[1], "Input array must be square"
-        # initialise, and set boundary conditions
+        # initialize, and set boundary conditions
         func = np.zeros([source.shape[0] + 2, source.shape[1] + 2])
         resid = np.zeros([source.shape[0] + 2, source.shape[1] + 2])
-        rhoSpe = np.cos(np.pi/source.shape[0])  # Here a square grid is assummed
+        rhoSpe = np.cos(np.pi/source.shape[0])  # Here a square grid is assumed
 
         # Calculate the initial error
         for i in range(1, func.shape[0] - 1):
@@ -1202,6 +1522,76 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         return output
 
     @staticmethod
+    def _forceZeroSum(inputArray, sumToInfinity):
+        """Given an array of correlations, adjust the
+        central value to force the sum of the array to be zero.
+
+        Parameters:
+        -----------
+        input : `np.array`
+            The square input array, assumed square and with
+            shape (2n+1) x (2n+1)
+
+        Returns:
+        --------
+        output : `np.array`
+            The same array, with the value of the central value
+            inputArray[n,n] adjusted to force the array sum to be zero.
+        """
+        assert(inputArray.shape[0] == inputArray.shape[1])
+        assert(inputArray.shape[0] % 2 == 1)
+        center = int((inputArray.shape[0] - 1) / 2)
+        outputArray = np.copy(inputArray)
+        outputArray[center, center] -= inputArray.sum() - sumToInfinity
+        return outputArray
+
+    @staticmethod
+    def _buildCorrelationModel(array, replacementRadius, slope):
+        """Given an array of correlations, build a model
+        for correlations beyond replacementRadius pixels from the center
+        and replace the measured values with the model.
+
+        Parameters:
+        -----------
+        input : `np.array`
+            The square input array, assumed square and with
+            shape (2n+1) x (2n+1)
+
+        Returns:
+        --------
+        output : `np.array`
+            The same array, with the outer values
+            replaced with a smoothed model.
+        """
+        assert(array.shape[0] == array.shape[1])
+        assert(array.shape[0] % 2 == 1)
+        assert(replacementRadius > 1)
+        center = int((array.shape[0] - 1) / 2)
+        # First we check if either the [0,1] or [1,0] correlation is positive.
+        # If so, the data is seriously messed up. This has happened in some bad amplifiers.
+        # In this case, we just return the input array unchanged.
+        if (array[center, center + 1] >= 0.0) or (array[center + 1, center] >= 0.0):
+            return 0.0
+
+        intercept = (np.log10(-array[center, center + 1]) + np.log10(-array[center + 1, center])) / 2.0
+        preFactor = 10**intercept
+        slopeFactor = 2.0*abs(slope) - 2.0
+        sumToInfinity = 2.0*np.pi*preFactor / (slopeFactor*(float(center)+0.5)**slopeFactor)
+        # sum_to_ininity is the integral of the model beyond what is measured.
+        # It is used to adjust C00 in the case of forcing zero sum
+
+        # Now replace the pixels beyond replacementRadius with the model values
+        for i in range(array.shape[0]):
+            for j in range(array.shape[1]):
+                r2 = float((i-center)*(i-center) + (j-center)*(j-center))
+                if abs(i-center) < replacementRadius and abs(j-center) < replacementRadius:
+                    continue
+                else:
+                    newCvalue = -preFactor * r2**slope
+                    array[i, j] = newCvalue
+        return sumToInfinity
+
+    @staticmethod
     def _convertImagelikeToFloatImage(imagelikeObject):
         """Turn an exposure or masked image of any type into an ImageF."""
         for attr in ("getMaskedImage", "getImage"):
@@ -1215,8 +1605,8 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
 
 
 def calcBiasCorr(fluxLevels, imageShape, repeats=1, seed=0, addCorrelations=False,
-                 correlationStrength=0.1, maxLag=10, nSigmaClip=5, border=10):
-    """Calculate the bias induced when sigma-clipping non-Gassian distributions.
+                 correlationStrength=0.1, maxLag=10, nSigmaClip=5, border=10, logger=None):
+    """Calculate the bias induced when sigma-clipping non-Gaussian distributions.
 
     Fill image-pairs of the specified size with Poisson-distributed values,
     adding correlations as necessary. Then calculate the cross correlation,
@@ -1226,7 +1616,7 @@ def calcBiasCorr(fluxLevels, imageShape, repeats=1, seed=0, addCorrelations=Fals
     Parameters:
     -----------
     fluxLevels : `list` of `int`
-        The mean flux levels at which to simiulate.
+        The mean flux levels at which to simulate.
         Nominal values might be something like [70000, 90000, 110000]
     imageShape : `tuple` of `int`
         The shape of the image array to simulate, nx by ny pixels.
@@ -1248,20 +1638,25 @@ def calcBiasCorr(fluxLevels, imageShape, repeats=1, seed=0, addCorrelations=Fals
         Number of sigma to clip to when calculating the sigma-clipped mean.
     border : `int`, optional
         Number of border pixels to mask
+    logger : `lsst.log.Log`, optional
+        Logger to use. Instantiated anew if not provided.
 
     Returns:
     --------
-    biases : `dict` of `list` of `float`
+    biases : `dict` [`float`, `list` of `float`]
         A dictionary, keyed by flux level, containing a list of the biases
         for each repeat at that flux level
-    means : `dict` of `list` of `float`
-        A dictionary, keyed by flux level, containing a list of the average mean
-        fluxes (average of the mean of the two images)
+    means : `dict` [`float`, `list` of `float`]
+        A dictionary, keyed by flux level, containing a list of the average
+        mean fluxes (average of the mean of the two images)
         for the image pairs at that flux level
-    xcorrs : `dict` of `list` of `np.ndarray`
+    xcorrs : `dict` [`float`, `list` of `np.ndarray`]
         A dictionary, keyed by flux level, containing a list of the xcorr
         images for the image pairs at that flux level
     """
+    if logger is None:
+        logger = lsstLog.Log.getDefaultLogger()
+
     means = {f: [] for f in fluxLevels}
     xcorrs = {f: [] for f in fluxLevels}
     biases = {f: [] for f in fluxLevels}
@@ -1295,12 +1690,14 @@ def calcBiasCorr(fluxLevels, imageShape, repeats=1, seed=0, addCorrelations=Fals
             xcorrs[flux].append(_xcorr)
             if addCorrelations:
                 bias = xcorrs[flux][-1][1, 1]/means[flux][-1]*(1 + correlationStrength)/correlationStrength
-                print("Simulated/expected avg. flux: %.1f, %.1f" % (flux, means[flux][-1]/2))
-                print("Bias: %.6f" % bias)
+                msg = f"Simulated/expected avg. flux: {flux:.1f}, {(means[flux][-1]/2):.1f}"
+                logger.info(msg)
+                logger.info(f"Bias: {bias:.6f}")
             else:
                 bias = xcorrs[flux][-1][0, 0]/means[flux][-1]
-                print("Simulated/expected avg. flux: %.1f, %.1f" % (flux, means[flux][-1]/2))
-                print("Bias: %.6f" % bias)
+                msg = f"Simulated/expected avg. flux: {flux:.1f}, {(means[flux][-1]/2):.1f}"
+                logger.info(msg)
+                logger.info(f"Bias: {bias:.6f}")
             biases[flux].append(bias)
 
     return biases, means, xcorrs

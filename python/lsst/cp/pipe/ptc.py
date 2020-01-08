@@ -110,12 +110,22 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
         doc="Maximum value (inclusive) of mean signal (in ADU) below which to consider.",
         default=9e6,
     )
-    initialNonLinearityExclusionThreshold = pexConfig.RangeField(
+    initialNonLinearityExclusionThresholdPositive = pexConfig.RangeField(
         dtype=float,
         doc="Initially exclude data points with a variance that are more than a factor of this from being"
-            " linear, from the PTC fit. Note that these points will also be excluded from the non-linearity"
-            " fit. This is done before the iterative outlier rejection, to allow an accurate determination"
-            " of the sigmas for said iterative fit.",
+            " linear in the positive direction, from the PTC fit. Note that these points will also be"
+            " excluded from the non-linearity fit. This is done before the iterative outlier rejection,"
+            " to allow an accurate determination of the sigmas for said iterative fit.",
+        default=0.12,
+        min=0.0,
+        max=1.0,
+    )
+    initialNonLinearityExclusionThresholdNegative = pexConfig.RangeField(
+        dtype=float,
+        doc="Initially exclude data points with a variance that are more than a factor of this from being"
+            " linear in the negative direction, from the PTC fit. Note that these points will also be"
+            " excluded from the non-linearity fit. This is done before the iterative outlier rejection,"
+            " to allow an accurate determination of the sigmas for said iterative fit.",
         default=0.25,
         min=0.0,
         max=1.0,
@@ -123,7 +133,7 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
     sigmaCutPtcOutliers = pexConfig.Field(
         dtype=float,
         doc="Sigma cut for outlier rejection in PTC.",
-        default=4.0,
+        default=5.0,
     )
     maxIterationsPtcOutliers = pexConfig.Field(
         dtype=int,
@@ -156,12 +166,18 @@ class PhotonTransferCurveDataset:
     always the same length as inputVisitPairs, rawExpTimes, rawMeans
     and rawVars, and is a list of bools, which are incrementally set to False
     as points are discarded from the fits.
+
+    PTC fit parameters for polynomials are stored in a list in ascending order
+    of polynomial term, i.e. par[0]*x^0 + par[1]*x + par[2]*x^2 etc
+    with the length of the list corresponding to the order of the polynomial
+    plus one.
     """
     def __init__(self, ampNames):
         # add items to __dict__ directly because __setattr__ is overridden
 
         # instance variables
         self.__dict__["ampNames"] = ampNames
+        self.__dict__["badAmps"] = []
 
         # raw data variables
         self.__dict__["inputVisitPairs"] = {ampName: [] for ampName in ampNames}
@@ -191,6 +207,25 @@ class PhotonTransferCurveDataset:
                                  " does not support setting of new attributes.")
         else:
             self.__dict__[attribute] = value
+
+    def getVisitsUsed(self, ampName):
+        """Get the visits used, i.e. not discarded, for a given amp.
+
+        If no mask has been created yet, all visits are returned.
+        """
+        if self.visitMask[ampName] == []:
+            return self.inputVisitPairs[ampName]
+
+        # if the mask exists it had better be the same length as the visitPairs
+        assert len(self.visitMask[ampName]) == len(self.inputVisitPairs[ampName])
+
+        pairs = self.inputVisitPairs[ampName]
+        mask = self.visitMask[ampName]
+        # cast to bool required because numpy
+        return [(v1, v2) for ((v1, v2), m) in zip(pairs, mask) if bool(m) is True]
+
+    def getGoodAmps(self):
+        return [amp for amp in self.ampNames if amp not in self.badAmps]
 
 
 class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
@@ -299,9 +334,11 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 dataset.rawExpTimes[ampName].append(expTime)
                 dataset.rawMeans[ampName].append(mu)
                 dataset.rawVars[ampName].append(varDiff)
+                dataset.inputVisitPairs[ampName].append((v1, v2))
 
         # Fit PTC and (non)linearity of signal vs time curve
-        self.fitPtcAndNl(dataset, ptcFitType=self.config.ptcFitType)
+        # dataset is modified in place but also returned for external code
+        dataset = self.fitPtcAndNl(dataset, ptcFitType=self.config.ptcFitType)
 
         if self.config.makePlots:
             self.plot(dataRef, dataset, ptcFitType=self.config.ptcFitType)
@@ -512,20 +549,44 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         return (lowers, uppers)
 
     @staticmethod
-    def _getInitialGoodPoints(means, variances, maxDeviation):
+    def _getInitialGoodPoints(means, variances, maxDeviationPositive, maxDeviationNegative):
         """Return a boolean array to mask bad points.
 
         A linear function has a constant ratio, so find the median
         value of the ratios, and exclude the points that deviate
-        from that by more than a factor of maxDeviation.
+        from that by more than a factor of maxDeviationPositive/negative.
+        Asymmetric deviations are supported as we expect the PTC to turn
+        down as the flux increases, but sometimes it anomalously turns
+        upwards just before turning over, which ruins the fits, so it
+        is wise to be stricter about restricting positive outliers than
+        negative ones.
 
         Too high and points that are so bad that fit will fail will be included
         Too low and the non-linear points will be excluded, biasing the NL fit."""
         ratios = [b/a for (a, b) in zip(means, variances)]
         medianRatio = np.median(ratios)
-        ratioDeviations = [r/medianRatio for r in ratios]
-        goodPoints = [abs(1-r) < maxDeviation for r in ratioDeviations]
-        return np.array(goodPoints)
+        ratioDeviations = [(r/medianRatio)-1 for r in ratios]
+
+        # so that it doesn't matter if the deviation is expressed as positive or negative
+        maxDeviationPositive = abs(maxDeviationPositive)
+        maxDeviationNegative = -1. * abs(maxDeviationNegative)
+
+        goodPoints = np.array([True if (r < maxDeviationPositive and r > maxDeviationNegative)
+                              else False for r in ratioDeviations])
+        return goodPoints
+
+    def _makeZeroSafe(self, array, warn=True, substituteValue=1e-9):
+        """"""
+        nBad = Counter(array)[0]
+        if nBad == 0:
+            return array
+
+        if warn:
+            msg = f"Found {nBad} zeros in array at elements {[x for x in np.where(array==0)[0]]}"
+            self.log.warn(msg)
+
+        array[array == 0] = substituteValue
+        return array
 
     def fitPtcAndNl(self, dataset, ptcFitType):
         """Fit the photon transfer curve and calculate linearity and residuals.
@@ -561,12 +622,14 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             timeVecOriginal = np.array(dataset.rawExpTimes[ampName])
             meanVecOriginal = np.array(dataset.rawMeans[ampName])
             varVecOriginal = np.array(dataset.rawVars[ampName])
+            varVecOriginal = self._makeZeroSafe(varVecOriginal)
 
             mask = ((meanVecOriginal >= self.config.minMeanSignal) &
                     (meanVecOriginal <= self.config.maxMeanSignal))
 
             goodPoints = self._getInitialGoodPoints(meanVecOriginal, varVecOriginal,
-                                                    self.config.initialNonLinearityExclusionThreshold)
+                                                    self.config.initialNonLinearityExclusionThresholdPositive,
+                                                    self.config.initialNonLinearityExclusionThresholdNegative)
             mask = mask & goodPoints
 
             if ptcFitType == 'ASTIERAPPROXIMATION':
@@ -614,8 +677,19 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                                f" {Counter(mask)[False]} out of {len(meanVecOriginal)}"))
 
             if (len(meanVecFinal) < len(parsIniPtc)):
-                raise RuntimeError(f"Not enough data points ({len(meanVecFinal)}) compared to the number of" +
-                                   f"parameters of the PTC model({len(parsIniPtc)}).")
+                msg = (f"\nSERIOUS: Not enough data points ({len(meanVecFinal)}) compared to the number of"
+                       f"parameters of the PTC model({len(parsIniPtc)}). Setting {ampName} to BAD.")
+                self.log.warn(msg)
+                dataset.badAmps.append(ampName)
+                dataset.gain[ampName] = np.nan
+                dataset.gainErr[ampName] = np.nan
+                dataset.noise[ampName] = np.nan
+                dataset.noiseErr[ampName] = np.nan
+                dataset.nonLinearity[ampName] = np.nan
+                dataset.nonLinearityError[ampName] = np.nan
+                dataset.nonLinearityResiduals[ampName] = np.nan
+                continue
+
             # Fit the PTC
             if self.config.doFitBootstrap:
                 parsFit, parsFitErr = self._fitBootstrap(parsIniPtc, meanVecFinal, varVecFinal, ptcFunc)
@@ -660,7 +734,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             dataset.nonLinearityError[ampName] = parsFitErr
             dataset.nonLinearityResiduals[ampName] = linResidual
 
-        return
+        return dataset
 
     def plot(self, dataRef, dataset, ptcFitType):
         dirname = dataRef.getUri(datasetType='cpPipePlotRoot', write=True)
