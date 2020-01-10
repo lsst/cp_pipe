@@ -141,14 +141,11 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
             self.assertIn(boxInput, boxesMeasured)
 
     def test_maskBlocks_full_column(self):
-        """A test for maskBlocksIfIntermitentBadPixelsInColumn (test 1).
+        """A test for maskBlocksIfIntermitentBadPixelsInColumn.
         Tests that a contigous bad column does not get split by the code.
 
-        Input defects for this test: (15, 1, 1, 50). The mock flat has a
-        size of 200X204 pixels. This column has a maximum length of 50
+        The mock flat has a size of 200X204 pixels. This column has a maximum length of 50
         pixels, otherwise there would be a split along the mock amp boundary.
-
-        Expected defects after the function runs: (15, 1, 1, 50)
 
         Plots can be found in DM-19903 on Jira.
         """
@@ -160,13 +157,9 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         self.check_maskBlocks(defects, expectedDefects)
 
     def test_maskBlocks_long_column(self):
-        """A test for maskBlocksIfIntermitentBadPixelsInColumn (test 2).
+        """A test for maskBlocksIfIntermitentBadPixelsInColumn.
         Tests that a contigous bad column with Npix >= badOnAndOffPixelColumnThreshold (10)
         does not get split by the code.
-
-        Input defects for this test: (20, 1, 1, 25).
-
-        Expected defects after the function runs: (20, 1, 1, 25)
 
         Plots can be found in DM-19903 on Jira.
         """
@@ -178,13 +171,9 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         self.check_maskBlocks(defects, expectedDefects)
 
     def test_maskBlocks_short_column(self):
-        """A test for maskBlocksIfIntermitentBadPixelsInColumn (test 3).
-        Npix contiguous bad pixels in a column where Npix < badOnAndOffPixelColumnThreshold (10).
-        Tests that a contigous bad column does not get split by the code.
-
-        Input defects for this test: (25, 1, 1, 8)
-
-        Expected defects after the function runs: (25, 1, 1, 8)
+        """A test for maskBlocksIfIntermitentBadPixelsInColumn.
+        Tests that a contigous bad column Npix < badOnAndOffPixelColumnThreshold (10)
+        does not get split by the code.
 
         Plots can be found in DM-19903 on Jira.
         """
@@ -196,15 +185,10 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         self.check_maskBlocks(defects, expectedDefects)
 
     def test_maskBlocks_discontigous_to_single_block(self):
-        """A test for maskBlocksIfIntermitentBadPixelsInColumn (test 4).
+        """A test for maskBlocksIfIntermitentBadPixelsInColumn.
         Npix discontiguous bad pixels in a column where Npix >= badOnAndOffPixelColumnThreshold (10)
         and gaps of good pixels < goodPixelColumnGapThreshold (5). Under these conditions, the whole
         block of bad pixels (including good gaps) should be masked.
-
-        Input defects for this test: (30, 1, 1, 2), (30, 5, 1, 3), (30, 11, 1, 5), (30, 19, 1, 5),
-                                     (30, 27, 1, 4), (30, 34, 1, 15
-
-        Expected defects after the function runs: (30, 1, 1, 48)
 
         Plots can be found in DM-19903 on Jira.
         """
@@ -222,14 +206,10 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         self.check_maskBlocks(defects, expectedDefects)
 
     def test_maskBlocks_discontigous_less_than_thresholds(self):
-        """A test for maskBlocksIfIntermitentBadPixelsInColumn (test 5).
+        """A test for maskBlocksIfIntermitentBadPixelsInColumn.
         Npix discontiguous bad pixels in a column where Npix < badOnAndOffPixelColumnThreshold (10)
         and gaps of good pixels < goodPixelColumnGapThreshold (5). Under these conditions,
         the expected defect boxes should be the same as the input boxes.
-
-        Input defects for this test: (35, 1, 1, 2), (35, 5, 1, 3), (35, 11, 1, 2)
-
-        Expected defects after the function runs: (35, 1, 1, 2), (35, 5, 1, 3), (35, 11, 1, 2)
 
         Plots can be found in DM-19903 on Jira.
         """
@@ -247,18 +227,11 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         self.check_maskBlocks(defects, expectedDefects)
 
     def test_maskBlocks_more_than_thresholds(self):
-        # Test 6: n discontiguous bad pixels in a column where n >= threshold, gap >= "good" threshold
-        # n=34 bad pixels total, 1 "good" gap big enough (13>=5 good pixels, from y=6 (1+5) to y=19)
-        """A test for maskBlocksIfIntermitentBadPixelsInColumn (test 6).
+        """A test for maskBlocksIfIntermitentBadPixelsInColumn.
         Npix discontiguous bad pixels in a column where Npix < badOnAndOffPixelColumnThreshold (10)
         and gaps of good pixels < goodPixelColumnGapThreshold (5).
         Npix=34 (> 10) bad pixels total, 1 "good" gap with 13 pixels big enough
         (13 >= 5 good pixels, from y=6 (1+5) to y=19).
-
-        Input defects for this test: (40, 1, 1, 2), (40, 5, 1, 3), (40, 19, 1, 5), (40, 27, 1, 4),
-        (40, 34, 1, 15), (45, 10, 1, 2), (45, 30, 1, 3)
-
-        Expected defects after the function runs: (40, 1, 1, 7), (40, 19, 1, 30)
 
         Plots can be found in DM-19903 on Jira.
         """
@@ -277,16 +250,12 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         self.check_maskBlocks(defects, expectedDefects)
 
     def test_maskBlocks_not_enough_bad_pixels_in_column(self):
-        """A test for maskBlocksIfIntermitentBadPixelsInColumn (test 7).
+        """A test for maskBlocksIfIntermitentBadPixelsInColumn.
         Npix discontiguous bad pixels in a column where Npix < badOnAndOffPixelColumnThreshold (10) and
         and gaps of good pixels > goodPixelColumnGapThreshold (5). Since  Npix <
         badOnAndOffPixelColumnThreshold, then it doesn't matter that the number of good pixels in gap >
         goodPixelColumnGapThreshold. 5<10 bad pixels total, 1 "good" gap big enough
         (29>=5 good pixels, from y =12 (10+2) to y=30)
-
-        Input defects for this test: (45, 10, 1, 2), (45, 30, 1, 3)
-
-        Expected defects after the function runs: (45, 10, 1, 2), (45, 30, 1, 3)
 
         Plots can be found in DM-19903 on Jira.
         """
@@ -302,15 +271,9 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         self.check_maskBlocks(defects, expectedDefects)
 
     def test_maskBlocks_every_other_pixel_bad_greater_than_threshold(self):
-        """A test for maskBlocksIfIntermitentBadPixelsInColumn (test 8).
+        """A test for maskBlocksIfIntermitentBadPixelsInColumn.
         Npix discontiguous bad pixels in a column where Npix > badOnAndOffPixelColumnThreshold (10)
         and every other pixel is bad.
-        Input defects for this test: [50, 10, 1, 1], [50, 12, 1, 1], [50, 14, 1, 1], [50, 16, 1, 1],
-                                     [50, 18, 1, 1], [50, 20, 1, 1], [50, 22, 1, 1], [50, 24, 1, 1],
-                                     [50, 26, 1, 1], [50, 28, 1, 1], [50, 30, 1, 1], [50, 32, 1, 1],
-                                     [50, 34, 1, 1], [50, 36, 1, 1], [50, 38, 1, 1], [50, 40, 1, 1].
-
-        Expected defects after the function runs: (50, 10, 1, 31)
 
         Plots can be found in DM-19903 on Jira.
         """
@@ -339,14 +302,9 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         self.check_maskBlocks(defects, expectedDefects)
 
     def test_maskBlocks_every_other_pixel_bad_less_than_threshold(self):
-        """A test for maskBlocksIfIntermitentBadPixelsInColumn (test 9).
+        """A test for maskBlocksIfIntermitentBadPixelsInColumn.
         Npix discontiguous bad pixels in a column where Npix > badOnAndOffPixelColumnThreshold (10)
         and every other pixel is bad.
-        Input defects for this test: [55, 20, 1, 1], [55, 22, 1, 1], [55, 24, 1, 1], [55, 26, 1, 1],
-                                     [55, 28, 1, 1], [55, 30, 1, 1]
-
-        Expected defects after the function runs: [55, 20, 1, 1], [55, 22, 1, 1], [55, 24, 1, 1],
-                                                  [55, 26, 1, 1], [55, 28, 1, 1], [55, 30, 1, 1]
 
         Plots can be found in DM-19903 on Jira.
         """
@@ -370,20 +328,17 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         self.check_maskBlocks(defects, expectedDefects)
 
     def test_maskBlocks_blobs_one_side_good_less_than_threshold(self):
-        """A test for maskBlocksIfIntermitentBadPixelsInColumn (test 10).
+        """A test for maskBlocksIfIntermitentBadPixelsInColumn.
         Npix discontiguous bad pixels in column with "blobs" of "m" bad pixels to one side,
         m > badOnAndOffPixelColumnThreshold (10), number of good pixel in gaps between blobs <
         goodPixelColumnGapThreshold (5).
-
-        Input defects for this test: (60, 1, 1, 18), (60, 20, 1, 10), (61, 2, 2, 2), (61, 6, 2, 8)
-
-        Expected defects after the function runs: (60,1,1,31), (61, 2, 2, 14)
 
         Plots can be found in DM-19903 on Jira.
         """
 
         expectedDefects = [Box2I(corner = Point2I(60, 1), dimensions = Extent2I(1, 29)),
-                           Box2I(corner = Point2I(61, 2), dimensions = Extent2I(1, 12))]
+                           Box2I(corner = Point2I(61, 2), dimensions = Extent2I(1, 12)),
+                           Box2I(corner = Point2I(62, 2), dimensions = Extent2I(1, 12))]
         defects = self.allDefectsList
         badPixels = [Box2I(corner = Point2I(60, 1), dimensions = Extent2I(1, 18)),
                      Box2I(corner = Point2I(60, 20), dimensions = Extent2I(1, 10)),
@@ -395,20 +350,17 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         self.check_maskBlocks(defects, expectedDefects)
 
     def test_maskBlocks_blobs_other_side_good_less_than_threshold(self):
-        """A test for maskBlocksIfIntermitentBadPixelsInColumn (test 11).
+        """A test for maskBlocksIfIntermitentBadPixelsInColumn.
         Npix discontiguous bad pixels in column with "blobs" of "m" bad pixels to the other side,
         m > badOnAndOffPixelColumnThreshold (10), number of good pixel in gaps between blobs <
         goodPixelColumnGapThreshold (5).
-
-        Input defects for this test: (70, 1, 1, 18), (70, 20, 1, 10), (68, 2, 2, 2), (68, 6, 2, 8)
-
-        Expected defects after the function runs: (70,1,1,31), (68, 2, 2, 14)
 
         Plots can be found in DM-19903 on Jira.
         """
 
         expectedDefects = [Box2I(corner = Point2I(70, 1), dimensions = Extent2I(1, 29)),
-                           Box2I(corner = Point2I(68, 2), dimensions = Extent2I(1, 12))]
+                           Box2I(corner = Point2I(68, 2), dimensions = Extent2I(1, 12)),
+                           Box2I(corner = Point2I(69, 2), dimensions = Extent2I(1, 12))]
         defects = self.allDefectsList
         badPixels = [Box2I(corner = Point2I(70, 1), dimensions = Extent2I(1, 18)),
                      Box2I(corner = Point2I(70, 20), dimensions = Extent2I(1, 10)),
@@ -420,23 +372,19 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         self.check_maskBlocks(defects, expectedDefects)
 
     def test_maskBlocks_blob_both_sides_good_less_than_threshold(self):
-        """A test for maskBlocksIfIntermitentBadPixelsInColumn (test 12).
+        """A test for maskBlocksIfIntermitentBadPixelsInColumn.
         Npix discontiguous bad pixels in column with "blobs" of "m" bad pixels to both sides,
         m > badOnAndOffPixelColumnThreshold (10), number of good pixel in gaps between blobs <
         goodPixelColumnGapThreshold (5).
-
-        Input defects for this test: (75, 1, 1, 18), (75, 20, 1, 10), (73, 2, 2, 2), (73, 6, 2, 8),
-                                     (76, 2, 2, 2), (76, 6, 2, 8)
-
-
-        Expected defects after the function runs: (75,1,1, 30), (73, 2, 2, 13), (76, 2, 2, 13)
 
         Plots can be found in DM-19903 on Jira.
         """
 
         expectedDefects = [Box2I(corner = Point2I(75, 1), dimensions = Extent2I(1, 29)),
                            Box2I(corner = Point2I(73, 2), dimensions = Extent2I(1, 12)),
-                           Box2I(corner = Point2I(76, 2), dimensions = Extent2I(1, 12))]
+                           Box2I(corner = Point2I(74, 2), dimensions = Extent2I(1, 12)),
+                           Box2I(corner = Point2I(76, 2), dimensions = Extent2I(1, 12)),
+                           Box2I(corner = Point2I(77, 2), dimensions = Extent2I(1, 12))]
         defects = self.allDefectsList
         badPixels = [Box2I(corner = Point2I(75, 1), dimensions = Extent2I(1, 18)),
                      Box2I(corner = Point2I(75, 20), dimensions = Extent2I(1, 10)),
@@ -450,14 +398,10 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         self.check_maskBlocks(defects, expectedDefects)
 
     def test_maskBlocks_blob_one_side_good_greater_than_threshold(self):
-        """A test for maskBlocksIfIntermitentBadPixelsInColumn (test 13).
+        """A test for maskBlocksIfIntermitentBadPixelsInColumn.
         Npix discontiguous bad pixels in column with "blobs" of "m" bad pixels to one side,
         m > badOnAndOffPixelColumnThreshold (10), number of good pixel in gaps between blobs >
         goodPixelColumnGapThreshold (5).
-
-        Input defects for this test: (80, 1, 1, 18), (80, 20, 1, 10), (81, 2, 2, 2), (81, 8, 2, 8)
-
-        Expected defects after the function runs: (80, 1, 1, 30), (81, 2, 2, 2), (81, 8, 2, 8)
 
         Plots can be found in DM-19903 on Jira.
         """
@@ -476,14 +420,10 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         self.check_maskBlocks(defects, expectedDefects)
 
     def test_maskBlocks_other_side_good_greater_than_threshold(self):
-        """A test for maskBlocksIfIntermitentBadPixelsInColumn (test 14).
+        """A test for maskBlocksIfIntermitentBadPixelsInColumn.
         Npix discontiguous bad pixels in column with "blobs" of "m" bad pixels to the other side,
         m > badOnAndOffPixelColumnThreshold (10), number of good pixel in gaps between blobs >
         goodPixelColumnGapThreshold (5).
-
-        Input defects for this test: (87, 1, 1, 12), (87, 20, 1, 10), (85, 2, 2, 2), (85, 8, 2, 2)
-
-        Expected defects after the function runs: (87, 1, 1, 30), (85, 2, 2, 2), (85, 8, 2, 2)
 
         Plots can be found in DM-19903 on Jira.
         """
@@ -502,17 +442,10 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         self.check_maskBlocks(defects, expectedDefects)
 
     def test_maskBlocks_both_sides_good_greater_than_threshold(self):
-        """A test for maskBlocksIfIntermitentBadPixelsInColumn (test 15).
+        """A test for maskBlocksIfIntermitentBadPixelsInColumn.
         Npix discontiguous bad pixels in column with "blobs" of "m" bad pixels to both sides,
         m > badOnAndOffPixelColumnThreshold (10), number of good pixel in gaps between blobs >
         goodPixelColumnGapThreshold (5).
-
-        Input defects for this test: (93, 1, 1, 12), (93, 15, 1, 20), (91, 2, 2, 2), (91, 8, 2, 2),
-                                     (94, 2, 2, 2), (94, 8, 2, 2),(91, 18, 2, 3), (91, 24, 2, 3),
-                                     (94, 18, 2, 3), (94, 24,2, 3)
-
-        Expected defects after the function runs: (93, 1, 1, 35), (91, 2, 2, 10), (91, 18, 2, 27),
-                                                  (94, 2, 2, 10), (94, 18, 2, 11)
 
         Plots can be found in DM-19903 on Jira.
         """
@@ -520,8 +453,12 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         expectedDefects = [Box2I(corner = Point2I(93, 1), dimensions = Extent2I(1, 34)),
                            Box2I(corner = Point2I(91, 2), dimensions = Extent2I(1, 7)),
                            Box2I(corner = Point2I(91, 18), dimensions = Extent2I(1, 9)),
+                           Box2I(corner = Point2I(92, 2), dimensions = Extent2I(1, 7)),
+                           Box2I(corner = Point2I(92, 18), dimensions = Extent2I(1, 9)),
                            Box2I(corner = Point2I(94, 2), dimensions = Extent2I(1, 7)),
-                           Box2I(corner = Point2I(94, 18), dimensions = Extent2I(1, 9))]
+                           Box2I(corner = Point2I(94, 18), dimensions = Extent2I(1, 9)),
+                           Box2I(corner = Point2I(95, 2), dimensions = Extent2I(1, 7)),
+                           Box2I(corner = Point2I(95, 18), dimensions = Extent2I(1, 9))]
         defects = self.allDefectsList
         badPixels = [Box2I(corner = Point2I(93, 1), dimensions = Extent2I(1, 12)),
                      Box2I(corner = Point2I(93, 15), dimensions = Extent2I(1, 20)),
