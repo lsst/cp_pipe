@@ -714,6 +714,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             dataset.gainErr[ampName] = ptcGainErr
             dataset.noise[ampName] = ptcNoise
             dataset.noiseErr[ampName] = ptcNoiseErr
+            dataset.ptcFitType[ampName] = ptcFitType
 
             # Non-linearity residuals (NL of mean vs time curve): percentage, and fit to a quadratic function
             # In this case, len(parsIniNl) = 3 indicates that we want a quadratic fit
