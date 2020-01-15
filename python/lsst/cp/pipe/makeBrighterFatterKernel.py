@@ -529,6 +529,8 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
             ptcConfig = MeasurePhotonTransferCurveTaskConfig()
             ptcConfig.isrForbiddenSteps = []
             ptcConfig.doFitBootstrap = True
+            ptcConfig.ptcFitType = 'POLYNOMIAL'  # default Astier doesn't work for gain correction
+            ptcConfig.polynomialFitDegree = 3
             ptcConfig.minMeanSignal = self.config.minMeanSignal
             ptcConfig.maxMeanSignal = self.config.maxMeanSignal
             ptcTask = MeasurePhotonTransferCurveTask(config=ptcConfig)
@@ -671,9 +673,9 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
             mask = ptcData.visitMask[ampName]
             gain = ptcData.gain[ampName]
 
-            fitType = ptcData.ptcFitType
+            fitType = ptcData.ptcFitType[ampName]
             if fitType != 'POLYNOMIAL':
-                raise RuntimeError("Only polynomial fit types supported currently")
+                raise RuntimeError(f"Only polynomial fit types supported currently, found {fitType}")
             ptcFitPars = ptcData.ptcFitPars[ampName]
             # polynomial params go in ascending order, so this is safe w.r.t.
             # the polynomial order, as the constant term is always first,
