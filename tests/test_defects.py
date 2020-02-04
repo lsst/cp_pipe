@@ -140,6 +140,17 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         for boxInput in expectedDefects:
             self.assertIn(boxInput, boxesMeasured)
 
+        # Union set of input and expected defects, as boxes.
+        unionInputExpectedBoxes = []
+        for defect in inputDefects:
+            unionInputExpectedBoxes.append(defect.getBBox())
+        for defect in expectedDefects:
+            unionInputExpectedBoxes.append(defect)
+
+        # Check that code doesn't mask more than it is supposed to.
+        for boxMeas in boxesMeasured:
+            self.assertIn(boxMeas, unionInputExpectedBoxes)
+
     def test_maskBlocks_full_column(self):
         """A test for maskBlocksIfIntermitentBadPixelsInColumn.
         Tests that a contigous bad column does not get split by the code.
