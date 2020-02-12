@@ -140,7 +140,8 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         for boxInput in expectedDefects:
             self.assertIn(boxInput, boxesMeasured)
 
-        # Union set of input and expected defects, as boxes.
+        # Check that the code did not mask anything extra by
+        # looking in both the input list and "expanded-column" list.
         unionInputExpectedBoxes = []
         for defect in inputDefects:
             unionInputExpectedBoxes.append(defect.getBBox())
