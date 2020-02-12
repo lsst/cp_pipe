@@ -298,7 +298,7 @@ class FindDefectsTask(pipeBase.CmdLineTask):
         if self.config.mode == 'MASTER':
             if len(visitList) > 1:
                 raise RuntimeError(f"Must only specify one visit when using mode MASTER, got {visitList}")
-            dataRef.dataId['visit'] = visitList[0]
+            dataRef.dataId['expId'] = visitList[0]
 
             for datasetType in defectLists.keys():
                 exp = dataRef.get(datasetType)
@@ -320,9 +320,10 @@ class FindDefectsTask(pipeBase.CmdLineTask):
                     raise RuntimeError(f"Got data from runs {runs} with assertSameRun==True")
 
             for visit in visitList:
-                imageType = butler.queryMetadata('raw', self.config.imageTypeKey, dataId={'visit': visit})[0]
+                imageType = butler.queryMetadata('raw', self.config.imageTypeKey, dataId={'expId': visit})[0]
                 imageType = imageType.lower()
-                dataRef.dataId['visit'] = visit
+                dataRef.dataId['expId'] = visit
+
                 if imageType == 'flat':  # note different isr tasks
                     exp = self.isrForFlats.runDataRef(dataRef).exposure
                     defects = self.findHotAndColdPixels(exp, imageType)
@@ -404,7 +405,7 @@ class FindDefectsTask(pipeBase.CmdLineTask):
         """Return the set of runs for the visits in visitList."""
         runs = set()
         for visit in visitList:
-            runs.add(butler.queryMetadata('raw', 'run', dataId={'visit': visit})[0])
+            runs.add(butler.queryMetadata('raw', 'run', dataId={'expId': visit})[0])
         return runs
 
     def _postProcessDefectSets(self, defectList, imageDimensions, mode):
