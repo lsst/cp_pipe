@@ -36,6 +36,7 @@ import lsst.afw.detection as afwDetection
 import lsst.afw.display as afwDisplay
 from lsst.afw import cameraGeom
 from lsst.geom import Box2I, Point2I
+import lsst.daf.base as dafBase
 
 from lsst.ip.isr import IsrTask
 from .utils import NonexistentDatasetTaskDataIdContainer, SingleVisitListTaskRunner, countMaskedPixels, \
@@ -159,6 +160,19 @@ class FindDefectsTaskConfig(pexConfig.Config):
         doc=("Ensure that all visits are from the same run? Raises if this is not the case, or"
              "if the run key isn't found."),
         default=False,  # false because most obs_packages don't have runs. obs_lsst/ts8 overrides this.
+    )
+    ignoreFilters = pexConfig.Field(
+        dtype=bool,
+        doc=("Set the filters used in the CALIB_ID to NONE regardless of the filters on the input"
+             " images. Allows mixing of filters in the input flats. Set to False if you think"
+             " your defects might be chromatic and want to have registry support for varying"
+             " defects with respect to filter."),
+        default=True,
+    )
+    nullFilterName = pexConfig.Field(
+        dtype=str,
+        doc=("The name of the null filter if ignoreFilters is True. Usually something like NONE or EMPTY"),
+        default="NONE",
     )
     combinationMode = pexConfig.ChoiceField(
         doc="Which types of defects to identify",
@@ -295,6 +309,9 @@ class FindDefectsTask(pipeBase.CmdLineTask):
 
         defectLists = {'dark': [], 'flat': []}
 
+        midTime = 0
+        filters = set()
+
         if self.config.mode == 'MASTER':
             if len(visitList) > 1:
                 raise RuntimeError(f"Must only specify one visit when using mode MASTER, got {visitList}")
@@ -302,6 +319,8 @@ class FindDefectsTask(pipeBase.CmdLineTask):
 
             for datasetType in defectLists.keys():
                 exp = dataRef.get(datasetType)
+                midTime += self._getMjd(exp)
+                filters.add(exp.getFilter().getName())
                 defects = self.findHotAndColdPixels(exp, datasetType)
 
                 msg = "Found %s defects containing %s pixels in master %s"
@@ -310,6 +329,7 @@ class FindDefectsTask(pipeBase.CmdLineTask):
                 if self.config.makePlots:
                     self._plot(dataRef, exp, visitList[0], self._getNsigmaForPlot(datasetType),
                                defects, datasetType)
+            midTime /= len(defectLists.keys())
 
         elif self.config.mode == 'VISITS':
             butler = dataRef.getButler()
@@ -328,11 +348,15 @@ class FindDefectsTask(pipeBase.CmdLineTask):
                     exp = self.isrForFlats.runDataRef(dataRef).exposure
                     defects = self.findHotAndColdPixels(exp, imageType)
                     defectLists['flat'].append(defects)
+                    midTime += self._getMjd(exp)
+                    filters.add(exp.getFilter().getName())
 
                 elif imageType == 'dark':
                     exp = self.isrForDarks.runDataRef(dataRef).exposure
                     defects = self.findHotAndColdPixels(exp, imageType)
                     defectLists['dark'].append(defects)
+                    midTime += self._getMjd(exp)
+                    filters.add(exp.getFilter().getName())
 
                 else:
                     raise RuntimeError(f"Failed on imageType {imageType}. Only flats and darks supported")
@@ -342,6 +366,8 @@ class FindDefectsTask(pipeBase.CmdLineTask):
 
                 if self.config.makePlots:
                     self._plot(dataRef, exp, visit, self._getNsigmaForPlot(imageType), defects, imageType)
+
+            midTime /= len(visitList)
 
         msg = "Combining %s defect sets from darks for detector %s"
         self.log.info(msg, len(defectLists['dark']), detNum)
@@ -357,7 +383,7 @@ class FindDefectsTask(pipeBase.CmdLineTask):
         brightDarkPostMerge = [mergedDefectsFromDarks, mergedDefectsFromFlats]
         allDefects = self._postProcessDefectSets(brightDarkPostMerge, exp.getDimensions(), mode='OR')
 
-        self._writeData(dataRef, allDefects)
+        self._writeData(dataRef, allDefects, midTime, filters)
 
         self.log.info("Finished finding defects in detector %s" % detNum)
         return pipeBase.Struct(defects=allDefects, exitStatus=0)
@@ -375,7 +401,7 @@ class FindDefectsTask(pipeBase.CmdLineTask):
             nPix += d.getBBox().getArea()
         return nPix
 
-    def _writeData(self, dataRef, defects):
+    def _writeData(self, dataRef, defects, midTime, filters):
         """Write the data out to the defect file.
 
         Parameters
@@ -385,20 +411,83 @@ class FindDefectsTask(pipeBase.CmdLineTask):
         defects : `lsst.meas.algorithms.Defect`
             The defects to be written.
         """
-        filename = dataRef.getUri(write=True)  # does not guarantee that full path exists
-        dirname = os.path.dirname(filename)
-        if not os.path.exists(dirname):
-            os.makedirs(dirname)
+        date = dafBase.DateTime(midTime, dafBase.DateTime.MJD).toPython().isoformat()
+
+        detName = self._getDetectorName(dataRef)
+        instrumentName = self._getInstrumentName(dataRef)
+        detNum = self._getDetectorNumber(dataRef)
+        if not self.config.ignoreFilters:
+            filt = self._filterSetToFilterString(filters)
+        else:
+            filt = self.config.nullFilterName
+
+        CALIB_ID = f"detectorName={detName} detector={detNum} calibDate={date} ccd={detNum} filter={filt}"
+        try:
+            raftName = detName.split("_")[0]
+            CALIB_ID += f" raftName={raftName}"
+        except Exception:
+            pass
+
+        now = dafBase.DateTime.now().toPython()
+        mdOriginal = defects.getMetadata()
+        mdSupplemental = {"INSTRUME": instrumentName,
+                          "DETECTOR": dataRef.dataId['detector'],
+                          "CALIBDATE": date,
+                          "CALIB_ID": CALIB_ID,
+                          "CALIB_CREATION_DATE": now.date().isoformat(),
+                          "CALIB_CREATION_TIME": now.time().isoformat()}
+
+        mdOriginal.update(mdSupplemental)
+
+        # TODO: DM-23508 sort out the butler abuse from here-on down in Gen3
+        # defects should simply be butler.put()
+        templateFilename = dataRef.getUri(write=True)  # does not guarantee that full path exists
+        baseDirName = os.path.dirname(templateFilename)
+        # ingest curated calibs demands detectorName is lowercase
+        dirName = os.path.join(baseDirName, instrumentName, "defects", detName.lower())
+        if not os.path.exists(dirName):
+            os.makedirs(dirName)
+
+        date += ".fits"
+        filename = os.path.join(dirName, date)
 
         msg = "Writing defects to %s in format: %s"
         self.log.info(msg, os.path.splitext(filename)[0], self.config.writeAs)
-
         if self.config.writeAs in ['FITS', 'BOTH']:
             defects.writeFits(filename)
         if self.config.writeAs in ['ASCII', 'BOTH']:
             wroteTo = defects.writeText(filename)
             assert(os.path.splitext(wroteTo)[0] == os.path.splitext(filename)[0])
         return
+
+    @staticmethod
+    def _filterSetToFilterString(filters):
+        return "~".join([f for f in filters])
+
+    @staticmethod
+    def _getDetectorNumber(dataRef):
+        dataRefDetNum = dataRef.dataId['detector']
+        camera = dataRef.get('camera')
+        detectorDetNum = camera[dataRef.dataId['detector']].getId()
+        assert dataRefDetNum == detectorDetNum
+        return dataRefDetNum
+
+    @staticmethod
+    def _getInstrumentName(dataRef):
+        camera = dataRef.get('camera')
+        return camera.getName()
+
+    @staticmethod
+    def _getDetectorName(dataRef):
+        camera = dataRef.get('camera')
+        return camera[dataRef.dataId['detector']].getName()
+
+    @staticmethod
+    def _getMjd(exp, timescale=dafBase.DateTime.UTC):
+        vi = exp.getInfo().getVisitInfo()
+        dateObs = vi.getDate()
+        mjd = dateObs.get(dafBase.DateTime.MJD)
+        return mjd
 
     @staticmethod
     def _getRunListFromVisits(butler, visitList):
