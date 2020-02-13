@@ -35,6 +35,7 @@ import lsst.afw.math as afwMath
 import lsst.afw.detection as afwDetection
 import lsst.afw.display as afwDisplay
 from lsst.afw import cameraGeom
+from lsst.geom import Box2I, Point2I
 
 from lsst.ip.isr import IsrTask
 from .utils import NonexistentDatasetTaskDataIdContainer, SingleVisitListTaskRunner, countMaskedPixels, \
@@ -129,6 +130,23 @@ class FindDefectsTaskConfig(pexConfig.Config):
         doc="Number of pixels to exclude from left & right of image when looking for defects.",
         default=7,
     )
+    badOnAndOffPixelColumnThreshold = pexConfig.Field(
+        dtype=int,
+        doc=("If BPC is the set of all the bad pixels in a given column (not necessarily consecutive) ",
+             "and the size of BPC is at least 'badOnAndOffPixelColumnThreshold', all the pixels between the ",
+             "pixels that satisfy minY (BPC) and maxY (BPC) will be marked as bad, with 'Y' being the long ",
+             "axis of the amplifier (and 'X' the other axis, which for a column is a constant for all ",
+             "pixels in the set BPC). If there are more than 'goodPixelColumnGapThreshold' consecutive ",
+             "non-bad pixels in BPC, an exception to the above is made and those consecutive ",
+             "'goodPixelColumnGapThreshold' are not marked as bad."),
+        default=50,
+    )
+    goodPixelColumnGapThreshold = pexConfig.Field(
+        dtype=int,
+        doc=("Size, in pixels, of usable consecutive pixels in a column with on and off bad pixels (see ",
+             "'badOnAndOffPixelColumnThreshold')."),
+        default=30,
+    )
     edgesAsDefects = pexConfig.Field(
         dtype=bool,
         doc=("Mark all edge pixels, as defined by nPixBorder[UpDown, LeftRight], as defects."
@@ -147,9 +165,9 @@ class FindDefectsTaskConfig(pexConfig.Config):
         dtype=str,
         default="FRACTION",
         allowed={
-            "AND": "Logical AND the pixels found in each visit to form set",
-            "OR": "Logical OR the pixels found in each visit to form set",
-            "FRACTION": "Use pixels found in more than config.combinationFraction of visits",
+            "AND": "Logical AND the pixels found in each visit to form set ",
+            "OR": "Logical OR the pixels found in each visit to form set ",
+            "FRACTION": "Use pixels found in more than config.combinationFraction of visits ",
         }
     )
     combinationFraction = pexConfig.RangeField(
@@ -305,7 +323,6 @@ class FindDefectsTask(pipeBase.CmdLineTask):
                 imageType = butler.queryMetadata('raw', self.config.imageTypeKey, dataId={'visit': visit})[0]
                 imageType = imageType.lower()
                 dataRef.dataId['visit'] = visit
-
                 if imageType == 'flat':  # note different isr tasks
                     exp = self.isrForFlats.runDataRef(dataRef).exposure
                     defects = self.findHotAndColdPixels(exp, imageType)
@@ -529,6 +546,107 @@ class FindDefectsTask(pipeBase.CmdLineTask):
             footprintList += mergedSet.getFootprints()
 
         defects = measAlg.Defects.fromFootprintList(footprintList)
+        defects = self.maskBlocksIfIntermitentBadPixelsInColumn(defects)
+
+        return defects
+
+    def maskBlocksIfIntermitentBadPixelsInColumn(self, defects):
+        """Mask blocks in a column if there are on-and-off bad pixels
+
+        If there's a column with on and off bad pixels, mask all the pixels in between,
+        except if there is a large enough gap of consecutive good pixels between two
+        bad pixels in the column.
+
+        Parameters
+        ---------
+        defects: `lsst.meas.algorithms.Defect`
+            The defects found in the image so far
+
+        Returns
+        ------
+        defects: `lsst.meas.algorithms.Defect`
+            If the number of bad pixels in a column is not larger or equal than
+            self.config.badPixelColumnThreshold, the iput list is returned. Otherwise,
+            the defects list returned will include boxes that mask blocks of on-and-of
+            pixels.
+        """
+        # Get the (x, y) values of each bad pixel in amp.
+        coordinates = []
+        for defect in defects:
+            bbox = defect.getBBox()
+            x0, y0 = bbox.getMinX(), bbox.getMinY()
+            deltaX0, deltaY0 = bbox.getDimensions()
+            for j in np.arange(y0, y0+deltaY0):
+                for i in np.arange(x0, x0 + deltaX0):
+                    coordinates.append((i, j))
+
+        x, y = [], []
+        for coordinatePair in coordinates:
+            x.append(coordinatePair[0])
+            y.append(coordinatePair[1])
+
+        x = np.array(x)
+        y = np.array(y)
+        # Find the defects with same "x" (vertical) coordinate (column).
+        unique, counts = np.unique(x, return_counts=True)
+        multipleX = []
+        for (a, b) in zip(unique, counts):
+            if b >= self.config.badOnAndOffPixelColumnThreshold:
+                multipleX.append(a)
+        if len(multipleX) != 0:
+            defects = self._markBlocksInBadColumn(x, y, multipleX, defects)
+
+        return defects
+
+    def _markBlocksInBadColumn(self, x, y, multipleX, defects):
+        """Mask blocks in a column if number of on-and-off bad pixels is above threshold.
+
+        This function is called if the number of on-and-off bad pixels in a column
+        is larger or equal than self.config.badOnAndOffPixelColumnThreshold.
+
+        Parameters
+        ---------
+            x: list
+                Lower left x coordinate of defect box. x coordinate is along the short axis if amp.
+
+            y: list
+                Lower left y coordinate of defect box. x coordinate is along the long axis if amp.
+
+            multipleX: list
+                List of x coordinates in amp. with multiple bad pixels (i.e., columns with defects).
+
+            defects: `lsst.meas.algorithms.Defect`
+                The defcts found in the image so far
+
+        Returns
+        -------
+        defects: `lsst.meas.algorithms.Defect`
+            The defects list returned that will include boxes that mask blocks
+            of on-and-of pixels.
+        """
+        goodPixelColumnGapThreshold = self.config.goodPixelColumnGapThreshold
+        for x0 in multipleX:
+            index = np.where(x == x0)
+            multipleY = y[index]  # multipleY and multipleX are in 1-1 correspondence.
+            minY, maxY = np.min(multipleY), np.max(multipleY)
+            # Next few lines: don't mask pixels in column if gap of good pixels between
+            # two consecutive bad pixels is larger or equal than 'goodPixelColumnGapThreshold'.
+            diffIndex = np.where(np.diff(multipleY) >= goodPixelColumnGapThreshold)[0]
+            if len(diffIndex) != 0:
+                limits = [minY]  # put the minimum first
+                for gapIndex in diffIndex:
+                    limits.append(multipleY[gapIndex])
+                    limits.append(multipleY[gapIndex+1])
+                limits.append(maxY)  # maximum last
+                assert len(limits)%2 == 0, 'limits is even by design, but check anyways'
+                for i in np.arange(0, len(limits)-1, 2):
+                    s = Box2I(minimum = Point2I(x0, limits[i]), maximum = Point2I(x0, limits[i+1]))
+                    if s not in defects:
+                        defects.append(s)
+            else:  # No gap is large enough
+                s = Box2I(minimum = Point2I(x0, minY), maximum = Point2I(x0, maxY))
+                if s not in defects:
+                    defects.append(s)
         return defects
 
     def _setEdgeBits(self, exposureOrMaskedImage, maskplaneToSet='EDGE'):
@@ -717,7 +835,7 @@ class FindDefectsTask(pipeBase.CmdLineTask):
             # Put v-lines and textboxes in
             a.axvline(thrUpper, c='k')
             a.axvline(thrLower, c='k')
-            msg = f"{amp.getName()}\nmean:{mean: .1f}\n$\\sigma$:{sigma: .1f}"
+            msg = f"{amp.getName()}\nmean:{mean: .2f}\n$\\sigma$:{sigma: .2f}"
             a.text(0.65, 0.6, msg, transform=a.transAxes, fontsize=11)
             msg = f"nLeft:{nLeft}\nnRight:{nRight}\nnOverflow:{nOverflow}\nnUnderflow:{nUnderflow}"
             a.text(0.03, 0.6, msg, transform=a.transAxes, fontsize=11.5)

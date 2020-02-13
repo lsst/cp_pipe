@@ -22,7 +22,6 @@
 #
 """Test cases for lsst.cp.pipe.FindDefectsTask."""
 
-from __future__ import absolute_import, division, print_function
 import unittest
 import numpy as np
 import copy
@@ -33,7 +32,8 @@ import lsst.utils.tests
 import lsst.cp.pipe as cpPipe
 from lsst.cp.pipe.utils import countMaskedPixels
 from lsst.ip.isr import isrMock
-from lsst.afw.geom import Box2I, Point2I, Extent2I
+from lsst.geom import Box2I, Point2I, Extent2I
+import lsst.meas.algorithms as measAlg
 
 
 class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
@@ -67,16 +67,19 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         self.flatExp = isrMock.FlatMock(config=mockImageConfig).run()
         (shapeY, shapeX) = self.flatExp.getDimensions()
 
-        # x, y, size tuples - NOTE: currently all are therefore square
+        # x, y, size tuples
         # always put edge defects at the start and change the value of nEdge
-        self.brightDefects = [(0, 15, 3), (100, 123, 1), (77, 90, 3)]
-        self.darkDefects = [(25, 0, 1), (33, 62, 2), (52, 21, 2)]
+
+        self.brightDefects = [(0, 15, 3, 3), (100, 123, 1, 1)]
+
+        self.darkDefects = [(5, 0, 1, 1), (7, 62, 2, 2)]
+
         nEdge = 1  # NOTE: update if more edge defects are included
         self.noEdges = slice(nEdge, None)
         self.onlyEdges = slice(0, nEdge)
 
-        self.darkBBoxes = [Box2I(Point2I(x, y), Extent2I(s, s)) for (x, y, s) in self.darkDefects]
-        self.brightBBoxes = [Box2I(Point2I(x, y), Extent2I(s, s)) for (x, y, s) in self.brightDefects]
+        self.darkBBoxes = [Box2I(Point2I(x, y), Extent2I(sx, sy)) for (x, y, sx, sy) in self.darkDefects]
+        self.brightBBoxes = [Box2I(Point2I(x, y), Extent2I(sx, sy)) for (x, y, sx, sy) in self.brightDefects]
 
         flatWidth = np.sqrt(self.flatMean) + self.readNoiseAdu
         darkWidth = self.readNoiseAdu
@@ -86,14 +89,16 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
 
         # NOTE: darks and flats have same defects applied deliberately to both
         for defect in self.brightDefects:
-            y, x, s = defect
-            flatData[x:x+s, y:y+s] += self.nSigmaBright * flatWidth  # are these actually the numbers we want?
-            darkData[x:x+s, y:y+s] += self.nSigmaBright * darkWidth  # are these actually the numbers we want?
+            y, x, sy, sx = defect
+            # are these actually the numbers we want?
+            flatData[x:x+sx, y:y+sy] += self.nSigmaBright * flatWidth
+            darkData[x:x+sx, y:y+sy] += self.nSigmaBright * darkWidth
 
         for defect in self.darkDefects:
-            y, x, s = defect
-            flatData[x:x+s, y:y+s] -= self.nSigmaDark * flatWidth  # are these actually the numbers we want?
-            darkData[x:x+s, y:y+s] -= self.nSigmaDark * darkWidth  # are these actually the numbers we want?
+            y, x, sy, sx = defect
+            # are these actually the numbers we want?
+            flatData[x:x+sx, y:y+sy] -= self.nSigmaDark * flatWidth
+            darkData[x:x+sx, y:y+sy] -= self.nSigmaDark * darkWidth
 
         self.darkExp = self.flatExp.clone()
         self.spareImage = self.flatExp.clone()  # for testing edge bits and misc
@@ -103,30 +108,421 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
 
         self.defaultTask = cpPipe.defects.FindDefectsTask(config=self.defaultConfig)
 
-    def test_defectFindingAllSensor(self):
+        self.allDefectsList = measAlg.Defects()
+
+        self.brightDefectsList = measAlg.Defects()
+        for d in self.brightBBoxes:
+            self.brightDefectsList.append(d)
+            self.allDefectsList.append(d)
+
+        self.darkDefectsList = measAlg.Defects()
+        for d in self.darkBBoxes:
+            self.darkDefectsList.append(d)
+            self.allDefectsList.append(d)
+
+    def check_maskBlocks(self, inputDefects, expectedDefects):
+        """A helper function for the tests of maskBlocksIfIntermitentBadPixelsInColumn.
+        """
         config = copy.copy(self.defaultConfig)
+        config.badOnAndOffPixelColumnThreshold = 10
+        config.goodPixelColumnGapThreshold = 5
         config.nPixBorderUpDown = 0
         config.nPixBorderLeftRight = 0
+
+        task = cpPipe.defects.FindDefectsTask(config=config)
+
+        defectsWithColumns = task.maskBlocksIfIntermitentBadPixelsInColumn(inputDefects)
+
+        boxesMeasured = []
+        for defect in defectsWithColumns:
+            boxesMeasured.append(defect.getBBox())
+
+        for boxInput in expectedDefects:
+            self.assertIn(boxInput, boxesMeasured)
+
+        # Check that the code did not mask anything extra by
+        # looking in both the input list and "expanded-column" list.
+        unionInputExpectedBoxes = []
+        for defect in inputDefects:
+            unionInputExpectedBoxes.append(defect.getBBox())
+        for defect in expectedDefects:
+            unionInputExpectedBoxes.append(defect)
+
+        # Check that code doesn't mask more than it is supposed to.
+        for boxMeas in boxesMeasured:
+            self.assertIn(boxMeas, unionInputExpectedBoxes)
+
+    def test_maskBlocks_full_column(self):
+        """A test for maskBlocksIfIntermitentBadPixelsInColumn.
+        Tests that a contigous bad column does not get split by the code.
+
+        The mock flat has a size of 200X204 pixels. This column has a maximum length of 50
+        pixels, otherwise there would be a split along the mock amp boundary.
+
+        Plots can be found in DM-19903 on Jira.
+        """
+
+        defects = self.allDefectsList
+        defects.append(Box2I(corner = Point2I(15, 1), dimensions = Extent2I(1, 50)))
+        expectedDefects = [Box2I(corner = Point2I(15, 1), dimensions = Extent2I(1, 50))]
+
+        self.check_maskBlocks(defects, expectedDefects)
+
+    def test_maskBlocks_long_column(self):
+        """A test for maskBlocksIfIntermitentBadPixelsInColumn.
+        Tests that a contigous bad column with Npix >= badOnAndOffPixelColumnThreshold (10)
+        does not get split by the code.
+
+        Plots can be found in DM-19903 on Jira.
+        """
+
+        expectedDefects = [Box2I(corner = Point2I(20, 1), dimensions = Extent2I(1, 25))]
+        defects = self.allDefectsList
+        defects.append(Box2I(corner = Point2I(20, 1), dimensions = Extent2I(1, 25)))
+
+        self.check_maskBlocks(defects, expectedDefects)
+
+    def test_maskBlocks_short_column(self):
+        """A test for maskBlocksIfIntermitentBadPixelsInColumn.
+        Tests that a contigous bad column Npix < badOnAndOffPixelColumnThreshold (10)
+        does not get split by the code.
+
+        Plots can be found in DM-19903 on Jira.
+        """
+
+        expectedDefects = [Box2I(corner = Point2I(25, 1), dimensions = Extent2I(1, 8))]
+        defects = self.allDefectsList
+        defects.append(Box2I(corner = Point2I(25, 1), dimensions = Extent2I(1, 8)))
+
+        self.check_maskBlocks(defects, expectedDefects)
+
+    def test_maskBlocks_discontigous_to_single_block(self):
+        """A test for maskBlocksIfIntermitentBadPixelsInColumn.
+        Npix discontiguous bad pixels in a column where Npix >= badOnAndOffPixelColumnThreshold (10)
+        and gaps of good pixels < goodPixelColumnGapThreshold (5). Under these conditions, the whole
+        block of bad pixels (including good gaps) should be masked.
+
+        Plots can be found in DM-19903 on Jira.
+        """
+
+        expectedDefects = [Box2I(corner = Point2I(30, 1), dimensions = Extent2I(1, 48))]
+        defects = self.allDefectsList
+        badPixels = [Box2I(corner = Point2I(30, 1), dimensions = Extent2I(1, 2)),
+                     Box2I(corner = Point2I(30, 5), dimensions = Extent2I(1, 3)),
+                     Box2I(corner = Point2I(30, 11), dimensions = Extent2I(1, 5)),
+                     Box2I(corner = Point2I(30, 19), dimensions = Extent2I(1, 5)),
+                     Box2I(corner = Point2I(30, 27), dimensions = Extent2I(1, 4)),
+                     Box2I(corner = Point2I(30, 34), dimensions = Extent2I(1, 15))]
+        for badBox in badPixels:
+            defects.append(badBox)
+        self.check_maskBlocks(defects, expectedDefects)
+
+    def test_maskBlocks_discontigous_less_than_thresholds(self):
+        """A test for maskBlocksIfIntermitentBadPixelsInColumn.
+        Npix discontiguous bad pixels in a column where Npix < badOnAndOffPixelColumnThreshold (10)
+        and gaps of good pixels < goodPixelColumnGapThreshold (5). Under these conditions,
+        the expected defect boxes should be the same as the input boxes.
+
+        Plots can be found in DM-19903 on Jira.
+        """
+
+        expectedDefects = [Box2I(corner = Point2I(35, 1), dimensions = Extent2I(1, 2)),
+                           Box2I(corner = Point2I(35, 5), dimensions = Extent2I(1, 3)),
+                           Box2I(corner = Point2I(35, 11), dimensions = Extent2I(1, 2))]
+        defects = self.allDefectsList
+        badPixels = [Box2I(corner = Point2I(35, 1), dimensions = Extent2I(1, 2)),
+                     Box2I(corner = Point2I(35, 5), dimensions = Extent2I(1, 3)),
+                     Box2I(corner = Point2I(35, 11), dimensions = Extent2I(1, 2))]
+        for badBox in badPixels:
+            defects.append(badBox)
+
+        self.check_maskBlocks(defects, expectedDefects)
+
+    def test_maskBlocks_more_than_thresholds(self):
+        """A test for maskBlocksIfIntermitentBadPixelsInColumn.
+        Npix discontiguous bad pixels in a column where Npix < badOnAndOffPixelColumnThreshold (10)
+        and gaps of good pixels < goodPixelColumnGapThreshold (5).
+        Npix=34 (> 10) bad pixels total, 1 "good" gap with 13 pixels big enough
+        (13 >= 5 good pixels, from y=6 (1+5) to y=19).
+
+        Plots can be found in DM-19903 on Jira.
+        """
+
+        expectedDefects = [Box2I(corner = Point2I(40, 1), dimensions = Extent2I(1, 7)),
+                           Box2I(corner = Point2I(40, 19), dimensions = Extent2I(1, 30))]
+        defects = self.allDefectsList
+        badPixels = [Box2I(corner = Point2I(40, 1), dimensions = Extent2I(1, 2)),
+                     Box2I(corner = Point2I(40, 5), dimensions = Extent2I(1, 3)),
+                     Box2I(corner = Point2I(40, 19), dimensions = Extent2I(1, 5)),
+                     Box2I(corner = Point2I(40, 27), dimensions = Extent2I(1, 4)),
+                     Box2I(corner = Point2I(40, 34), dimensions = Extent2I(1, 15))]
+        for badBox in badPixels:
+            defects.append(badBox)
+
+        self.check_maskBlocks(defects, expectedDefects)
+
+    def test_maskBlocks_not_enough_bad_pixels_in_column(self):
+        """A test for maskBlocksIfIntermitentBadPixelsInColumn.
+        Npix discontiguous bad pixels in a column where Npix < badOnAndOffPixelColumnThreshold (10) and
+        and gaps of good pixels > goodPixelColumnGapThreshold (5). Since  Npix <
+        badOnAndOffPixelColumnThreshold, then it doesn't matter that the number of good pixels in gap >
+        goodPixelColumnGapThreshold. 5<10 bad pixels total, 1 "good" gap big enough
+        (29>=5 good pixels, from y =12 (10+2) to y=30)
+
+        Plots can be found in DM-19903 on Jira.
+        """
+
+        expectedDefects = [Box2I(corner = Point2I(45, 10), dimensions = Extent2I(1, 2)),
+                           Box2I(corner = Point2I(45, 30), dimensions = Extent2I(1, 3))]
+        defects = self.allDefectsList
+        badPixels = [Box2I(corner = Point2I(45, 10), dimensions = Extent2I(1, 2)),
+                     Box2I(corner = Point2I(45, 30), dimensions = Extent2I(1, 3))]
+        for badBox in badPixels:
+            defects.append(badBox)
+
+        self.check_maskBlocks(defects, expectedDefects)
+
+    def test_maskBlocks_every_other_pixel_bad_greater_than_threshold(self):
+        """A test for maskBlocksIfIntermitentBadPixelsInColumn.
+        Npix discontiguous bad pixels in a column where Npix > badOnAndOffPixelColumnThreshold (10)
+        and every other pixel is bad.
+
+        Plots can be found in DM-19903 on Jira.
+        """
+
+        expectedDefects = [Box2I(corner = Point2I(50, 10), dimensions = Extent2I(1, 31))]
+        defects = self.allDefectsList
+        badPixels = [Box2I(corner = Point2I(50, 10), dimensions = Extent2I(1, 1)),
+                     Box2I(corner = Point2I(50, 12), dimensions = Extent2I(1, 1)),
+                     Box2I(corner = Point2I(50, 14), dimensions = Extent2I(1, 1)),
+                     Box2I(corner = Point2I(50, 16), dimensions = Extent2I(1, 1)),
+                     Box2I(corner = Point2I(50, 18), dimensions = Extent2I(1, 1)),
+                     Box2I(corner = Point2I(50, 20), dimensions = Extent2I(1, 1)),
+                     Box2I(corner = Point2I(50, 22), dimensions = Extent2I(1, 1)),
+                     Box2I(corner = Point2I(50, 24), dimensions = Extent2I(1, 1)),
+                     Box2I(corner = Point2I(50, 26), dimensions = Extent2I(1, 1)),
+                     Box2I(corner = Point2I(50, 28), dimensions = Extent2I(1, 1)),
+                     Box2I(corner = Point2I(50, 30), dimensions = Extent2I(1, 1)),
+                     Box2I(corner = Point2I(50, 32), dimensions = Extent2I(1, 1)),
+                     Box2I(corner = Point2I(50, 34), dimensions = Extent2I(1, 1)),
+                     Box2I(corner = Point2I(50, 36), dimensions = Extent2I(1, 1)),
+                     Box2I(corner = Point2I(50, 38), dimensions = Extent2I(1, 1)),
+                     Box2I(corner = Point2I(50, 40), dimensions = Extent2I(1, 1))]
+        for badBox in badPixels:
+            defects.append(badBox)
+
+        self.check_maskBlocks(defects, expectedDefects)
+
+    def test_maskBlocks_every_other_pixel_bad_less_than_threshold(self):
+        """A test for maskBlocksIfIntermitentBadPixelsInColumn.
+        Npix discontiguous bad pixels in a column where Npix > badOnAndOffPixelColumnThreshold (10)
+        and every other pixel is bad.
+
+        Plots can be found in DM-19903 on Jira.
+        """
+
+        expectedDefects = [Box2I(corner = Point2I(55, 20), dimensions = Extent2I(1, 1)),
+                           Box2I(corner = Point2I(55, 22), dimensions = Extent2I(1, 1)),
+                           Box2I(corner = Point2I(55, 24), dimensions = Extent2I(1, 1)),
+                           Box2I(corner = Point2I(55, 26), dimensions = Extent2I(1, 1)),
+                           Box2I(corner = Point2I(55, 28), dimensions = Extent2I(1, 1)),
+                           Box2I(corner = Point2I(55, 30), dimensions = Extent2I(1, 1))]
+        defects = self.allDefectsList
+        badPixels = [Box2I(corner = Point2I(55, 20), dimensions = Extent2I(1, 1)),
+                     Box2I(corner = Point2I(55, 22), dimensions = Extent2I(1, 1)),
+                     Box2I(corner = Point2I(55, 24), dimensions = Extent2I(1, 1)),
+                     Box2I(corner = Point2I(55, 26), dimensions = Extent2I(1, 1)),
+                     Box2I(corner = Point2I(55, 28), dimensions = Extent2I(1, 1)),
+                     Box2I(corner = Point2I(55, 30), dimensions = Extent2I(1, 1))]
+        for badBox in badPixels:
+            defects.append(badBox)
+
+        self.check_maskBlocks(defects, expectedDefects)
+
+    def test_maskBlocks_blobs_one_side_good_less_than_threshold(self):
+        """A test for maskBlocksIfIntermitentBadPixelsInColumn.
+        Npix discontiguous bad pixels in column with "blobs" of "m" bad pixels to one side,
+        m > badOnAndOffPixelColumnThreshold (10), number of good pixel in gaps between blobs <
+        goodPixelColumnGapThreshold (5).
+
+        Plots can be found in DM-19903 on Jira.
+        """
+
+        expectedDefects = [Box2I(corner = Point2I(60, 1), dimensions = Extent2I(1, 29)),
+                           Box2I(corner = Point2I(61, 2), dimensions = Extent2I(1, 12)),
+                           Box2I(corner = Point2I(62, 2), dimensions = Extent2I(1, 12))]
+        defects = self.allDefectsList
+        badPixels = [Box2I(corner = Point2I(60, 1), dimensions = Extent2I(1, 18)),
+                     Box2I(corner = Point2I(60, 20), dimensions = Extent2I(1, 10)),
+                     Box2I(corner = Point2I(61, 2), dimensions = Extent2I(2, 2)),
+                     Box2I(corner = Point2I(61, 6), dimensions = Extent2I(2, 8))]
+        for badBox in badPixels:
+            defects.append(badBox)
+
+        self.check_maskBlocks(defects, expectedDefects)
+
+    def test_maskBlocks_blobs_other_side_good_less_than_threshold(self):
+        """A test for maskBlocksIfIntermitentBadPixelsInColumn.
+        Npix discontiguous bad pixels in column with "blobs" of "m" bad pixels to the other side,
+        m > badOnAndOffPixelColumnThreshold (10), number of good pixel in gaps between blobs <
+        goodPixelColumnGapThreshold (5).
+
+        Plots can be found in DM-19903 on Jira.
+        """
+
+        expectedDefects = [Box2I(corner = Point2I(70, 1), dimensions = Extent2I(1, 29)),
+                           Box2I(corner = Point2I(68, 2), dimensions = Extent2I(1, 12)),
+                           Box2I(corner = Point2I(69, 2), dimensions = Extent2I(1, 12))]
+        defects = self.allDefectsList
+        badPixels = [Box2I(corner = Point2I(70, 1), dimensions = Extent2I(1, 18)),
+                     Box2I(corner = Point2I(70, 20), dimensions = Extent2I(1, 10)),
+                     Box2I(corner = Point2I(68, 2), dimensions = Extent2I(2, 2)),
+                     Box2I(corner = Point2I(68, 6), dimensions = Extent2I(2, 8))]
+        for badBox in badPixels:
+            defects.append(badBox)
+
+        self.check_maskBlocks(defects, expectedDefects)
+
+    def test_maskBlocks_blob_both_sides_good_less_than_threshold(self):
+        """A test for maskBlocksIfIntermitentBadPixelsInColumn.
+        Npix discontiguous bad pixels in column with "blobs" of "m" bad pixels to both sides,
+        m > badOnAndOffPixelColumnThreshold (10), number of good pixel in gaps between blobs <
+        goodPixelColumnGapThreshold (5).
+
+        Plots can be found in DM-19903 on Jira.
+        """
+
+        expectedDefects = [Box2I(corner = Point2I(75, 1), dimensions = Extent2I(1, 29)),
+                           Box2I(corner = Point2I(73, 2), dimensions = Extent2I(1, 12)),
+                           Box2I(corner = Point2I(74, 2), dimensions = Extent2I(1, 12)),
+                           Box2I(corner = Point2I(76, 2), dimensions = Extent2I(1, 12)),
+                           Box2I(corner = Point2I(77, 2), dimensions = Extent2I(1, 12))]
+        defects = self.allDefectsList
+        badPixels = [Box2I(corner = Point2I(75, 1), dimensions = Extent2I(1, 18)),
+                     Box2I(corner = Point2I(75, 20), dimensions = Extent2I(1, 10)),
+                     Box2I(corner = Point2I(73, 2), dimensions = Extent2I(2, 2)),
+                     Box2I(corner = Point2I(73, 6), dimensions = Extent2I(2, 8)),
+                     Box2I(corner = Point2I(76, 2), dimensions = Extent2I(2, 2)),
+                     Box2I(corner = Point2I(76, 6), dimensions = Extent2I(2, 8))]
+        for badBox in badPixels:
+            defects.append(badBox)
+
+        self.check_maskBlocks(defects, expectedDefects)
+
+    def test_maskBlocks_blob_one_side_good_greater_than_threshold(self):
+        """A test for maskBlocksIfIntermitentBadPixelsInColumn.
+        Npix discontiguous bad pixels in column with "blobs" of "m" bad pixels to one side,
+        m > badOnAndOffPixelColumnThreshold (10), number of good pixel in gaps between blobs >
+        goodPixelColumnGapThreshold (5).
+
+        Plots can be found in DM-19903 on Jira.
+        """
+
+        expectedDefects = [Box2I(corner = Point2I(80, 1), dimensions = Extent2I(1, 29)),
+                           Box2I(corner = Point2I(81, 2), dimensions = Extent2I(1, 2)),
+                           Box2I(corner = Point2I(81, 8), dimensions = Extent2I(1, 8))]
+        defects = self.allDefectsList
+        badPixels = [Box2I(corner = Point2I(80, 1), dimensions = Extent2I(1, 18)),
+                     Box2I(corner = Point2I(80, 20), dimensions = Extent2I(1, 10)),
+                     Box2I(corner = Point2I(81, 2), dimensions = Extent2I(2, 2)),
+                     Box2I(corner = Point2I(81, 8), dimensions = Extent2I(2, 8))]
+        for badBox in badPixels:
+            defects.append(badBox)
+
+        self.check_maskBlocks(defects, expectedDefects)
+
+    def test_maskBlocks_other_side_good_greater_than_threshold(self):
+        """A test for maskBlocksIfIntermitentBadPixelsInColumn.
+        Npix discontiguous bad pixels in column with "blobs" of "m" bad pixels to the other side,
+        m > badOnAndOffPixelColumnThreshold (10), number of good pixel in gaps between blobs >
+        goodPixelColumnGapThreshold (5).
+
+        Plots can be found in DM-19903 on Jira.
+        """
+
+        expectedDefects = [Box2I(corner = Point2I(87, 1), dimensions = Extent2I(1, 29)),
+                           Box2I(corner = Point2I(85, 2), dimensions = Extent2I(1, 2)),
+                           Box2I(corner = Point2I(85, 8), dimensions = Extent2I(1, 8))]
+        defects = self.allDefectsList
+        badPixels = [Box2I(corner = Point2I(87, 1), dimensions = Extent2I(1, 18)),
+                     Box2I(corner = Point2I(87, 20), dimensions = Extent2I(1, 10)),
+                     Box2I(corner = Point2I(85, 2), dimensions = Extent2I(2, 2)),
+                     Box2I(corner = Point2I(85, 8), dimensions = Extent2I(2, 8))]
+        for badBox in badPixels:
+            defects.append(badBox)
+
+        self.check_maskBlocks(defects, expectedDefects)
+
+    def test_maskBlocks_both_sides_good_greater_than_threshold(self):
+        """A test for maskBlocksIfIntermitentBadPixelsInColumn.
+        Npix discontiguous bad pixels in column with "blobs" of "m" bad pixels to both sides,
+        m > badOnAndOffPixelColumnThreshold (10), number of good pixel in gaps between blobs >
+        goodPixelColumnGapThreshold (5).
+
+        Plots can be found in DM-19903 on Jira.
+        """
+
+        expectedDefects = [Box2I(corner = Point2I(93, 1), dimensions = Extent2I(1, 34)),
+                           Box2I(corner = Point2I(91, 2), dimensions = Extent2I(1, 7)),
+                           Box2I(corner = Point2I(91, 18), dimensions = Extent2I(1, 9)),
+                           Box2I(corner = Point2I(92, 2), dimensions = Extent2I(1, 7)),
+                           Box2I(corner = Point2I(92, 18), dimensions = Extent2I(1, 9)),
+                           Box2I(corner = Point2I(94, 2), dimensions = Extent2I(1, 7)),
+                           Box2I(corner = Point2I(94, 18), dimensions = Extent2I(1, 9)),
+                           Box2I(corner = Point2I(95, 2), dimensions = Extent2I(1, 7)),
+                           Box2I(corner = Point2I(95, 18), dimensions = Extent2I(1, 9))]
+        defects = self.allDefectsList
+        badPixels = [Box2I(corner = Point2I(93, 1), dimensions = Extent2I(1, 12)),
+                     Box2I(corner = Point2I(93, 15), dimensions = Extent2I(1, 20)),
+                     Box2I(corner = Point2I(91, 2), dimensions = Extent2I(2, 2)),
+                     Box2I(corner = Point2I(91, 7), dimensions = Extent2I(2, 2)),
+                     Box2I(corner = Point2I(94, 2), dimensions = Extent2I(2, 2)),
+                     Box2I(corner = Point2I(94, 7), dimensions = Extent2I(2, 2)),
+                     Box2I(corner = Point2I(91, 18), dimensions = Extent2I(2, 3)),
+                     Box2I(corner = Point2I(91, 24), dimensions = Extent2I(2, 3)),
+                     Box2I(corner = Point2I(94, 18), dimensions = Extent2I(2, 3)),
+                     Box2I(corner = Point2I(94, 24), dimensions = Extent2I(2, 3))]
+        for badBox in badPixels:
+            defects.append(badBox)
+
+        self.check_maskBlocks(defects, expectedDefects)
+
+    def test_defectFindingAllSensor(self):
+        config = copy.copy(self.defaultConfig)
+        config.nPixBorderLeftRight = 0
+        config.nPixBorderUpDown = 0
+
         task = cpPipe.defects.FindDefectsTask(config=config)
 
         defects = task.findHotAndColdPixels(self.flatExp, 'flat')
 
         allBBoxes = self.darkBBoxes + self.brightBBoxes
 
+        boxesMeasured = []
         for defect in defects:
-            self.assertIn(defect.getBBox(), allBBoxes)
+            boxesMeasured.append(defect.getBBox())
+
+        for expectedBBox in allBBoxes:
+            self.assertIn(expectedBBox, boxesMeasured)
 
     def test_defectFindingEdgeIgnore(self):
-        task = cpPipe.defects.FindDefectsTask(config=self.defaultConfig)
+        config = copy.copy(self.defaultConfig)
+        config.nPixBorderUpDown = 0
+        task = cpPipe.defects.FindDefectsTask(config=config)
         defects = task.findHotAndColdPixels(self.flatExp, 'flat')
 
         shouldBeFound = self.darkBBoxes[self.noEdges] + self.brightBBoxes[self.noEdges]
+
+        boxesMeasured = []
         for defect in defects:
-            self.assertIn(defect.getBBox(), shouldBeFound)
+            boxesMeasured.append(defect.getBBox())
+
+        for expectedBBox in shouldBeFound:
+            self.assertIn(expectedBBox, boxesMeasured)
 
         shouldBeMissed = self.darkBBoxes[self.onlyEdges] + self.brightBBoxes[self.onlyEdges]
-        for defect in defects:
-            self.assertNotIn(defect.getBBox(), shouldBeMissed)
+        for boxMissed in shouldBeMissed:
+            self.assertNotIn(boxMissed, boxesMeasured)
 
     def test_postProcessDefectSets(self):
         """Tests the way in which the defect sets merge.
@@ -188,16 +584,21 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         for defect in defects:
             defectArea += defect.getBBox().getArea()
 
+        # The columnar code will cover blocks of a column
+        # with on-and-off pixels, thus creating more bad pixels
+        # that what initially placed in self.brightDefects and self.darkDefects.
+        # Thus, defectArea should be >= crossCheck.
         crossCheck = 0
-        for x, y, s in self.brightDefects:
-            crossCheck += s**2
-        for x, y, s in self.darkDefects:
-            crossCheck += s**2
+        for x, y, sx, sy in self.brightDefects:
+            crossCheck += sx*sy
+        for x, y, sx, sy in self.darkDefects:
+            crossCheck += sx*sy
 
         # Test the result of _nPixFromDefects()
         # via two different ways of calculating area.
         self.assertEqual(defectArea, task._nPixFromDefects(defects))
-        self.assertEqual(defectArea, crossCheck)
+        # defectArea should be >= crossCheck
+        self.assertGreaterEqual(defectArea, crossCheck)
 
     def test_getNumGoodPixels(self):
         """Test the the number of pixels in the image not masked is as expected."""
