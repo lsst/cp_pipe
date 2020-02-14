@@ -730,11 +730,11 @@ class FindDefectsTask(pipeBase.CmdLineTask):
                 limits.append(maxY)  # maximum last
                 assert len(limits)%2 == 0, 'limits is even by design, but check anyways'
                 for i in np.arange(0, len(limits)-1, 2):
-                    s = Box2I(minimum = Point2I(x0, limits[i]), maximum = Point2I(x0, limits[i+1]))
+                    s = Box2I(minimum=Point2I(x0, limits[i]), maximum=Point2I(x0, limits[i+1]))
                     if s not in defects:
                         defects.append(s)
             else:  # No gap is large enough
-                s = Box2I(minimum = Point2I(x0, minY), maximum = Point2I(x0, maxY))
+                s = Box2I(minimum=Point2I(x0, minY), maximum=Point2I(x0, maxY))
                 if s not in defects:
                     defects.append(s)
         return defects

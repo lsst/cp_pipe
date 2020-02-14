@@ -163,8 +163,8 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         """
 
         defects = self.allDefectsList
-        defects.append(Box2I(corner = Point2I(15, 1), dimensions = Extent2I(1, 50)))
-        expectedDefects = [Box2I(corner = Point2I(15, 1), dimensions = Extent2I(1, 50))]
+        defects.append(Box2I(corner=Point2I(15, 1), dimensions=Extent2I(1, 50)))
+        expectedDefects = [Box2I(corner=Point2I(15, 1), dimensions=Extent2I(1, 50))]
 
         self.check_maskBlocks(defects, expectedDefects)
 
@@ -176,9 +176,9 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         Plots can be found in DM-19903 on Jira.
         """
 
-        expectedDefects = [Box2I(corner = Point2I(20, 1), dimensions = Extent2I(1, 25))]
+        expectedDefects = [Box2I(corner=Point2I(20, 1), dimensions=Extent2I(1, 25))]
         defects = self.allDefectsList
-        defects.append(Box2I(corner = Point2I(20, 1), dimensions = Extent2I(1, 25)))
+        defects.append(Box2I(corner=Point2I(20, 1), dimensions=Extent2I(1, 25)))
 
         self.check_maskBlocks(defects, expectedDefects)
 
@@ -190,9 +190,9 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         Plots can be found in DM-19903 on Jira.
         """
 
-        expectedDefects = [Box2I(corner = Point2I(25, 1), dimensions = Extent2I(1, 8))]
+        expectedDefects = [Box2I(corner=Point2I(25, 1), dimensions=Extent2I(1, 8))]
         defects = self.allDefectsList
-        defects.append(Box2I(corner = Point2I(25, 1), dimensions = Extent2I(1, 8)))
+        defects.append(Box2I(corner=Point2I(25, 1), dimensions=Extent2I(1, 8)))
 
         self.check_maskBlocks(defects, expectedDefects)
 
@@ -205,14 +205,14 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         Plots can be found in DM-19903 on Jira.
         """
 
-        expectedDefects = [Box2I(corner = Point2I(30, 1), dimensions = Extent2I(1, 48))]
+        expectedDefects = [Box2I(corner=Point2I(30, 1), dimensions=Extent2I(1, 48))]
         defects = self.allDefectsList
-        badPixels = [Box2I(corner = Point2I(30, 1), dimensions = Extent2I(1, 2)),
-                     Box2I(corner = Point2I(30, 5), dimensions = Extent2I(1, 3)),
-                     Box2I(corner = Point2I(30, 11), dimensions = Extent2I(1, 5)),
-                     Box2I(corner = Point2I(30, 19), dimensions = Extent2I(1, 5)),
-                     Box2I(corner = Point2I(30, 27), dimensions = Extent2I(1, 4)),
-                     Box2I(corner = Point2I(30, 34), dimensions = Extent2I(1, 15))]
+        badPixels = [Box2I(corner=Point2I(30, 1), dimensions=Extent2I(1, 2)),
+                     Box2I(corner=Point2I(30, 5), dimensions=Extent2I(1, 3)),
+                     Box2I(corner=Point2I(30, 11), dimensions=Extent2I(1, 5)),
+                     Box2I(corner=Point2I(30, 19), dimensions=Extent2I(1, 5)),
+                     Box2I(corner=Point2I(30, 27), dimensions=Extent2I(1, 4)),
+                     Box2I(corner=Point2I(30, 34), dimensions=Extent2I(1, 15))]
         for badBox in badPixels:
             defects.append(badBox)
         self.check_maskBlocks(defects, expectedDefects)
@@ -226,13 +226,13 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         Plots can be found in DM-19903 on Jira.
         """
 
-        expectedDefects = [Box2I(corner = Point2I(35, 1), dimensions = Extent2I(1, 2)),
-                           Box2I(corner = Point2I(35, 5), dimensions = Extent2I(1, 3)),
-                           Box2I(corner = Point2I(35, 11), dimensions = Extent2I(1, 2))]
+        expectedDefects = [Box2I(corner=Point2I(35, 1), dimensions=Extent2I(1, 2)),
+                           Box2I(corner=Point2I(35, 5), dimensions=Extent2I(1, 3)),
+                           Box2I(corner=Point2I(35, 11), dimensions=Extent2I(1, 2))]
         defects = self.allDefectsList
-        badPixels = [Box2I(corner = Point2I(35, 1), dimensions = Extent2I(1, 2)),
-                     Box2I(corner = Point2I(35, 5), dimensions = Extent2I(1, 3)),
-                     Box2I(corner = Point2I(35, 11), dimensions = Extent2I(1, 2))]
+        badPixels = [Box2I(corner=Point2I(35, 1), dimensions=Extent2I(1, 2)),
+                     Box2I(corner=Point2I(35, 5), dimensions=Extent2I(1, 3)),
+                     Box2I(corner=Point2I(35, 11), dimensions=Extent2I(1, 2))]
         for badBox in badPixels:
             defects.append(badBox)
 
@@ -248,14 +248,14 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         Plots can be found in DM-19903 on Jira.
         """
 
-        expectedDefects = [Box2I(corner = Point2I(40, 1), dimensions = Extent2I(1, 7)),
-                           Box2I(corner = Point2I(40, 19), dimensions = Extent2I(1, 30))]
+        expectedDefects = [Box2I(corner=Point2I(40, 1), dimensions=Extent2I(1, 7)),
+                           Box2I(corner=Point2I(40, 19), dimensions=Extent2I(1, 30))]
         defects = self.allDefectsList
-        badPixels = [Box2I(corner = Point2I(40, 1), dimensions = Extent2I(1, 2)),
-                     Box2I(corner = Point2I(40, 5), dimensions = Extent2I(1, 3)),
-                     Box2I(corner = Point2I(40, 19), dimensions = Extent2I(1, 5)),
-                     Box2I(corner = Point2I(40, 27), dimensions = Extent2I(1, 4)),
-                     Box2I(corner = Point2I(40, 34), dimensions = Extent2I(1, 15))]
+        badPixels = [Box2I(corner=Point2I(40, 1), dimensions=Extent2I(1, 2)),
+                     Box2I(corner=Point2I(40, 5), dimensions=Extent2I(1, 3)),
+                     Box2I(corner=Point2I(40, 19), dimensions=Extent2I(1, 5)),
+                     Box2I(corner=Point2I(40, 27), dimensions=Extent2I(1, 4)),
+                     Box2I(corner=Point2I(40, 34), dimensions=Extent2I(1, 15))]
         for badBox in badPixels:
             defects.append(badBox)
 
@@ -272,11 +272,11 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         Plots can be found in DM-19903 on Jira.
         """
 
-        expectedDefects = [Box2I(corner = Point2I(45, 10), dimensions = Extent2I(1, 2)),
-                           Box2I(corner = Point2I(45, 30), dimensions = Extent2I(1, 3))]
+        expectedDefects = [Box2I(corner=Point2I(45, 10), dimensions=Extent2I(1, 2)),
+                           Box2I(corner=Point2I(45, 30), dimensions=Extent2I(1, 3))]
         defects = self.allDefectsList
-        badPixels = [Box2I(corner = Point2I(45, 10), dimensions = Extent2I(1, 2)),
-                     Box2I(corner = Point2I(45, 30), dimensions = Extent2I(1, 3))]
+        badPixels = [Box2I(corner=Point2I(45, 10), dimensions=Extent2I(1, 2)),
+                     Box2I(corner=Point2I(45, 30), dimensions=Extent2I(1, 3))]
         for badBox in badPixels:
             defects.append(badBox)
 
@@ -290,24 +290,24 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         Plots can be found in DM-19903 on Jira.
         """
 
-        expectedDefects = [Box2I(corner = Point2I(50, 10), dimensions = Extent2I(1, 31))]
+        expectedDefects = [Box2I(corner=Point2I(50, 10), dimensions=Extent2I(1, 31))]
         defects = self.allDefectsList
-        badPixels = [Box2I(corner = Point2I(50, 10), dimensions = Extent2I(1, 1)),
-                     Box2I(corner = Point2I(50, 12), dimensions = Extent2I(1, 1)),
-                     Box2I(corner = Point2I(50, 14), dimensions = Extent2I(1, 1)),
-                     Box2I(corner = Point2I(50, 16), dimensions = Extent2I(1, 1)),
-                     Box2I(corner = Point2I(50, 18), dimensions = Extent2I(1, 1)),
-                     Box2I(corner = Point2I(50, 20), dimensions = Extent2I(1, 1)),
-                     Box2I(corner = Point2I(50, 22), dimensions = Extent2I(1, 1)),
-                     Box2I(corner = Point2I(50, 24), dimensions = Extent2I(1, 1)),
-                     Box2I(corner = Point2I(50, 26), dimensions = Extent2I(1, 1)),
-                     Box2I(corner = Point2I(50, 28), dimensions = Extent2I(1, 1)),
-                     Box2I(corner = Point2I(50, 30), dimensions = Extent2I(1, 1)),
-                     Box2I(corner = Point2I(50, 32), dimensions = Extent2I(1, 1)),
-                     Box2I(corner = Point2I(50, 34), dimensions = Extent2I(1, 1)),
-                     Box2I(corner = Point2I(50, 36), dimensions = Extent2I(1, 1)),
-                     Box2I(corner = Point2I(50, 38), dimensions = Extent2I(1, 1)),
-                     Box2I(corner = Point2I(50, 40), dimensions = Extent2I(1, 1))]
+        badPixels = [Box2I(corner=Point2I(50, 10), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 12), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 14), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 16), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 18), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 20), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 22), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 24), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 26), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 28), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 30), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 32), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 34), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 36), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 38), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 40), dimensions=Extent2I(1, 1))]
         for badBox in badPixels:
             defects.append(badBox)
 
@@ -321,19 +321,19 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         Plots can be found in DM-19903 on Jira.
         """
 
-        expectedDefects = [Box2I(corner = Point2I(55, 20), dimensions = Extent2I(1, 1)),
-                           Box2I(corner = Point2I(55, 22), dimensions = Extent2I(1, 1)),
-                           Box2I(corner = Point2I(55, 24), dimensions = Extent2I(1, 1)),
-                           Box2I(corner = Point2I(55, 26), dimensions = Extent2I(1, 1)),
-                           Box2I(corner = Point2I(55, 28), dimensions = Extent2I(1, 1)),
-                           Box2I(corner = Point2I(55, 30), dimensions = Extent2I(1, 1))]
+        expectedDefects = [Box2I(corner=Point2I(55, 20), dimensions=Extent2I(1, 1)),
+                           Box2I(corner=Point2I(55, 22), dimensions=Extent2I(1, 1)),
+                           Box2I(corner=Point2I(55, 24), dimensions=Extent2I(1, 1)),
+                           Box2I(corner=Point2I(55, 26), dimensions=Extent2I(1, 1)),
+                           Box2I(corner=Point2I(55, 28), dimensions=Extent2I(1, 1)),
+                           Box2I(corner=Point2I(55, 30), dimensions=Extent2I(1, 1))]
         defects = self.allDefectsList
-        badPixels = [Box2I(corner = Point2I(55, 20), dimensions = Extent2I(1, 1)),
-                     Box2I(corner = Point2I(55, 22), dimensions = Extent2I(1, 1)),
-                     Box2I(corner = Point2I(55, 24), dimensions = Extent2I(1, 1)),
-                     Box2I(corner = Point2I(55, 26), dimensions = Extent2I(1, 1)),
-                     Box2I(corner = Point2I(55, 28), dimensions = Extent2I(1, 1)),
-                     Box2I(corner = Point2I(55, 30), dimensions = Extent2I(1, 1))]
+        badPixels = [Box2I(corner=Point2I(55, 20), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(55, 22), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(55, 24), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(55, 26), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(55, 28), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(55, 30), dimensions=Extent2I(1, 1))]
         for badBox in badPixels:
             defects.append(badBox)
 
@@ -348,14 +348,14 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         Plots can be found in DM-19903 on Jira.
         """
 
-        expectedDefects = [Box2I(corner = Point2I(60, 1), dimensions = Extent2I(1, 29)),
-                           Box2I(corner = Point2I(61, 2), dimensions = Extent2I(1, 12)),
-                           Box2I(corner = Point2I(62, 2), dimensions = Extent2I(1, 12))]
+        expectedDefects = [Box2I(corner=Point2I(60, 1), dimensions=Extent2I(1, 29)),
+                           Box2I(corner=Point2I(61, 2), dimensions=Extent2I(1, 12)),
+                           Box2I(corner=Point2I(62, 2), dimensions=Extent2I(1, 12))]
         defects = self.allDefectsList
-        badPixels = [Box2I(corner = Point2I(60, 1), dimensions = Extent2I(1, 18)),
-                     Box2I(corner = Point2I(60, 20), dimensions = Extent2I(1, 10)),
-                     Box2I(corner = Point2I(61, 2), dimensions = Extent2I(2, 2)),
-                     Box2I(corner = Point2I(61, 6), dimensions = Extent2I(2, 8))]
+        badPixels = [Box2I(corner=Point2I(60, 1), dimensions=Extent2I(1, 18)),
+                     Box2I(corner=Point2I(60, 20), dimensions=Extent2I(1, 10)),
+                     Box2I(corner=Point2I(61, 2), dimensions=Extent2I(2, 2)),
+                     Box2I(corner=Point2I(61, 6), dimensions=Extent2I(2, 8))]
         for badBox in badPixels:
             defects.append(badBox)
 
@@ -370,14 +370,14 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         Plots can be found in DM-19903 on Jira.
         """
 
-        expectedDefects = [Box2I(corner = Point2I(70, 1), dimensions = Extent2I(1, 29)),
-                           Box2I(corner = Point2I(68, 2), dimensions = Extent2I(1, 12)),
-                           Box2I(corner = Point2I(69, 2), dimensions = Extent2I(1, 12))]
+        expectedDefects = [Box2I(corner=Point2I(70, 1), dimensions=Extent2I(1, 29)),
+                           Box2I(corner=Point2I(68, 2), dimensions=Extent2I(1, 12)),
+                           Box2I(corner=Point2I(69, 2), dimensions=Extent2I(1, 12))]
         defects = self.allDefectsList
-        badPixels = [Box2I(corner = Point2I(70, 1), dimensions = Extent2I(1, 18)),
-                     Box2I(corner = Point2I(70, 20), dimensions = Extent2I(1, 10)),
-                     Box2I(corner = Point2I(68, 2), dimensions = Extent2I(2, 2)),
-                     Box2I(corner = Point2I(68, 6), dimensions = Extent2I(2, 8))]
+        badPixels = [Box2I(corner=Point2I(70, 1), dimensions=Extent2I(1, 18)),
+                     Box2I(corner=Point2I(70, 20), dimensions=Extent2I(1, 10)),
+                     Box2I(corner=Point2I(68, 2), dimensions=Extent2I(2, 2)),
+                     Box2I(corner=Point2I(68, 6), dimensions=Extent2I(2, 8))]
         for badBox in badPixels:
             defects.append(badBox)
 
@@ -392,18 +392,18 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         Plots can be found in DM-19903 on Jira.
         """
 
-        expectedDefects = [Box2I(corner = Point2I(75, 1), dimensions = Extent2I(1, 29)),
-                           Box2I(corner = Point2I(73, 2), dimensions = Extent2I(1, 12)),
-                           Box2I(corner = Point2I(74, 2), dimensions = Extent2I(1, 12)),
-                           Box2I(corner = Point2I(76, 2), dimensions = Extent2I(1, 12)),
-                           Box2I(corner = Point2I(77, 2), dimensions = Extent2I(1, 12))]
+        expectedDefects = [Box2I(corner=Point2I(75, 1), dimensions=Extent2I(1, 29)),
+                           Box2I(corner=Point2I(73, 2), dimensions=Extent2I(1, 12)),
+                           Box2I(corner=Point2I(74, 2), dimensions=Extent2I(1, 12)),
+                           Box2I(corner=Point2I(76, 2), dimensions=Extent2I(1, 12)),
+                           Box2I(corner=Point2I(77, 2), dimensions=Extent2I(1, 12))]
         defects = self.allDefectsList
-        badPixels = [Box2I(corner = Point2I(75, 1), dimensions = Extent2I(1, 18)),
-                     Box2I(corner = Point2I(75, 20), dimensions = Extent2I(1, 10)),
-                     Box2I(corner = Point2I(73, 2), dimensions = Extent2I(2, 2)),
-                     Box2I(corner = Point2I(73, 6), dimensions = Extent2I(2, 8)),
-                     Box2I(corner = Point2I(76, 2), dimensions = Extent2I(2, 2)),
-                     Box2I(corner = Point2I(76, 6), dimensions = Extent2I(2, 8))]
+        badPixels = [Box2I(corner=Point2I(75, 1), dimensions=Extent2I(1, 18)),
+                     Box2I(corner=Point2I(75, 20), dimensions=Extent2I(1, 10)),
+                     Box2I(corner=Point2I(73, 2), dimensions=Extent2I(2, 2)),
+                     Box2I(corner=Point2I(73, 6), dimensions=Extent2I(2, 8)),
+                     Box2I(corner=Point2I(76, 2), dimensions=Extent2I(2, 2)),
+                     Box2I(corner=Point2I(76, 6), dimensions=Extent2I(2, 8))]
         for badBox in badPixels:
             defects.append(badBox)
 
@@ -418,14 +418,14 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         Plots can be found in DM-19903 on Jira.
         """
 
-        expectedDefects = [Box2I(corner = Point2I(80, 1), dimensions = Extent2I(1, 29)),
-                           Box2I(corner = Point2I(81, 2), dimensions = Extent2I(1, 2)),
-                           Box2I(corner = Point2I(81, 8), dimensions = Extent2I(1, 8))]
+        expectedDefects = [Box2I(corner=Point2I(80, 1), dimensions=Extent2I(1, 29)),
+                           Box2I(corner=Point2I(81, 2), dimensions=Extent2I(1, 2)),
+                           Box2I(corner=Point2I(81, 8), dimensions=Extent2I(1, 8))]
         defects = self.allDefectsList
-        badPixels = [Box2I(corner = Point2I(80, 1), dimensions = Extent2I(1, 18)),
-                     Box2I(corner = Point2I(80, 20), dimensions = Extent2I(1, 10)),
-                     Box2I(corner = Point2I(81, 2), dimensions = Extent2I(2, 2)),
-                     Box2I(corner = Point2I(81, 8), dimensions = Extent2I(2, 8))]
+        badPixels = [Box2I(corner=Point2I(80, 1), dimensions=Extent2I(1, 18)),
+                     Box2I(corner=Point2I(80, 20), dimensions=Extent2I(1, 10)),
+                     Box2I(corner=Point2I(81, 2), dimensions=Extent2I(2, 2)),
+                     Box2I(corner=Point2I(81, 8), dimensions=Extent2I(2, 8))]
         for badBox in badPixels:
             defects.append(badBox)
 
@@ -440,14 +440,14 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         Plots can be found in DM-19903 on Jira.
         """
 
-        expectedDefects = [Box2I(corner = Point2I(87, 1), dimensions = Extent2I(1, 29)),
-                           Box2I(corner = Point2I(85, 2), dimensions = Extent2I(1, 2)),
-                           Box2I(corner = Point2I(85, 8), dimensions = Extent2I(1, 8))]
+        expectedDefects = [Box2I(corner=Point2I(87, 1), dimensions=Extent2I(1, 29)),
+                           Box2I(corner=Point2I(85, 2), dimensions=Extent2I(1, 2)),
+                           Box2I(corner=Point2I(85, 8), dimensions=Extent2I(1, 8))]
         defects = self.allDefectsList
-        badPixels = [Box2I(corner = Point2I(87, 1), dimensions = Extent2I(1, 18)),
-                     Box2I(corner = Point2I(87, 20), dimensions = Extent2I(1, 10)),
-                     Box2I(corner = Point2I(85, 2), dimensions = Extent2I(2, 2)),
-                     Box2I(corner = Point2I(85, 8), dimensions = Extent2I(2, 8))]
+        badPixels = [Box2I(corner=Point2I(87, 1), dimensions=Extent2I(1, 18)),
+                     Box2I(corner=Point2I(87, 20), dimensions=Extent2I(1, 10)),
+                     Box2I(corner=Point2I(85, 2), dimensions=Extent2I(2, 2)),
+                     Box2I(corner=Point2I(85, 8), dimensions=Extent2I(2, 8))]
         for badBox in badPixels:
             defects.append(badBox)
 
@@ -462,26 +462,26 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         Plots can be found in DM-19903 on Jira.
         """
 
-        expectedDefects = [Box2I(corner = Point2I(93, 1), dimensions = Extent2I(1, 34)),
-                           Box2I(corner = Point2I(91, 2), dimensions = Extent2I(1, 7)),
-                           Box2I(corner = Point2I(91, 18), dimensions = Extent2I(1, 9)),
-                           Box2I(corner = Point2I(92, 2), dimensions = Extent2I(1, 7)),
-                           Box2I(corner = Point2I(92, 18), dimensions = Extent2I(1, 9)),
-                           Box2I(corner = Point2I(94, 2), dimensions = Extent2I(1, 7)),
-                           Box2I(corner = Point2I(94, 18), dimensions = Extent2I(1, 9)),
-                           Box2I(corner = Point2I(95, 2), dimensions = Extent2I(1, 7)),
-                           Box2I(corner = Point2I(95, 18), dimensions = Extent2I(1, 9))]
+        expectedDefects = [Box2I(corner=Point2I(93, 1), dimensions=Extent2I(1, 34)),
+                           Box2I(corner=Point2I(91, 2), dimensions=Extent2I(1, 7)),
+                           Box2I(corner=Point2I(91, 18), dimensions=Extent2I(1, 9)),
+                           Box2I(corner=Point2I(92, 2), dimensions=Extent2I(1, 7)),
+                           Box2I(corner=Point2I(92, 18), dimensions=Extent2I(1, 9)),
+                           Box2I(corner=Point2I(94, 2), dimensions=Extent2I(1, 7)),
+                           Box2I(corner=Point2I(94, 18), dimensions=Extent2I(1, 9)),
+                           Box2I(corner=Point2I(95, 2), dimensions=Extent2I(1, 7)),
+                           Box2I(corner=Point2I(95, 18), dimensions=Extent2I(1, 9))]
         defects = self.allDefectsList
-        badPixels = [Box2I(corner = Point2I(93, 1), dimensions = Extent2I(1, 12)),
-                     Box2I(corner = Point2I(93, 15), dimensions = Extent2I(1, 20)),
-                     Box2I(corner = Point2I(91, 2), dimensions = Extent2I(2, 2)),
-                     Box2I(corner = Point2I(91, 7), dimensions = Extent2I(2, 2)),
-                     Box2I(corner = Point2I(94, 2), dimensions = Extent2I(2, 2)),
-                     Box2I(corner = Point2I(94, 7), dimensions = Extent2I(2, 2)),
-                     Box2I(corner = Point2I(91, 18), dimensions = Extent2I(2, 3)),
-                     Box2I(corner = Point2I(91, 24), dimensions = Extent2I(2, 3)),
-                     Box2I(corner = Point2I(94, 18), dimensions = Extent2I(2, 3)),
-                     Box2I(corner = Point2I(94, 24), dimensions = Extent2I(2, 3))]
+        badPixels = [Box2I(corner=Point2I(93, 1), dimensions=Extent2I(1, 12)),
+                     Box2I(corner=Point2I(93, 15), dimensions=Extent2I(1, 20)),
+                     Box2I(corner=Point2I(91, 2), dimensions=Extent2I(2, 2)),
+                     Box2I(corner=Point2I(91, 7), dimensions=Extent2I(2, 2)),
+                     Box2I(corner=Point2I(94, 2), dimensions=Extent2I(2, 2)),
+                     Box2I(corner=Point2I(94, 7), dimensions=Extent2I(2, 2)),
+                     Box2I(corner=Point2I(91, 18), dimensions=Extent2I(2, 3)),
+                     Box2I(corner=Point2I(91, 24), dimensions=Extent2I(2, 3)),
+                     Box2I(corner=Point2I(94, 18), dimensions=Extent2I(2, 3)),
+                     Box2I(corner=Point2I(94, 24), dimensions=Extent2I(2, 3))]
         for badBox in badPixels:
             defects.append(badBox)
 
