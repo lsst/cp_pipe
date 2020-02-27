@@ -539,11 +539,11 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         # Loop over pairs of visits
         # calculating the cross-correlations at the required level
         for (v1, v2) in visitPairs:
-            dataRef.dataId['visit'] = v1
+            dataRef.dataId['expId'] = v1
             exp1 = self.isr.runDataRef(dataRef).exposure
-            dataRef.dataId['visit'] = v2
+            dataRef.dataId['expId'] = v2
             exp2 = self.isr.runDataRef(dataRef).exposure
-            del dataRef.dataId['visit']
+            del dataRef.dataId['expId']
             checkExpLengthEqual(exp1, exp2, v1, v2, raiseWithMessage=True)
 
             self.log.info('Preparing images for cross-correlation calculation for detector %s' % detNum)
@@ -1051,9 +1051,9 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         # manipulate the dataId to get a postISR exposure for each visit
         # from the detector obj, restoring its original state afterwards
         originalDataId = dataRef.dataId.copy()
-        dataRef.dataId['visit'] = v1
+        dataRef.dataId['expId'] = v1
         exp1 = self.isr.runDataRef(dataRef).exposure
-        dataRef.dataId['visit'] = v2
+        dataRef.dataId['expId'] = v2
         exp2 = self.isr.runDataRef(dataRef).exposure
         dataRef.dataId = originalDataId
         exps = [exp1, exp2]

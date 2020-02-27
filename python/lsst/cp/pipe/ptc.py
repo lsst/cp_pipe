@@ -331,11 +331,11 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         for (v1, v2) in visitPairs:
             # Perform ISR on each exposure
-            dataRef.dataId['visit'] = v1
+            dataRef.dataId['expId'] = v1
             exp1 = self.isr.runDataRef(dataRef).exposure
-            dataRef.dataId['visit'] = v2
+            dataRef.dataId['expId'] = v2
             exp2 = self.isr.runDataRef(dataRef).exposure
-            del dataRef.dataId['visit']
+            del dataRef.dataId['expId']
 
             checkExpLengthEqual(exp1, exp2, v1, v2, raiseWithMessage=True)
             expTime = exp1.getInfo().getVisitInfo().getExposureTime()
