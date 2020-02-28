@@ -354,7 +354,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         lookupTableArray = np.zeros((numberAmps, numberAduValues), dtype=np.float32)
 
         # Fit PTC and (non)linearity of signal vs time curve, produce linearizer
-        self.fitPtcAndNonLinearity(dataset, lookupTableArray, ptcFitType=self.config.ptcFitType)
+        dataset = self.fitPtcAndNonLinearity(dataset, lookupTableArray, ptcFitType=self.config.ptcFitType)
 
         if self.config.makePlots:
             self.plot(dataRef, dataset, ptcFitType=self.config.ptcFitType)
