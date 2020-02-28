@@ -331,11 +331,11 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         for (v1, v2) in visitPairs:
             # Perform ISR on each exposure
-            dataRef.dataId['visit'] = v1
+            dataRef.dataId['expId'] = v1
             exp1 = self.isr.runDataRef(dataRef).exposure
-            dataRef.dataId['visit'] = v2
+            dataRef.dataId['expId'] = v2
             exp2 = self.isr.runDataRef(dataRef).exposure
-            del dataRef.dataId['visit']
+            del dataRef.dataId['expId']
 
             checkExpLengthEqual(exp1, exp2, v1, v2, raiseWithMessage=True)
             expTime = exp1.getInfo().getVisitInfo().getExposureTime()
@@ -353,8 +353,10 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         numberAduValues = self.config.maxAduForLookupTableLinearizer
         lookupTableArray = np.zeros((numberAmps, numberAduValues), dtype=np.float32)
 
-        # Fit PTC and (non)linearity of signal vs time curve, produce linearizer
-        self.fitPtcAndNonLinearity(dataset, lookupTableArray, ptcFitType=self.config.ptcFitType)
+        # Fit PTC and (non)linearity of signal vs time curve.
+        # Fill up PhotonTransferCurveDataset object.
+        # Fill up array for LUT linearizer.
+        dataset = self.fitPtcAndNonLinearity(dataset, lookupTableArray, ptcFitType=self.config.ptcFitType)
 
         if self.config.makePlots:
             self.plot(dataRef, dataset, ptcFitType=self.config.ptcFitType)
@@ -705,6 +707,13 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             'ASTIERAPPROXIMATION' to the PTC
         tableArray : `np.array`
             Look-up table array with size rows=nAmps and columns=ADU values
+
+        Returns
+        -------
+        dataset: `lsst.cp.pipe.ptc.PhotonTransferCurveDataset`
+            This is the same dataset as the input paramter, however, it has been modified
+            to include information such as the fit vectors and the fit parameters. See
+            the class `PhotonTransferCurveDatase`.
         """
 
         def errFunc(p, x, y):
@@ -825,7 +834,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             dataset.nonLinearityResiduals[ampName] = linResidualNonLinearity
             dataset.coefficientLinearizeSquared[ampName] = c0
 
-        return
+        return dataset
 
     def plot(self, dataRef, dataset, ptcFitType):
         dirname = dataRef.getUri(datasetType='cpPipePlotRoot', write=True)
