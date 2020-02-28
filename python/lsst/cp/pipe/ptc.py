@@ -353,7 +353,9 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         numberAduValues = self.config.maxAduForLookupTableLinearizer
         lookupTableArray = np.zeros((numberAmps, numberAduValues), dtype=np.float32)
 
-        # Fit PTC and (non)linearity of signal vs time curve, produce linearizer
+        # Fit PTC and (non)linearity of signal vs time curve.
+        # Fill up PhotonTransferCurveDataset object.
+        # Fill up array for LUT linearizer.
         dataset = self.fitPtcAndNonLinearity(dataset, lookupTableArray, ptcFitType=self.config.ptcFitType)
 
         if self.config.makePlots:
