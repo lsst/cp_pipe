@@ -705,6 +705,13 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             'ASTIERAPPROXIMATION' to the PTC
         tableArray : `np.array`
             Look-up table array with size rows=nAmps and columns=ADU values
+
+        Returns
+        -------
+        dataset: `lsst.cp.pipe.ptc.PhotonTransferCurveDataset`
+            This is the same dataset as the input paramter, however, it has been modified
+            to include information such as the fit vectors and the fit parameters. See
+            the class `PhotonTransferCurveDatase`.
         """
 
         def errFunc(p, x, y):
@@ -825,7 +832,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             dataset.nonLinearityResiduals[ampName] = linResidualNonLinearity
             dataset.coefficientLinearizeSquared[ampName] = c0
 
-        return
+        return dataset
 
     def plot(self, dataRef, dataset, ptcFitType):
         dirname = dataRef.getUri(datasetType='cpPipePlotRoot', write=True)
