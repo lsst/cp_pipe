@@ -40,6 +40,8 @@ from .utils import (NonexistentDatasetTaskDataIdContainer, PairedVisitListTaskRu
 from scipy.optimize import leastsq, least_squares
 import numpy.polynomial.polynomial as poly
 
+from lsst.ip.isr.linearize import Linearizer
+
 
 class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
     """Config class for photon transfer curve measurement task"""
@@ -98,7 +100,7 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
     polynomialFitDegreeNonLinearity = pexConfig.Field(
         dtype=int,
         doc="Degree of polynomial to fit the meanSignal vs exposureTime curve to produce" +
-        " the table for LinearizerLookupTable.",
+        " the table for LinearizeLookupTable.",
         default=3,
     )
     binSize = pexConfig.Field(
@@ -364,6 +366,16 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         # Save data, PTC fit, and NL fit dictionaries
         self.log.info(f"Writing PTC and NL data to {dataRef.getUri(write=True)}")
         dataRef.put(dataset, datasetType="photonTransferCurveDataset")
+        # Save linearizers as ecvs files
+        self.log.info(f"Writing linearizers")
+        
+        lin = Linearizer (table=lookupTableArray)
+        #llut_class = lin.getLinearityTypeByName("LookupTable")
+        #llut = llut_class() 
+        lin.writeText("hola.ecvs")
+
+        #dataRef.put(lookupTableArray, datasetType="linearizerLut") 
+        #dataRef.put(dataset.coefficientLinearizeSquared, datasetType="linearizerSquared")
 
         self.log.info('Finished measuring PTC for in detector %s' % detNum)
 
