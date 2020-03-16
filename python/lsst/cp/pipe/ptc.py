@@ -792,6 +792,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 dataset.nonLinearity[ampName] = np.nan
                 dataset.nonLinearityError[ampName] = np.nan
                 dataset.nonLinearityResiduals[ampName] = np.nan
+                dataset.coefficientLinearizeSquared[ampName] = np.nan
                 continue
 
             # Fit the PTC
