@@ -683,7 +683,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         return c0, linearizerTableRow, linResidual, parsFit, parsFitErr
 
-    def fitPtcAndNonLinearity(self, dataset, tableArray, ptcFitType):
+    def fitPtcAndNonLinearity(self, dataset, ptcFitType, tableArray=None):
         """Fit the photon transfer curve and calculate linearity and residuals.
 
         Fit the photon transfer curve with either a polynomial of the order
@@ -827,7 +827,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
              parsFitErrNonLinearity) = self.calculateLinearityResidualAndLinearizers(timeVecFinal,
                                                                                      meanVecFinal)
             # LinearizerLookupTable
-            tableArray[i, :] = linearizerTableRow
+            if tableArray is not None:
+                tableArray[i, :] = linearizerTableRow
 
             dataset.nonLinearity[ampName] = parsFitNonLinearity
             dataset.nonLinearityError[ampName] = parsFitErrNonLinearity
