@@ -204,7 +204,6 @@ class PhotonTransferCurveDataset:
         self.__dict__["nonLinearity"] = {ampName: [] for ampName in ampNames}
         self.__dict__["nonLinearityError"] = {ampName: [] for ampName in ampNames}
         self.__dict__["nonLinearityResiduals"] = {ampName: [] for ampName in ampNames}
-        self.__dict__["coefficientLinearizeSquared"] = {ampName: [] for ampName in ampNames}
 
         # final results
         self.__dict__["gain"] = {ampName: -1. for ampName in ampNames}
