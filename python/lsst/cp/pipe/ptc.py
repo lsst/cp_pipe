@@ -706,7 +706,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             Fit a 'POLYNOMIAL' (degree: 'polynomialFitDegree') or
             'ASTIERAPPROXIMATION' to the PTC
         tableArray : `np.array`
-            Look-up table array with size rows=nAmps and columns=ADU values
+            Optional. Look-up table array with size rows=nAmps and columns=ADU values.
+            It will be modified in-place if supplied.
 
         Returns
         -------
