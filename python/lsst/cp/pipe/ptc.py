@@ -369,12 +369,12 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         # Save linearizers as ecvs files
         self.log.info(f"Writing linearizers")
         
-        lin = Linearizer (table=lookupTableArray)
+        #lin = Linearizer (table=lookupTableArray)
         #llut_class = lin.getLinearityTypeByName("LookupTable")
         #llut = llut_class() 
-        lin.writeText("hola.ecvs")
+        #lin.writeText("hola.ecvs")
 
-        #dataRef.put(lookupTableArray, datasetType="linearizerLut") 
+        dataRef.put(lookupTableArray, datasetType="linearizerLut") 
         #dataRef.put(dataset.coefficientLinearizeSquared, datasetType="linearizerSquared")
 
         self.log.info('Finished measuring PTC for in detector %s' % detNum)
