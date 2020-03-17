@@ -657,8 +657,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         # Use linear part to get time at wich signal is maxAduForLookupTableLinearizer ADU
         tMax = (self.config.maxAduForLookupTableLinearizer - parsFit[0])/parsFit[1]
         timeRange = np.linspace(0, tMax, self.config.maxAduForLookupTableLinearizer)
-        signalIdeal = parsFit[0] + parsFit[1]*timeRange
-        signalUncorrected = self.funcPolynomial(parsFit, timeRange)
+        signalIdeal = (parsFit[0] + parsFit[1]*timeRange).astype(int)
+        signalUncorrected = (self.funcPolynomial(parsFit, timeRange)).astype(int)
         linearizerTableRow = signalIdeal - signalUncorrected  # LinearizerLookupTable has corrections
 
         # Use quadratic and linear part of fit to produce c0 for LinearizeSquared

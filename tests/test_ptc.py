@@ -122,7 +122,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         numberAmps = len(self.ampNames)
         numberAduValues = config.maxAduForLookupTableLinearizer
 
-        lookupTableArray = np.zeros((numberAmps, numberAduValues), dtype=np.float32)
+        lookupTableArray = np.zeros((numberAmps, numberAduValues), dtype=np.int)
         returnedDataset = task.fitPtcAndNonLinearity(localDataset, lookupTableArray, ptcFitType='POLYNOMIAL')
 
         # check that the linearizer table has been filled out properly
@@ -132,7 +132,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             signalIdeal = timeRange*self.flux
             signalUncorrected = task.funcPolynomial(np.array([0.0, self.flux, self.k2NonLinearity]),
                                                     timeRange)
-            linearizerTableRow = signalIdeal - signalUncorrected
+            linearizerTableRow = signalIdeal.astype(int) - signalUncorrected.astype(int)
             self.assertEqual(len(linearizerTableRow), len(lookupTableArray[i, :]))
             for j in np.arange(len(linearizerTableRow)):
                 self.assertAlmostEqual(linearizerTableRow[j], lookupTableArray[i, :][j], places=6)
@@ -201,10 +201,22 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
         numberAmps = len(self.ampNames)
         numberAduValues = config.maxAduForLookupTableLinearizer
-        lookupTableArray = np.zeros((numberAmps, numberAduValues), dtype=np.float32)
+        lookupTableArray = np.zeros((numberAmps, numberAduValues), dtype=np.int)
 
         returnedDataset = task.fitPtcAndNonLinearity(localDataset, lookupTableArray,
                                                      ptcFitType='ASTIERAPPROXIMATION')
+
+        # check that the linearizer table has been filled out properly
+        for i in np.arange(numberAmps):
+            tMax = (config.maxAduForLookupTableLinearizer)/self.flux
+            timeRange = np.linspace(0., tMax, config.maxAduForLookupTableLinearizer)
+            signalIdeal = timeRange*self.flux
+            signalUncorrected = task.funcPolynomial(np.array([0.0, self.flux, self.k2NonLinearity]),
+                                                    timeRange)
+            linearizerTableRow = signalIdeal.astype(int) - signalUncorrected.astype(int)
+            self.assertEqual(len(linearizerTableRow), len(lookupTableArray[i, :]))
+            for j in np.arange(len(linearizerTableRow)):
+                self.assertAlmostEqual(linearizerTableRow[j], lookupTableArray[i, :][j], places=6)
 
         # check entries in localDataset, which was modified by the function
         for ampName in self.ampNames:
