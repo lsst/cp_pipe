@@ -78,9 +78,13 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         self.flatExp2.image.array[:] = flatData2
 
         # create fake PTC data to see if fit works, for one amp ('amp')
-        flux = 1000  # ADU/sec
+        self.flux = 1000  # ADU/sec
         timeVec = np.arange(1., 201.)
-        muVec = flux*timeVec  # implies that signal-chain non-linearity is zero
+        self.k2NonLinearity = -5e-6
+        muVec = self.flux*timeVec + self.k2NonLinearity*timeVec**2   # quadratic signal-chain non-linearity
+        # Assumes parameter linResidualTimeIndex = 2 (default) in PTC task
+        self.inputNonLinearityResiduals = 100*(1 - ((muVec[2]/timeVec[2])/(muVec/timeVec)))
+
         self.gain = 1.5  # e-/ADU
         self.c1 = 1./self.gain
         self.noiseSq = 5*self.gain  # 7.5 (e-)^2
@@ -95,22 +99,43 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             self.dataset.rawExpTimes[ampName] = timeVec
             self.dataset.rawMeans[ampName] = muVec
 
-    def test_ptcFitQuad(self):
+    def ptcFitQuadAndCubic(self, order):
         localDataset = copy.copy(self.dataset)
-        for ampName in self.ampNames:
-            localDataset.rawVars[ampName] = [self.noiseSq + self.c1*mu + self.c2*mu**2 for
-                                             mu in localDataset.rawMeans[ampName]]
-
         config = copy.copy(self.defaultConfig)
-        config.polynomialFitDegree = 2
+        if order not in [2, 3]:
+            RuntimeError("Enter a valid polynomial order for this test: 2 or 3")
+        if order == 2:
+            for ampName in self.ampNames:
+                localDataset.rawVars[ampName] = [self.noiseSq + self.c1*mu + self.c2*mu**2 for
+                                                 mu in localDataset.rawMeans[ampName]]
+            config.polynomialFitDegree = 2
+        if order == 3:
+            for ampName in self.ampNames:
+                localDataset.rawVars[ampName] = [self.noiseSq + self.c1*mu + self.c2*mu**2 + self.c3*mu**3 for
+                                                 mu in localDataset.rawMeans[ampName]]
+            config.polynomialFitDegree = 3
+
+        config.maxAduForLookupTableLinearizer = 200000  # Max ADU in input mock flats
         task = cpPipe.ptc.MeasurePhotonTransferCurveTask(config=config)
 
 
         numberAmps = len(self.ampNames)
         numberAduValues = config.maxAduForLookupTableLinearizer
-        lookupTableArray = np.zeros((numberAmps, numberAduValues), dtype=np.float32)
 
+        lookupTableArray = np.zeros((numberAmps, numberAduValues), dtype=np.float32)
         returnedDataset = task.fitPtcAndNonLinearity(localDataset, lookupTableArray, ptcFitType='POLYNOMIAL')
+
+        # check that the linearizer table has been filled out properly
+        for i in np.arange(numberAmps):
+            tMax = (config.maxAduForLookupTableLinearizer)/self.flux
+            timeRange = np.linspace(0., tMax, config.maxAduForLookupTableLinearizer)
+            signalIdeal = timeRange*self.flux
+            signalUncorrected = task.funcPolynomial(np.array([0.0, self.flux, self.k2NonLinearity]),
+                                                    timeRange)
+            linearizerTableRow = signalIdeal - signalUncorrected
+            self.assertEqual(len(linearizerTableRow), len(lookupTableArray[i, :]))
+            for j in np.arange(len(linearizerTableRow)):
+                self.assertAlmostEqual(linearizerTableRow[j], lookupTableArray[i, :][j], places=6)
 
         # check entries in localDataset, which was modified by the function
         for ampName in self.ampNames:
@@ -118,60 +143,51 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             self.assertAlmostEqual(self.c1, localDataset.ptcFitPars[ampName][1])
             self.assertAlmostEqual(self.gain, localDataset.gain[ampName])
             self.assertAlmostEqual(np.sqrt(self.noiseSq)*self.gain, localDataset.noise[ampName])
-            # Non-linearity coefficient should be consistent with zero
-            self.assertAlmostEqual(0.0, localDataset.coefficientLinearizeSquared[ampName])
-            # Linearity residual should be zero
-            self.assertTrue(localDataset.nonLinearityResiduals[ampName].all() == 0)
 
-        # check entries in returned dataset (shoudl be the same as localDataset after calling the funciton)
+            # Nonlinearity fit parameters
+            self.assertAlmostEqual(0.0, localDataset.nonLinearity[ampName][0])
+            self.assertAlmostEqual(self.flux, localDataset.nonLinearity[ampName][1])
+            self.assertAlmostEqual(self.k2NonLinearity, localDataset.nonLinearity[ampName][2])
+
+            # Non-linearity coefficient for linearizer
+            self.assertAlmostEqual(-self.k2NonLinearity/(self.flux**2),
+                                   localDataset.coefficientLinearizeSquared[ampName])
+
+            # Linearity residuals
+            self.assertEqual(len(localDataset.nonLinearityResiduals[ampName]),
+                             len(self.inputNonLinearityResiduals[localDataset.visitMask[ampName]]))
+
+            for i in np.arange(len(localDataset.nonLinearityResiduals[ampName])):
+                self.assertAlmostEqual(localDataset.nonLinearityResiduals[ampName][i],
+                                       self.inputNonLinearityResiduals[i])
+
+        # check entries in returned dataset (should be the same as localDataset after calling the funciton)
         for ampName in self.ampNames:
             self.assertAlmostEqual('POLYNOMIAL', returnedDataset.ptcFitType[ampName])
             self.assertAlmostEqual(self.c1, returnedDataset.ptcFitPars[ampName][1])
             self.assertAlmostEqual(self.gain, returnedDataset.gain[ampName])
             self.assertAlmostEqual(np.sqrt(self.noiseSq)*self.gain, returnedDataset.noise[ampName])
-            # Non-linearity coefficient should be consistent with zero
-            self.assertAlmostEqual(0.0, returnedDataset.coefficientLinearizeSquared[ampName])
-            # Linearity residual should be zero
-            self.assertTrue(returnedDataset.nonLinearityResiduals[ampName].all() == 0)
 
-    def test_ptcFitCubic(self):
-        localDataset = copy.copy(self.dataset)
-        for ampName in self.ampNames:
-            localDataset.rawVars[ampName] = [self.noiseSq + self.c1*mu + self.c2*mu**2 + self.c3*mu**3 for
-                                             mu in localDataset.rawMeans[ampName]]
+            # Nonlinearity fit parameters
+            self.assertAlmostEqual(0.0, localDataset.nonLinearity[ampName][0])
+            self.assertAlmostEqual(self.flux, localDataset.nonLinearity[ampName][1])
+            self.assertAlmostEqual(self.k2NonLinearity, localDataset.nonLinearity[ampName][2])
 
-        config = copy.copy(self.defaultConfig)
-        config.polynomialFitDegree = 3
+            # Non-linearity coefficient for linearizer
+            self.assertAlmostEqual(-self.k2NonLinearity/(self.flux**2),
+                                   localDataset.coefficientLinearizeSquared[ampName])
 
-        task = cpPipe.ptc.MeasurePhotonTransferCurveTask(config=config)
+            # Linearity residuals
+            self.assertEqual(len(localDataset.nonLinearityResiduals[ampName]),
+                             len(self.inputNonLinearityResiduals[localDataset.visitMask[ampName]]))
 
-        numberAmps = len(self.ampNames)
-        numberAduValues = config.maxAduForLookupTableLinearizer
-        lookupTableArray = np.zeros((numberAmps, numberAduValues), dtype=np.float32)
+            for i in np.arange(len(localDataset.nonLinearityResiduals[ampName])):
+                self.assertAlmostEqual(localDataset.nonLinearityResiduals[ampName][i],
+                                       self.inputNonLinearityResiduals[i])
 
-        returnedDataset = task.fitPtcAndNonLinearity(localDataset, lookupTableArray, ptcFitType='POLYNOMIAL')
-
-        # check entries in localDataset, which was modified by the function
-        for ampName in self.ampNames:
-            self.assertAlmostEqual('POLYNOMIAL', localDataset.ptcFitType[ampName])
-            self.assertAlmostEqual(self.c1, localDataset.ptcFitPars[ampName][1])
-            self.assertAlmostEqual(self.gain, localDataset.gain[ampName])
-            self.assertAlmostEqual(np.sqrt(self.noiseSq)*self.gain, localDataset.noise[ampName])
-            # Non-linearity coefficient should be consistent with zero
-            self.assertAlmostEqual(0.0, localDataset.coefficientLinearizeSquared[ampName])
-            # Linearity residual should be zero
-            self.assertTrue(localDataset.nonLinearityResiduals[ampName].all() == 0)
-
-        # check entries in returned dataset (shoudl be the same as localDataset after calling the funciton)
-        for ampName in self.ampNames:
-            self.assertAlmostEqual('POLYNOMIAL', returnedDataset.ptcFitType[ampName])
-            self.assertAlmostEqual(self.c1, returnedDataset.ptcFitPars[ampName][1])
-            self.assertAlmostEqual(self.gain, returnedDataset.gain[ampName])
-            self.assertAlmostEqual(np.sqrt(self.noiseSq)*self.gain, returnedDataset.noise[ampName])
-            # Non-linearity coefficient should be consistent with zero
-            self.assertAlmostEqual(0.0, returnedDataset.coefficientLinearizeSquared[ampName])
-            # Linearity residual should be zero
-            self.assertTrue(returnedDataset.nonLinearityResiduals[ampName].all() == 0)
+    def test_ptcFitQuadAndCubic(self):
+        for order in [2, 3]:
+            self.ptcFitQuadAndCubic(order)
 
     def test_ptcFitAstier(self):
         localDataset = copy.copy(self.dataset)
@@ -195,24 +211,48 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             self.assertAlmostEqual('ASTIERAPPROXIMATION', localDataset.ptcFitType[ampName])
             self.assertAlmostEqual(self.a00, localDataset.ptcFitPars[ampName][0])
             self.assertAlmostEqual(self.gain, localDataset.gain[ampName])
-            #  noise already comes out of the fit in electrons with Astier
             self.assertAlmostEqual(np.sqrt(self.noiseSq), localDataset.noise[ampName])
-            # Non-linearity coefficient should be consistent with zero
-            self.assertAlmostEqual(0.0, localDataset.coefficientLinearizeSquared[ampName])
-            # Linearity residual should be zero
-            self.assertTrue(localDataset.nonLinearityResiduals[ampName].all() == 0)
 
-        # check entries in returned dataset (shoudl be the same as localDataset after calling the funciton)
+            # Nonlinearity fit parameters
+            self.assertAlmostEqual(0.0, localDataset.nonLinearity[ampName][0])
+            self.assertAlmostEqual(self.flux, localDataset.nonLinearity[ampName][1])
+            self.assertAlmostEqual(self.k2NonLinearity, localDataset.nonLinearity[ampName][2])
+
+            # Non-linearity coefficient for linearizer
+            self.assertAlmostEqual(-self.k2NonLinearity/(self.flux**2),
+                                   localDataset.coefficientLinearizeSquared[ampName])
+
+            # Linearity residuals
+            self.assertEqual(len(localDataset.nonLinearityResiduals[ampName]),
+                             len(self.inputNonLinearityResiduals[localDataset.visitMask[ampName]]))
+
+            for i in np.arange(len(localDataset.nonLinearityResiduals[ampName])):
+                self.assertAlmostEqual(localDataset.nonLinearityResiduals[ampName][i],
+                                       self.inputNonLinearityResiduals[i])
+
+        # check entries in returned dataset (should be the same as localDataset after calling the funciton)
         for ampName in self.ampNames:
             self.assertAlmostEqual('ASTIERAPPROXIMATION', returnedDataset.ptcFitType[ampName])
             self.assertAlmostEqual(self.a00, returnedDataset.ptcFitPars[ampName][0])
             self.assertAlmostEqual(self.gain, returnedDataset.gain[ampName])
-            #  noise already comes out of the fit in electrons with Astier
             self.assertAlmostEqual(np.sqrt(self.noiseSq), returnedDataset.noise[ampName])
-            # Non-linearity coefficient should be consistent with zero
-            self.assertAlmostEqual(0.0, returnedDataset.coefficientLinearizeSquared[ampName])
-            # Linearity residual should be zero
-            self.assertTrue(returnedDataset.nonLinearityResiduals[ampName].all() == 0)
+
+            # Nonlinearity fit parameters
+            self.assertAlmostEqual(0.0, localDataset.nonLinearity[ampName][0])
+            self.assertAlmostEqual(self.flux, localDataset.nonLinearity[ampName][1])
+            self.assertAlmostEqual(self.k2NonLinearity, localDataset.nonLinearity[ampName][2])
+
+            # Non-linearity coefficient for linearizer
+            self.assertAlmostEqual(-self.k2NonLinearity/(self.flux**2),
+                                   localDataset.coefficientLinearizeSquared[ampName])
+
+            # Linearity residuals
+            self.assertEqual(len(localDataset.nonLinearityResiduals[ampName]),
+                             len(self.inputNonLinearityResiduals[localDataset.visitMask[ampName]]))
+
+            for i in np.arange(len(localDataset.nonLinearityResiduals[ampName])):
+                self.assertAlmostEqual(localDataset.nonLinearityResiduals[ampName][i],
+                                       self.inputNonLinearityResiduals[i])
 
     def test_meanVarMeasurement(self):
         task = self.defaultTask
