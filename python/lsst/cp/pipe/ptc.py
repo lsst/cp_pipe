@@ -41,6 +41,7 @@ from scipy.optimize import leastsq, least_squares
 import numpy.polynomial.polynomial as poly
 
 from lsst.ip.isr.linearize import Linearizer
+import datetime
 
 
 class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
@@ -352,7 +353,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         numberAmps = len(detector.getAmplifiers())
         numberAduValues = self.config.maxAduForLookupTableLinearizer
-        lookupTableArray = np.zeros((numberAmps, numberAduValues), dtype=np.float32)
+        lookupTableArray = np.zeros((numberAmps, numberAduValues), dtype=np.int)
 
         # Fit PTC and (non)linearity of signal vs time curve.
         # Fill up PhotonTransferCurveDataset object.
@@ -366,16 +367,23 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         # Save data, PTC fit, and NL fit dictionaries
         self.log.info(f"Writing PTC and NL data to {dataRef.getUri(write=True)}")
         dataRef.put(dataset, datasetType="photonTransferCurveDataset")
-        # Save linearizers as ecvs files
-        self.log.info(f"Writing linearizers")
-        
-        #lin = Linearizer (table=lookupTableArray)
-        #llut_class = lin.getLinearityTypeByName("LookupTable")
-        #llut = llut_class() 
-        #lin.writeText("hola.ecvs")
 
-        dataRef.put(lookupTableArray, datasetType="linearizerLut") 
-        #dataRef.put(dataset.coefficientLinearizeSquared, datasetType="linearizerSquared")
+        self.log.info(f"Writing linearizers")
+
+        linearizerLut = Linearizer(table=lookupTableArray)
+        for i, amp in enumerate(detector.getAmplifiers()):
+            ampName = amp.getName()
+            linearizerLut.linearityCoeffs[ampName] = [i, 0]
+            linearizerLut.linearityType[ampName] = "LookupTable"
+            linearizerLut.linearityBBox[ampName] = amp.getBBox()
+        linearizerLut.validate()
+
+        now = datetime.datetime.utcnow()
+        butler = dataRef.getButler()
+        butler.put(lookupTableArray, datasetType='linearityTable', dataId={'detector': detNum,
+                   'calibDate': now.strftime("%Y-%m-%d")})
+        butler.put(linearizerLut.toDict(), datasetType='linearizerLut', dataId={'detector': detNum,
+                   'calibDate': now.strftime("%Y-%m-%d")})
 
         self.log.info('Finished measuring PTC for in detector %s' % detNum)
 
