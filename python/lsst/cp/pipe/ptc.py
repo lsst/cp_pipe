@@ -377,7 +377,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             linearizerLut.linearityType[ampName] = "LookupTable"
             linearizerLut.linearityBBox[ampName] = amp.getBBox()
         linearizerLut.validate()
-
+        linearizer.updateMetadata (instrumentName='LATISS', detectorName = detector.getName(), calibId =
+                "lookuptable")
         now = datetime.datetime.utcnow()
         butler = dataRef.getButler()
         butler.put(lookupTableArray, datasetType='linearityTable', dataId={'detector': detNum,
