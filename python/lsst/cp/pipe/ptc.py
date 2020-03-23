@@ -371,18 +371,30 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         self.log.info(f"Writing linearizers")
 
         linearizerLut = Linearizer(table=lookupTableArray)
+        
         for i, amp in enumerate(detector.getAmplifiers()):
             ampName = amp.getName()
             linearizerLut.linearityCoeffs[ampName] = [i, 0]
             linearizerLut.linearityType[ampName] = "LookupTable"
             linearizerLut.linearityBBox[ampName] = amp.getBBox()
+        
         linearizerLut.validate()
-        linearizer.updateMetadata (instrumentName='LATISS', detectorName = detector.getName(), calibId =
-                "lookuptable")
+        linearizerLut.setMetadata()
+        date = datetime.datetime.now().isoformat() 
+        detName = detector.getName()
+        calibId = f"detectorName={detName} detector={detNum} calibDate={date} ccd={detNum}"
+        try:
+            raftname = detname.split("_")[0]
+            calibId += f" raftName={raftName}"
+        except Exception:
+            pass
+
+        linearizerLut.updateMetadata (instrumentName='LATISS', detectorNumber = f"{detNum}", calibId =
+                calibId)
         now = datetime.datetime.utcnow()
         butler = dataRef.getButler()
-        butler.put(lookupTableArray, datasetType='linearityTable', dataId={'detector': detNum,
-                   'calibDate': now.strftime("%Y-%m-%d")})
+        #butler.put(lookupTableArray, datasetType='linearityTable' ) #, dataId={'detector': detNum,
+                   #'calibDate': now.strftime("%Y-%m-%d")})
         butler.put(linearizerLut.toDict(), datasetType='linearizerLut', dataId={'detector': detNum,
                    'calibDate': now.strftime("%Y-%m-%d")})
 
