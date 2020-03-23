@@ -105,11 +105,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         config.polynomialFitDegree = 2
         task = cpPipe.ptc.MeasurePhotonTransferCurveTask(config=config)
 
-        numberAmps = len(self.ampNames)
-        numberAduValues = config.maxAduForLookupTableLinearizer
-        lookupTableArray = np.zeros((numberAmps, numberAduValues), dtype=np.float32)
-
-        task.fitPtcAndNonLinearity(localDataset, lookupTableArray, ptcFitType='POLYNOMIAL')
+        task.fitPtcAndNonLinearity(localDataset, ptcFitType='POLYNOMIAL')
 
         for ampName in self.ampNames:
             self.assertAlmostEqual(self.gain, localDataset.gain[ampName])
@@ -128,11 +124,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
         task = cpPipe.ptc.MeasurePhotonTransferCurveTask(config=config)
 
-        numberAmps = len(self.ampNames)
-        numberAduValues = config.maxAduForLookupTableLinearizer
-        lookupTableArray = np.zeros((numberAmps, numberAduValues), dtype=np.float32)
-
-        task.fitPtcAndNonLinearity(localDataset, lookupTableArray, ptcFitType='POLYNOMIAL')
+        task.fitPtcAndNonLinearity(localDataset, ptcFitType='POLYNOMIAL')
 
         for ampName in self.ampNames:
             self.assertAlmostEqual(self.gain, localDataset.gain[ampName])
@@ -150,11 +142,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         config = copy.copy(self.defaultConfig)
         task = cpPipe.ptc.MeasurePhotonTransferCurveTask(config=config)
 
-        numberAmps = len(self.ampNames)
-        numberAduValues = config.maxAduForLookupTableLinearizer
-        lookupTableArray = np.zeros((numberAmps, numberAduValues), dtype=np.float32)
-
-        task.fitPtcAndNonLinearity(localDataset, lookupTableArray, ptcFitType='ASTIERAPPROXIMATION')
+        task.fitPtcAndNonLinearity(localDataset, ptcFitType='ASTIERAPPROXIMATION')
 
         for ampName in self.ampNames:
             self.assertAlmostEqual(self.gain, localDataset.gain[ampName])
