@@ -164,6 +164,11 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
         doc="Maximum ADU value for the LookupTable linearizer.",
         default=2**18,
     )
+    instrumentName = pexConfig.Field(
+        dtype=str,
+        doc="Instrument name.",
+        default='',
+    )
 
 
 class PhotonTransferCurveDataset:
@@ -370,18 +375,73 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         self.log.info(f"Writing linearizers")
 
-        linearizerLut = Linearizer(table=lookupTableArray)
+        detName = detector.getName()
+        now = datetime.datetime.utcnow()
+        butler = dataRef.getButler()
+
+        linearizerLut = self.buildLinearizerObject(dataset, detName, detNum,
+                                                   instruName=self.config.instrumentName,
+                                                   linearizerType="LOOKUPTABLE", tableArray=lookupTableArray)
+        butler.put(linearizerLut.toDict(), datasetType='linearizerLut', dataId={'detector': detNum,
+                   'calibDate': now.strftime("%Y-%m-%d")})
         
+        linearizerSq = self.buildLinearizerObject (dataset, detName, detNum, 
+                                                   instruName=self.config.instrumentName,
+                                                   linearizerType="LINEARIZESQUARED")
+        butler.put(linearizerSq.toDict(), datasetType='linearizerSquared', dataId={'detector': detNum,
+                   'calibDate': now.strftime("%Y-%m-%d")})
+
+        self.log.info('Finished measuring PTC for in detector %s' % detNum)
+
+        return pipeBase.Struct(exitStatus=0)
+
+    def buildLinearizerObject(self, dataset, detName, detNum, instruName='', linearizerType='', tableArray=None):
+        """Build linearizer object to persist.
+
+        Parameters
+        ----------
+        dataset : `lsst.cp.pipe.ptc.PhotonTransferCurveDataset`
+            The dataset containing the means, variances and exposure times
+        detName : `srt`
+            Detector name
+        detNum : `int`
+            Detector number
+        instruName : `str`, optional
+            Instrument name
+        linearizerType : `str`, optional
+            'LOOKUPTABLE' or 'LINEARIZESQUARED'
+        tableArray : `np.array`, optional 
+            Look-up table array with size rows=nAmps and columns=ADU values
+
+        Returns
+        -------
+        linearizer : `lsst.ip.isr.Linearizer`
+            Linearizer object
+        """
+        if linearizerType == 'LOOKUPTABLE':
+            if not tableArray == None: 
+                linearizer = Linearizer(table=lookupTableArray)
+            else: 
+                raise RuntimeError("tableArray must be provided when creating a LookupTable linearizer")
+        elif linearizerType == 'LINEARIZESQUARED':
+            linearizer = Linearizer()
+        else: 
+            raise RuntimeError("Enter supporter linearizerType to build a Linearizer object: "+
+                               'LOOKUPTABLE' or 'LINEARIZESQUARED')
+
         for i, amp in enumerate(detector.getAmplifiers()):
             ampName = amp.getName()
-            linearizerLut.linearityCoeffs[ampName] = [i, 0]
-            linearizerLut.linearityType[ampName] = "LookupTable"
-            linearizerLut.linearityBBox[ampName] = amp.getBBox()
+            if linearizerType == 'LOOKUPTABLE':
+                linearizer.linearityCoeffs[ampName] = [i, 0]
+                linearizer.linearityType[ampName] = "LookupTable"
+            if linearizerType == 'LINEARIZESQUARED':
+                linearizerQuad.linearityCoeffs = dataset.coefficientLinearizeSquared[amp]
+                linearizer.linearityType[ampName] = "LinearizeSquared"
+            linearizer.linearityBBox[ampName] = amp.getBBox()
         
-        linearizerLut.validate()
-        linearizerLut.setMetadata()
+        linearizer.validate()
+        linearizer.setMetadata()
         date = datetime.datetime.now().isoformat() 
-        detName = detector.getName()
         calibId = f"detectorName={detName} detector={detNum} calibDate={date} ccd={detNum}"
         try:
             raftname = detname.split("_")[0]
@@ -389,18 +449,11 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         except Exception:
             pass
 
-        linearizerLut.updateMetadata (instrumentName='LATISS', detectorNumber = f"{detNum}", calibId =
+        linearizer.updateMetadata (instrumentName=instruName, detectorNumber = f"{detNum}", calibId =
                 calibId)
-        now = datetime.datetime.utcnow()
-        butler = dataRef.getButler()
-        #butler.put(lookupTableArray, datasetType='linearityTable' ) #, dataId={'detector': detNum,
-                   #'calibDate': now.strftime("%Y-%m-%d")})
-        butler.put(linearizerLut.toDict(), datasetType='linearizerLut', dataId={'detector': detNum,
-                   'calibDate': now.strftime("%Y-%m-%d")})
 
-        self.log.info('Finished measuring PTC for in detector %s' % detNum)
+        return linearizer
 
-        return pipeBase.Struct(exitStatus=0)
 
     def measureMeanVarPair(self, exposure1, exposure2, region=None):
         """Calculate the mean signal of two exposures and the variance of their difference.
