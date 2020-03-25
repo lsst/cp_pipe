@@ -379,23 +379,23 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         now = datetime.datetime.utcnow()
         butler = dataRef.getButler()
 
-        linearizerLut = self.buildLinearizerObject(dataset, detName, detNum,
+        linearizerLut = self.buildLinearizerObject(dataset, detName, detNum, detector,
                                                    instruName=self.config.instrumentName,
                                                    linearizerType="LOOKUPTABLE", tableArray=lookupTableArray)
-        butler.put(linearizerLut.toDict(), datasetType='linearizerLut', dataId={'detector': detNum,
+        butler.put(linearizerLut.toDict(), datasetType='linearizeLut', dataId={'detector': detNum,
                    'calibDate': now.strftime("%Y-%m-%d")})
         
-        linearizerSq = self.buildLinearizerObject (dataset, detName, detNum, 
+        linearizerSq = self.buildLinearizerObject (dataset, detName, detNum, detector,
                                                    instruName=self.config.instrumentName,
                                                    linearizerType="LINEARIZESQUARED")
-        butler.put(linearizerSq.toDict(), datasetType='linearizerSquared', dataId={'detector': detNum,
+        butler.put(linearizerSq.toDict(), datasetType='linearizeSquared', dataId={'detector': detNum,
                    'calibDate': now.strftime("%Y-%m-%d")})
 
         self.log.info('Finished measuring PTC for in detector %s' % detNum)
 
         return pipeBase.Struct(exitStatus=0)
 
-    def buildLinearizerObject(self, dataset, detName, detNum, instruName='', linearizerType='', tableArray=None):
+    def buildLinearizerObject(self, dataset, detName, detNum, detector, instruName='', linearizerType='', tableArray=None):
         """Build linearizer object to persist.
 
         Parameters
@@ -406,6 +406,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             Detector name
         detNum : `int`
             Detector number
+        detector : `lsst.afw.cameraGeom.detector.detector.Detector` 
+            Detector object 
         instruName : `str`, optional
             Instrument name
         linearizerType : `str`, optional
@@ -419,8 +421,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             Linearizer object
         """
         if linearizerType == 'LOOKUPTABLE':
-            if not tableArray == None: 
-                linearizer = Linearizer(table=lookupTableArray)
+            if tableArray is not None: 
+                linearizer = Linearizer(table=tableArray)
             else: 
                 raise RuntimeError("tableArray must be provided when creating a LookupTable linearizer")
         elif linearizerType == 'LINEARIZESQUARED':
@@ -435,22 +437,23 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 linearizer.linearityCoeffs[ampName] = [i, 0]
                 linearizer.linearityType[ampName] = "LookupTable"
             if linearizerType == 'LINEARIZESQUARED':
-                linearizerQuad.linearityCoeffs = dataset.coefficientLinearizeSquared[amp]
-                linearizer.linearityType[ampName] = "LinearizeSquared"
+                linearizer.linearityCoeffs[ampName] = [dataset.coefficientLinearizeSquared[ampName]]
+                linearizer.linearityType[ampName] = "Squared"
             linearizer.linearityBBox[ampName] = amp.getBBox()
         
         linearizer.validate()
         linearizer.setMetadata()
-        date = datetime.datetime.now().isoformat() 
+        date = datetime.datetime.now().isoformat()
         calibId = f"detectorName={detName} detector={detNum} calibDate={date} ccd={detNum}"
         try:
-            raftname = detname.split("_")[0]
+            raftname = detName.split("_")[0]
             calibId += f" raftName={raftName}"
         except Exception:
             pass
-
+        
+        serial = detector.getSerial() 
         linearizer.updateMetadata (instrumentName=instruName, detectorNumber = f"{detNum}", calibId =
-                calibId)
+                calibId, serial=serial)
 
         return linearizer
 
