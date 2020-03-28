@@ -394,16 +394,17 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
             linearizer = self.buildLinearizerObject(dataset, detName, detNum, detector,
                                                     instruName=self.config.instrumentName,
-                                                    linearizerType=linType, tableArray=tableArray)
+                                                    linearizerType=linType, tableArray=tableArray,
+                                                    log=self.log)
             butler.put(linearizer.toDict(), datasetType=dataType, dataId={'detector': detNum,
-                       'calibDate': now.strftime("%Y-%m-%d")})
+                       'detectorName': detName, 'calibDate': now.strftime("%Y-%m-%d")})
 
         self.log.info('Finished measuring PTC for in detector %s' % detNum)
 
         return pipeBase.Struct(exitStatus=0)
 
     def buildLinearizerObject(self, dataset, detName, detNum, detector, instruName='', linearizerType='',
-                              tableArray=None, filt='NONE'):
+                              tableArray=None, filt='NONE', log=None):
         """Build linearizer object to persist.
 
         Parameters
@@ -423,6 +424,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         tableArray : `np.array`, optional
             Look-up table array with size rows=nAmps and columns=ADU values
         filt : filter, `str`, optional
+        log : `lsst.log.Log`, optional
+            Logger to handle messages
 
         Returns
         -------
@@ -431,11 +434,11 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         """
         if linearizerType == 'LOOKUPTABLE':
             if tableArray is not None:
-                linearizer = Linearizer(table=tableArray)
+                linearizer = Linearizer(table=tableArray, log=log)
             else:
                 raise RuntimeError("tableArray must be provided when creating a LookupTable linearizer")
         elif linearizerType in ['LINEARIZESQUARED', 'LINEARIZEPOLYNOMIAL']:
-            linearizer = Linearizer()
+            linearizer = Linearizer(log=log)
         else:
             raise RuntimeError("Enter supporter linearizerType to build a Linearizer object: " +
                                "'LOOKUPTABLE', 'LINEARIZESQUARED', or 'LINEARIZEPOLYNOMIAL'")
@@ -464,8 +467,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             calibId += f" raftName={raftname}"
 
         serial = detector.getSerial()
-        linearizer.updateMetadata(instrumentName=instruName, detectorNumber=f"{detNum}",
-                                  calibId=calibId, serial=serial)
+        linearizer.updateMetadata(instrumentName=instruName, detectorId=f"{detNum}",
+                                  calibId=calibId, serial=serial, detectorName=f"{detName}")
 
         return linearizer
 
@@ -528,7 +531,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         optimize.leastsq returns the fractional covariance matrix. To estimate the
         standard deviation of the fit parameters, multiply the entries of this matrix
-        by the reduced chi squared and take the square root of the diagonal elements.
+        by the unweighted reduced chi squared and take the square root of the diagonal elements.
 
         Parameters
         ----------
@@ -554,7 +557,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             List with errors for fitted parameters.
 
         reducedChiSqSingleLeastSquares : `np.float`
-            Reduced chi squared
+            Unweighted reduced chi squared
         """
 
         def errFunc(p, x, y):
@@ -971,8 +974,11 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             dataset.nonLinearity[ampName] = parsFitNonLinearity
             dataset.nonLinearityError[ampName] = parsFitErrNonLinearity
             dataset.nonLinearityResiduals[ampName] = linResidualNonLinearity
-            dataset.nonLinearityRducedChiSquared[ampName] = reducedChiSqNonLinearity
-            dataset.coefficientsLinearizePolynomial[ampName] = coeffsLinPoly
+            dataset.nonLinearityReducedChiSquared[ampName] = reducedChiSqNonLinearity
+            # Slice correction coefficients (starting at 2) for polynomial linearizer. The first
+            # and second are reduntant  with the bias and gain, respectively,
+            # and are not used by LinearizerPolynomial.
+            dataset.coefficientsLinearizePolynomial[ampName] = coeffsLinPoly[2:]
             dataset.coefficientLinearizeSquared[ampName] = c0
 
         return dataset
@@ -991,17 +997,18 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
     def _plotPtc(self, dataset, ptcFitType, pdfPages):
         """Plot PTC, linearity, and linearity residual per amplifier"""
 
+        reducedChiSqPtc = dataset.ptcFitReducedChiSquared
         if ptcFitType == 'ASTIERAPPROXIMATION':
             ptcFunc = self.funcAstier
-            stringTitle = r"Var = $\frac{1}{2g^2a_{00}}(\exp (2a_{00} \mu g) - 1) + \frac{n_{00}}{g^2}$"
-
+            stringTitle = (r"Var = $\frac{1}{2g^2a_{00}}(\exp (2a_{00} \mu g) - 1) + \frac{n_{00}}{g^2}$ " +
+                           r" ($chi^2$/dof = %g)" % (reducedChiSqPtc))
         if ptcFitType == 'POLYNOMIAL':
             ptcFunc = self.funcPolynomial
-            stringTitle = f"Polynomial (degree: {self.config.polynomialFitDegree})"
+            stringTitle = r"Polynomial (degree: %g)" % (self.config.polynomialFitDegree)
 
-        legendFontSize = 7.5
-        labelFontSize = 8
-        titleFontSize = 10
+        legendFontSize = 7
+        labelFontSize = 7
+        titleFontSize = 9
         supTitleFontSize = 18
         markerSize = 25
 
@@ -1036,16 +1043,16 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 ptcGain, ptcGainError = pars[1], parsErr[1]
                 ptcNoise = np.sqrt(np.fabs(pars[2]))
                 ptcNoiseError = 0.5*(parsErr[2]/np.fabs(pars[2]))*np.sqrt(np.fabs(pars[2]))
-                stringLegend = (f"a00: {ptcA00:.2e}+/-{ptcA00error:.2e}"
-                                f"\n Gain: {ptcGain:.4}+/-{ptcGainError:.2e}"
-                                f"\n Noise: {ptcNoise:.4}+/-{ptcNoiseError:.2e}")
+                stringLegend = (f"a00: {ptcA00:.2e}+/-{ptcA00error:.2e} 1/e"
+                                f"\n Gain: {ptcGain:.4}+/-{ptcGainError:.2e} e/DN"
+                                f"\n Noise: {ptcNoise:.4}+/-{ptcNoiseError:.2e} e \n")
 
             if ptcFitType == 'POLYNOMIAL':
                 ptcGain, ptcGainError = 1./pars[1], np.fabs(1./pars[1])*(parsErr[1]/pars[1])
                 ptcNoise = np.sqrt(np.fabs(pars[0]))*ptcGain
                 ptcNoiseError = (0.5*(parsErr[0]/np.fabs(pars[0]))*(np.sqrt(np.fabs(pars[0]))))*ptcGain
-                stringLegend = (f"Noise: {ptcNoise:.4}+/-{ptcNoiseError:.2e} \n"
-                                f"Gain: {ptcGain:.4}+/-{ptcGainError:.2e}")
+                stringLegend = (f"Noise: {ptcNoise:.4}+/-{ptcNoiseError:.2e} e \n"
+                                f"Gain: {ptcGain:.4}+/-{ptcGainError:.2e} e/DN \n")
 
             minMeanVecFinal = np.min(meanVecFinal)
             maxMeanVecFinal = np.max(meanVecFinal)
@@ -1058,9 +1065,9 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             a.plot(meanVecFinal, pars[0] + pars[1]*meanVecFinal, color='green', linestyle='--')
             a.scatter(meanVecFinal, varVecFinal, c='blue', marker='o', s=markerSize)
             a.scatter(meanVecOutliers, varVecOutliers, c='magenta', marker='s', s=markerSize)
-            a.set_xlabel(r'Mean signal ($\mu$, ADU)', fontsize=labelFontSize)
+            a.set_xlabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
             a.set_xticks(meanVecOriginal)
-            a.set_ylabel(r'Variance (ADU$^2$)', fontsize=labelFontSize)
+            a.set_ylabel(r'Variance (DN$^2$)', fontsize=labelFontSize)
             a.tick_params(labelsize=11)
             a.text(0.03, 0.8, stringLegend, transform=a.transAxes, fontsize=legendFontSize)
             a.set_xscale('linear', fontsize=labelFontSize)
@@ -1072,8 +1079,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             a2.plot(meanVecFit, ptcFunc(pars, meanVecFit), color='red')
             a2.scatter(meanVecFinal, varVecFinal, c='blue', marker='o', s=markerSize)
             a2.scatter(meanVecOutliers, varVecOutliers, c='magenta', marker='s', s=markerSize)
-            a2.set_xlabel(r'Mean Signal ($\mu$, ADU)', fontsize=labelFontSize)
-            a2.set_ylabel(r'Variance (ADU$^2$)', fontsize=labelFontSize)
+            a2.set_xlabel(r'Mean Signal ($\mu$, DN)', fontsize=labelFontSize)
+            a2.set_ylabel(r'Variance (DN$^2$)', fontsize=labelFontSize)
             a2.tick_params(labelsize=11)
             a2.text(0.03, 0.8, stringLegend, transform=a2.transAxes, fontsize=legendFontSize)
             a2.set_xscale('log')
@@ -1093,23 +1100,24 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             timeVecFinal = np.array(dataset.rawExpTimes[amp])[dataset.visitMask[amp]]
 
             pars, parsErr = dataset.nonLinearity[amp], dataset.nonLinearityError[amp]
-            c0, c0Error = pars[0], parsErr[0]
-            c1, c1Error = pars[1], parsErr[1]
-            c2, c2Error = pars[2], parsErr[2]
-            stringLegend = f"c0: {c0:.4}+/-{c0Error:.2e}\n c1: {c1:.4}+/-{c1Error:.2e}" \
-                + f"\n c2(NL): {c2:.2e}+/-{c2Error:.2e}"
+            k0, k0Error = pars[0], parsErr[0]
+            k1, k1Error = pars[1], parsErr[1]
+            k2, k2Error = pars[2], parsErr[2]
+            stringLegend = (f"k0: {k0:.4}+/-{k0Error:.2e} DN\n k1: {k1:.4}+/-{k1Error:.2e} DN/t"
+                            f"\n k2: {k2:.2e}+/-{k2Error:.2e} DN/t^2 \n")
             a.scatter(timeVecFinal, meanVecFinal)
             a.plot(timeVecFinal, self.funcPolynomial(pars, timeVecFinal), color='red')
             a.set_xlabel('Time (sec)', fontsize=labelFontSize)
             a.set_xticks(timeVecFinal)
-            a.set_ylabel(r'Mean signal ($\mu$, ADU)', fontsize=labelFontSize)
+            a.set_ylabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
             a.tick_params(labelsize=labelFontSize)
             a.text(0.03, 0.75, stringLegend, transform=a.transAxes, fontsize=legendFontSize)
             a.set_xscale('linear', fontsize=labelFontSize)
             a.set_yscale('linear', fontsize=labelFontSize)
             a.set_title(amp, fontsize=titleFontSize)
-
-        f.suptitle("Linearity \n Fit: " + r"$\mu = c_0 + c_1 t + c_2 t^2$", fontsize=supTitleFontSize)
+        f.suptitle("Linearity \n Fit: Polynomial (degree: %g)"
+                   % (self.config.polynomialFitDegreeNonLinearity),
+                   fontsize=supTitleFontSize)
         pdfPages.savefig()
 
         # Plot linearity residual
