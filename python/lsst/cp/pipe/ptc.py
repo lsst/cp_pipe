@@ -204,7 +204,6 @@ class PhotonTransferCurveDataset:
         self.__dict__["nonLinearity"] = {ampName: [] for ampName in ampNames}
         self.__dict__["nonLinearityError"] = {ampName: [] for ampName in ampNames}
         self.__dict__["nonLinearityResiduals"] = {ampName: [] for ampName in ampNames}
-        self.__dict__["coefficientLinearizeSquared"] = {ampName: [] for ampName in ampNames}
 
         # final results
         self.__dict__["gain"] = {ampName: -1. for ampName in ampNames}
@@ -356,7 +355,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         # Fit PTC and (non)linearity of signal vs time curve.
         # Fill up PhotonTransferCurveDataset object.
         # Fill up array for LUT linearizer.
-        dataset = self.fitPtcAndNonLinearity(dataset, lookupTableArray, ptcFitType=self.config.ptcFitType)
+        dataset = self.fitPtcAndNonLinearity(dataset, tableArray=lookupTableArray,
+                                             ptcFitType=self.config.ptcFitType)
 
         if self.config.makePlots:
             self.plot(dataRef, dataset, ptcFitType=self.config.ptcFitType)
@@ -658,8 +658,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         # Use linear part to get time at wich signal is maxAduForLookupTableLinearizer ADU
         tMax = (self.config.maxAduForLookupTableLinearizer - parsFit[0])/parsFit[1]
         timeRange = np.linspace(0, tMax, self.config.maxAduForLookupTableLinearizer)
-        signalIdeal = parsFit[0] + parsFit[1]*timeRange
-        signalUncorrected = self.funcPolynomial(parsFit, timeRange)
+        signalIdeal = (parsFit[0] + parsFit[1]*timeRange).astype(int)
+        signalUncorrected = (self.funcPolynomial(parsFit, timeRange)).astype(int)
         linearizerTableRow = signalIdeal - signalUncorrected  # LinearizerLookupTable has corrections
 
         # Use quadratic and linear part of fit to produce c0 for LinearizeSquared
@@ -793,6 +793,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 dataset.nonLinearity[ampName] = np.nan
                 dataset.nonLinearityError[ampName] = np.nan
                 dataset.nonLinearityResiduals[ampName] = np.nan
+                dataset.coefficientLinearizeSquared[ampName] = np.nan
                 continue
 
             # Fit the PTC
