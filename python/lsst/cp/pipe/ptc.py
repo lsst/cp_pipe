@@ -431,26 +431,26 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         """
         detName = detector.getName()
         detNum = detector.getId()
-        if linearizerType == 'LOOKUPTABLE':
+        if linearizerType == "LOOKUPTABLE":
             if tableArray is not None:
                 linearizer = Linearizer(table=tableArray, log=log)
             else:
                 raise RuntimeError("tableArray must be provided when creating a LookupTable linearizer")
-        elif linearizerType in ['LINEARIZESQUARED', 'LINEARIZEPOLYNOMIAL']:
+        elif linearizerType in ("LINEARIZESQUARED", "LINEARIZEPOLYNOMIAL"):
             linearizer = Linearizer(log=log)
         else:
-            raise RuntimeError("Enter supporter linearizerType to build a Linearizer object: " +
+            raise RuntimeError("Enter supporter linearizerType to build a Linearizer object: "
                                "'LOOKUPTABLE', 'LINEARIZESQUARED', or 'LINEARIZEPOLYNOMIAL'")
         linearizer.setMetadata()
         for i, amp in enumerate(detector.getAmplifiers()):
             ampName = amp.getName()
-            if linearizerType == 'LOOKUPTABLE':
+            if linearizerType == "LOOKUPTABLE":
                 linearizer.linearityCoeffs[ampName] = [i, 0]
                 linearizer.linearityType[ampName] = "LookupTable"
-            if linearizerType == 'LINEARIZESQUARED':
+            if linearizerType == "LINEARIZESQUARED":
                 linearizer.linearityCoeffs[ampName] = [dataset.coefficientLinearizeSquared[ampName]]
                 linearizer.linearityType[ampName] = "Squared"
-            if linearizerType == 'LINEARIZEPOLYNOMIAL':
+            if linearizerType == "LINEARIZEPOLYNOMIAL":
                 linearizer.linearityCoeffs[ampName] = dataset.coefficientsLinearizePolynomial[ampName]
                 linearizer.linearityType[ampName] = "Polynomial"
             linearizer.linearityBBox[ampName] = amp.getBBox()
