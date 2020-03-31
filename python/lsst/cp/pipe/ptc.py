@@ -381,6 +381,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         detName = detector.getName()
         now = datetime.datetime.utcnow()
+        calibDate = now.strftime("%Y-%m-%d")
         butler = dataRef.getButler()
 
         for linType, dataType in [("LOOKUPTABLE", 'linearizeLut'),
@@ -392,18 +393,18 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             else:
                 tableArray = None
 
-            linearizer = self.buildLinearizerObject(dataset, detector,
+            linearizer = self.buildLinearizerObject(dataset, detector, calibDate,
                                                     instruName=self.config.instrumentName,
                                                     linearizerType=linType, tableArray=tableArray,
                                                     log=self.log)
             butler.put(linearizer.toDict(), datasetType=dataType, dataId={'detector': detNum,
-                       'detectorName': detName, 'calibDate': now.strftime("%Y-%m-%d")})
+                       'detectorName': detName, 'calibDate': calibDate})
 
         self.log.info('Finished measuring PTC for in detector %s' % detNum)
 
         return pipeBase.Struct(exitStatus=0)
 
-    def buildLinearizerObject(self, dataset, detector, instruName='',
+    def buildLinearizerObject(self, dataset, detector, calibDate, instruName='',
                               linearizerType='LINEARIZEPOLYNOMIAL',
                               tableArray=None, log=None):
         """Build linearizer object to persist.
@@ -411,9 +412,11 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         Parameters
         ----------
         dataset : `lsst.cp.pipe.ptc.PhotonTransferCurveDataset`
-            The dataset containing the means, variances and exposure times
+            The dataset containing the means, variances, and exposure times
         detector : `lsst.afw.cameraGeom.Detector`
             Detector object
+        calibDate : `datetime.datetime`
+            Calibration date
         instruName : `str`, optional
             Instrument name
         linearizerType : `str`, optional
@@ -455,8 +458,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             linearizer.linearityBBox[ampName] = amp.getBBox()
 
         linearizer.validate()
-        date = datetime.datetime.now().isoformat()
-        calibId = f"detectorName={detName} detector={detNum} calibDate={date} ccd={detNum}"
+        calibId = f"detectorName={detName} detector={detNum} calibDate={calibDate} ccd={detNum}"
 
         serial = detector.getSerial()
         linearizer.updateMetadata(instrumentName=instruName, detectorId=f"{detNum}",
