@@ -383,11 +383,10 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         now = datetime.datetime.utcnow()
         butler = dataRef.getButler()
 
-        for linPair in [("LOOKUPTABLE", 'linearizeLut'), ("LINEARIZEPOLYNOMIAL", 'linearizePolynomial'),
-                        ("LINEARIZESQUARED", 'linearizeSquared')]:
+        for linType, dataType in [("LOOKUPTABLE", 'linearizeLut'),
+                                  ("LINEARIZEPOLYNOMIAL", 'linearizePolynomial'),
+                                  ("LINEARIZESQUARED", 'linearizeSquared')]:
 
-            linType = linPair[0]
-            dataType = linPair[1]
             if linType == "LOOKUPTABLE":
                 tableArray = lookupTableArray
             else:
