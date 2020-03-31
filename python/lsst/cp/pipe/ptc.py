@@ -405,7 +405,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
     def buildLinearizerObject(self, dataset, detector, instruName='',
                               linearizerType='LINEARIZEPOLYNOMIAL',
-                              tableArray=None, filt='NONE', log=None):
+                              tableArray=None, log=None):
         """Build linearizer object to persist.
 
         Parameters
@@ -420,7 +420,6 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             'LOOKUPTABLE', 'LINEARIZESQUARED', or 'LINEARIZEPOLYNOMIAL'
         tableArray : `np.array`, optional
             Look-up table array with size rows=nAmps and columns=ADU values
-        filt : filter, `str`, optional
         log : `lsst.log.Log`, optional
             Logger to handle messages
 
@@ -457,7 +456,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         linearizer.validate()
         date = datetime.datetime.now().isoformat()
-        calibId = f"detectorName={detName} detector={detNum} calibDate={date} ccd={detNum} filter={filt}"
+        calibId = f"detectorName={detName} detector={detNum} calibDate={date} ccd={detNum}"
         try:
             raftName = detName.split("_")[0]
             calibId += f" raftName={raftName}"
