@@ -457,12 +457,6 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         linearizer.validate()
         date = datetime.datetime.now().isoformat()
         calibId = f"detectorName={detName} detector={detNum} calibDate={date} ccd={detNum}"
-        try:
-            raftName = detName.split("_")[0]
-            calibId += f" raftName={raftName}"
-        except Exception:
-            raftname = "NONE"
-            calibId += f" raftName={raftname}"
 
         serial = detector.getSerial()
         linearizer.updateMetadata(instrumentName=instruName, detectorId=f"{detNum}",
