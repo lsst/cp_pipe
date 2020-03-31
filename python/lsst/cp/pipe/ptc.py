@@ -367,7 +367,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         # Fill up PhotonTransferCurveDataset object.
         # Fill up array for LUT linearizer.
         # Produce coefficients for Polynomial ans Squared linearizers.
-        dataset = self.fitPtcAndNonLinearity(dataset, lookupTableArray, ptcFitType=self.config.ptcFitType)
+        dataset = self.fitPtcAndNonLinearity(dataset, self.config.ptcFitType,
+                                             tableArray=lookupTableArray)
 
         if self.config.makePlots:
             self.plot(dataRef, dataset, ptcFitType=self.config.ptcFitType)
