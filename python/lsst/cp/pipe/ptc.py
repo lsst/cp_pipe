@@ -403,7 +403,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         return pipeBase.Struct(exitStatus=0)
 
-    def buildLinearizerObject(self, dataset, detName, detNum, detector, instruName='', linearizerType='',
+    def buildLinearizerObject(self, dataset, detName, detNum, detector, instruName='',
+                              linearizerType='LINEARIZEPOLYNOMIAL',
                               tableArray=None, filt='NONE', log=None):
         """Build linearizer object to persist.
 
@@ -420,7 +421,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         instruName : `str`, optional
             Instrument name
         linearizerType : `str`, optional
-            'LOOKUPTABLE' or 'LINEARIZESQUARED'
+            'LOOKUPTABLE', 'LINEARIZESQUARED', or 'LINEARIZEPOLYNOMIAL'
         tableArray : `np.array`, optional
             Look-up table array with size rows=nAmps and columns=ADU values
         filt : filter, `str`, optional
