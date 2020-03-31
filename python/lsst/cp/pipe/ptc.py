@@ -392,7 +392,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             else:
                 tableArray = None
 
-            linearizer = self.buildLinearizerObject(dataset, detName, detNum, detector,
+            linearizer = self.buildLinearizerObject(dataset, detector,
                                                     instruName=self.config.instrumentName,
                                                     linearizerType=linType, tableArray=tableArray,
                                                     log=self.log)
@@ -403,7 +403,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         return pipeBase.Struct(exitStatus=0)
 
-    def buildLinearizerObject(self, dataset, detName, detNum, detector, instruName='',
+    def buildLinearizerObject(self, dataset, detector, instruName='',
                               linearizerType='LINEARIZEPOLYNOMIAL',
                               tableArray=None, filt='NONE', log=None):
         """Build linearizer object to persist.
@@ -412,11 +412,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         ----------
         dataset : `lsst.cp.pipe.ptc.PhotonTransferCurveDataset`
             The dataset containing the means, variances and exposure times
-        detName : `srt`
-            Detector name
-        detNum : `int`
-            Detector number
-        detector : `lsst.afw.cameraGeom.detector.detector.Detector`
+        detector : `lsst.afw.cameraGeom.Detector`
             Detector object
         instruName : `str`, optional
             Instrument name
@@ -433,6 +429,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         linearizer : `lsst.ip.isr.Linearizer`
             Linearizer object
         """
+        detName = detector.getName()
+        detNum = detector.getId()
         if linearizerType == 'LOOKUPTABLE':
             if tableArray is not None:
                 linearizer = Linearizer(table=tableArray, log=log)
