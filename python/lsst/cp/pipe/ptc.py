@@ -377,7 +377,10 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         self.log.info(f"Writing PTC and NL data to {dataRef.getUri(write=True)}")
         dataRef.put(dataset, datasetType="photonTransferCurveDataset")
 
-        self.log.info(f"Writing linearizers")
+        self.log.info(f"Writing linearizers to {butler.getUri(write=True)}: \n
+                       lookup table (linear component of polynomial fit), \n
+                       polynomial (coefficients for a polynomial correction), \n
+                       and squared linearizer (quadratic coefficient from polynomial)")
 
         detName = detector.getName()
         now = datetime.datetime.utcnow()
