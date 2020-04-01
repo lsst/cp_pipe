@@ -489,11 +489,11 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         Return
         ------
 
-        mu : `np.float`
+        mu : `float`
             0.5*(mu1 + mu2), where mu1, and mu2 are the clipped means of the regions in
             both exposures.
 
-        varDiff : `np.float`
+        varDiff : `float`
             Half of the clipped variance of the difference of the regions inthe two input
             exposures.
         """
@@ -535,14 +535,14 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         Parameters
         ----------
-        initialParams : list of np.float
+        initialParams : `list` of `float`
             initial values for fit parameters. For ptcFitType=POLYNOMIAL, its length
             determines the degree of the polynomial.
 
-        dataX : np.array of np.float
+        dataX : `numpy.array` of `float`
             Data in the abscissa axis.
 
-        dataY : np.array of np.float
+        dataY : `numpy.array` of `float`
             Data in the ordinate axis.
 
         function : callable object (function)
@@ -550,13 +550,13 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         Return
         ------
-        pFitSingleLeastSquares : list of np.float
+        pFitSingleLeastSquares : `list` of `float`
             List with fitted parameters.
 
-        pErrSingleLeastSquares : list of np.float
+        pErrSingleLeastSquares : `list` of `float`
             List with errors for fitted parameters.
 
-        reducedChiSqSingleLeastSquares : `np.float`
+        reducedChiSqSingleLeastSquares : `float`
             Unweighted reduced chi squared
         """
 
@@ -588,31 +588,31 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         Parameters
         ----------
-        initialParams : list of np.float
+        initialParams : `list` of `float`
             initial values for fit parameters. For ptcFitType=POLYNOMIAL, its length
             determines the degree of the polynomial.
 
-        dataX : np.array of np.float
+        dataX : `numpy.array` of `float`
             Data in the abscissa axis.
 
-        dataY : np.array of np.float
+        dataY : `numpy.array` of `float`
             Data in the ordinate axis.
 
         function : callable object (function)
             Function to fit the data with.
 
-        confidenceSigma : np.float
+        confidenceSigma : `float`
             Number of sigmas that determine confidence interval for the bootstrap errors.
 
         Return
         ------
-        pFitBootstrap : list of np.float
+        pFitBootstrap : `list` of `float`
             List with fitted parameters.
 
-        pErrBootstrap : list of np.float
+        pErrBootstrap : `list` of `float`
             List with errors for fitted parameters.
 
-        reducedChiSqBootstrap : `np.float`
+        reducedChiSqBootstrap : `float`
             Reduced chi squared.
         """
 
@@ -727,15 +727,15 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         Parameters
         ---------
 
-        exposureTimeVector: `list` of `np.float`
+        exposureTimeVector: `list` of `float`
             List of exposure times for each flat pair
 
-        meanSignalVector: `list` of `np.float`
+        meanSignalVector: `list` of `float`
             List of mean signal from diference image of flat pairs
 
         Returns
         -------
-        polynomialLinearizerCoefficients : `list` of `np.float`
+        polynomialLinearizerCoefficients : `list` of `float`
             Coefficients for LinearizePolynomial, where corrImage = uncorrImage + sum_i c_i uncorrImage^(2 +
             i).
             c_(j-2) = -k_j/(k_1^j) with units (DN^(1-j)). The units of k_j are DN/t^j, and they are fit from
@@ -745,28 +745,28 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             correction. Therefore, j = 2...n in the above expression (see `LinearizePolynomial` class in
             `linearize.py`.)
 
-        c0 : `np.float`
+        c0 : `float`
             Coefficient for LinearizeSquared, where corrImage = uncorrImage + c0*uncorrImage^2.
             c0 = -k2/(k1^2), where k1 and k2 are fit from
             meanSignalVector = k0 + k1*exposureTimeVector + k2*exposureTimeVector^2 +...
                                + kn*exposureTimeVector^n, with n = "polynomialFitDegreeNonLinearity".
 
-        linearizerTableRow : list of `np.float`
+        linearizerTableRow : `list` of `float`
            One dimensional array with deviation from linear part of n-order polynomial fit
            to mean vs time curve. This array will be one row (for the particular amplifier at hand)
            of the table array for LinearizeLookupTable.
 
-        linResidual : list of `np.float`
+        linResidual : `list` of `float`
             Linearity residual from the mean vs time curve, defined as
             100*(1 - meanSignalReference/expTimeReference/(meanSignal/expTime).
 
-        parsFit : list of `np.float`
+        parsFit : `list` of `float`
             Parameters from n-order polynomial fit to meanSignalVector vs exposureTimeVector.
 
-        parsFitErr : list of `np.float`
+        parsFitErr : list of `float`
             Parameters from n-order polynomial fit to meanSignalVector vs exposureTimeVector.
 
-        reducedChiSquaredNonLinearityFit : `np.float`
+        reducedChiSquaredNonLinearityFit : `float`
             Reduced chi squared from polynomial fit to meanSignalVector vs exposureTimeVector.
         """
 
