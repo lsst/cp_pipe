@@ -393,9 +393,9 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             else:
                 tableArray = None
 
-            linearizer = self.buildLinearizerObject(dataset, detector, calibDate,
+            linearizer = self.buildLinearizerObject(dataset, detector, calibDate, linType,
                                                     instruName=self.config.instrumentName,
-                                                    linearizerType=linType, tableArray=tableArray,
+                                                    tableArray=tableArray,
                                                     log=self.log)
             butler.put(linearizer.toDict(), datasetType=dataType, dataId={'detector': detNum,
                        'detectorName': detName, 'calibDate': calibDate})
@@ -404,8 +404,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         return pipeBase.Struct(exitStatus=0)
 
-    def buildLinearizerObject(self, dataset, detector, calibDate, instruName='',
-                              linearizerType='LINEARIZEPOLYNOMIAL',
+    def buildLinearizerObject(self, dataset, detector, calibDate, linearizerType, instruName='',
                               tableArray=None, log=None):
         """Build linearizer object to persist.
 
@@ -417,9 +416,11 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             Detector object
         calibDate : `datetime.datetime`
             Calibration date
+        linearizerType : `str`
+            'LOOKUPTABLE', 'LINEARIZESQUARED', or 'LINEARIZEPOLYNOMIAL'
         instruName : `str`, optional
             Instrument name
-        linearizerType : `str`, optional
+        linearizerType : `str`
             'LOOKUPTABLE', 'LINEARIZESQUARED', or 'LINEARIZEPOLYNOMIAL'
         tableArray : `np.array`, optional
             Look-up table array with size rows=nAmps and columns=ADU values
