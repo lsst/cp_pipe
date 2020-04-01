@@ -426,8 +426,6 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             'LOOKUPTABLE', 'LINEARIZESQUARED', or 'LINEARIZEPOLYNOMIAL'
         instruName : `str`, optional
             Instrument name
-        linearizerType : `str`
-            'LOOKUPTABLE', 'LINEARIZESQUARED', or 'LINEARIZEPOLYNOMIAL'
         tableArray : `np.array`, optional
             Look-up table array with size rows=nAmps and columns=ADU values
         log : `lsst.log.Log`, optional
@@ -464,7 +462,14 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             linearizer.linearityBBox[ampName] = amp.getBBox()
 
         linearizer.validate()
-        calibId = f"detectorName={detName} detector={detNum} calibDate={calibDate} ccd={detNum}"
+        calibId = f"detectorName={detName} detector={detNum} calibDate={calibDate} ccd={detNum} filter=NONE"
+
+        try:
+            raftName = detName.split("_")[0]
+            calibId += f" raftName={raftName}"
+        except Exception:
+            raftname = "NONE"
+            calibId += f" raftName={raftname}"
 
         serial = detector.getSerial()
         linearizer.updateMetadata(instrumentName=instruName, detectorId=f"{detNum}",
