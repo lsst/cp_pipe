@@ -442,7 +442,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         detNum = detector.getId()
         if linearizerType == "LOOKUPTABLE":
             if tableArray is not None:
-                linearizer = Linearizer(table=tableArray, log=log)
+                linearizer = Linearizer(detector=detector, table=tableArray, log=log)
             else:
                 raise RuntimeError("tableArray must be provided when creating a LookupTable linearizer")
         elif linearizerType in ("LINEARIZESQUARED", "LINEARIZEPOLYNOMIAL"):
@@ -1000,7 +1000,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         reducedChiSqPtc = dataset.ptcFitReducedChiSquared
         if ptcFitType == 'ASTIERAPPROXIMATION':
             ptcFunc = self.funcAstier
-            stringTitle = (r"Var = $\frac{1}{2g^2a_{00}}(\exp (2a_{00} \mu g) - 1) + \frac{n_{00}}{g^2}$ " +
+            stringTitle = (r"Var = $\frac{1}{2g^2a_{00}}(\exp (2a_{00} \mu g) - 1) + \frac{n_{00}}{g^2}$ "
                            r" ($chi^2$/dof = %g)" % (reducedChiSqPtc))
         if ptcFitType == 'POLYNOMIAL':
             ptcFunc = self.funcPolynomial
