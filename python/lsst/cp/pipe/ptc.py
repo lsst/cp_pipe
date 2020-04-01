@@ -377,15 +377,15 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         self.log.info(f"Writing PTC and NL data to {dataRef.getUri(write=True)}")
         dataRef.put(dataset, datasetType="photonTransferCurveDataset")
 
-        self.log.info(f"Writing linearizers to {butler.getUri(write=True)}: \n
-                       lookup table (linear component of polynomial fit), \n
-                       polynomial (coefficients for a polynomial correction), \n
-                       and squared linearizer (quadratic coefficient from polynomial)")
+        butler = dataRef.getButler()
+        self.log.info(f"Writing linearizers: \n "
+                      "lookup table (linear component of polynomial fit), \n "
+                      "polynomial (coefficients for a polynomial correction), \n "
+                      "and squared linearizer (quadratic coefficient from polynomial)")
 
         detName = detector.getName()
         now = datetime.datetime.utcnow()
         calibDate = now.strftime("%Y-%m-%d")
-        butler = dataRef.getButler()
 
         for linType, dataType in [("LOOKUPTABLE", 'linearizeLut'),
                                   ("LINEARIZEPOLYNOMIAL", 'linearizePolynomial'),
@@ -445,9 +445,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         elif linearizerType in ("LINEARIZESQUARED", "LINEARIZEPOLYNOMIAL"):
             linearizer = Linearizer(log=log)
         else:
-            raise RuntimeError("Enter supporter linearizerType to build a Linearizer object: "
-                               "'LOOKUPTABLE', 'LINEARIZESQUARED', or 'LINEARIZEPOLYNOMIAL'")
-        linearizer.setMetadata()
+            raise RuntimeError("Invalid linearizerType {linearizerType} to build a Linearizer object. "
+                               "Supported: 'LOOKUPTABLE', 'LINEARIZESQUARED', or 'LINEARIZEPOLYNOMIAL'")
         for i, amp in enumerate(detector.getAmplifiers()):
             ampName = amp.getName()
             if linearizerType == "LOOKUPTABLE":
