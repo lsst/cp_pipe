@@ -452,10 +452,10 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             if linearizerType == "LOOKUPTABLE":
                 linearizer.linearityCoeffs[ampName] = [i, 0]
                 linearizer.linearityType[ampName] = "LookupTable"
-            if linearizerType == "LINEARIZESQUARED":
+            elif linearizerType == "LINEARIZESQUARED":
                 linearizer.linearityCoeffs[ampName] = [dataset.coefficientLinearizeSquared[ampName]]
                 linearizer.linearityType[ampName] = "Squared"
-            if linearizerType == "LINEARIZEPOLYNOMIAL":
+            elif linearizerType == "LINEARIZEPOLYNOMIAL":
                 linearizer.linearityCoeffs[ampName] = dataset.coefficientsLinearizePolynomial[ampName]
                 linearizer.linearityType[ampName] = "Polynomial"
             linearizer.linearityBBox[ampName] = amp.getBBox()
