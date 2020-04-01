@@ -265,6 +265,9 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
     arXiv:1905.08677) can be fitted to the PTC curve. These models include
     parameters such as the gain (e/ADU) and readout noise.
 
+    Linearizers to correct for signal-chain non-linearity are also calculated.
+    The `Linearizer` class, in general, can support per-amp linearizers, but in this
+    task this is not supported.
     Parameters
     ----------
 
