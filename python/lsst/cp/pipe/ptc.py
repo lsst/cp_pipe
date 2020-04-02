@@ -111,12 +111,12 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
     )
     minMeanSignal = pexConfig.Field(
         dtype=float,
-        doc="Minimum value (inclusive) of mean signal (in ADU) above which to consider.",
+        doc="Minimum value (inclusive) of mean signal (in DN) above which to consider.",
         default=0,
     )
     maxMeanSignal = pexConfig.Field(
         dtype=float,
-        doc="Maximum value (inclusive) of mean signal (in ADU) below which to consider.",
+        doc="Maximum value (inclusive) of mean signal (in DN) below which to consider.",
         default=9e6,
     )
     initialNonLinearityExclusionThresholdPositive = pexConfig.RangeField(
@@ -161,7 +161,7 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
     )
     maxAduForLookupTableLinearizer = pexConfig.Field(
         dtype=int,
-        doc="Maximum ADU value for the LookupTable linearizer.",
+        doc="Maximum DN value for the LookupTable linearizer.",
         default=2**18,
     )
     instrumentName = pexConfig.Field(
@@ -263,7 +263,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
     are used to produce the PTC. An n-degree polynomial or the approximation in Equation
     16 of Astier+19 ("The Shape of the Photon Transfer Curve of CCD sensors",
     arXiv:1905.08677) can be fitted to the PTC curve. These models include
-    parameters such as the gain (e/ADU) and readout noise.
+    parameters such as the gain (e/DN) and readout noise.
 
     Linearizers to correct for signal-chain non-linearity are also calculated.
     The `Linearizer` class, in general, can support per-amp linearizers, but in this
@@ -427,7 +427,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         instruName : `str`, optional
             Instrument name
         tableArray : `np.array`, optional
-            Look-up table array with size rows=nAmps and columns=ADU values
+            Look-up table array with size rows=nAmps and columns=DN values
         log : `lsst.log.Log`, optional
             Logger to handle messages
 
@@ -789,7 +789,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                                                                                      self.funcPolynomial)
 
         # LinearizeLookupTable:
-        # Use linear part to get time at wich signal is maxAduForLookupTableLinearizer ADU
+        # Use linear part to get time at wich signal is maxAduForLookupTableLinearizer DN
         tMax = (self.config.maxAduForLookupTableLinearizer - parsFit[0])/parsFit[1]
         timeRange = np.linspace(0, tMax, self.config.maxAduForLookupTableLinearizer)
         signalIdeal = (parsFit[0] + parsFit[1]*timeRange).astype(int)
@@ -845,7 +845,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             Fit a 'POLYNOMIAL' (degree: 'polynomialFitDegree') or
             'ASTIERAPPROXIMATION' to the PTC
         tableArray : `np.array`
-            Optional. Look-up table array with size rows=nAmps and columns=ADU values.
+            Optional. Look-up table array with size rows=nAmps and columns=DN values.
             It will be modified in-place if supplied.
 
         Returns
@@ -1134,7 +1134,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             a.scatter(meanVecFinal, linRes)
             a.axhline(y=0, color='k')
             a.axvline(x=timeVecFinal[self.config.linResidualTimeIndex], color='g', linestyle='--')
-            a.set_xlabel(r'Mean signal ($\mu$, ADU)', fontsize=labelFontSize)
+            a.set_xlabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
             a.set_xticks(meanVecFinal)
             a.set_ylabel('LR (%)', fontsize=labelFontSize)
             a.tick_params(labelsize=labelFontSize)
