@@ -805,8 +805,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         for i, coefficient in enumerate(parsFit):
             c = -coefficient/(k1**i)
             polynomialLinearizerCoefficients.append(c)
-            if np.fabs(coefficient) > 1e-10:
-                msg = f"Coefficient {coefficient} in polynomial fit larger than threshold 1e-10."
+            if np.fabs(c) > 1e-10:
+                msg = f"Coefficient {c} in polynomial fit larger than threshold 1e-10."
                 self.log.warn(msg)
         # Coefficient for LinearizedSquared. Called "c0" in linearize.py
         c0 = polynomialLinearizerCoefficients[2]
