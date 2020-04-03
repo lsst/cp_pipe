@@ -403,7 +403,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                                                     instruName=self.config.instrumentName,
                                                     tableArray=tableArray,
                                                     log=self.log)
-            butler.put(linearizer.toDict(), datasetType=dataType, dataId={'detector': detNum,
+            butler.put(linearizer, datasetType=dataType, dataId={'detector': detNum,
                        'detectorName': detName, 'calibDate': calibDate})
 
         self.log.info('Finished measuring PTC for in detector %s' % detNum)
@@ -983,7 +983,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             # Slice correction coefficients (starting at 2) for polynomial linearizer. The first
             # and second are reduntant  with the bias and gain, respectively,
             # and are not used by LinearizerPolynomial.
-            dataset.coefficientsLinearizePolynomial[ampName] = coeffsLinPoly[2:]
+            dataset.coefficientsLinearizePolynomial[ampName] = np.array(coeffsLinPoly[2:])
             dataset.coefficientLinearizeSquared[ampName] = c0
 
         return dataset
