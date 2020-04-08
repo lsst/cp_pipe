@@ -364,7 +364,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         numberAmps = len(detector.getAmplifiers())
         numberAduValues = self.config.maxAduForLookupTableLinearizer
-        lookupTableArray = np.zeros((numberAmps, numberAduValues), dtype=np.int)
+        lookupTableArray = np.zeros((numberAmps, numberAduValues), dtype=np.float32)
 
         # Fit PTC and (non)linearity of signal vs time curve.
         # Fill up PhotonTransferCurveDataset object.
@@ -792,10 +792,9 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         # Use linear part to get time at wich signal is maxAduForLookupTableLinearizer DN
         tMax = (self.config.maxAduForLookupTableLinearizer - parsFit[0])/parsFit[1]
         timeRange = np.linspace(0, tMax, self.config.maxAduForLookupTableLinearizer)
-        signalIdeal = (parsFit[0] + parsFit[1]*timeRange).astype(int)
-        signalUncorrected = (self.funcPolynomial(parsFit, timeRange)).astype(int)
+        signalIdeal = parsFit[0] + parsFit[1]*timeRange
+        signalUncorrected = self.funcPolynomial(parsFit, timeRange)
         linearizerTableRow = signalIdeal - signalUncorrected  # LinearizerLookupTable has corrections
-
         # LinearizePolynomial and LinearizeSquared:
         # Check that magnitude of higher order (>= 3) coefficents of the polyFit are small,
         # i.e., less than threshold = 1e-10 (typical quadratic and cubic coefficents are ~1e-6
@@ -975,7 +974,6 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             # LinearizerLookupTable
             if tableArray is not None:
                 tableArray[i, :] = linearizerTableRow
-
             dataset.nonLinearity[ampName] = parsFitNonLinearity
             dataset.nonLinearityError[ampName] = parsFitErrNonLinearity
             dataset.nonLinearityResiduals[ampName] = linResidualNonLinearity
@@ -985,7 +983,6 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             # and are not used by LinearizerPolynomial.
             dataset.coefficientsLinearizePolynomial[ampName] = np.array(coeffsLinPoly[2:])
             dataset.coefficientLinearizeSquared[ampName] = c0
-
         return dataset
 
     def plot(self, dataRef, dataset, ptcFitType):
