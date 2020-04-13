@@ -213,6 +213,7 @@ class PhotonTransferCurveDataset:
         self.__dict__["nonLinearity"] = {ampName: [] for ampName in ampNames}
         self.__dict__["nonLinearityError"] = {ampName: [] for ampName in ampNames}
         self.__dict__["nonLinearityResiduals"] = {ampName: [] for ampName in ampNames}
+        self.__dict__["fractionalNonLinearityResiduals"] = {ampName: [] for ampName in ampNames}
         self.__dict__["nonLinearityReducedChiSquared"] = {ampName: [] for ampName in ampNames}
 
         # final results
@@ -770,8 +771,13 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         parsFit : `list` of `float`
             Parameters from n-order polynomial fit to meanSignalVector vs exposureTimeVector.
 
-        parsFitErr : list of `float`
+        parsFitErr : `list` of `float`
             Parameters from n-order polynomial fit to meanSignalVector vs exposureTimeVector.
+
+        fracNonLinearityResidual : `list` of `float`
+            Fractial residuals from the meanSignal vs exposureTime curve with respect to linear part of
+            polynomial fit: 100*(linearPart - meanSignal)/linearPart, where
+            linearPart = k0 + k1*exposureTimeVector.
 
         reducedChiSquaredNonLinearityFit : `float`
             Reduced chi squared from polynomial fit to meanSignalVector vs exposureTimeVector.
@@ -820,8 +826,11 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                            exposureTimeVector[linResidualTimeIndex]) /
                            (meanSignalVector/exposureTimeVector)))
 
+        # Fractional non-linearity residual, w.r.t linear part of polynomial fit
+        linearPart = parsFit[0] + k1*exposureTimeVector
+        fracNonLinearityResidual = 100*(linearPart - meanSignalVector)/linearPart
         return (polynomialLinearizerCoefficients, c0, linearizerTableRow, linResidual, parsFit, parsFitErr,
-                reducedChiSquaredNonLinearityFit)
+                fracNonLinearityResidual, reducedChiSquaredNonLinearityFit)
 
     def fitPtcAndNonLinearity(self, dataset, ptcFitType, tableArray=None):
         """Fit the photon transfer curve and calculate linearity and residuals.
@@ -933,6 +942,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 dataset.nonLinearity[ampName] = np.nan
                 dataset.nonLinearityError[ampName] = np.nan
                 dataset.nonLinearityResiduals[ampName] = np.nan
+                dataset.fractionalNonLinearityResiduals[ampName] = np.nan
                 dataset.coefficientLinearizeSquared[ampName] = np.nan
                 continue
 
@@ -969,7 +979,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             # In this case, len(parsIniNonLinearity) = 3 indicates that we want a quadratic fit
 
             (coeffsLinPoly, c0, linearizerTableRow, linResidualNonLinearity,
-             parsFitNonLinearity, parsFitErrNonLinearity,
+             parsFitNonLinearity, parsFitErrNonLinearity, fracResidualNonLinearity,
              reducedChiSqNonLinearity) = self.calculateLinearityResidualAndLinearizers(timeVecFinal,
                                                                                        meanVecFinal)
 
@@ -979,6 +989,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             dataset.nonLinearity[ampName] = parsFitNonLinearity
             dataset.nonLinearityError[ampName] = parsFitErrNonLinearity
             dataset.nonLinearityResiduals[ampName] = linResidualNonLinearity
+            dataset.fractionalNonLinearityResiduals[ampName] = fracResidualNonLinearity
             dataset.nonLinearityReducedChiSquared[ampName] = reducedChiSqNonLinearity
             # Slice correction coefficients (starting at 2) for polynomial linearizer. The first
             # and second are reduntant  with the bias and gain, respectively,
