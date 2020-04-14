@@ -1172,7 +1172,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             a.set_yscale('linear', fontsize=labelFontSize)
             a.set_title(amp, fontsize=titleFontSize)
 
-        f.suptitle(r"Linearity Residual: $100\times(linearPartPoly - meanSignal)/linearPartPoly$",
+        f.suptitle(r"Fractional NL residual" + "\n" +
+                   r"$100\times \frac{(k_0 + k_1\times Time - $\mu$)}{k_0 + k_1\times Time}$",
                    fontsize=supTitleFontSize)
         pdfPages.savefig()
 
