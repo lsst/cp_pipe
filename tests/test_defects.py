@@ -44,7 +44,6 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
 
         for config in [self.defaultConfig.isrForDarks, self.defaultConfig.isrForFlats]:
             config.doCrosstalk = False
-            config.doAddDistortionModel = False
             config.doUseOpticsTransmission = False
             config.doUseFilterTransmission = False
             config.doUseSensorTransmission = False

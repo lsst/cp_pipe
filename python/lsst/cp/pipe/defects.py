@@ -70,14 +70,14 @@ class FindDefectsTaskConfig(pexConfig.Config):
         dtype=str,
         doc=("isr operations that must NOT be performed for valid results when using flats."
              " Raises if any of these are True"),
-        default=['doAddDistortionModel', 'doBrighterFatter', 'doUseOpticsTransmission',
+        default=['doBrighterFatter', 'doUseOpticsTransmission',
                  'doUseFilterTransmission', 'doUseSensorTransmission', 'doUseAtmosphereTransmission']
     )
     isrForbiddenStepsDarks = pexConfig.ListField(
         dtype=str,
         doc=("isr operations that must NOT be performed for valid results when using darks."
              " Raises if any of these are True"),
-        default=['doAddDistortionModel', 'doBrighterFatter', 'doUseOpticsTransmission',
+        default=['doBrighterFatter', 'doUseOpticsTransmission',
                  'doUseFilterTransmission', 'doUseSensorTransmission', 'doUseAtmosphereTransmission']
     )
     isrDesirableSteps = pexConfig.ListField(
