@@ -1152,8 +1152,28 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             a.set_yscale('linear', fontsize=labelFontSize)
             a.set_title(amp, fontsize=titleFontSize)
 
-        f.suptitle(r"Linearity Residual: $100(1 - \mu_{\rm{ref}}/t_{\rm{ref}})/(\mu / t))$" + "\n" +
+        f.suptitle(r"Linearity Residual: $100\times(1 - \mu_{\rm{ref}}/t_{\rm{ref}})/(\mu / t))$" + "\n" +
                    r"$t_{\rm{ref}}$: " + f"{timeVecFinal[2]} s", fontsize=supTitleFontSize)
+        pdfPages.savefig()
+
+        # Plot fractional non-linearity residual (w.r.t linear part of polynomial fit)
+        f, ax = plt.subplots(nrows=4, ncols=4, sharex='col', sharey='row', figsize=(13, 10))
+        for i, (amp, a) in enumerate(zip(dataset.ampNames, ax.flatten())):
+            meanVecFinal = np.array(dataset.rawMeans[amp])[dataset.visitMask[amp]]
+            fracLinRes = np.array(dataset.fractionalNonLinearityResiduals[amp])
+            a.scatter(meanVecFinal, fracLinRes, c='g')
+            a.axhline(y=0, color='k')
+            a.axvline(x=0, color='k', linestyle='-')
+            a.set_xlabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
+            a.set_xticks(meanVecFinal)
+            a.set_ylabel('Fractional nonlinearity (%)', fontsize=labelFontSize)
+            a.tick_params(labelsize=labelFontSize)
+            a.set_xscale('linear', fontsize=labelFontSize)
+            a.set_yscale('linear', fontsize=labelFontSize)
+            a.set_title(amp, fontsize=titleFontSize)
+
+        f.suptitle(r"Linearity Residual: $100\times(linearPartPoly - meanSignal)/linearPartPoly$",
+                   fontsize=supTitleFontSize)
         pdfPages.savefig()
 
         return
