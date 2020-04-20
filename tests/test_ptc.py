@@ -186,6 +186,17 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                                    inputFracNonLinearityResiduals):
                 self.assertAlmostEqual(calc, truth)
 
+            # check calls to calculateLinearityResidualAndLinearizers
+            datasetLinResAndLinearizers = task.calculateLinearityResidualAndLinearizers(
+                localDataset.rawExpTimes[ampName], localDataset.rawMeans[ampName])
+
+            self.assertAlmostEqual(-self.k2NonLinearity/(self.flux**2),
+                                   datasetLinResAndLinearizers.quadraticPolynomialLinearizerCoefficient)
+            self.assertAlmostEqual(0.0, datasetLinResAndLinearizers.meanSignalVsTimePolyFitPars[0])
+            self.assertAlmostEqual(self.flux, datasetLinResAndLinearizers.meanSignalVsTimePolyFitPars[1])
+            self.assertAlmostEqual(self.k2NonLinearity,
+                                   datasetLinResAndLinearizers.meanSignalVsTimePolyFitPars[2])
+
         # check entries in returned dataset (should be the same as localDataset after calling the function)
         for ampName in self.ampNames:
             maskAmp = returnedDataset.visitMask[ampName]
@@ -227,6 +238,17 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             for calc, truth in zip(returnedDataset.fractionalNonLinearityResiduals[ampName],
                                    inputFracNonLinearityResiduals):
                 self.assertAlmostEqual(calc, truth)
+
+            # check calls to calculateLinearityResidualAndLinearizers
+            datasetLinResAndLinearizers = task.calculateLinearityResidualAndLinearizers(
+                returnedDataset.rawExpTimes[ampName], returnedDataset.rawMeans[ampName])
+
+            self.assertAlmostEqual(-self.k2NonLinearity/(self.flux**2),
+                                   datasetLinResAndLinearizers.quadraticPolynomialLinearizerCoefficient)
+            self.assertAlmostEqual(0.0, datasetLinResAndLinearizers.meanSignalVsTimePolyFitPars[0])
+            self.assertAlmostEqual(self.flux, datasetLinResAndLinearizers.meanSignalVsTimePolyFitPars[1])
+            self.assertAlmostEqual(self.k2NonLinearity,
+                                   datasetLinResAndLinearizers.meanSignalVsTimePolyFitPars[2])
 
     def test_ptcFit(self):
         for createArray in [True, False]:
