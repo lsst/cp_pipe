@@ -175,18 +175,16 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             # Linearity residuals
             self.assertEqual(len(localDataset.nonLinearityResiduals[ampName]),
                              len(inputNonLinearityResiduals))
-
-            for i in np.arange(len(localDataset.nonLinearityResiduals[ampName])):
-                self.assertAlmostEqual(localDataset.nonLinearityResiduals[ampName][i],
-                                       inputNonLinearityResiduals[i])
+            for calc, truth in zip(localDataset.nonLinearityResiduals[ampName],
+                                   inputNonLinearityResiduals):
+                self.assertAlmostEqual(calc, truth)
 
             # Fractional nonlinearity residuals
             self.assertEqual(len(localDataset.fractionalNonLinearityResiduals[ampName]),
                              len(inputFracNonLinearityResiduals))
-
-            for i in np.arange(len(localDataset.fractionalNonLinearityResiduals[ampName])):
-                self.assertAlmostEqual(localDataset.fractionalNonLinearityResiduals[ampName][i],
-                                       inputFracNonLinearityResiduals[i])
+            for calc, truth in zip(localDataset.fractionalNonLinearityResiduals[ampName],
+                                   inputFracNonLinearityResiduals):
+                self.assertAlmostEqual(calc, truth)
 
         # check entries in returned dataset (should be the same as localDataset after calling the function)
         for ampName in self.ampNames:
@@ -219,18 +217,16 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             # Linearity residuals
             self.assertEqual(len(returnedDataset.nonLinearityResiduals[ampName]),
                              len(inputNonLinearityResiduals))
-
-            for i in np.arange(len(returnedDataset.nonLinearityResiduals[ampName])):
-                self.assertAlmostEqual(returnedDataset.nonLinearityResiduals[ampName][i],
-                                       inputNonLinearityResiduals[i])
+            for calc, truth in zip(returnedDataset.nonLinearityResiduals[ampName],
+                                   inputNonLinearityResiduals):
+                self.assertAlmostEqual(calc, truth)
 
             # Fractional nonlinearity residuals
             self.assertEqual(len(returnedDataset.fractionalNonLinearityResiduals[ampName]),
                              len(inputFracNonLinearityResiduals))
-
-            for i in np.arange(len(returnedDataset.fractionalNonLinearityResiduals[ampName])):
-                self.assertAlmostEqual(returnedDataset.fractionalNonLinearityResiduals[ampName][i],
-                                       inputFracNonLinearityResiduals[i])
+            for calc, truth in zip(returnedDataset.fractionalNonLinearityResiduals[ampName],
+                                   inputFracNonLinearityResiduals):
+                self.assertAlmostEqual(calc, truth)
 
     def test_ptcFit(self):
         for createArray in [True, False]:
