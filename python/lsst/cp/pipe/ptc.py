@@ -775,7 +775,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             Parameters from n-order polynomial fit to meanSignalVector vs exposureTimeVector.
 
         fracNonLinearityResidual : `list` of `float`
-            Fractial residuals from the meanSignal vs exposureTime curve with respect to linear part of
+            Fractional residuals from the meanSignal vs exposureTime curve with respect to linear part of
             polynomial fit: 100*(linearPart - meanSignal)/linearPart, where
             linearPart = k0 + k1*exposureTimeVector.
 
