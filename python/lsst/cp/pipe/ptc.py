@@ -30,6 +30,7 @@ import os
 from matplotlib.backends.backend_pdf import PdfPages
 from sqlite3 import OperationalError
 from collections import Counter
+from dataclasses import dataclass
 
 import lsst.afw.math as afwMath
 import lsst.pex.config as pexConfig
@@ -171,23 +172,23 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
     )
 
 
+@dataclass
 class LinearityResidualsAndLinearizersDataset:
     """A simple class to hold the output from the
        `calculateLinearityResidualAndLinearizers` function.
     """
-    def __init__(self):
-        # Normalized coefficients for polynomial NL correction
-        self.polynomialLinearizerCoefficients = []
-        # Normalized coefficient for quadratic polynomial NL correction (c0)
-        self.quadraticPolynomialLinearizerCoefficient = None
-        # LUT array row for the amplifier at hand
-        self.linearizerTableRow = []
-        # Linearity residual, Eq. 2.2. of Janesick (2001)
-        self.linearityResidual = []
-        self.meanSignalVsTimePolyFitPars = []
-        self.meanSignalVsTimePolyFitParsErr = []
-        self.fractionalNonLinearityResidual = []
-        self.meanSignalVsTimePolyFitReducedChiSq = None
+    # Normalized coefficients for polynomial NL correction
+    polynomialLinearizerCoefficients: list
+    # Normalized coefficient for quadratic polynomial NL correction (c0)
+    quadraticPolynomialLinearizerCoefficient: float
+    # LUT array row for the amplifier at hand
+    linearizerTableRow: list
+    # Linearity residual, Eq. 2.2. of Janesick (2001)
+    linearityResidual: list
+    meanSignalVsTimePolyFitPars: list
+    meanSignalVsTimePolyFitParsErr: list 
+    fractionalNonLinearityResidual: list
+    meanSignalVsTimePolyFitReducedChiSq: float
 
 
 class PhotonTransferCurveDataset:
@@ -853,7 +854,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         linearPart = parsFit[0] + k1*exposureTimeVector
         fracNonLinearityResidual = 100*(linearPart - meanSignalVector)/linearPart
 
-        dataset = LinearityResidualsAndLinearizersDataset()
+        dataset = LinearityResidualsAndLinearizersDataset([], None, [], [], [], [], [], None)
         dataset.polynomialLinearizerCoefficients = polynomialLinearizerCoefficients
         dataset.quadraticPolynomialLinearizerCoefficient = c0
         dataset.linearizerTableRow = linearizerTableRow
