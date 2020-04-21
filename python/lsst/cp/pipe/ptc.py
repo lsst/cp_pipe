@@ -186,7 +186,7 @@ class LinearityResidualsAndLinearizersDataset:
     # Linearity residual, Eq. 2.2. of Janesick (2001)
     linearityResidual: list
     meanSignalVsTimePolyFitPars: list
-    meanSignalVsTimePolyFitParsErr: list 
+    meanSignalVsTimePolyFitParsErr: list
     fractionalNonLinearityResidual: list
     meanSignalVsTimePolyFitReducedChiSq: float
 
