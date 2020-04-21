@@ -64,7 +64,7 @@ class MakeBrighterFatterKernelTaskConfig(pexConfig.Config):
     isrForbiddenSteps = pexConfig.ListField(
         dtype=str,
         doc="isr operations that must NOT be performed for valid results. Raises if any of these are True",
-        default=['doFlat', 'doFringe', 'doAddDistortionModel', 'doBrighterFatter', 'doUseOpticsTransmission',
+        default=['doFlat', 'doFringe', 'doBrighterFatter', 'doUseOpticsTransmission',
                  'doUseFilterTransmission', 'doUseSensorTransmission', 'doUseAtmosphereTransmission']
     )
     isrDesirableSteps = pexConfig.ListField(

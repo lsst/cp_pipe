@@ -45,7 +45,6 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         self.defaultConfig.isr.doFlat = False
         self.defaultConfig.isr.doFringe = False
         self.defaultConfig.isr.doCrosstalk = False
-        self.defaultConfig.isr.doAddDistortionModel = False
         self.defaultConfig.isr.doUseOpticsTransmission = False
         self.defaultConfig.isr.doUseFilterTransmission = False
         self.defaultConfig.isr.doUseSensorTransmission = False
