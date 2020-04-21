@@ -30,6 +30,7 @@ import os
 from matplotlib.backends.backend_pdf import PdfPages
 from sqlite3 import OperationalError
 from collections import Counter
+from dataclasses import dataclass
 
 import lsst.afw.math as afwMath
 import lsst.pex.config as pexConfig
@@ -171,6 +172,25 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
     )
 
 
+@dataclass
+class LinearityResidualsAndLinearizersDataset:
+    """A simple class to hold the output from the
+       `calculateLinearityResidualAndLinearizers` function.
+    """
+    # Normalized coefficients for polynomial NL correction
+    polynomialLinearizerCoefficients: list
+    # Normalized coefficient for quadratic polynomial NL correction (c0)
+    quadraticPolynomialLinearizerCoefficient: float
+    # LUT array row for the amplifier at hand
+    linearizerTableRow: list
+    # Linearity residual, Eq. 2.2. of Janesick (2001)
+    linearityResidual: list
+    meanSignalVsTimePolyFitPars: list
+    meanSignalVsTimePolyFitParsErr: list
+    fractionalNonLinearityResidual: list
+    meanSignalVsTimePolyFitReducedChiSq: float
+
+
 class PhotonTransferCurveDataset:
     """A simple class to hold the output data from the PTC task.
 
@@ -213,6 +233,7 @@ class PhotonTransferCurveDataset:
         self.__dict__["nonLinearity"] = {ampName: [] for ampName in ampNames}
         self.__dict__["nonLinearityError"] = {ampName: [] for ampName in ampNames}
         self.__dict__["nonLinearityResiduals"] = {ampName: [] for ampName in ampNames}
+        self.__dict__["fractionalNonLinearityResiduals"] = {ampName: [] for ampName in ampNames}
         self.__dict__["nonLinearityReducedChiSquared"] = {ampName: [] for ampName in ampNames}
 
         # final results
@@ -364,7 +385,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         numberAmps = len(detector.getAmplifiers())
         numberAduValues = self.config.maxAduForLookupTableLinearizer
-        lookupTableArray = np.zeros((numberAmps, numberAduValues), dtype=np.int)
+        lookupTableArray = np.zeros((numberAmps, numberAduValues), dtype=np.float32)
 
         # Fit PTC and (non)linearity of signal vs time curve.
         # Fill up PhotonTransferCurveDataset object.
@@ -575,7 +596,9 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             reducedChiSq = (errFunc(pFit, dataX, dataY)**2).sum()/(len(dataY)-len(initialParams))
             pCov *= reducedChiSq
         else:
+            pCov = np.zeros((len(initialParams), len(initialParams)))
             pCov[:, :] = np.inf
+            reducedChiSq = np.inf
 
         errorVec = []
         for i in range(len(pFit)):
@@ -740,7 +763,11 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         Returns
         -------
-        polynomialLinearizerCoefficients : `list` of `float`
+        dataset : `lsst.cp.pipe.ptc.LinearityResidualsAndLinearizersDataset`
+            The dataset containing the fit parameters, the NL correction coefficients, and the
+            LUT row for the amplifier at hand. Explicitly:
+
+        dataset.polynomialLinearizerCoefficients : `list` of `float`
             Coefficients for LinearizePolynomial, where corrImage = uncorrImage + sum_i c_i uncorrImage^(2 +
             i).
             c_(j-2) = -k_j/(k_1^j) with units (DN^(1-j)). The units of k_j are DN/t^j, and they are fit from
@@ -750,29 +777,34 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             correction. Therefore, j = 2...n in the above expression (see `LinearizePolynomial` class in
             `linearize.py`.)
 
-        c0 : `float`
+        dataset.quadraticPolynomialLinearizerCoefficient : `float`
             Coefficient for LinearizeSquared, where corrImage = uncorrImage + c0*uncorrImage^2.
             c0 = -k2/(k1^2), where k1 and k2 are fit from
             meanSignalVector = k0 + k1*exposureTimeVector + k2*exposureTimeVector^2 +...
                                + kn*exposureTimeVector^n, with n = "polynomialFitDegreeNonLinearity".
 
-        linearizerTableRow : `list` of `float`
+        dataset.linearizerTableRow : `list` of `float`
            One dimensional array with deviation from linear part of n-order polynomial fit
            to mean vs time curve. This array will be one row (for the particular amplifier at hand)
            of the table array for LinearizeLookupTable.
 
-        linResidual : `list` of `float`
+        dataset.linearityResidual : `list` of `float`
             Linearity residual from the mean vs time curve, defined as
             100*(1 - meanSignalReference/expTimeReference/(meanSignal/expTime).
 
-        parsFit : `list` of `float`
+        dataset.meanSignalVsTimePolyFitPars  : `list` of `float`
             Parameters from n-order polynomial fit to meanSignalVector vs exposureTimeVector.
 
-        parsFitErr : list of `float`
+        dataset.meanSignalVsTimePolyFitParsErr : `list` of `float`
             Parameters from n-order polynomial fit to meanSignalVector vs exposureTimeVector.
 
-        reducedChiSquaredNonLinearityFit : `float`
-            Reduced chi squared from polynomial fit to meanSignalVector vs exposureTimeVector.
+        dataset.fractionalNonLinearityResidual : `list` of `float`
+            Fractional residuals from the meanSignal vs exposureTime curve with respect to linear part of
+            polynomial fit: 100*(linearPart - meanSignal)/linearPart, where
+            linearPart = k0 + k1*exposureTimeVector.
+
+        dataset.meanSignalVsTimePolyFitReducedChiSq  : `float`
+            Reduced unweighted chi squared from polynomial fit to meanSignalVector vs exposureTimeVector.
         """
 
         # Lookup table linearizer
@@ -792,10 +824,9 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         # Use linear part to get time at wich signal is maxAduForLookupTableLinearizer DN
         tMax = (self.config.maxAduForLookupTableLinearizer - parsFit[0])/parsFit[1]
         timeRange = np.linspace(0, tMax, self.config.maxAduForLookupTableLinearizer)
-        signalIdeal = (parsFit[0] + parsFit[1]*timeRange).astype(int)
-        signalUncorrected = (self.funcPolynomial(parsFit, timeRange)).astype(int)
+        signalIdeal = parsFit[0] + parsFit[1]*timeRange
+        signalUncorrected = self.funcPolynomial(parsFit, timeRange)
         linearizerTableRow = signalIdeal - signalUncorrected  # LinearizerLookupTable has corrections
-
         # LinearizePolynomial and LinearizeSquared:
         # Check that magnitude of higher order (>= 3) coefficents of the polyFit are small,
         # i.e., less than threshold = 1e-10 (typical quadratic and cubic coefficents are ~1e-6
@@ -819,8 +850,21 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                            exposureTimeVector[linResidualTimeIndex]) /
                            (meanSignalVector/exposureTimeVector)))
 
-        return (polynomialLinearizerCoefficients, c0, linearizerTableRow, linResidual, parsFit, parsFitErr,
-                reducedChiSquaredNonLinearityFit)
+        # Fractional non-linearity residual, w.r.t linear part of polynomial fit
+        linearPart = parsFit[0] + k1*exposureTimeVector
+        fracNonLinearityResidual = 100*(linearPart - meanSignalVector)/linearPart
+
+        dataset = LinearityResidualsAndLinearizersDataset([], None, [], [], [], [], [], None)
+        dataset.polynomialLinearizerCoefficients = polynomialLinearizerCoefficients
+        dataset.quadraticPolynomialLinearizerCoefficient = c0
+        dataset.linearizerTableRow = linearizerTableRow
+        dataset.linearityResidual = linResidual
+        dataset.meanSignalVsTimePolyFitPars = parsFit
+        dataset.meanSignalVsTimePolyFitParsErr = parsFitErr
+        dataset.fractionalNonLinearityResidual = fracNonLinearityResidual
+        dataset.meanSignalVsTimePolyFitReducedChiSq = reducedChiSquaredNonLinearityFit
+
+        return dataset
 
     def fitPtcAndNonLinearity(self, dataset, ptcFitType, tableArray=None):
         """Fit the photon transfer curve and calculate linearity and residuals.
@@ -932,6 +976,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 dataset.nonLinearity[ampName] = np.nan
                 dataset.nonLinearityError[ampName] = np.nan
                 dataset.nonLinearityResiduals[ampName] = np.nan
+                dataset.fractionalNonLinearityResiduals[ampName] = np.nan
                 dataset.coefficientLinearizeSquared[ampName] = np.nan
                 continue
 
@@ -967,24 +1012,23 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             # Non-linearity residuals (NL of mean vs time curve): percentage, and fit to a quadratic function
             # In this case, len(parsIniNonLinearity) = 3 indicates that we want a quadratic fit
 
-            (coeffsLinPoly, c0, linearizerTableRow, linResidualNonLinearity,
-             parsFitNonLinearity, parsFitErrNonLinearity,
-             reducedChiSqNonLinearity) = self.calculateLinearityResidualAndLinearizers(timeVecFinal,
-                                                                                       meanVecFinal)
+            datasetLinRes = self.calculateLinearityResidualAndLinearizers(timeVecFinal, meanVecFinal)
 
             # LinearizerLookupTable
             if tableArray is not None:
-                tableArray[i, :] = linearizerTableRow
-
-            dataset.nonLinearity[ampName] = parsFitNonLinearity
-            dataset.nonLinearityError[ampName] = parsFitErrNonLinearity
-            dataset.nonLinearityResiduals[ampName] = linResidualNonLinearity
-            dataset.nonLinearityReducedChiSquared[ampName] = reducedChiSqNonLinearity
+                tableArray[i, :] = datasetLinRes.linearizerTableRow
+            dataset.nonLinearity[ampName] = datasetLinRes.meanSignalVsTimePolyFitPars
+            dataset.nonLinearityError[ampName] = datasetLinRes.meanSignalVsTimePolyFitParsErr
+            dataset.nonLinearityResiduals[ampName] = datasetLinRes.linearityResidual
+            dataset.fractionalNonLinearityResiduals[ampName] = datasetLinRes.fractionalNonLinearityResidual
+            dataset.nonLinearityReducedChiSquared[ampName] = datasetLinRes.meanSignalVsTimePolyFitReducedChiSq
             # Slice correction coefficients (starting at 2) for polynomial linearizer. The first
             # and second are reduntant  with the bias and gain, respectively,
             # and are not used by LinearizerPolynomial.
-            dataset.coefficientsLinearizePolynomial[ampName] = np.array(coeffsLinPoly[2:])
-            dataset.coefficientLinearizeSquared[ampName] = c0
+            polyLinCoeffs = np.array(datasetLinRes.polynomialLinearizerCoefficients[2:])
+            dataset.coefficientsLinearizePolynomial[ampName] = polyLinCoeffs
+            quadPolyLinCoeff = datasetLinRes.quadraticPolynomialLinearizerCoefficient
+            dataset.coefficientLinearizeSquared[ampName] = quadPolyLinCoeff
 
         return dataset
 
@@ -1142,8 +1186,29 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             a.set_yscale('linear', fontsize=labelFontSize)
             a.set_title(amp, fontsize=titleFontSize)
 
-        f.suptitle(r"Linearity Residual: $100(1 - \mu_{\rm{ref}}/t_{\rm{ref}})/(\mu / t))$" + "\n" +
+        f.suptitle(r"Linearity Residual: $100\times(1 - \mu_{\rm{ref}}/t_{\rm{ref}})/(\mu / t))$" + "\n" +
                    r"$t_{\rm{ref}}$: " + f"{timeVecFinal[2]} s", fontsize=supTitleFontSize)
+        pdfPages.savefig()
+
+        # Plot fractional non-linearity residual (w.r.t linear part of polynomial fit)
+        f, ax = plt.subplots(nrows=4, ncols=4, sharex='col', sharey='row', figsize=(13, 10))
+        for i, (amp, a) in enumerate(zip(dataset.ampNames, ax.flatten())):
+            meanVecFinal = np.array(dataset.rawMeans[amp])[dataset.visitMask[amp]]
+            fracLinRes = np.array(dataset.fractionalNonLinearityResiduals[amp])
+            a.scatter(meanVecFinal, fracLinRes, c='g')
+            a.axhline(y=0, color='k')
+            a.axvline(x=0, color='k', linestyle='-')
+            a.set_xlabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
+            a.set_xticks(meanVecFinal)
+            a.set_ylabel('Fractional nonlinearity (%)', fontsize=labelFontSize)
+            a.tick_params(labelsize=labelFontSize)
+            a.set_xscale('linear', fontsize=labelFontSize)
+            a.set_yscale('linear', fontsize=labelFontSize)
+            a.set_title(amp, fontsize=titleFontSize)
+
+        f.suptitle(r"Fractional NL residual" + "\n" +
+                   r"$100\times \frac{(k_0 + k_1\times Time - \mu)}{k_0 + k_1\times Time}$",
+                   fontsize=supTitleFontSize)
         pdfPages.savefig()
 
         return
