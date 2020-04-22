@@ -32,7 +32,7 @@ import lsst.utils
 import lsst.utils.tests
 
 import lsst.afw.image as afwImage
-from lsst.afw.geom import Box2I, Point2I, Extent2I
+from lsst.geom import Box2I, Point2I, Extent2I
 import lsst.ip.isr as ipIsr
 from lsst.ip.isr import isrMock
 import lsst.log
