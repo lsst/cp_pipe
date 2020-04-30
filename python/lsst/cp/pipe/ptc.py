@@ -393,6 +393,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         # Produce coefficients for Polynomial ans Squared linearizers.
         dataset = self.fitPtcAndNonLinearity(dataset, self.config.ptcFitType,
                                              tableArray=lookupTableArray)
+
         if self.config.makePlots:
             self.plot(dataRef, dataset, ptcFitType=self.config.ptcFitType)
 
@@ -413,10 +414,12 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         for linType, dataType in [("LOOKUPTABLE", 'linearizeLut'),
                                   ("LINEARIZEPOLYNOMIAL", 'linearizePolynomial'),
                                   ("LINEARIZESQUARED", 'linearizeSquared')]:
+
             if linType == "LOOKUPTABLE":
                 tableArray = lookupTableArray
             else:
                 tableArray = None
+
             linearizer = self.buildLinearizerObject(dataset, detector, calibDate, linType,
                                                     instruName=self.config.instrumentName,
                                                     tableArray=tableArray,
@@ -965,20 +968,19 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 msg = (f"\nSERIOUS: Not enough data points ({len(meanVecFinal)}) compared to the number of"
                        f"parameters of the PTC model({len(parsIniPtc)}). Setting {ampName} to BAD.")
                 self.log.warn(msg)
-                lenRawTimes = len(dataset.rawExpTimes)
                 lenNonLinPars = self.config.polynomialFitDegreeNonLinearity - 1
                 dataset.badAmps.append(ampName)
                 dataset.gain[ampName] = np.nan
                 dataset.gainErr[ampName] = np.nan
                 dataset.noise[ampName] = np.nan
                 dataset.noiseErr[ampName] = np.nan
-                dataset.nonLinearity[ampName] = [np.nan for _ in range(lenRawTimes)]
-                dataset.nonLinearityError[ampName] = [np.nan for _ in range(lenRawTimes)]
-                dataset.nonLinearityResiduals[ampName] = [np.nan for _ in range(lenRawTimes)]
-                dataset.fractionalNonLinearityResiduals[ampName] = [np.nan for _ in range(lenRawTimes)]
+                dataset.nonLinearity[ampName] = np.nan
+                dataset.nonLinearityError[ampName] = np.nan
+                dataset.nonLinearityResiduals[ampName] = np.nan
+                dataset.fractionalNonLinearityResiduals[ampName] = np.nan
                 dataset.coefficientLinearizeSquared[ampName] = np.nan
-                dataset.ptcFitPars[ampName] = [np.nan for _ in range(lenRawTimes)]
-                dataset.ptcFitParsError[ampName] = [np.nan for _ in range(lenRawTimes)]
+                dataset.ptcFitPars[ampName] = np.nan
+                dataset.ptcFitParsError[ampName] = np.nan
                 dataset.ptcFitReducedChiSquared[ampName] = np.nan
                 dataset.coefficientsLinearizePolynomial[ampName] = [np.nan for _ in range(lenNonLinPars)]
                 tableArray[i, :] = [np.nan for _ in range(self.config.maxAduForLookupTableLinearizer)]
@@ -1092,20 +1094,34 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             pars, parsErr = dataset.ptcFitPars[amp], dataset.ptcFitParsError[amp]
 
             if ptcFitType == 'ASTIERAPPROXIMATION':
-                ptcA00, ptcA00error = pars[0], parsErr[0]
-                ptcGain, ptcGainError = pars[1], parsErr[1]
-                ptcNoise = np.sqrt(np.fabs(pars[2]))
-                ptcNoiseError = 0.5*(parsErr[2]/np.fabs(pars[2]))*np.sqrt(np.fabs(pars[2]))
-                stringLegend = (f"a00: {ptcA00:.2e}+/-{ptcA00error:.2e} 1/e"
-                                f"\n Gain: {ptcGain:.4}+/-{ptcGainError:.2e} e/DN"
-                                f"\n Noise: {ptcNoise:.4}+/-{ptcNoiseError:.2e} e \n")
+                if len(meanVecFinal):
+                    ptcA00, ptcA00error = pars[0], parsErr[0]
+                    ptcGain, ptcGainError = pars[1], parsErr[1]
+                    ptcNoise = np.sqrt(np.fabs(pars[2]))
+                    ptcNoiseError = 0.5*(parsErr[2]/np.fabs(pars[2]))*np.sqrt(np.fabs(pars[2]))
+                    stringLegend = (f"a00: {ptcA00:.2e}+/-{ptcA00error:.2e} 1/e"
+                                    f"\n Gain: {ptcGain:.4}+/-{ptcGainError:.2e} e/DN"
+                                    f"\n Noise: {ptcNoise:.4}+/-{ptcNoiseError:.2e} e \n")
 
             if ptcFitType == 'POLYNOMIAL':
-                ptcGain, ptcGainError = 1./pars[1], np.fabs(1./pars[1])*(parsErr[1]/pars[1])
-                ptcNoise = np.sqrt(np.fabs(pars[0]))*ptcGain
-                ptcNoiseError = (0.5*(parsErr[0]/np.fabs(pars[0]))*(np.sqrt(np.fabs(pars[0]))))*ptcGain
-                stringLegend = (f"Noise: {ptcNoise:.4}+/-{ptcNoiseError:.2e} e \n"
-                                f"Gain: {ptcGain:.4}+/-{ptcGainError:.2e} e/DN \n")
+                if len(meanVecFinal):
+                    ptcGain, ptcGainError = 1./pars[1], np.fabs(1./pars[1])*(parsErr[1]/pars[1])
+                    ptcNoise = np.sqrt(np.fabs(pars[0]))*ptcGain
+                    ptcNoiseError = (0.5*(parsErr[0]/np.fabs(pars[0]))*(np.sqrt(np.fabs(pars[0]))))*ptcGain
+                    stringLegend = (f"Noise: {ptcNoise:.4}+/-{ptcNoiseError:.2e} e \n"
+                                    f"Gain: {ptcGain:.4}+/-{ptcGainError:.2e} e/DN \n")
+
+                a.set_xlabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
+                a.set_ylabel(r'Variance (DN$^2$)', fontsize=labelFontSize)
+                a.tick_params(labelsize=11)
+                a.set_xscale('linear', fontsize=labelFontSize)
+                a.set_yscale('linear', fontsize=labelFontSize)
+
+                a2.set_xlabel(r'Mean Signal ($\mu$, DN)', fontsize=labelFontSize)
+                a2.set_ylabel(r'Variance (DN$^2$)', fontsize=labelFontSize)
+                a2.tick_params(labelsize=11)
+                a2.set_xscale('log')
+                a2.set_yscale('log')
 
             if len(meanVecFinal):  # Empty if the whole amp is bad, for example.
                 minMeanVecFinal = np.min(meanVecFinal)
@@ -1119,13 +1135,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 a.plot(meanVecFinal, pars[0] + pars[1]*meanVecFinal, color='green', linestyle='--')
                 a.scatter(meanVecFinal, varVecFinal, c='blue', marker='o', s=markerSize)
                 a.scatter(meanVecOutliers, varVecOutliers, c='magenta', marker='s', s=markerSize)
-                a.set_xlabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
-                a.set_xticks(meanVecOriginal)
-                a.set_ylabel(r'Variance (DN$^2$)', fontsize=labelFontSize)
-                a.tick_params(labelsize=11)
                 a.text(0.03, 0.8, stringLegend, transform=a.transAxes, fontsize=legendFontSize)
-                a.set_xscale('linear', fontsize=labelFontSize)
-                a.set_yscale('linear', fontsize=labelFontSize)
                 a.set_title(amp, fontsize=titleFontSize)
                 a.set_xlim([minMeanVecOriginal - 0.2*deltaXlim, maxMeanVecOriginal + 0.2*deltaXlim])
 
@@ -1133,29 +1143,11 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 a2.plot(meanVecFit, ptcFunc(pars, meanVecFit), color='red')
                 a2.scatter(meanVecFinal, varVecFinal, c='blue', marker='o', s=markerSize)
                 a2.scatter(meanVecOutliers, varVecOutliers, c='magenta', marker='s', s=markerSize)
-                a2.set_xlabel(r'Mean Signal ($\mu$, DN)', fontsize=labelFontSize)
-                a2.set_ylabel(r'Variance (DN$^2$)', fontsize=labelFontSize)
-                a2.tick_params(labelsize=11)
                 a2.text(0.03, 0.8, stringLegend, transform=a2.transAxes, fontsize=legendFontSize)
-                a2.set_xscale('log')
-                a2.set_yscale('log')
                 a2.set_title(amp, fontsize=titleFontSize)
                 a2.set_xlim([minMeanVecOriginal, maxMeanVecOriginal])
             else:
-                a.set_xlabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
-                a.set_ylabel(r'Variance (DN$^2$)', fontsize=labelFontSize)
-                a.tick_params(labelsize=11)
-                a.text(0.03, 0.8, stringLegend, transform=a.transAxes, fontsize=legendFontSize)
-                a.set_xscale('linear', fontsize=labelFontSize)
-                a.set_yscale('linear', fontsize=labelFontSize)
                 a.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
-
-                a2.set_xlabel(r'Mean Signal ($\mu$, DN)', fontsize=labelFontSize)
-                a2.set_ylabel(r'Variance (DN$^2$)', fontsize=labelFontSize)
-                a2.tick_params(labelsize=11)
-                a2.text(0.03, 0.8, stringLegend, transform=a2.transAxes, fontsize=legendFontSize)
-                a2.set_xscale('log')
-                a2.set_yscale('log')
                 a2.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
 
         f.suptitle(f"PTC \n Fit: " + stringTitle, fontsize=20)
@@ -1169,6 +1161,12 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             meanVecFinal = np.array(dataset.rawMeans[amp])[dataset.visitMask[amp]]
             timeVecFinal = np.array(dataset.rawExpTimes[amp])[dataset.visitMask[amp]]
 
+            a.set_xlabel('Time (sec)', fontsize=labelFontSize)
+            a.set_ylabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
+            a.tick_params(labelsize=labelFontSize)
+            a.set_xscale('linear', fontsize=labelFontSize)
+            a.set_yscale('linear', fontsize=labelFontSize)
+
             if len(meanVecFinal):
                 pars, parsErr = dataset.nonLinearity[amp], dataset.nonLinearityError[amp]
                 k0, k0Error = pars[0], parsErr[0]
@@ -1178,88 +1176,62 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                                 f"\n k2: {k2:.2e}+/-{k2Error:.2e} DN/t^2 \n")
                 a.scatter(timeVecFinal, meanVecFinal)
                 a.plot(timeVecFinal, self.funcPolynomial(pars, timeVecFinal), color='red')
-                a.set_xlabel('Time (sec)', fontsize=labelFontSize)
-                a.set_xticks(timeVecFinal)
-                a.set_ylabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
-                a.tick_params(labelsize=labelFontSize)
                 a.text(0.03, 0.75, stringLegend, transform=a.transAxes, fontsize=legendFontSize)
-                a.set_xscale('linear', fontsize=labelFontSize)
-                a.set_yscale('linear', fontsize=labelFontSize)
-                a.set_title(amp, fontsize=titleFontSize)
+                a.set_title(f"{amp}", fontsize=titleFontSize)
             else:
-                a.set_xlabel('Time (sec)', fontsize=labelFontSize)
-                a.set_ylabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
-                a.tick_params(labelsize=labelFontSize)
-                a.text(0.03, 0.75, stringLegend, transform=a.transAxes, fontsize=legendFontSize)
-                a.set_xscale('linear', fontsize=labelFontSize)
-                a.set_yscale('linear', fontsize=labelFontSize)
                 a.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
 
         f.suptitle("Linearity \n Fit: Polynomial (degree: %g)"
                    % (self.config.polynomialFitDegreeNonLinearity),
                    fontsize=supTitleFontSize)
-        pdfPages.savefig()
+        pdfPages.savefig(f)
 
         # Plot linearity residual
         f, ax = plt.subplots(nrows=4, ncols=4, sharex='col', sharey='row', figsize=(13, 10))
         for i, (amp, a) in enumerate(zip(dataset.ampNames, ax.flatten())):
             meanVecFinal = np.array(dataset.rawMeans[amp])[dataset.visitMask[amp]]
             linRes = np.array(dataset.nonLinearityResiduals[amp])
+
+            a.set_xlabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
+            a.set_ylabel('LR (%)', fontsize=labelFontSize)
+            a.set_xscale('linear', fontsize=labelFontSize)
+            a.set_yscale('linear', fontsize=labelFontSize)
             if len(meanVecFinal):
-                a.scatter(meanVecFinal, linRes)
-                a.axhline(y=0, color='k')
                 a.axvline(x=timeVecFinal[self.config.linResidualTimeIndex], color='g', linestyle='--')
-                a.set_xlabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
-                a.set_xticks(meanVecFinal)
-                a.set_ylabel('LR (%)', fontsize=labelFontSize)
-                a.tick_params(labelsize=labelFontSize)
-                a.set_xscale('linear', fontsize=labelFontSize)
-                a.set_yscale('linear', fontsize=labelFontSize)
-                a.set_title(amp, fontsize=titleFontSize)
-            else:
+                a.scatter(meanVecFinal, linRes)
+                a.set_title(f"{amp}", fontsize=titleFontSize)
                 a.axhline(y=0, color='k')
-                a.set_xlabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
-                a.set_xticks(meanVecFinal)
-                a.set_ylabel('LR (%)', fontsize=labelFontSize)
                 a.tick_params(labelsize=labelFontSize)
-                a.set_xscale('linear', fontsize=labelFontSize)
-                a.set_yscale('linear', fontsize=labelFontSize)
+            else:
                 a.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
 
         f.suptitle(r"Linearity Residual: $100\times(1 - \mu_{\rm{ref}}/t_{\rm{ref}})/(\mu / t))$" + "\n" +
                    r"$t_{\rm{ref}}$: " + f"{timeVecFinal[2]} s", fontsize=supTitleFontSize)
-        pdfPages.savefig()
+        pdfPages.savefig(f)
 
         # Plot fractional non-linearity residual (w.r.t linear part of polynomial fit)
         f, ax = plt.subplots(nrows=4, ncols=4, sharex='col', sharey='row', figsize=(13, 10))
         for i, (amp, a) in enumerate(zip(dataset.ampNames, ax.flatten())):
             meanVecFinal = np.array(dataset.rawMeans[amp])[dataset.visitMask[amp]]
             fracLinRes = np.array(dataset.fractionalNonLinearityResiduals[amp])
+
+            a.axhline(y=0, color='k')
+            a.axvline(x=0, color='k', linestyle='-')
+            a.set_xlabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
+            a.set_ylabel('Fractional nonlinearity (%)', fontsize=labelFontSize)
+            a.tick_params(labelsize=labelFontSize)
+            a.set_xscale('linear', fontsize=labelFontSize)
+            a.set_yscale('linear', fontsize=labelFontSize)
+
             if len(meanVecFinal):
                 a.scatter(meanVecFinal, fracLinRes, c='g')
-                a.axhline(y=0, color='k')
-                a.axvline(x=0, color='k', linestyle='-')
-                a.set_xlabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
-                a.set_xticks(meanVecFinal)
-                a.set_ylabel('Fractional nonlinearity (%)', fontsize=labelFontSize)
-                a.tick_params(labelsize=labelFontSize)
-                a.set_xscale('linear', fontsize=labelFontSize)
-                a.set_yscale('linear', fontsize=labelFontSize)
                 a.set_title(amp, fontsize=titleFontSize)
             else:
-                a.axhline(y=0, color='k')
-                a.axvline(x=0, color='k', linestyle='-')
-                a.set_xlabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
-                a.set_xticks(meanVecFinal)
-                a.set_ylabel('Fractional nonlinearity (%)', fontsize=labelFontSize)
-                a.tick_params(labelsize=labelFontSize)
-                a.set_xscale('linear', fontsize=labelFontSize)
-                a.set_yscale('linear', fontsize=labelFontSize)
                 a.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
 
         f.suptitle(r"Fractional NL residual" + "\n" +
                    r"$100\times \frac{(k_0 + k_1*Time-\mu)}{k_0+k_1*Time}$",
                    fontsize=supTitleFontSize)
-        pdfPages.savefig()
+        pdfPages.savefig(f)
 
         return
