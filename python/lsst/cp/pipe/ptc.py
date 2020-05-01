@@ -968,6 +968,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 msg = (f"\nSERIOUS: Not enough data points ({len(meanVecFinal)}) compared to the number of"
                        f"parameters of the PTC model({len(parsIniPtc)}). Setting {ampName} to BAD.")
                 self.log.warn(msg)
+                # The first and second parameters of initial fit are discarded (bias and gain)
+                # for the final NL coefficients
                 lenNonLinPars = self.config.polynomialFitDegreeNonLinearity - 1
                 dataset.badAmps.append(ampName)
                 dataset.gain[ampName] = np.nan
@@ -982,8 +984,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 dataset.ptcFitPars[ampName] = np.nan
                 dataset.ptcFitParsError[ampName] = np.nan
                 dataset.ptcFitReducedChiSquared[ampName] = np.nan
-                dataset.coefficientsLinearizePolynomial[ampName] = [np.nan for _ in range(lenNonLinPars)]
-                tableArray[i, :] = [np.nan for _ in range(self.config.maxAduForLookupTableLinearizer)]
+                dataset.coefficientsLinearizePolynomial[ampName] = [np.nan]*lenNonLinPars
+                tableArray[i, :] = [np.nan]*self.config.maxAduForLookupTableLinearizer
                 continue
 
             # Fit the PTC
