@@ -151,6 +151,40 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         for boxMeas in boxesMeasured:
             self.assertIn(boxMeas, unionInputExpectedBoxes)
 
+    def test_normalize_defects(self):
+        """A test for the lsst.meas.algorithms.Defect.normalize() method.
+        """
+        defects = self.allDefectsList
+        #  First series of 1-pixel contiguous defects
+        defects.append(Box2I(corner=Point2I(15, 1), dimensions=Extent2I(1, 1)))
+        defects.append(Box2I(corner=Point2I(15, 2), dimensions=Extent2I(1, 1)))
+        defects.append(Box2I(corner=Point2I(15, 3), dimensions=Extent2I(1, 1)))
+        defects.append(Box2I(corner=Point2I(15, 4), dimensions=Extent2I(1, 1)))
+        defects.append(Box2I(corner=Point2I(15, 5), dimensions=Extent2I(1, 1)))
+
+        # Second series of 1-pixel contiguos defects
+        defects.append(Box2I(corner=Point2I(20, 11), dimensions=Extent2I(1, 1)))
+        defects.append(Box2I(corner=Point2I(20, 12), dimensions=Extent2I(1, 1)))
+        defects.append(Box2I(corner=Point2I(20, 13), dimensions=Extent2I(1, 1)))
+        defects.append(Box2I(corner=Point2I(20, 14), dimensions=Extent2I(1, 1)))
+        defects.append(Box2I(corner=Point2I(20, 15), dimensions=Extent2I(1, 1)))
+
+        # the normalize() method should replace the 10 defects above by just
+        # two defect boxes with adjusted dimensions
+        newDefects = defects.normalize(self.flatExp.getBBox())
+
+        boxesMeasured = []
+        for defect in newDefects:
+            boxesMeasured.append(defect.getBBox())
+
+        # The normalizing function should have created the following two boxes out
+        # of the individual 1-pixel defects from above
+        expectedDefects = [Box2I(corner=Point2I(15, 1), dimensions=Extent2I(1, 5)),
+                           Box2I(corner=Point2I(20, 11), dimensions=Extent2I(1, 5))]
+
+        for d in expectedDefects:
+            self.assertIn(d, boxesMeasured)
+
     def test_maskBlocks_full_column(self):
         """A test for maskBlocksIfIntermitentBadPixelsInColumn.
         Tests that a contigous bad column does not get split by the code.
