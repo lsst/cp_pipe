@@ -131,7 +131,6 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         task = cpPipe.defects.FindDefectsTask(config=config)
 
         defectsWithColumns = task.maskBlocksIfIntermitentBadPixelsInColumn(inputDefects)
-
         boxesMeasured = []
         for defect in defectsWithColumns:
             boxesMeasured.append(defect.getBBox())
@@ -214,6 +213,7 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
                      Box2I(corner=Point2I(30, 34), dimensions=Extent2I(1, 15))]
         for badBox in badPixels:
             defects.append(badBox)
+
         self.check_maskBlocks(defects, expectedDefects)
 
     def test_maskBlocks_discontigous_less_than_thresholds(self):
@@ -348,8 +348,7 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         """
 
         expectedDefects = [Box2I(corner=Point2I(60, 1), dimensions=Extent2I(1, 29)),
-                           Box2I(corner=Point2I(61, 2), dimensions=Extent2I(1, 12)),
-                           Box2I(corner=Point2I(62, 2), dimensions=Extent2I(1, 12))]
+                           Box2I(corner=Point2I(61, 2), dimensions=Extent2I(2, 12))]
         defects = self.allDefectsList
         badPixels = [Box2I(corner=Point2I(60, 1), dimensions=Extent2I(1, 18)),
                      Box2I(corner=Point2I(60, 20), dimensions=Extent2I(1, 10)),
@@ -370,8 +369,7 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         """
 
         expectedDefects = [Box2I(corner=Point2I(70, 1), dimensions=Extent2I(1, 29)),
-                           Box2I(corner=Point2I(68, 2), dimensions=Extent2I(1, 12)),
-                           Box2I(corner=Point2I(69, 2), dimensions=Extent2I(1, 12))]
+                           Box2I(corner=Point2I(68, 2), dimensions=Extent2I(2, 12))]
         defects = self.allDefectsList
         badPixels = [Box2I(corner=Point2I(70, 1), dimensions=Extent2I(1, 18)),
                      Box2I(corner=Point2I(70, 20), dimensions=Extent2I(1, 10)),
@@ -392,10 +390,8 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         """
 
         expectedDefects = [Box2I(corner=Point2I(75, 1), dimensions=Extent2I(1, 29)),
-                           Box2I(corner=Point2I(73, 2), dimensions=Extent2I(1, 12)),
-                           Box2I(corner=Point2I(74, 2), dimensions=Extent2I(1, 12)),
-                           Box2I(corner=Point2I(76, 2), dimensions=Extent2I(1, 12)),
-                           Box2I(corner=Point2I(77, 2), dimensions=Extent2I(1, 12))]
+                           Box2I(corner=Point2I(73, 2), dimensions=Extent2I(2, 12)),
+                           Box2I(corner=Point2I(76, 2), dimensions=Extent2I(2, 12))]
         defects = self.allDefectsList
         badPixels = [Box2I(corner=Point2I(75, 1), dimensions=Extent2I(1, 18)),
                      Box2I(corner=Point2I(75, 20), dimensions=Extent2I(1, 10)),
@@ -418,8 +414,8 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         """
 
         expectedDefects = [Box2I(corner=Point2I(80, 1), dimensions=Extent2I(1, 29)),
-                           Box2I(corner=Point2I(81, 2), dimensions=Extent2I(1, 2)),
-                           Box2I(corner=Point2I(81, 8), dimensions=Extent2I(1, 8))]
+                           Box2I(corner=Point2I(81, 2), dimensions=Extent2I(2, 2)),
+                           Box2I(corner=Point2I(81, 8), dimensions=Extent2I(2, 8))]
         defects = self.allDefectsList
         badPixels = [Box2I(corner=Point2I(80, 1), dimensions=Extent2I(1, 18)),
                      Box2I(corner=Point2I(80, 20), dimensions=Extent2I(1, 10)),
@@ -440,8 +436,8 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         """
 
         expectedDefects = [Box2I(corner=Point2I(87, 1), dimensions=Extent2I(1, 29)),
-                           Box2I(corner=Point2I(85, 2), dimensions=Extent2I(1, 2)),
-                           Box2I(corner=Point2I(85, 8), dimensions=Extent2I(1, 8))]
+                           Box2I(corner=Point2I(85, 2), dimensions=Extent2I(2, 2)),
+                           Box2I(corner=Point2I(85, 8), dimensions=Extent2I(2, 8))]
         defects = self.allDefectsList
         badPixels = [Box2I(corner=Point2I(87, 1), dimensions=Extent2I(1, 18)),
                      Box2I(corner=Point2I(87, 20), dimensions=Extent2I(1, 10)),
@@ -462,14 +458,10 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         """
 
         expectedDefects = [Box2I(corner=Point2I(93, 1), dimensions=Extent2I(1, 34)),
-                           Box2I(corner=Point2I(91, 2), dimensions=Extent2I(1, 7)),
-                           Box2I(corner=Point2I(91, 18), dimensions=Extent2I(1, 9)),
-                           Box2I(corner=Point2I(92, 2), dimensions=Extent2I(1, 7)),
-                           Box2I(corner=Point2I(92, 18), dimensions=Extent2I(1, 9)),
-                           Box2I(corner=Point2I(94, 2), dimensions=Extent2I(1, 7)),
-                           Box2I(corner=Point2I(94, 18), dimensions=Extent2I(1, 9)),
-                           Box2I(corner=Point2I(95, 2), dimensions=Extent2I(1, 7)),
-                           Box2I(corner=Point2I(95, 18), dimensions=Extent2I(1, 9))]
+                           Box2I(corner=Point2I(91, 2), dimensions=Extent2I(2, 7)),
+                           Box2I(corner=Point2I(91, 18), dimensions=Extent2I(2, 9)),
+                           Box2I(corner=Point2I(94, 2), dimensions=Extent2I(2, 7)),
+                           Box2I(corner=Point2I(94, 18), dimensions=Extent2I(2, 9))]
         defects = self.allDefectsList
         badPixels = [Box2I(corner=Point2I(93, 1), dimensions=Extent2I(1, 12)),
                      Box2I(corner=Point2I(93, 15), dimensions=Extent2I(1, 20)),
