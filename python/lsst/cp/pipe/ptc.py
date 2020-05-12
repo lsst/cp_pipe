@@ -145,6 +145,11 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
         doc="Sigma cut for outlier rejection in PTC.",
         default=5.0,
     )
+    sigmaCutAfwMathStatsControl = pexConfig.Field(
+        dtype=float,
+        doc="Sigma cut for afwMatch.StatisticsControl()",
+        default=3.0,
+    )
     maxIterationsPtcOutliers = pexConfig.Field(
         dtype=int,
         doc="Maximum number of iterations for outlier rejection in PTC.",
@@ -534,9 +539,11 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         im1Area = afwMath.binImage(im1Area, self.config.binSize)
         im2Area = afwMath.binImage(im2Area, self.config.binSize)
 
+        statsCtrl = afwMath.StatisticsControl()
+        statsCtrl.setNumSigmaClip(self.config.sigmaCutAfwMathStatsControl)
         #  Clipped mean of images; then average of mean.
-        mu1 = afwMath.makeStatistics(im1Area, afwMath.MEANCLIP).getValue()
-        mu2 = afwMath.makeStatistics(im2Area, afwMath.MEANCLIP).getValue()
+        mu1 = afwMath.makeStatistics(im1Area, afwMath.MEANCLIP, statsCtrl).getValue()
+        mu2 = afwMath.makeStatistics(im2Area, afwMath.MEANCLIP, statsCtrl).getValue()
         mu = 0.5*(mu1 + mu2)
 
         # Take difference of pairs
@@ -548,7 +555,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         diffIm -= temp
         diffIm /= mu
 
-        varDiff = 0.5*(afwMath.makeStatistics(diffIm, afwMath.VARIANCECLIP).getValue())
+        varDiff = 0.5*(afwMath.makeStatistics(diffIm, afwMath.VARIANCECLIP, statsCtrl).getValue())
 
         return mu, varDiff
 
