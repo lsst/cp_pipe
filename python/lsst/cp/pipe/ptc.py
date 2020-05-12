@@ -407,7 +407,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         dataRef.put(dataset, datasetType="photonTransferCurveDataset")
 
         butler = dataRef.getButler()
-        self.log.info(f"Writing linearizers: \n "
+        self.log.info("Writing linearizers: \n "
                       "lookup table (linear component of polynomial fit), \n "
                       "polynomial (coefficients for a polynomial correction), \n "
                       "and squared linearizer (quadratic coefficient from polynomial)")
@@ -1159,9 +1159,9 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 a.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
                 a2.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
 
-        f.suptitle(f"PTC \n Fit: " + stringTitle, fontsize=20)
+        f.suptitle("PTC \n Fit: " + stringTitle, fontsize=20)
         pdfPages.savefig(f)
-        f2.suptitle(f"PTC (log-log)", fontsize=20)
+        f2.suptitle("PTC (log-log)", fontsize=20)
         pdfPages.savefig(f2)
 
         # Plot mean vs time
