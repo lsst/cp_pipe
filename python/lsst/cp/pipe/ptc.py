@@ -147,8 +147,13 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
     )
     nSigmaClipPtc = pexConfig.Field(
         dtype=float,
-        doc="Sigma cut for afwMatch.StatisticsControl()",
+        doc="Sigma cut for afwMath.StatisticsControl()",
         default=5.5,
+    )
+    nIterSigmaClipPtc = pexConfig.Field(
+        dtype=int,
+        doc="Number of sigma-clipping iterations for afwMath.StatisticsControl()",
+        default=1,
     )
     maxIterationsPtcOutliers = pexConfig.Field(
         dtype=int,
@@ -541,6 +546,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         statsCtrl = afwMath.StatisticsControl()
         statsCtrl.setNumSigmaClip(self.config.nSigmaClipPtc)
+        statsCtrl.setNumIter(self.config.nIterSigmaClipPtc)
         #  Clipped mean of images; then average of mean.
         mu1 = afwMath.makeStatistics(im1Area, afwMath.MEANCLIP, statsCtrl).getValue()
         mu2 = afwMath.makeStatistics(im2Area, afwMath.MEANCLIP, statsCtrl).getValue()
