@@ -145,6 +145,16 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
         doc="Sigma cut for outlier rejection in PTC.",
         default=5.0,
     )
+    nSigmaClipPtc = pexConfig.Field(
+        dtype=float,
+        doc="Sigma cut for afwMath.StatisticsControl()",
+        default=5.5,
+    )
+    nIterSigmaClipPtc = pexConfig.Field(
+        dtype=int,
+        doc="Number of sigma-clipping iterations for afwMath.StatisticsControl()",
+        default=1,
+    )
     maxIterationsPtcOutliers = pexConfig.Field(
         dtype=int,
         doc="Maximum number of iterations for outlier rejection in PTC.",
@@ -402,7 +412,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         dataRef.put(dataset, datasetType="photonTransferCurveDataset")
 
         butler = dataRef.getButler()
-        self.log.info(f"Writing linearizers: \n "
+        self.log.info("Writing linearizers: \n "
                       "lookup table (linear component of polynomial fit), \n "
                       "polynomial (coefficients for a polynomial correction), \n "
                       "and squared linearizer (quadratic coefficient from polynomial)")
@@ -534,9 +544,12 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         im1Area = afwMath.binImage(im1Area, self.config.binSize)
         im2Area = afwMath.binImage(im2Area, self.config.binSize)
 
+        statsCtrl = afwMath.StatisticsControl()
+        statsCtrl.setNumSigmaClip(self.config.nSigmaClipPtc)
+        statsCtrl.setNumIter(self.config.nIterSigmaClipPtc)
         #  Clipped mean of images; then average of mean.
-        mu1 = afwMath.makeStatistics(im1Area, afwMath.MEANCLIP).getValue()
-        mu2 = afwMath.makeStatistics(im2Area, afwMath.MEANCLIP).getValue()
+        mu1 = afwMath.makeStatistics(im1Area, afwMath.MEANCLIP, statsCtrl).getValue()
+        mu2 = afwMath.makeStatistics(im2Area, afwMath.MEANCLIP, statsCtrl).getValue()
         mu = 0.5*(mu1 + mu2)
 
         # Take difference of pairs
@@ -548,7 +561,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         diffIm -= temp
         diffIm /= mu
 
-        varDiff = 0.5*(afwMath.makeStatistics(diffIm, afwMath.VARIANCECLIP).getValue())
+        varDiff = 0.5*(afwMath.makeStatistics(diffIm, afwMath.VARIANCECLIP, statsCtrl).getValue())
 
         return mu, varDiff
 
@@ -1152,9 +1165,9 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 a.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
                 a2.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
 
-        f.suptitle(f"PTC \n Fit: " + stringTitle, fontsize=20)
+        f.suptitle("PTC \n Fit: " + stringTitle, fontsize=20)
         pdfPages.savefig(f)
-        f2.suptitle(f"PTC (log-log)", fontsize=20)
+        f2.suptitle("PTC (log-log)", fontsize=20)
         pdfPages.savefig(f2)
 
         # Plot mean vs time
