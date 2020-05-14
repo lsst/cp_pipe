@@ -96,6 +96,11 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
             "ASTIERAPPROXIMATION": "Approximation in Astier+19 (Eq. 16)."
         }
     )
+    covariancesAstier = pexConfig.Field(
+        dtype=bool,
+        doc="Compute full covariancesas in Astier+19?",
+        default=False,
+    )
     polynomialFitDegree = pexConfig.Field(
         dtype=int,
         doc="Degree of polynomial to fit the PTC, when 'ptcFitType'=POLYNOMIAL.",
