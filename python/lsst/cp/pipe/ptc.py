@@ -44,6 +44,9 @@ import numpy.polynomial.polynomial as poly
 from lsst.ip.isr.linearize import Linearizer
 import datetime
 
+from .utilsCovsPtcAstier import (find_mask, fft_size, compute_cov_fft)
+from .ptc_plots import make_all_plots
+
 
 class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
     """Config class for photon transfer curve measurement task"""
@@ -372,43 +375,138 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 except OperationalError:
                     pass
 
-        dataset, lookupTableArray = self.computeStandardPtcAndNonLinearity(dataRef, visitPairs, detector)
-        if self.config.makePlots:
-            self.plot(dataRef, dataset, ptcFitType=self.config.ptcFitType)
+        if self.config.covariancesAstier:
+            tupleCovariancesWithTags = self.computeCovariancesAstier(dataRef, visitPairs, detector)
+            if self.config.makePlots:
+                self.plotCovariancesAstier(dataRef, tupleCovariancesWithTags)
+        else:
+            dataset, lookupTableArray = self.computeStandardPtcAndNonLinearity(dataRef, visitPairs, detector)
+            if self.config.makePlots:
+                self.plot(dataRef, dataset, ptcFitType=self.config.ptcFitType)
 
-        # Save data, PTC fit, and NL fit dictionaries
-        self.log.info(f"Writing PTC and NL data to {dataRef.getUri(write=True)}")
-        dataRef.put(dataset, datasetType="photonTransferCurveDataset")
+            # Save data, PTC fit, and NL fit dictionaries
+            self.log.info(f"Writing PTC and NL data to {dataRef.getUri(write=True)}")
+            dataRef.put(dataset, datasetType="photonTransferCurveDataset")
 
-        butler = dataRef.getButler()
-        self.log.info("Writing linearizers: \n "
-                      "lookup table (linear component of polynomial fit), \n "
-                      "polynomial (coefficients for a polynomial correction), \n "
-                      "and squared linearizer (quadratic coefficient from polynomial)")
+            butler = dataRef.getButler()
+            self.log.info("Writing linearizers: \n "
+                          "lookup table (linear component of polynomial fit), \n "
+                          "polynomial (coefficients for a polynomial correction), \n "
+                          "and squared linearizer (quadratic coefficient from polynomial)")
 
-        detName = detector.getName()
-        now = datetime.datetime.utcnow()
-        calibDate = now.strftime("%Y-%m-%d")
+            detName = detector.getName()
+            now = datetime.datetime.utcnow()
+            calibDate = now.strftime("%Y-%m-%d")
 
-        for linType, dataType in [("LOOKUPTABLE", 'linearizeLut'),
-                                  ("LINEARIZEPOLYNOMIAL", 'linearizePolynomial'),
-                                  ("LINEARIZESQUARED", 'linearizeSquared')]:
+            for linType, dataType in [("LOOKUPTABLE", 'linearizeLut'),
+                                      ("LINEARIZEPOLYNOMIAL", 'linearizePolynomial'),
+                                      ("LINEARIZESQUARED", 'linearizeSquared')]:
 
-            if linType == "LOOKUPTABLE":
-                tableArray = lookupTableArray
-            else:
-                tableArray = None
+                if linType == "LOOKUPTABLE":
+                    tableArray = lookupTableArray
+                else:
+                    tableArray = None
 
-            linearizer = self.buildLinearizerObject(dataset, detector, calibDate, linType,
-                                                    instruName=self.config.instrumentName,
-                                                    tableArray=tableArray,
-                                                    log=self.log)
-            butler.put(linearizer, datasetType=dataType, dataId={'detector': detNum,
-                       'detectorName': detName, 'calibDate': calibDate})
+                linearizer = self.buildLinearizerObject(dataset, detector, calibDate, linType,
+                                                        instruName=self.config.instrumentName,
+                                                        tableArray=tableArray,
+                                                        log=self.log)
+                butler.put(linearizer, datasetType=dataType, dataId={'detector': detNum,
+                           'detectorName': detName, 'calibDate': calibDate})
 
         self.log.info('Finished measuring PTC for in detector %s' % detNum)
 
         return pipeBase.Struct(exitStatus=0)
+
+    def computeCovariancesAstier(self, dataRef, visitPairs, detector):
+        """Iterate over pairs of flats to calculate full covariances from the difference image.
+        This follows the treatment in Astier+19
+
+        Parameters
+        ----------
+        dataRef : list of lsst.daf.persistence.ButlerDataRef
+            dataRef for the detector for the visits to be fit.
+
+        visitPairs : `iterable` of `tuple` of `int`
+            Pairs of visit numbers to be processed together
+
+        detector : `lsst.afw.cameraGeom.Detector`
+            Detector object
+
+        Returns
+        -------
+
+        """
+        tupleRecords = []
+        allTags = []
+
+        self.log.info('Measuring Astier covariances using %s visits for detector %s' % (visitPairs,
+                                                                                        detector.getId()))
+
+        for (v1, v2) in visitPairs:
+            # Perform ISR on each exposure
+            dataRef.dataId['expId'] = v1
+            exp1 = self.isr.runDataRef(dataRef).exposure
+            dataRef.dataId['expId'] = v2
+            exp2 = self.isr.runDataRef(dataRef).exposure
+            del dataRef.dataId['expId']
+
+            checkExpLengthEqual(exp1, exp2, v1, v2, raiseWithMessage=True)
+            expTime = exp1.getInfo().getVisitInfo().getExposureTime()
+
+            tupleRows = []
+            for ampNumber, amp in enumerate(detector):
+                # covs: (mu1, mu2, i, j, var, cov, npix)
+                mu1, mu2, covs = self.getCovariancesAstier(exp1, exp2, region=amp.getBBox())
+                tupleRows += [(mu1, mu2) + cov + (ampNumber, expTime, amp.getName()) for cov in covs]
+                tags = ['mu1', 'mu2', 'i', 'j', 'var', 'cov', 'npix', 'ext', 'expTime', 'ampName']
+            allTags += tags
+            tupleRecords += tupleRows
+
+        tupleCovariancesWithTags = np.core.records.fromrecords(tupleRecords, names=allTags)
+
+        return tupleCovariancesWithTags
+
+    def getCovariancesAstier(self, exposure1, exposure2, region=None):
+        if region is not None:
+            im1Area = exposure1.maskedImage[region]
+            im2Area = exposure2.maskedImage[region]
+        else:
+            im1Area = exposure1.maskedImage
+            im2Area = exposure2.maskedImage
+
+        im1Area = afwMath.binImage(im1Area, self.config.binSize)
+        im2Area = afwMath.binImage(im2Area, self.config.binSize)
+
+        statsCtrl = afwMath.StatisticsControl()
+        statsCtrl.setNumSigmaClip(self.config.nSigmaClipPtc)
+        statsCtrl.setNumIter(self.config.nIterSigmaClipPtc)
+        #  Clipped mean of images; then average of mean.
+        mu1 = afwMath.makeStatistics(im1Area, afwMath.MEANCLIP, statsCtrl).getValue()
+        mu2 = afwMath.makeStatistics(im2Area, afwMath.MEANCLIP, statsCtrl).getValue()
+        mu = 0.5*(mu1 + mu2)
+
+        # Take difference of pairs
+        # symmetric formula: diff = (mu2*im1-mu1*im2)/(0.5*(mu1+mu2))
+        temp = im2Area.clone()
+        temp *= mu1
+        diffIm = im1Area.clone()
+        diffIm *= mu2
+        diffIm -= temp
+        diffIm /= mu
+
+        # TODO: Need to figure out how to get these masks of ones and zeroes using the stack
+        w1 = find_mask(im1Area.getImage().getArray(), 5.0)
+        w2 = find_mask(im2Area.getImage().getArray(), 5.0)
+        w12 = w1*w2
+        wdiff = find_mask(diffIm.getImage().getArray(), 5.0, w12)
+        w = w12*wdiff
+        shapeDiff = diffIm.getImage().getArray().shape
+        # Make this a parameter
+        maxrangeCov = 8
+        fft_shape = (fft_size(shapeDiff[0] + maxrangeCov), fft_size(shapeDiff[1]+maxrangeCov))
+        covs = compute_cov_fft(diffIm.getImage().getArray(), w, fft_shape, maxrangeCov)
+        return mu1, mu2, covs
 
     def computeStandardPtcAndNonLinearity(self, dataRef, visitPairs, detector):
         """Iterate over pairs of flats to calculate the standard PTC from the difference image.
@@ -543,7 +641,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         return linearizer
 
     def measureMeanVarPair(self, exposure1, exposure2, region=None):
-        """Calculate the mean signal of two exposures and the variance of their difference.
+        """Calculate the mean signal of each of two exposures and the variance of their difference.
 
         Parameters
         ----------
@@ -1086,6 +1184,17 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             dataset.coefficientLinearizeSquared[ampName] = quadPolyLinCoeff
 
         return dataset
+
+    def plotCovariancesAstier(self, dataRef, tupleCovariances):
+        dirname = dataRef.getUri(datasetType='cpPipePlotRoot', write=True)
+        if not os.path.exists(dirname):
+            os.makedirs(dirname)
+
+        detNum = dataRef.dataId[self.config.ccdKey]
+        filename = f"PTC_COVS_ASTIER_det{detNum}.pdf"
+        filenameFull = os.path.join(dirname, filename)
+        with PdfPages(filenameFull) as pdfPages:
+            make_all_plots(tupleCovariances, pdfPages)
 
     def plot(self, dataRef, dataset, ptcFitType):
         dirname = dataRef.getUri(datasetType='cpPipePlotRoot', write=True)
