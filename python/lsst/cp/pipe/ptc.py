@@ -44,7 +44,7 @@ import numpy.polynomial.polynomial as poly
 from lsst.ip.isr.linearize import Linearizer
 import datetime
 
-from .utilsCovsPtcAstier import (find_mask, fft_size, compute_cov_fft)
+from .astierCovPtcUtils import (find_mask, fft_size, compute_cov_fft)
 from .ptc_plots import make_all_plots
 
 
