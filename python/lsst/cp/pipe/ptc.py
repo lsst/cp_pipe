@@ -44,8 +44,6 @@ import numpy.polynomial.polynomial as poly
 from lsst.ip.isr.linearize import Linearizer
 import datetime
 
-from .utilsCovsPtcAstier import (find_mask, fft_size, compute_cov_fft)
-from .ptc_plots import make_all_plots
 
 class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
     """Config class for photon transfer curve measurement task"""
@@ -374,43 +372,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 except OperationalError:
                     pass
 
-        amps = detector.getAmplifiers()
-        ampNames = [amp.getName() for amp in amps]
-        dataset = PhotonTransferCurveDataset(ampNames)
-
-        self.log.info('Measuring PTC using %s visits for detector %s' % (visitPairs, detNum))
-
-        for (v1, v2) in visitPairs:
-            # Perform ISR on each exposure
-            dataRef.dataId['expId'] = v1
-            exp1 = self.isr.runDataRef(dataRef).exposure
-            dataRef.dataId['expId'] = v2
-            exp2 = self.isr.runDataRef(dataRef).exposure
-            del dataRef.dataId['expId']
-
-            checkExpLengthEqual(exp1, exp2, v1, v2, raiseWithMessage=True)
-            expTime = exp1.getInfo().getVisitInfo().getExposureTime()
-
-            for amp in detector:
-                mu, varDiff = self.measureMeanVarPair(exp1, exp2, region=amp.getBBox())
-                ampName = amp.getName()
-
-                dataset.rawExpTimes[ampName].append(expTime)
-                dataset.rawMeans[ampName].append(mu)
-                dataset.rawVars[ampName].append(varDiff)
-                dataset.inputVisitPairs[ampName].append((v1, v2))
-
-        numberAmps = len(detector.getAmplifiers())
-        numberAduValues = self.config.maxAduForLookupTableLinearizer
-        lookupTableArray = np.zeros((numberAmps, numberAduValues), dtype=np.float32)
-
-        # Fit PTC and (non)linearity of signal vs time curve.
-        # Fill up PhotonTransferCurveDataset object.
-        # Fill up array for LUT linearizer.
-        # Produce coefficients for Polynomial ans Squared linearizers.
-        dataset = self.fitPtcAndNonLinearity(dataset, self.config.ptcFitType,
-                                             tableArray=lookupTableArray)
-
+        dataset, lookupTableArray = self.computeStandardPtcAndNonLinearity(dataRef, visitPairs, detector)
         if self.config.makePlots:
             self.plot(dataRef, dataset, ptcFitType=self.config.ptcFitType)
 
@@ -447,6 +409,71 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         self.log.info('Finished measuring PTC for in detector %s' % detNum)
 
         return pipeBase.Struct(exitStatus=0)
+
+    def computeStandardPtcAndNonLinearity(self, dataRef, visitPairs, detector):
+        """Iterate over pairs of flats to calculate the standard PTC from the difference image.
+        In this case, 'standard' refers to var(diff) vs mean(diff), as opposed to a more
+        general calculation of the covariances of the difference image.
+        In addition, the linearizer to correct for signal-chain non-linearity is calculated here
+        too.
+
+        Parameters
+        ----------
+        dataRef : list of lsst.daf.persistence.ButlerDataRef
+            dataRef for the detector for the visits to be fit.
+
+        visitPairs : `iterable` of `tuple` of `int`
+            Pairs of visit numbers to be processed together
+
+        detector : `lsst.afw.cameraGeom.Detector`
+            Detector object
+
+        Returns
+        -------
+        dataset : `PhotonTransferCurveDataset`
+            Output data from the standard PTC and linearizer calculations
+
+        lookupTableArray : `np.array`
+            Linearizer look-up table array with size rows=nAmps and columns=DN values
+        """
+        amps = detector.getAmplifiers()
+        ampNames = [amp.getName() for amp in amps]
+        dataset = PhotonTransferCurveDataset(ampNames)
+
+        self.log.info('Measuring PTC using %s visits for detector %s' % (visitPairs, detector.getId()))
+
+        for (v1, v2) in visitPairs:
+            # Perform ISR on each exposure
+            dataRef.dataId['expId'] = v1
+            exp1 = self.isr.runDataRef(dataRef).exposure
+            dataRef.dataId['expId'] = v2
+            exp2 = self.isr.runDataRef(dataRef).exposure
+            del dataRef.dataId['expId']
+
+            checkExpLengthEqual(exp1, exp2, v1, v2, raiseWithMessage=True)
+            expTime = exp1.getInfo().getVisitInfo().getExposureTime()
+
+            for amp in detector:
+                mu, varDiff = self.measureMeanVarPair(exp1, exp2, region=amp.getBBox())
+                ampName = amp.getName()
+
+                dataset.rawExpTimes[ampName].append(expTime)
+                dataset.rawMeans[ampName].append(mu)
+                dataset.rawVars[ampName].append(varDiff)
+                dataset.inputVisitPairs[ampName].append((v1, v2))
+
+        numberAmps = len(detector.getAmplifiers())
+        numberAduValues = self.config.maxAduForLookupTableLinearizer
+        lookupTableArray = np.zeros((numberAmps, numberAduValues), dtype=np.float32)
+
+        # Fit PTC and (non)linearity of signal vs time curve.
+        # Fill up PhotonTransferCurveDataset object.
+        # Fill up array for LUT linearizer.
+        # Produce coefficients for Polynomial ans Squared linearizers.
+        dataset = self.fitPtcAndNonLinearity(dataset, self.config.ptcFitType,
+                                             tableArray=lookupTableArray)
+
+        return dataset, lookupTableArray
 
     def buildLinearizerObject(self, dataset, detector, calibDate, linearizerType, instruName='',
                               tableArray=None, log=None):
