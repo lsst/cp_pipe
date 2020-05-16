@@ -44,7 +44,7 @@ class cov_fft :
         """
         This class computed (via FFT), the nearby pixel correlation function.
         The range is controlled by "parameters", as well as
-        the actual FFT shape.   # Assumes that w consists of 1's and 0's ? AP
+        the actual FFT shape.   # Assumes that w consists of 1's and 0's. 
         """
         #self.parameters = parameters
         maxrange = maxrangeCov #parameters.maxrange
@@ -58,7 +58,6 @@ class cov_fft :
         # the second dimension should be even, so
         if fft_shape[1]%2 == 1 :
             fft_shape = (fft_shape[0], fft_shape[1]+1)
-            print ("NEW FFT shape: ", fft_shape)
         tim = np.fft.rfft2(diff*w, fft_shape)
         tmask = np.fft.rfft2(w, fft_shape)
         # sum of  "squares" (What does this mean? Is there a reference I can consult? AP)
@@ -128,6 +127,7 @@ def index_for_bins(x, nbins) :
     just builds an index with regular binning
     The result can be fed into bin_data
     """
+    print ("Index for bin x: ", x)
     bins = np.linspace(x.min(), x.max() + abs(x.max() * 1e-7), nbins + 1)
     return np.digitize(x, bins)
 

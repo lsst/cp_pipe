@@ -462,8 +462,11 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 tags = ['mu1', 'mu2', 'i', 'j', 'var', 'cov', 'npix', 'ext', 'expTime', 'ampName']
             allTags += tags
             tupleRecords += tupleRows
-
+        print ("allTags: ", allTags)
+        print ("tupleRecords: ", tupleRecords)
+        print (len(allTags), len(tupleRecords))
         tupleCovariancesWithTags = np.core.records.fromrecords(tupleRecords, names=allTags)
+        print ("tupleCovariancesWithTags: ", tupleCovariancesWithTags)
 
         return tupleCovariancesWithTags
 
@@ -494,18 +497,22 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         diffIm *= mu2
         diffIm -= temp
         diffIm /= mu
-
-        # TODO: Need to figure out how to get these masks of ones and zeroes using the stack
-        w1 = find_mask(im1Area.getImage().getArray(), 5.0)
-        w2 = find_mask(im2Area.getImage().getArray(), 5.0)
+       
+        # Get the mask and identify good pixels as '1', and the rest as '0'.
+        w1 = np.where (im1Area.getMask().getArray() == 0, 1, 0)
+        w2 = np.where (im2Area.getMask().getArray() == 0, 1, 0) 
+   
+        temp = find_mask(im1Area.getImage().getArray(), 5.0)
         w12 = w1*w2
-        wdiff = find_mask(diffIm.getImage().getArray(), 5.0, w12)
-        w = w12*wdiff
+        wDiff =  np.where (diffIm.getMask().getArray() == 0, 1, 0)
+        w = w12*wDiff
+
         shapeDiff = diffIm.getImage().getArray().shape
         # Make this a parameter
         maxrangeCov = 8
         fft_shape = (fft_size(shapeDiff[0] + maxrangeCov), fft_size(shapeDiff[1]+maxrangeCov))
         covs = compute_cov_fft(diffIm.getImage().getArray(), w, fft_shape, maxrangeCov)
+        
         return mu1, mu2, covs
 
     def computeStandardPtcAndNonLinearity(self, dataRef, visitPairs, detector):
