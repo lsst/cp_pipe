@@ -44,7 +44,8 @@ import numpy.polynomial.polynomial as poly
 from lsst.ip.isr.linearize import Linearizer
 import datetime
 
-from .astierCovPtcUtils import (find_mask, fft_size, compute_cov_fft)
+from .astierCovPtcUtils import (find_mask, fft_size, compute_cov_fft, load_fits, 
+                                save_fits, fit_data)
 from .ptc_plots import make_all_plots
 
 
@@ -377,8 +378,14 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         if self.config.covariancesAstier:
             tupleCovariancesWithTags = self.computeCovariancesAstier(dataRef, visitPairs, detector)
+            try :
+                fits, fits_nb = load_fits('fits.pkl')
+            except :
+                fits, fits_nb = fit_data(tupleCovariancesWithTags, 1.4e5, 1e5, 8)
+                save_fits(fits, fits_nb, 'fits.pkl')
+            
             if self.config.makePlots:
-                self.plotCovariancesAstier(dataRef, tupleCovariancesWithTags)
+                self.plotCovariancesAstier(dataRef, fits, fits_nb)
         else:
             dataset, lookupTableArray = self.computeStandardPtcAndNonLinearity(dataRef, visitPairs, detector)
             if self.config.makePlots:
@@ -460,11 +467,16 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 mu1, mu2, covs = self.getCovariancesAstier(exp1, exp2, region=amp.getBBox())
                 tupleRows += [(mu1, mu2) + cov + (ampNumber, expTime, amp.getName()) for cov in covs]
                 tags = ['mu1', 'mu2', 'i', 'j', 'var', 'cov', 'npix', 'ext', 'expTime', 'ampName']
+                print ("Inside amp loop: len(tupleRows), len(tags)", len(tupleRows), len(tags))
             allTags += tags
             tupleRecords += tupleRows
-        print ("allTags: ", allTags)
-        print ("tupleRecords: ", tupleRecords)
-        print (len(allTags), len(tupleRecords))
+            print ("Inside visits loop len(allTags), len(tupleRecords)",len(allTags), len(tupleRecords) )
+        #print ("allTags: ", allTags)
+        #print ("tupleRecords: ", tupleRecords)
+        print ("After visits loops: len(allTags), len(tupleRecords)", len(allTags), len(tupleRecords))
+        print ("len(tupleRecords[0]), tupleRecords[0]: ", len(tupleRecords[0]), tupleRecords[0])
+        print ("len(allTags)[0], len(allTags), allTags[0]: ", len(allTags[0]), len(allTags), allTags[0])
+        print ("len(allTags)[1], len(allTags), allTags[1]: ", len(allTags[1]), len(allTags), allTags[1])
         tupleCovariancesWithTags = np.core.records.fromrecords(tupleRecords, names=allTags)
         print ("tupleCovariancesWithTags: ", tupleCovariancesWithTags)
 
@@ -1192,7 +1204,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         return dataset
 
-    def plotCovariancesAstier(self, dataRef, tupleCovariances):
+    def plotCovariancesAstier(self, dataRef, covAstierFits, covAstierFitsWithoutB):
         dirname = dataRef.getUri(datasetType='cpPipePlotRoot', write=True)
         if not os.path.exists(dirname):
             os.makedirs(dirname)
@@ -1201,7 +1213,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         filename = f"PTC_COVS_ASTIER_det{detNum}.pdf"
         filenameFull = os.path.join(dirname, filename)
         with PdfPages(filenameFull) as pdfPages:
-            make_all_plots(tupleCovariances, pdfPages)
+            make_all_plots(covAstierFits, covAstierFitsWithoutB, pdfPages)
 
     def plot(self, dataRef, dataset, ptcFitType):
         dirname = dataRef.getUri(datasetType='cpPipePlotRoot', write=True)

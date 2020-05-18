@@ -7,6 +7,7 @@ import scipy.interpolate as interp
 from .ptcCovsFitAstier import cov_fit
 
 import itertools
+import pickle
 
 #__all__ = ["cov_fft"]
 
@@ -38,6 +39,20 @@ def fft_size(s):
     # maybe there exists something more clever....
     x = int(np.log(s)/np.log(2.))
     return int(2**(x+1))
+
+def save_fits(fits, fits_nob, filename) :
+    file = open(filename,'wb')
+    pickle.dump(fits,file)
+    pickle.dump(fits_nob,file)
+    file.close()
+
+def load_fits(filename):
+    file = open(filename)
+    fits = pickle.load(file)
+    fits_nb = pickle.load(file)
+    file.close()
+    return fits,fits_nb
+
 
 class cov_fft :
     def __init__(self, diff, w, fft_shape, maxrangeCov): #parameters):
