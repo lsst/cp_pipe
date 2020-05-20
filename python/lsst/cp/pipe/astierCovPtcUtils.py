@@ -3,19 +3,18 @@ import matplotlib.pyplot as pl
 import math
 
 import scipy.interpolate as interp
-#from .ptcCovsFitAstier import *
-from .ptcCovsFitAstier import cov_fit
+from .astierCovPtcFit import covFit
 
 import itertools
 import pickle
 
 #__all__ = ["cov_fft"]
 
-def find_mask(im, nsig, w=None) :
+def findMask(im, nsig, w=None) :
     if w is None:
         w = np.ones(im.shape)
     #  mu is used for sake of numerical precision in the sigma
-    # computation, and is needed (at full precision) to identify outliers.
+    #  computation, and is needed (at full precision) to identify outliers.
     count = w.sum()
     # different from (w*im).mean()
     mu = (w*im).sum()/count
@@ -35,83 +34,129 @@ def find_mask(im, nsig, w=None) :
         sigma = newsig
     return w
 
-def fft_size(s):
-    # maybe there exists something more clever....
+def fftSize(s):
     x = int(np.log(s)/np.log(2.))
     return int(2**(x+1))
 
-def save_fits(fits, fits_nob, filename) :
-    file = open(filename,'wb')
-    pickle.dump(fits,file)
-    pickle.dump(fits_nob,file)
-    file.close()
-
-def load_fits(filename):
-    file = open(filename)
-    fits = pickle.load(file)
-    fits_nb = pickle.load(file)
-    file.close()
+def saveFits(fits, fits_nob, filename) :
+    with open(filename, 'wb') as f:
+        pickle.dump(fits,f)
+        pickle.dump(fits_nob,f)
+    
+def loadFits(filename):
+    with open(filename, 'rb') as f:
+        fits = pickle.load(f)
+        fits_nb = pickle.load(f)
     return fits,fits_nb
 
 
-class cov_fft :
-    def __init__(self, diff, w, fft_shape, maxrangeCov): #parameters):
+class covFft :
+    def __init__(self, diff, w, fftShape, maxRangeCov):
         """
         This class computed (via FFT), the nearby pixel correlation function.
-        The range is controlled by "parameters", as well as
-        the actual FFT shape.   # Assumes that w consists of 1's and 0's. 
+        The range is controlled by maxRangeCov, as well as
+        the actual FFT shape. It  assumes that w consists of 1's (good pix) and 0's (bad).
+        
+        Implements appendix of Astier+19.
         """
-        #self.parameters = parameters
-        maxrange = maxrangeCov #parameters.maxrange
 
         # check that the zero padding implied by "fft_shape"
-        # is large enough for the required correlation range
-        #fft_shape =     #parameters.fft_shape #  What is typical value for parameters.fft_shape? AP
-        assert(fft_shape[0] > diff.shape[0]+maxrange+1)
-        assert(fft_shape[1] > diff.shape[1]+maxrange+1)
+        # is large enough for the required correlation range 
+        assert(fftShape[0] > diff.shape[0]+maxRangeCov+1)
+        assert(fftShape[1] > diff.shape[1]+maxRangeCov+1)
         # for some reason related to numpy.fft.rfftn,
         # the second dimension should be even, so
-        if fft_shape[1]%2 == 1 :
-            fft_shape = (fft_shape[0], fft_shape[1]+1)
-        tim = np.fft.rfft2(diff*w, fft_shape)
-        tmask = np.fft.rfft2(w, fft_shape)
-        # sum of  "squares" (What does this mean? Is there a reference I can consult? AP)
-        self.pcov = np.fft.irfft2(tim*tim.conjugate())
-        # sum of values (depends on the offets indeed) (What does this mean? AP)
-        self.pmean= np.fft.irfft2(tim*tmask.conjugate())
+        if fftShape[1]%2 == 1 :
+            fftShape = (fftShape[0], fftShape[1]+1)
+        tIm = np.fft.rfft2(diff*w, fftShape)
+        tMask = np.fft.rfft2(w, fftShape)
+        # sum of  "squares"
+        self.pCov = np.fft.irfft2(tIm*tIm.conjugate())
+        # sum of values
+        self.pMean= np.fft.irfft2(tIm*tMask.conjugate())
         # number of w!=0 pixels.
-        self.pcount= np.fft.irfft2(tmask*tmask.conjugate())
+        self.pCount= np.fft.irfft2(tMask*tMask.conjugate())
 
     def cov(self, dx,dy) :
-        """
-        covariance for dx,dy averaged with dx,-dy if both non zero.
+        """Covariance for dx,dy averaged with dx,-dy if both non zero.
+        
+        Implements appendix of Astier+19.
+
+        Parameters
+        ----------
+        dx : `int`
+           Lag in x
+
+        dy : `int
+           Lag in y
+
+        Returns
+        -------
+        0.5*(cov1+cov2) : `float`
+            Covariance at (dx, dy) lag
+
+        npix1+npix2 : `int`
+            Number of pixels used in covariance calculation.
         """
         # compensate rounding errors
-        # Can you explain this a bit more? AP
-        # How does this compensate for rounding errors? AP
-        npix1 = int(round(self.pcount[dy, dx]))
-        cov1 = self.pcov[dy, dx]/npix1-self.pmean[dy, dx]*self.pmean[-dy, -dx]/(npix1*npix1)
+        nPix1 = int(round(self.pCount[dy, dx]))
+        cov1 = self.pCov[dy, dx]/nPix1-self.pMean[dy, dx]*self.pMean[-dy, -dx]/(nPix1*nPix1)
         if (dx == 0 or dy == 0):
-            return cov1, npix1
-        npix2 = int(round(self.pcount[-dy, dx]))
-        cov2 = self.pcov[-dy, dx]/npix2-self.pmean[-dy, dx]*self.pmean[dy, -dx]/(npix2*npix2)
-        return 0.5*(cov1+cov2), npix1+npix2
+            return cov1, nPix1
+        nPix2 = int(round(self.pCount[-dy, dx]))
+        cov2 = self.pCov[-dy, dx]/nPix2-self.pMean[-dy, dx]*self.pMean[dy, -dx]/(nPix2*nPix2)
+        return 0.5*(cov1+cov2), nPix1+nPix2
 
-    def report_cov_fft(self, maxrange):
-        maxrange = maxrange
+    def reportCovFft(self, maxRange):
+        """Produce a list of tuples with covariances. 
+        
+        Implements appendix of Astier+19.
+        
+        Parameters
+        ----------
+        maxRange : `int`
+            Maximum range of covariances.
+
+        Returns
+        -------
+        tupleVec : `list`
+            List with covariance tuples.
+        """
         tupleVec = []
         # (dy,dx) = (0,0) has to be first
-        for dy in range(maxrange+1):
-            for dx in range(0, maxrange+1):  #  Why (0, maxRange+1) instead of just (maxRange+1)? AP
+        for dy in range(maxRange+1):
+            for dx in range(0, maxRange+1):
                 cov, npix = self.cov(dx, dy)
                 if (dx == 0 and dy == 0):
                     var = cov
                 tupleVec.append((dx, dy, var, cov, npix))
-        return tupleVec 
+        return tupleVec
 
-def compute_cov_fft(diff, w, fft_size, maxrange):
-    c = cov_fft(diff, w, fft_size, maxrange)
-    return c.report_cov_fft(maxrange)
+def computeCovFft(diff, w, fftSize, maxRange):
+    """Compute covariances via FFT
+    
+    Parameters
+    ----------
+    diff : `lsst.afw.image.exposure.exposure.ExposureF`
+        Difference image from a pair of flats taken at the same exposure time.
+    
+    w : `numpy array`
+        Mask array with 1's (good pixels) and 0's (bad pixels).
+    
+    fftSize : `tuple`
+        Size of the DFT: (xSize, ySize)
+
+    maxRange : `int`
+        Maximum range of covariances
+
+    Returns
+    -------
+    covFft.reportCovFft(maxRange) : `list`
+        List with covariance tuples,
+    """
+
+    c = covFft(diff, w, fftSize, maxRange)
+    return c.reportCovFft(maxRange)
 
 def find_groups(x, maxdiff):
     """
@@ -169,8 +214,6 @@ def bin_data(x,y, bin_index, wy=None):
     return xbin, ybin, wybin, sybin
 
 
-
-
 class pol2d :
     def __init__(self, x,y,z,order, w=None):
         self.orderx = min(order,x.shape[0]-1)
@@ -199,28 +242,28 @@ class load_params:
     Prepare covariances for the PTC fit:
     - eliminate data beyond saturation
     - eliminate data beyond r (ignored in the fit
-    - optionnaly (subtract_distant_value) subtract the extrapolation from distant covariances to closer ones, separately for each pair.
+    - optionnaly (subtractDistantValue) subtract the extrapolation from distant covariances to closer ones, separately for each pair.
     - start: beyond which the modl is fitted
     - offset_degree: polynomila degree for the subtraction model
     """
     def __init__(self):
         self.r = 8
-        self.maxmu = 2e5
-        self.maxmu_el = 1e5
-        self.subtract_distant_value = True
+        self.maxMu = 2e5
+        self.maxMuElectrons = 1e5
+        self.subtractDistantValue = True
         self.start=12
         self.offset_degree = 1        
 
 def load_data(tuple_name,params) :
     """
-    Returns a list of cov_fits, indexed by amp number.
+    Returns a list of covFits, indexed by amp number.
     tuple_name can be an actual tuple (rec array), rather than a file name containing a tuple.
 
     params drives what happens....  the class load_params provides default values
     params.r : max lag considered
-    params.maxmu : maxmu in ADU's
+    params.maxMu : maxMu in ADU's
 
-    params.subtract_distant_value: boolean that says if one wants to subtract a background to the measured covariances (mandatory for HSC flat pairs).
+    params.subtractDistantValue: boolean that says if one wants to subtract a background to the measured covariances (mandatory for HSC flat pairs).
     Then there are two more needed parameters: start, offset_degree
 
     """
@@ -229,31 +272,31 @@ def load_data(tuple_name,params) :
     else :
         nt = tuple_name
     exts = np.array(np.unique(nt['ext']), dtype = int)
-    cov_fit_list = {}
+    covFitList = {}
     for ext in exts :
         print('extension=', ext)
         ntext = nt[nt['ext'] == ext]
-        if params.subtract_distant_value :
-            c = cov_fit(ntext,r=None)
+        if params.subtractDistantValue :
+            c = covFit(ntext,r=None)
             c.subtract_distant_offset(params.r, params.start, params.offset_degree)
         else :
-            c = cov_fit(ntext, params.r)
-        this_maxmu = params.maxmu            
-        # tune the maxmu_el cut
+            c = covFit(ntext, params.r)
+        thisMaxMu = params.maxMu            
+        # tune the maxMuElectrons cut
         for iter in range(3) : 
             cc = c.copy()
-            cc.set_maxmu(this_maxmu)
-            cc.init_fit()# allows to get a crude gain.
-            gain = cc.get_gain()
-            if (this_maxmu*gain < params.maxmu_el) :
-                this_maxmu = params.maxmu_el/gain
+            cc.setMaxMu(thisMaxMu)
+            cc.initFit()# allows to get a crude gain.
+            gain = cc.getGain()
+            if (thisMaxMu*gain < params.maxMuElectrons) :
+                thisMaxMu = params.maxMuElectrons/gain
                 continue
-            cc.set_maxmu_electrons(params.maxmu_el)
+            cc.setMaxMuElectrons(params.maxMuElectrons)
             break
-        cov_fit_list[ext] = cc
-    return cov_fit_list
+        covFitList[ext] = cc
+    return covFitList
 
-def fit_data(tuple_name, maxmu = 1.4e5, maxmu_el = 1e5, r=8) :
+def fitData(tuple_name, maxMu = 1.4e5, maxMuElectrons = 1e5, r=8) :
     """
     The first argument can be a tuple, instead of the name of a tuple file.
     returns 2 dictionnaries, one of full fits, and one with b=0
@@ -261,25 +304,27 @@ def fit_data(tuple_name, maxmu = 1.4e5, maxmu_el = 1e5, r=8) :
     The behavior of this routine should be controlled by other means.
     """
     lparams = load_params()
-    lparams.subtract_distant_value = False
-    lparams.maxmu = maxmu
-    lparams.maxmu = maxmu_el = maxmu_el
+    lparams.subtractDistantValue = False
+    lparams.maxMu = maxMu
+    lparams.maxMu = maxMuElectrons
     lparams.r = r
-    cov_fit_list = load_data(tuple_name, lparams)
-    # exts = [i for i in range(len(cov_fit_list)) if cov_fit_list[i] is not None]
+    covFitList = load_data(tuple_name, lparams)
+    # exts = [i for i in range(len(covFitList)) if covFitList[i] is not None]
     alist = []
     blist = []
-    cov_fit_nob_list = {} # [None]*(exts[-1]+1)
-    for ext,c in cov_fit_list.items() :
+    covFitNoBList = {} # [None]*(exts[-1]+1)
+    for ext,c in covFitList.items() :
         print('fitting channel %d'%ext)
+        print ("c: ", c)
         c.fit()
-        cov_fit_nob_list[ext] = c.copy()
+        print ("after c.fit()")
+        covFitNoBList[ext] = c.copy()
         c.params['c'].release()
         c.fit()
-        a = c.get_a()
+        a = c.getA()
         alist.append(a)
         print(a[0:3, 0:3])
-        b = c.get_b()
+        b = c.getB()
         blist.append(b)
         print(b[0:3, 0:3])
     a = np.asarray(alist)
@@ -288,7 +333,7 @@ def fit_data(tuple_name, maxmu = 1.4e5, maxmu_el = 1e5, r=8) :
         for j in range(2) :
             print(i,j,'a = %g +/- %g'%(a[:,i,j].mean(), a[:,i,j].std()),
                   'b = %g +/- %g'%(b[:,i,j].mean(), b[:,i,j].std()))
-    return cov_fit_list, cov_fit_nob_list
+    return covFitList, covFitNoBList
 
 
 # subtract the "long distance" offset from measured covariances
@@ -451,19 +496,20 @@ def correct_tuple_for_nonlin(tuple, nonlin_corr=None, verbose=False, draw = Fals
 
 #    return mcc, cvc, pix
 
-def apply_quality_cuts(nt0, satu_adu=1.35e5, sig_ped=3):
+def apply_quality_cuts(nt0, saturationAdu = 1.35e5, sigPedestal = 3):
     """
     dispersion of the pedestal and saturation
     """
-    cut = (nt0['sp1']<sig_ped)  & (nt0['sp2']<sig_ped) & (nt0['mu1']<satu_adu)
+    cut = (nt0['sp1']<sigPedestal)  & (nt0['sp2']<sigPedestal) & (nt0['mu1']<saturationAdu)
+    
     return nt0[cut]
 
 
 import astropy.io.fits as pf
 
 def dump_a_fits(fits) :
-    a = np.array([f.get_a() for f in fits.values()]).mean(axis=0)
-    siga = np.array([f.get_a_sig() for f in fits.values()]).mean(axis=0)
+    a = np.array([f.getA() for f in fits.values()]).mean(axis=0)
+    siga = np.array([f.getASig() for f in fits.values()]).mean(axis=0)
     pf.writeto('a.fits', a, overwrite=True)
     pf.writeto('siga.fits', siga, overwrite=True)
     

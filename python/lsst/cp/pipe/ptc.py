@@ -44,9 +44,9 @@ import numpy.polynomial.polynomial as poly
 from lsst.ip.isr.linearize import Linearizer
 import datetime
 
-from .astierCovPtcUtils import (find_mask, fft_size, compute_cov_fft, load_fits, 
-                                save_fits, fit_data)
-from .ptc_plots import make_all_plots
+from .astierCovPtcUtils import (findMask, fftSize, computeCovFft, loadFits, 
+                                saveFits, fitData)
+from .astierCovPtcPlots import covAstierMakeAllPlots
 
 
 class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
@@ -98,10 +98,15 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
             "ASTIERAPPROXIMATION": "Approximation in Astier+19 (Eq. 16)."
         }
     )
-    covariancesAstier = pexConfig.Field(
+    doCovariancesAstier = pexConfig.Field(
         dtype=bool,
-        doc="Compute full covariancesas in Astier+19?",
+        doc="Compute full covariances as in Astier+19?",
         default=False,
+    )
+    maximumRangeCovAstier = pexConfig.Field(
+        dtype=int,
+        doc="Maximum range of covariances as in Astier+19",
+        default=8,
     )
     polynomialFitDegree = pexConfig.Field(
         dtype=int,
@@ -376,13 +381,13 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 except OperationalError:
                     pass
 
-        if self.config.covariancesAstier:
+        if self.config.doCovariancesAstier:
             tupleCovariancesWithTags = self.computeCovariancesAstier(dataRef, visitPairs, detector)
-            try :
-                fits, fits_nb = load_fits('fits.pkl')
+            try : 
+                fits, fits_nb = loadFits('fits.pkl')
             except :
-                fits, fits_nb = fit_data(tupleCovariancesWithTags, 1.4e5, 1e5, 8)
-                save_fits(fits, fits_nb, 'fits.pkl')
+                fits, fits_nb = fitData(tupleCovariancesWithTags, 1.4e5, 1e5, 8)
+                saveFits(fits, fits_nb, 'fits.pkl')
             
             if self.config.makePlots:
                 self.plotCovariancesAstier(dataRef, fits, fits_nb)
@@ -442,7 +447,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         Returns
         -------
-
+        covariancesWithTags : `numpy.recarray`
+            Covariance measurements.
         """
         tupleRecords = []
         allTags = []
@@ -467,20 +473,11 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 mu1, mu2, covs = self.getCovariancesAstier(exp1, exp2, region=amp.getBBox())
                 tupleRows += [(mu1, mu2) + cov + (ampNumber, expTime, amp.getName()) for cov in covs]
                 tags = ['mu1', 'mu2', 'i', 'j', 'var', 'cov', 'npix', 'ext', 'expTime', 'ampName']
-                print ("Inside amp loop: len(tupleRows), len(tags)", len(tupleRows), len(tags))
             allTags += tags
             tupleRecords += tupleRows
-            print ("Inside visits loop len(allTags), len(tupleRecords)",len(allTags), len(tupleRecords) )
-        #print ("allTags: ", allTags)
-        #print ("tupleRecords: ", tupleRecords)
-        print ("After visits loops: len(allTags), len(tupleRecords)", len(allTags), len(tupleRecords))
-        print ("len(tupleRecords[0]), tupleRecords[0]: ", len(tupleRecords[0]), tupleRecords[0])
-        print ("len(allTags)[0], len(allTags), allTags[0]: ", len(allTags[0]), len(allTags), allTags[0])
-        print ("len(allTags)[1], len(allTags), allTags[1]: ", len(allTags[1]), len(allTags), allTags[1])
-        tupleCovariancesWithTags = np.core.records.fromrecords(tupleRecords, names=allTags)
-        print ("tupleCovariancesWithTags: ", tupleCovariancesWithTags)
+        covariancesWithTags = np.core.records.fromrecords(tupleRecords, names=allTags)
 
-        return tupleCovariancesWithTags
+        return covariancesWithTags
 
     def getCovariancesAstier(self, exposure1, exposure2, region=None):
         if region is not None:
@@ -514,16 +511,16 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         w1 = np.where (im1Area.getMask().getArray() == 0, 1, 0)
         w2 = np.where (im2Area.getMask().getArray() == 0, 1, 0) 
    
-        temp = find_mask(im1Area.getImage().getArray(), 5.0)
+        temp = findMask(im1Area.getImage().getArray(), 5.0)
         w12 = w1*w2
         wDiff =  np.where (diffIm.getMask().getArray() == 0, 1, 0)
         w = w12*wDiff
 
         shapeDiff = diffIm.getImage().getArray().shape
-        # Make this a parameter
-        maxrangeCov = 8
-        fft_shape = (fft_size(shapeDiff[0] + maxrangeCov), fft_size(shapeDiff[1]+maxrangeCov))
-        covs = compute_cov_fft(diffIm.getImage().getArray(), w, fft_shape, maxrangeCov)
+        
+        maxRangeCov = self.config.maximumRangeCovAstier
+        fftShape = (fftSize(shapeDiff[0] + maxRangeCov), fftSize(shapeDiff[1]+maxRangeCov))
+        covs = computeCovFft(diffIm.getImage().getArray(), w, fftShape, maxRangeCov)
         
         return mu1, mu2, covs
 
@@ -1213,7 +1210,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         filename = f"PTC_COVS_ASTIER_det{detNum}.pdf"
         filenameFull = os.path.join(dirname, filename)
         with PdfPages(filenameFull) as pdfPages:
-            make_all_plots(covAstierFits, covAstierFitsWithoutB, pdfPages)
+            covAstierMakeAllPlots(covAstierFits, covAstierFitsWithoutB, pdfPages)
 
     def plot(self, dataRef, dataset, ptcFitType):
         dirname = dataRef.getUri(datasetType='cpPipePlotRoot', write=True)
