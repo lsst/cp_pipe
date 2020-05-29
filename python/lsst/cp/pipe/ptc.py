@@ -383,16 +383,21 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                     pass
 
         if self.config.doCovariancesAstier:
+            # Calculate the full covariances as in Astier+19. The variances for the PTC will be
+            # covariances[0,0]
+
             tupleCovariancesWithTags = self.computeCovariancesAstier(dataRef, visitPairs, detector)
-            #try : 
-            #    fits, fits_nb = loadFits('fits.pkl')
-            #except :
+            # use the np.recarray to obtain the covFit objects 
             fits, fits_nb = fitData (tupleCovariancesWithTags, 3e5, 3e5, 8)
+            # save the covFit objects
             saveFits(fits, fits_nb, 'fits.pkl')
             
             if self.config.makePlots:
-                self.plotCovariancesAstier(dataRef, fits, fits_nb)
+                self.plotCovariancesAstier(dataRef, fits, fits_nb, tupleCovariancesWithTags)
         else:
+            # Calculatethe PTC in the standard way (variances vs mean), and linearity by fitting mean_signal
+            # vs expTime
+            
             dataset, lookupTableArray = self.computeStandardPtcAndNonLinearity(dataRef, visitPairs, detector)
             if self.config.makePlots:
                 self.plot(dataRef, dataset, ptcFitType=self.config.ptcFitType)
@@ -476,11 +481,13 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             # TEMP
 
             tupleRows = []
+            #gainVecTemp = np.linspace(0.75, 0.85, 16)
             for ampNumber, amp in enumerate(detector):
                 # covs: (i, j, var, cov, npix)
                 #mu1, mu2, covs = self.getCovariancesAstier(exp1, exp2, region=amp.getBBox())
-                if not amp.getName() == 'C10':
-                     continue
+                #if not amp.getName() == 'C10':
+                #     continue
+                #mockExp1, mockExp2 = self.makeMockFlats (expTime, gain=gainVecTemp[ampNumber])
                 mu1, mu2, covs = self.getCovariancesAstier(mockExp1, mockExp2)
                 tupleRows += [(mu1, mu2) + cov + (ampNumber, expTime, amp.getName()) for cov in covs]
                 tags = ['mu1', 'mu2', 'i', 'j', 'var', 'cov', 'npix', 'ext', 'expTime', 'ampName']
@@ -611,7 +618,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             # TEMP
 
             for amp in detector:
-                #mu, varDiff = self.measureMeanVarPair(exp1, exp2, region=amp.getBBox())
+                #mu, varDiff = self.measureMeanVarPair(exp1, exp2, region=amp.getBBox()) 
                 mu, varDiff = self.measureMeanVarPair(mockExp1, mockExp2)
                 ampName = amp.getName()
 
@@ -619,9 +626,6 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 dataset.rawMeans[ampName].append(mu)
                 dataset.rawVars[ampName].append(varDiff)
                 dataset.inputVisitPairs[ampName].append((v1, v2))
-        print ("MEANS C10: ", dataset.rawMeans['C10'])
-        print ("VARS C10: ", dataset.rawVars['C10'])
-        stop
         numberAmps = len(detector.getAmplifiers())
         numberAduValues = self.config.maxAduForLookupTableLinearizer
         lookupTableArray = np.zeros((numberAmps, numberAduValues), dtype=np.float32)
@@ -1247,7 +1251,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         return dataset
 
-    def plotCovariancesAstier(self, dataRef, covAstierFits, covAstierFitsWithoutB):
+    def plotCovariancesAstier(self, dataRef, covAstierFits, covAstierFitsWithoutB, tupleCovariancesWithTags):
         dirname = dataRef.getUri(datasetType='cpPipePlotRoot', write=True)
         if not os.path.exists(dirname):
             os.makedirs(dirname)
@@ -1256,7 +1260,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         filename = f"PTC_COVS_ASTIER_det{detNum}.pdf"
         filenameFull = os.path.join(dirname, filename)
         with PdfPages(filenameFull) as pdfPages:
-            covAstierMakeAllPlots(covAstierFits, covAstierFitsWithoutB, pdfPages)
+            covAstierMakeAllPlots(covAstierFits, covAstierFitsWithoutB, tupleCovariancesWithTags, pdfPages)
 
     def plot(self, dataRef, dataset, ptcFitType):
         dirname = dataRef.getUri(datasetType='cpPipePlotRoot', write=True)

@@ -271,11 +271,11 @@ def load_data(tuple_name, params) :
         nt = np.load(tuple_name) 
     else :
         nt = tuple_name
-    exts = np.array(np.unique(nt['ext']), dtype = int)
+    exts = np.array(np.unique(nt['ampName']), dtype = str)
     covFitList = {}
     for ext in exts :
         print('extension=', ext)
-        ntext = nt[nt['ext'] == ext]
+        ntext = nt[nt['ampName'] == ext]
         if params.subtractDistantValue :
             c = covFit(ntext,r=None)
             c.subtract_distant_offset(params.r, params.start, params.offset_degree)
@@ -310,12 +310,11 @@ def fitData(tuple_name, maxMu = 1.4e5, maxMuElectrons = 1e5, r=8) :
     lparams.r = r
     
     covFitList = load_data(tuple_name, lparams)
-    # exts = [i for i in range(len(covFitList)) if covFitList[i] is not None]
     alist = []
     blist = []
     covFitNoBList = {} # [None]*(exts[-1]+1)
     for ext,c in covFitList.items() :
-        print('fitting channel %d'%ext)
+        print(f"fitting channel {ext}")
         print ("c: ", c)
         c.fit()
         print ("after c.fit()")
@@ -339,20 +338,17 @@ def fitData(tuple_name, maxMu = 1.4e5, maxMuElectrons = 1e5, r=8) :
 
 # subtract the "long distance" offset from measured covariances
 
-
-
 def CHI2(res,wy):
     wres = res*wy
     return (wres*wres).sum()
     
-
     
 # pass fixed arguments using curve_fit:    
 # https://stackoverflow.com/questions/10250461/passing-additional-arguments-using-scipy-optimize-curve-fit
 
 
-def select_from_tuple(t, i, j, ext):
-    cut = (t['i'] == i) & (t['j'] == j) & (t['ext'] == ext)
+def select_from_tuple(t, i, j, ampName):
+    cut = (t['i'] == i) & (t['j'] == j) & (t['ampName'] == ampName)
     return t[cut]
 
 def apply_quality_cuts(nt0, saturationAdu = 1.35e5, sigPedestal = 3):

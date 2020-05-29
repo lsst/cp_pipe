@@ -4,50 +4,25 @@ from .astierCovPtcUtils import *
 
 #import croaks
 
-def covAstierMakeAllPlots (fits, fits_nb, pdfPages, maxmu = 1.4e5, maxmu_el = 1e5,r=8):
-#def makeAllPlotsCovsAstier (fits, fits_nb, maxmu = 1.4e5, maxmu_el = 1e5,r=8):
-    #try : 
-    #    fits, fits_nb = load_fits('fits.pkl')
-    #except :
-    #    fits, fits_nb = fit_data(tuple_name,maxmu,maxmu_el,r)
-    #    save_fits(fits, fits_nb, 'fits.pkl')
+def covAstierMakeAllPlots (fits, fits_nb, covariancesTuple, pdfPages, maxmu = 1.4e5, maxmu_el = 1e5, r=8):
 
-    #all_channels_nonlin_plot(figname = 'nonlin_all_channels.pdf')
-    do_cov_exposure_plot(fits[10], pdfPages)
-    #make_satur_plot(tuple_name = tuple_name, channel=1)
-    plot_ptc(fits[0], pdfPages)
-    #ptc_table(fits, fits_nb, pdfPages)
+    do_cov_exposure_plot(fits['C10'], pdfPages)
+    make_satur_plot(covariancesTuple, 'C10', pdfPages)
+    plot_ptc(fits['C10'], pdfPages)
+    ptc_table(fits, fits_nb, 0, 0)
     plot_cov_2(fits, fits_nb, 0, 0, pdfPages, offset=0.01, top_plot=True)
     plot_cov_2(fits, fits_nb, 0, 1, pdfPages)
     plot_cov_2(fits, fits_nb, 1, 0, pdfPages)
     plot_a_b(fits, pdfPages)
     ab_vs_dist(fits, pdfPages, brange=4) #figname='ab_vs_dist.pdf')
-    #make_distant_cov_plot(fits, tuple_name=tuple_name)
+    #make_distant_cov_plot(fits, covariancesTuple, pdfPages)
     plot_a_sum(fits, pdfPages)
-
-def make_all_plots_itl(tuple_name='dc1-tuple-corr.npy',maxmu = 1.4e5, maxmu_el = 1e5,r=8) :
-    try : 
-        fits, fits_nb = load_fits('fits.pkl')
-    except :
-        fits, fits_nb = fit_data(tuple_name,maxmu,maxmu_el,r)
-        save_fits(fits, fits_nb, 'fits.pkl')
-    
-    do_cov_exposure_plot(fits[10], profile_plot=False)
-    make_satur_plot(tuple_name = tuple_name, channel=1)
-    plot_ptc(fits[1])
-    ptc_table(fits, fits_nb)
-    plot_cov_2(fits,fits_nb, 0, 1)
-    plot_a_b(fits,figname='a_and_b.png')
-    ab_vs_dist(fits, brange=4, figname='a_b_dist.pdf')
-    make_distant_cov_plot(fits, tuple_name=tuple_name)
-
 
 #from .group import *
 def CHI2(res,wy):
     wres = res*wy
     return (wres*wres).sum()
     
-
 
 import matplotlib.pyplot as pl
 from matplotlib import gridspec
@@ -140,7 +115,7 @@ def plot_cov_2(fits, fits_nb, i, j, pdfPages, offset=0.004, figname=None, plot_d
     ax0.tick_params(axis='both', labelsize='x-large')
     mue, rese, wce = [], [], []
     mue_nb, rese_nb, wce_nb = [], [], []
-    for amp,  fit in fits.items():
+    for counter, (amp, fit) in enumerate(fits.items()):
         print ("AMP: ", amp)
         mu, c, model, wc = fit.getNormalizedFitData(i, j, divideByMu = True)
         print ("mu: ", mu)
@@ -160,15 +135,16 @@ def plot_cov_2(fits, fits_nb, i, j, pdfPages, offset=0.004, figname=None, plot_d
 
         
         # the corresponding fit
-        fit_curve, = pl.plot(mu,model+amp*offset,'-',linewidth=4.0)
+        fit_curve, = pl.plot(mu,model + counter*offset, '-', linewidth=4.0)
         # bin plot 
         gind = index_for_bins(mu, 25) #group
         xb, yb, wyb, sigyb = bin_data(mu,c,gind, wc) # group 
         chi2bin = (sigyb*wyb).mean() # chi2 of enforcing the same value in each bin
-        z = pl.errorbar(xb,yb+amp*offset,yerr=sigyb, marker = 'o', linestyle='none', markersize = 7, color=fit_curve.get_color(), label="ch %d"%amp)
+        z = pl.errorbar(xb,yb+counter*offset,yerr=sigyb, marker = 'o', linestyle='none', markersize = 7,
+                color=fit_curve.get_color(), label=f"ch {amp}")
         # plot the data
         if plot_data :
-            points, = pl.plot(mu,c+amp*offset, '.', color = fit_curve.get_color())
+            points, = pl.plot(mu,c+counter*offset, '.', color = fit_curve.get_color())
 
         aij = fit.getA()[i,j]
         bij = fit.getB()[i,j]
@@ -176,7 +152,7 @@ def plot_cov_2(fits, fits_nb, i, j, pdfPages, offset=0.004, figname=None, plot_d
         lb.append(bij)
         lcov.append(fit.getACov()[i,j,i,j])
         lchi2.append(chi2)
-        print('%i : slope %g b %g  chi2 %f chi2bin %f'%(amp, aij , bij, chi2, chi2bin))
+        print('%s : slope %g b %g  chi2 %f chi2bin %f'%(amp, aij , bij, chi2, chi2bin))
     # end loop on amps
     la = np.array(la)
     lb = np.array(lb)
@@ -253,9 +229,11 @@ from matplotlib.ticker import MaxNLocator
 
 def plot_a_sum(fits, pdfPages) :
     a, b = [],[]
-    for amp,fit in fits.items() :
+    for amp,fit in fits.items():
         a.append(fit.getA())
         b.append(fit.getB())
+    print ("a: ", a)
+    print ("b: ", b)
     a = np.array(a).mean(axis=0)
     b = np.array(b).mean(axis=0)
     fig = pl.figure(figsize=(7,6))
@@ -287,7 +265,7 @@ def plot_a_b(fits, pdfPages, brange=3) :
     b = np.array(b).mean(axis=0)
     fig = pl.figure(figsize=(7,11))
     ax0 = fig.add_subplot(2,1,1)
-    im0 = ax0.imshow(np.abs(a.transpose()), origin='lower', norm = mpl.colors.LogNorm(), interpolation='none')
+    im0 = ax0.imshow(np.abs(a.transpose()), origin='lower', norm = mpl.colors.LogNorm()) #, interpolation='none')
     ax0.tick_params(axis='both', labelsize='x-large')
     ax0.set_title('$|a|$', fontsize='x-large')
     ax0.xaxis.set_ticks_position('bottom')
@@ -298,7 +276,7 @@ def plot_a_b(fits, pdfPages, brange=3) :
     ax1.tick_params(axis='both', labelsize='x-large')
     ax1.yaxis.set_major_locator(MaxNLocator(integer=True))
     ax1.xaxis.set_major_locator(MaxNLocator(integer=True))
-    im1 = ax1.imshow(1e6*b[:brange,:brange].transpose(), origin='lower', interpolation='none')
+    im1 = ax1.imshow(1e6*b[:brange,:brange].transpose(), origin='lower' ) #, interpolation='none')
     cb1 = pl.colorbar(im1)
     cb1.ax.tick_params(labelsize='x-large')
     ax1.set_title(r'$b \times 10^6$', fontsize='x-large')
@@ -312,6 +290,9 @@ import copy
 
 def ptc_table(fits, fits_nb, i=0, j=0):
     amps = fits.keys()
+    print ("HOLA:" , amps)
+    print ("fits['C10']: ", fits['C10'])
+    print ("fits[amp].getA(): ", fits['C10'].getA())
     # collect arrays of everything, for stats 
     chi2_tot = np.array([fits[amp].chi2()/fits[amp].ndof() for amp in amps])
     a_00 = np.array([fits[amp].getA()[i,j] for amp in amps])
@@ -373,30 +354,9 @@ def do_cov_exposure_plot(fit, pdfPages, profile_plot=True):
     pl.tight_layout()
     pdfPages.savefig(fig)
 
-
-def plot_clap_data(nt) :
-    amps = set(nt['ampName'].astype(str))
-    pl.figure(figsize=(15,15))
-    pl.suptitle('clap-ccd vs clap',fontsize='x-large')
-    for k,amp in enumerate(amps):
-        ax = pl.subplot(4,4,k+1)
-        cut = (nt['i']==0)&(nt['j']==0) & (nt['ampName'] == amp)
-        nt_amp = nt[cut]
-        nt_amp = nt_amp[np.isfinite(nt_amp['c1'])]
-        x = nt_amp['c1']
-        if (x.mean()<0) : x= -x
-        y = nt_amp['mu1']
-        pars = np.polyfit(x,y,1)
-        x *= pars[0]
-        ax.plot(x, y-x, '.')
-        ax.ticklabel_format(style='sci', axis='x', scilimits=(0,0))
-        ax.text(0.15, 0.85, 'amp %d'%amp, verticalalignment='top', horizontalalignment='left',transform=ax.transAxes, fontsize=15)
-    pl.tight_layout()
-    pl.show()
-
     
 def plot_ptc_data(nt, i=0, j=0) :
-    amps = set(nt['ampName'].astype(int))
+    amps = set(nt['ampName'].astype(str))
     pl.figure(figsize=(10,10))
     for k,amp in enumerate(amps):
         ax = pl.subplot(4,4,k+1)
@@ -554,20 +514,6 @@ def make_noise_plot(fits) :
     pl.savefig('noise.png')
         
 
-#import pickle
-#def save_fits(fits, fits_nob, filename) :
-#    file = open(filename,'wb')
-#    pickle.dump(fits,file)
-#    pickle.dump(fits_nob,file)
-#    file.close()
-
-#def load_fits(filename):
-#    file = open(filename)
-#    fits = pickle.load(file)
-#    fits_nb = pickle.load(file)
-#    file.close()
-#    return fits,fits_nb
-
 def eval_nonlin_draw(tuple, knots=20, verbose= False):
     res, ccd, clap = eval_nonlin(tuple, knots, verbose, fullOutput = True)
     pl.figure(figsize=(9,14))
@@ -587,22 +533,48 @@ def eval_nonlin_draw(tuple, knots=20, verbose= False):
     return res
 
     
-def make_distant_cov_plot(fits, tuple_name='v12/dc5-tuple.npy'):
+def make_distant_cov_plot(fits, tuple_name, pdfPages):
     # need the fits to get the gains, and the tuple to get the distant
     # covariances
-    ntuple = croaks.NTuple.fromfile(tuple_name)
-    # convert all inputs to electrons
-    gain_amp = np.array([fits[i].getGain() if fits[i] != None else 0 for i in range(len(fits))])
-    gain = gain_amp[ntuple['ampName'].astype(int)]
+    #ntuple = croaks.NTuple.fromfile(tuple_name)
     
+    ntuple = tuple_name
+    
+    # convert all inputs to electrons
+    print ("fits.keys(): ", fits.keys())
+    print ("len(fits): ", len(fits))
+    print ("len(ntuple)", len(ntuple))
+    print ("len(ntuple)", len(ntuple['mu1']))
+    
+    gain_amp = np.array([fits[i].getGain() if fits[i] != None else 1.0 for i in list(fits.keys())])
+
+    print ("first  gain_amp: ",  gain_amp)
+    print ("len(gain_amp[ntuple['ext'].astype(int)])", len(gain_amp[ntuple['ext'].astype(int)]))
+    print ("gain = gain_amp[ntuple['ext'].astype(int)]: ", gain_amp[ntuple['ext'].astype(int)])
+
+    print ("gain_amp the other way: ", gain_amp)
+
+    print ("ntuple['ext'].astype(int)", ntuple['ext'].astype(int))
+
+    gain = gain_amp[ntuple['ext'].astype(int)]
+    
+    #gain = gain_amp
+
     mu = 0.5*(ntuple['mu1'] + ntuple['mu2'])*gain
+    print ("mu: ", mu)
+
+    print ("ntuple['i']: ", ntuple['i'])
+    print ("ntuple['j']: ", ntuple['j'])
+
     cov = 0.5*ntuple['cov']*(gain**2) 
     npix = (ntuple['npix'])
     fig = pl.figure(figsize=(8,16))
     # cov vs mu
     ax = pl.subplot(3,1,1)
     #idx = (ntuple['i']**2+ntuple['j']**2 >= 225) & (mu>2.5e4) & (mu<1e5)  
-    idx = (ntuple['i']**2+ntuple['j']**2 >= 225) & (mu<1e5) & (ntuple['sp1']<4) & (ntuple['sp2']<4)
+    idx = (ntuple['i']**2+ntuple['j']**2 >= 225) & (mu<2e5) # & (ntuple['sp1']<4) & (ntuple['sp2']<4)
+    print ("idx: ", idx)
+    
     binplot(mu[idx], cov[idx],nbins=20, data=False)
     ax.set_xlabel('$\mu$ (el)',fontsize='x-large')
     ax.ticklabel_format(style='sci', axis='x', scilimits=(0,0))
@@ -628,17 +600,20 @@ def make_distant_cov_plot(fits, tuple_name='v12/dc5-tuple.npy'):
     for ax in fig.get_axes() :
         ax.tick_params(axis='both', labelsize='x-large')
     pl.tight_layout()
-    pl.show()
-    pl.savefig('distant_cov_plot.pdf')
+    #pl.show()
+    #pl.savefig('distant_cov_plot.pdf')
+    pdfPages.savefig(fig)
 
-#from mpl_toolkits.axes_grid1 import AxesGrid
     
-def make_satur_plot(tuple_name='v12/dc4-tuple.npy', channel=0, figname=None):
+def make_satur_plot(tuple_name, ampName, pdfPages):
     # need the fits to get the gains, and the tuple to get the distant
     # covariances
-    ntuple = croaks.NTuple.fromfile(tuple_name)
+    #ntuple = croaks.NTuple.fromfile(tuple_name)
+    
+    ntuple = tuple_name
+    
     # convert all inputs to electrons
-    nt0 = ntuple[ntuple['ampName'] == channel]
+    nt0 = ntuple[ntuple['ampName'] == ampName]
 
     mu_el_cut = 1e5
     gain = 0.733
@@ -679,8 +654,8 @@ def make_satur_plot(tuple_name='v12/dc4-tuple.npy', channel=0, figname=None):
             ax.ticklabel_format(style='sci', axis='x', scilimits=(0,0))
 
     gs.tight_layout(fig)
-    if figname is not None : pl.savefig(figname)
     #avoid_overlapping_y_labels(fig)
+    pdfPages.savefig(fig)
 
     return ax
 
