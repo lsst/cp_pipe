@@ -60,7 +60,8 @@ def plot_cov(fits, i, j, offset=0.004):
     ax0=pl.subplot(gs[0])
     pl.setp(ax0.get_xticklabels(), visible=False)
     mue, rese, wce = [], [], []
-    for amp,fit in fits.items() :
+    for amp,fit in fits.items():
+        print ("AMP: ", amp)
         mu,c, model, wc = fit.getNormalizedFitData(i, j, divideByMu = True)
         chi2 = CHI2(c-model,wc)/(len(mu)-3)
         chi2bin= 0
@@ -73,6 +74,7 @@ def plot_cov(fits, i, j, offset=0.004):
         # the corresponding fit
         pl.plot(mu,model+amp*offset,'-', color="k",linewidth=4.0)
         # bin plot 
+        print ("mu: ", mu)
         gind = index_for_bins(mu, 25) #from group
         xb, yb, wyb, sigyb = bin_data(mu,c,gind, wc)  # from group
         chi2bin = (sigyb*wyb).mean() # chi2 of enforcing the same value in each bin
@@ -138,8 +140,12 @@ def plot_cov_2(fits, fits_nb, i, j, pdfPages, offset=0.004, figname=None, plot_d
     ax0.tick_params(axis='both', labelsize='x-large')
     mue, rese, wce = [], [], []
     mue_nb, rese_nb, wce_nb = [], [], []
-    for amp,fit in fits.items() :
+    for amp,  fit in fits.items():
+        print ("AMP: ", amp)
         mu, c, model, wc = fit.getNormalizedFitData(i, j, divideByMu = True)
+        print ("mu: ", mu)
+        print ("c: ", c)
+        print ("model: ", model)
         chi2 = CHI2(c-model,wc)/(len(mu)-3)
         chi2bin= 0
         mue += list(mu)
@@ -349,7 +355,8 @@ def do_cov_exposure_plot(fit, pdfPages, profile_plot=True):
     lj = [1,1,0, 0]
     fig=pl.figure(figsize=(8,8))
     for (i,j) in zip(li,lj) :
-        mu,var,model,w = fit.getNormalizedFitData(i,j, divideByMu=True)
+        mu,var,model,w = fit.getNormalizedFitData(i,j, divideByMu=False)
+
         if profile_plot : 
             gind = find_groups(mu, 1000.)
             xb, yb, wyb, sigyb = bin_data(mu, var, gind, w)
@@ -368,12 +375,12 @@ def do_cov_exposure_plot(fit, pdfPages, profile_plot=True):
 
 
 def plot_clap_data(nt) :
-    amps = set(nt['ext'].astype(int))
+    amps = set(nt['ampName'].astype(str))
     pl.figure(figsize=(15,15))
     pl.suptitle('clap-ccd vs clap',fontsize='x-large')
     for k,amp in enumerate(amps):
         ax = pl.subplot(4,4,k+1)
-        cut = (nt['i']==0)&(nt['j']==0) & (nt['ext'] == amp)
+        cut = (nt['i']==0)&(nt['j']==0) & (nt['ampName'] == amp)
         nt_amp = nt[cut]
         nt_amp = nt_amp[np.isfinite(nt_amp['c1'])]
         x = nt_amp['c1']
@@ -389,11 +396,11 @@ def plot_clap_data(nt) :
 
     
 def plot_ptc_data(nt, i=0, j=0) :
-    amps = set(nt['ext'].astype(int))
+    amps = set(nt['ampName'].astype(int))
     pl.figure(figsize=(10,10))
     for k,amp in enumerate(amps):
         ax = pl.subplot(4,4,k+1)
-        cut = (nt['i']==i)&(nt['j']==j) & (nt['ext'] == amp)
+        cut = (nt['i']==i)&(nt['j']==j) & (nt['ampName'] == amp)
         nt_amp = nt[cut]
         ax.plot(nt_amp['mu1'], nt_amp['cov']/nt_amp['mu1'], '.')
         ax.ticklabel_format(style='sci', axis='x', scilimits=(0,0))
@@ -586,7 +593,7 @@ def make_distant_cov_plot(fits, tuple_name='v12/dc5-tuple.npy'):
     ntuple = croaks.NTuple.fromfile(tuple_name)
     # convert all inputs to electrons
     gain_amp = np.array([fits[i].getGain() if fits[i] != None else 0 for i in range(len(fits))])
-    gain = gain_amp[ntuple['ext'].astype(int)]
+    gain = gain_amp[ntuple['ampName'].astype(int)]
     
     mu = 0.5*(ntuple['mu1'] + ntuple['mu2'])*gain
     cov = 0.5*ntuple['cov']*(gain**2) 
@@ -631,7 +638,7 @@ def make_satur_plot(tuple_name='v12/dc4-tuple.npy', channel=0, figname=None):
     # covariances
     ntuple = croaks.NTuple.fromfile(tuple_name)
     # convert all inputs to electrons
-    nt0 = ntuple[ntuple['ext'] == channel]
+    nt0 = ntuple[ntuple['ampName'] == channel]
 
     mu_el_cut = 1e5
     gain = 0.733
@@ -686,116 +693,6 @@ def avoid_overlapping_y_labels(figure):
         labels = [item.get_text() for item in ax.get_yticklabels()]
         labels[0] = ''
         ax.set_yticklabels(labels)
-
-
-import scipy.interpolate as interp
-        
-#it has to be an uncorrected tuple
-def make_nonlin_plot(filename, knots=20, channel=8) : 
-    nt = croaks.NTuple.fromfile(filename)
-    cut = (nt['mu1']<1.3e5) & (nt['sp1']<3.5) & (nt['sp2']<3.5)
-    t8 = nt[cut & (nt['ext'] == channel)]
-    dict = {}
-    if knots is not None:
-        dict['knots'] = knots
-    s,x,yclap = fit_nonlin_corr(t8['mu1'],t8['c1'], fullOutput=True, **dict)
-    model = interp.splev(x,s)
-    fig=pl.figure(figsize=(8,14))
-    axes = fig.add_subplot(2,1,1)
-
-    pl.plot(x, x/yclap-1, '.', label= 'data')
-    pl.plot(x, x/model -1, '-r', label='model')
-    pl.ticklabel_format(style='sci', axis='x', scilimits=(0,0))
-    my_fontsize='xx-large'
-    pl.xlabel("$\mu$(ADU)", fontsize=my_fontsize)
-    pl.xticks(fontsize=my_fontsize)
-    pl.yticks(fontsize=my_fontsize)
-    pl.ylabel("$\mu$/diode-1", fontsize=my_fontsize)
-    pl.legend(loc='upper right', fontsize=my_fontsize)
-    
-    fig.add_subplot(2,1,2)
-    mu = t8['mu1']
-    mu_cor = interp.splev(mu,s)
-    dd = interp.splder(s)
-    der= interp.splev(mu,dd)
-    var = 0.5*t8['var']
-    var_cor = var*(der**2)
-    pl.plot(mu, var/mu,'b.', label='before correction')
-    pl.plot(mu_cor, var_cor/mu_cor,'r.', label='after correction')
-    pl.ticklabel_format(style='sci', axis='x', scilimits=(0,0))
-    pl.xlabel("$\mu$ (ADU)",fontsize=my_fontsize)
-    pl.ylabel("$C_{00}/\mu$",fontsize=my_fontsize)
-    pl.xticks(fontsize=my_fontsize)
-    pl.yticks(fontsize=my_fontsize)
-    pl.legend(loc='upper right', fontsize=my_fontsize)
-    pl.tight_layout()
-    fig.show()
-    pl.savefig("nonlin_plot.pdf")
-
-def all_channels_nonlin_plot(figname = None):
-    pl.figure(figsize=(7,7))
-    ax = pl.subplot(111)
-    splines =  pickle.load(open('v12/nonlin.pkl','rb'))
-    mu = np.linspace(1000,1.3e5,200)
-    for spline in splines:
-        mu_cor = interp.splev(mu,spline)
-        ax.plot(mu, mu/mu_cor-1)
-    ax.ticklabel_format(style='sci', axis='x', scilimits=(0,0))
-    ax.set_xlabel("$\mu$ (ADU)", fontsize='x-large')
-    ax.set_ylabel("$\mu$/diode-1", fontsize='x-large')
-    pl.tight_layout()
-    if (figname is not None) : pl.savefig(figname)
-
-
-    
-def do_spikes_plot() :
-    nt_cti=croaks.NTuple.fromfile('v12/tuple-cti.npy')
-    nt_before=croaks.NTuple.fromfile('v12/corr-tuple.npy')
-    nt_after=croaks.NTuple.fromfile('v12/corr-dc2-tuple.npy')
-    spikes_plot(nt_cti, nt_before, nt_after)
-
-def spikes_plot(nt_cti, nt_before, nt_after, channel=10) :
-    import pickle
-    dc_corr = pickle.load(open('cte.pkl','rb'))
-    #delta = dc_corr[channel](image[:,1:])
-    pl.figure(figsize=(6,12))
-
-    #
-    ax0 = pl.subplot(3,1,1)
-    max_mu = 1.4e5
-    n = nt_cti[nt_cti['f0']<max_mu]
-    ax0.plot(n['f0'], n['f1'], '.')
-    max_mu = 1.4e5
-    mu = np.linspace(0, max_mu , 140)    
-    corr_model = dc_corr[channel](mu)
-    ax0.plot(mu, corr_model,'r-')
-    pl.xlabel('$\mu$ (ADU)',fontsize='x-large')
-    pl.ylabel('next pixel (ADU)',fontsize='x-large')
-    pl.ticklabel_format(style='sci', axis='x', scilimits=(0,0))
-    #
-    ax1 = pl.subplot(3,1,2, sharex = ax0)
-    n = nt_before[(nt_before['i'] == 1) & (nt_before['j'] == 0) & (nt_before['ext'] == channel) ]
-    ax1.plot(n['mu1'], 0.5*n['cov']/n['mu1'], '.', label='before', alpha=0.4)
-    n = nt_after[(nt_after['i'] == 1) & (nt_after['j'] == 0) & (nt_after['ext'] == channel)]
-    ax1.plot(n['mu1'], 0.5*n['cov']/n['mu1'], '.', label='after', alpha=0.4)
-    pl.xlabel('$\mu$ (ADU)',fontsize='x-large')
-    pl.ylabel('$C_{10}/\mu (ADU)$',fontsize='x-large')
-    pl.legend(loc='upper left')
-    pl.ticklabel_format(style='sci', axis='x', scilimits=(0,0))
-    #
-    ax1 = pl.subplot(3,1,3, sharex = ax0)
-    n = nt_before[(nt_before['i'] == 0) & (nt_before['j'] == 0) & (nt_before['ext'] == channel) ]
-    ax1.plot(n['mu1'], 0.5*n['var']/n['mu1'], '.', label='before', alpha=0.4)
-    n = nt_after[(nt_after['i'] == 0) & (nt_after['j'] == 0) & (nt_after['ext'] == channel)]
-    ax1.plot(n['mu1'], 0.5*n['var']/n['mu1'], '.', label='after', alpha=0.4)
-    pl.xlabel('$\mu$ (ADU)',fontsize='x-large')
-    pl.ylabel('$C_{00}/\mu (ADU)$',fontsize='x-large')
-    pl.ticklabel_format(style='sci', axis='x', scilimits=(0,0))
-    pl.legend(loc='upper right')
-
-    pl.tight_layout()
-    pl.show()
-    pl.savefig('cti_plot.png')
 
     
 def plot_da(fits, fitsnb, mu_el, maxr=None, figname=None):

@@ -65,7 +65,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         self.flatExp1 = isrMock.FlatMock(config=mockImageConfig).run()
         self.flatExp2 = self.flatExp1.clone()
         (shapeY, shapeX) = self.flatExp1.getDimensions()
-
+        
         self.flatWidth = np.sqrt(self.flatMean) + self.readNoiseAdu
 
         self.rng1 = np.random.RandomState(1984)

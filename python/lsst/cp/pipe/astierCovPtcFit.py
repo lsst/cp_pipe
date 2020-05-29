@@ -185,10 +185,10 @@ def makeCovArray(inputTuple, maxRangeFromTuple=8):
     cov[ind, i, j] = c
     var[ind, i, j] = v**2/n
     var[:, 0,0] *= 2 # var(v) = 2*v**2/N
-    # compensate for loss of variance and covariance due to outlier elimination
+    # compensate for loss of variance and covariance due to outlier elimination (sigma clipping)
     # when computing variances (cut to 4 sigma): 1 per mill for variances and twice as
     # much for covariances:
-    fact = 1.00107
+    fact = 1.0 #1.00107
     cov *= fact*fact
     cov[:, 0,0] /= fact
 
@@ -483,8 +483,10 @@ class covFit:
         if p0 is None:
             p0 = self.getParamValues()
         nOutliers = 1
-        while (nOutliers != 0) :
+        #while (nOutliers != 0) :
+        for _  in [1,2]:
             coeffs, covParams, _, mesg, ierr = leastsq(self.weightedRes, p0, full_output=True)
+            print ("coeffs: ", coeffs)
             wres = self.weightedRes(coeffs)
             # Do not count the outliers as significant
             sig = mad(wres[wres != 0])
@@ -517,10 +519,10 @@ class covFit:
         Parameters
         ---------
         i : `int`
-            Cov index
+            Lag for covariance
 
         j : `int`
-            Cov index
+            Lag for covariance
    
         divideByMu : `bool`, optional
             Divide covariance, model, and weights by signal mu?
@@ -545,6 +547,7 @@ class covFit:
         mu*gain, self.cov[:,i,j]*gain**2 model*gain**2, and self.sqrtW/gain**2
         """
         gain = self.getGain()
+        print ("GAIN: ", gain)
         mu = self.mu*gain
         covariance = self.cov[:,i,j]*(gain**2)
         model = self.evalCovModel()[:,i,j]*(gain**2)
@@ -553,7 +556,9 @@ class covFit:
         mask = weights != 0
         weights = weights[mask]
         model = model[mask]
+        print ("mu before mask: ", mu)
         mu = mu[mask]
+        print ("mu after mask: ", mu)
         covariance = covariance[mask]
         if (divideByMu) :
             covariance /= mu
