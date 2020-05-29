@@ -215,6 +215,13 @@ class LinearityResidualsAndLinearizersDataset:
     fractionalNonLinearityResidual: list
     meanSignalVsTimePolyFitReducedChiSq: float
 
+class PhotonTransferCurveCovAstierDataset:
+    """A simple class to hold the output from the PTC task when doCovariancesAstier=True
+    """
+    def __init__(self):
+        self.__dict__["covariancesTuple"] = []
+        self.__dict__["covariancesFits"] = {}
+        self.__dict__["covariancesFitsWithNoB"] = {}
 
 class PhotonTransferCurveDataset:
     """A simple class to hold the output data from the PTC task.
@@ -384,19 +391,28 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         if self.config.doCovariancesAstier:
             # Calculate the full covariances as in Astier+19. The variances for the PTC will be
-            # covariances[0,0]
+            # covariances[0,0].
 
             tupleCovariancesWithTags = self.computeCovariancesAstier(dataRef, visitPairs, detector)
             # use the np.recarray to obtain the covFit objects 
-            fits, fits_nb = fitData (tupleCovariancesWithTags, 3e5, 3e5, 8)
+            covFits, covFitsNoB = fitData (tupleCovariancesWithTags, 3e5, 3e5, 8)
             # save the covFit objects
-            saveFits(fits, fits_nb, 'fits.pkl')
+            #saveFits(fits, fits_nb, 'fits.pkl')
             
             if self.config.makePlots:
-                self.plotCovariancesAstier(dataRef, fits, fits_nb, tupleCovariancesWithTags)
+                self.plotCovariancesAstier(dataRef, covFits, covFitsNoB, tupleCovariancesWithTags)
+
+            datasetCovAstier = PhotonTransferCurveCovAstierDataset()
+            datasetCovAstier.covariancesTuple = tupleCovariancesWithTags
+            datasetCovAstier.covariancesFits = covFits
+            datasetCovAstier.covariancesFitsWithNoB = covFitsNoB
+            
+            self.log.info(f"Writing Astier+19 covariances data")
+            dataRef.put(datasetCovAstier, datasetType="photonTransferCurveCovAstierDataset")
+
         else:
-            # Calculatethe PTC in the standard way (variances vs mean), and linearity by fitting mean_signal
-            # vs expTime
+            # Calculate the PTC in the standard way (variances vs mean), and linearity by fitting mean_signal
+            # vs expTime.
             
             dataset, lookupTableArray = self.computeStandardPtcAndNonLinearity(dataRef, visitPairs, detector)
             if self.config.makePlots:
