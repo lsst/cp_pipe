@@ -48,6 +48,7 @@ from .astierCovPtcUtils import (findMask, fftSize, computeCovFft, loadFits,
                                 saveFits, fitData)
 from .astierCovPtcPlots import covAstierMakeAllPlots
 
+import lsst.ip.isr.isrMock as isrMock # TEMP
 
 class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
     """Config class for photon transfer curve measurement task"""
@@ -383,11 +384,11 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         if self.config.doCovariancesAstier:
             tupleCovariancesWithTags = self.computeCovariancesAstier(dataRef, visitPairs, detector)
-            try : 
-                fits, fits_nb = loadFits('fits.pkl')
-            except :
-                fits, fits_nb = fitData(tupleCovariancesWithTags, 1.4e5, 1e5, 8)
-                saveFits(fits, fits_nb, 'fits.pkl')
+            #try : 
+            #    fits, fits_nb = loadFits('fits.pkl')
+            #except :
+            fits, fits_nb = fitData (tupleCovariancesWithTags, 3e5, 3e5, 8)
+            saveFits(fits, fits_nb, 'fits.pkl')
             
             if self.config.makePlots:
                 self.plotCovariancesAstier(dataRef, fits, fits_nb)
@@ -457,6 +458,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                                                                                         detector.getId()))
 
         for (v1, v2) in visitPairs:
+            """
             # Perform ISR on each exposure
             dataRef.dataId['expId'] = v1
             exp1 = self.isr.runDataRef(dataRef).exposure
@@ -466,18 +468,52 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
             checkExpLengthEqual(exp1, exp2, v1, v2, raiseWithMessage=True)
             expTime = exp1.getInfo().getVisitInfo().getExposureTime()
+            """
+            #TEMP
+            assert(v1==v2) # visits numbers are expTimes in this case
+            expTime = v1
+            mockExp1, mockExp2 = self.makeMockFlats (expTime, gain=0.75)
+            # TEMP
 
             tupleRows = []
             for ampNumber, amp in enumerate(detector):
-                # covs: (mu1, mu2, i, j, var, cov, npix)
-                mu1, mu2, covs = self.getCovariancesAstier(exp1, exp2, region=amp.getBBox())
+                # covs: (i, j, var, cov, npix)
+                #mu1, mu2, covs = self.getCovariancesAstier(exp1, exp2, region=amp.getBBox())
+                if not amp.getName() == 'C10':
+                     continue
+                mu1, mu2, covs = self.getCovariancesAstier(mockExp1, mockExp2)
                 tupleRows += [(mu1, mu2) + cov + (ampNumber, expTime, amp.getName()) for cov in covs]
                 tags = ['mu1', 'mu2', 'i', 'j', 'var', 'cov', 'npix', 'ext', 'expTime', 'ampName']
             allTags += tags
             tupleRecords += tupleRows
         covariancesWithTags = np.core.records.fromrecords(tupleRecords, names=allTags)
-
         return covariancesWithTags
+        
+    def makeMockFlats (self, expTime, gain=1.0, readNoiseElectrons = 5, fluxElectrons = 1000):
+        flatFlux = fluxElectrons # e/s
+        flatMean = flatFlux*expTime # e
+        readNoise = readNoiseElectrons  # e
+        mockImageConfig = isrMock.IsrMock.ConfigClass()
+
+        # flatDrop is not really relevant as we replace the data
+        # but good to note it in case we change how this image is made
+        mockImageConfig.flatDrop = 0.99999
+        mockImageConfig.isTrimmed = True
+
+        flatExp1 = isrMock.FlatMock(config=mockImageConfig).run()
+        flatExp2 = flatExp1.clone()
+        (shapeY, shapeX) = flatExp1.getDimensions()
+        flatWidth = np.sqrt(flatMean)
+
+        rng1 = np.random.RandomState(1984)
+        flatData1 = rng1.normal(flatMean, flatWidth, (shapeX, shapeY)) + rng1.normal(0.0, readNoise, (shapeX, shapeY))
+        rng2 = np.random.RandomState(666)
+        flatData2 = rng2.normal(flatMean, flatWidth, (shapeX, shapeY)) + rng1.normal(0.0, readNoise, (shapeX, shapeY))
+
+        flatExp1.image.array[:] = flatData1/gain # ADU
+        flatExp2.image.array[:] = flatData2/gain # ADU
+        
+        return flatExp1, flatExp2
 
     def getCovariancesAstier(self, exposure1, exposure2, region=None):
         if region is not None:
@@ -557,6 +593,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         self.log.info('Measuring PTC using %s visits for detector %s' % (visitPairs, detector.getId()))
 
         for (v1, v2) in visitPairs:
+            """ TEMP
             # Perform ISR on each exposure
             dataRef.dataId['expId'] = v1
             exp1 = self.isr.runDataRef(dataRef).exposure
@@ -566,16 +603,25 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
             checkExpLengthEqual(exp1, exp2, v1, v2, raiseWithMessage=True)
             expTime = exp1.getInfo().getVisitInfo().getExposureTime()
+            """ 
+            # TEMP 
+            assert(v1==v2)
+            expTime = v1
+            mockExp1, mockExp2 = self.makeMockFlats (expTime, gain=0.75)
+            # TEMP
 
             for amp in detector:
-                mu, varDiff = self.measureMeanVarPair(exp1, exp2, region=amp.getBBox())
+                #mu, varDiff = self.measureMeanVarPair(exp1, exp2, region=amp.getBBox())
+                mu, varDiff = self.measureMeanVarPair(mockExp1, mockExp2)
                 ampName = amp.getName()
 
                 dataset.rawExpTimes[ampName].append(expTime)
                 dataset.rawMeans[ampName].append(mu)
                 dataset.rawVars[ampName].append(varDiff)
                 dataset.inputVisitPairs[ampName].append((v1, v2))
-
+        print ("MEANS C10: ", dataset.rawMeans['C10'])
+        print ("VARS C10: ", dataset.rawVars['C10'])
+        stop
         numberAmps = len(detector.getAmplifiers())
         numberAduValues = self.config.maxAduForLookupTableLinearizer
         lookupTableArray = np.zeros((numberAmps, numberAduValues), dtype=np.float32)
