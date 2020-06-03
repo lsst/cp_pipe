@@ -1,11 +1,12 @@
-from __future__ import print_function
-#from .ptcfit import *
-from .astierCovPtcUtils import *
-
-#import croaks
+import matplotlib.pyplot as pl
+from matplotlib import gridspec
+import numpy as np
+from .astierCovPtcFit import aCoeffsComputeOldFashion
+from .astierCovPtcUtils import (findGroups, binData, indexForBins, CHI2)
 
 def covAstierMakeAllPlots (fits, fits_nb, covariancesTuple, pdfPages, maxmu = 1.4e5, maxmu_el = 1e5, r=8):
 
+    plotStandardPtc (fits, pdfPages)
     do_cov_exposure_plot(fits['C10'], pdfPages)
     make_satur_plot(covariancesTuple, 'C10', pdfPages)
     plot_ptc(fits['C10'], pdfPages)
@@ -14,91 +15,122 @@ def covAstierMakeAllPlots (fits, fits_nb, covariancesTuple, pdfPages, maxmu = 1.
     plot_cov_2(fits, fits_nb, 0, 1, pdfPages)
     plot_cov_2(fits, fits_nb, 1, 0, pdfPages)
     plot_a_b(fits, pdfPages)
-    ab_vs_dist(fits, pdfPages, brange=4) #figname='ab_vs_dist.pdf')
+    ab_vs_dist(fits, pdfPages, brange=4)
     #make_distant_cov_plot(fits, covariancesTuple, pdfPages)
     plot_a_sum(fits, pdfPages)
+    plotRelativeBiasACoeffs (fits, fits_nb, maxmu_el, pdfPages)
 
-#from .group import *
-def CHI2(res,wy):
-    wres = res*wy
-    return (wres*wres).sum()
-    
+def plotStandardPtc (fits, pdfPages): 
 
-import matplotlib.pyplot as pl
-from matplotlib import gridspec
+    legendFontSize = 7
+    labelFontSize = 7
+    titleFontSize = 9
+    supTitleFontSize = 18
+    markerSize = 25
 
-def plot_cov(fits, i, j, offset=0.004):
-    lchi2, la, lb, lcov = [],[], [], []
-    pl.figure(figsize=(8,10))
-    gs = gridspec.GridSpec(2,1, height_ratios=[3, 1])
-    gs.update(hspace=0)
-    ax0=pl.subplot(gs[0])
-    pl.setp(ax0.get_xticklabels(), visible=False)
-    mue, rese, wce = [], [], []
-    for amp,fit in fits.items():
-        print ("AMP: ", amp)
-        mu,c, model, wc = fit.getNormalizedFitData(i, j, divideByMu = True)
-        chi2 = CHI2(c-model,wc)/(len(mu)-3)
-        chi2bin= 0
-        mue += list(mu)
-        rese += list(c - model)
-        wce += list(wc)
+    nAmps = len(fits)
+    if nAmps == 2:
+        nRows, nCols = 2, 1
+    nRows = np.sqrt(nAmps)
+    mantissa, _ = np.modf(nRows)
+    if mantissa > 0:
+        nRows = int(nRows) + 1
+        nCols = nRows
+    else:
+        nRows = int(nRows)
+        nCols = nRows
+        
+    f, ax = pl.subplots(nrows=nRows, ncols=nCols, sharex='col', sharey='row', figsize=(13, 10))
+    f2, ax2 = pl.subplots(nrows=nRows, ncols=nCols, sharex='col', sharey='row', figsize=(13, 10))
 
-        # plot the data and fit
-        points, = pl.plot(mu,c+amp*offset,'.')
-        # the corresponding fit
-        pl.plot(mu,model+amp*offset,'-', color="k",linewidth=4.0)
-        # bin plot 
+    for i, (fitPair, a, a2) in enumerate(zip(fits.items(), ax.flatten(), ax2.flatten())):
+        
+        ampName = fitPair[0]
+        fit = fitPair[1]
+
+        mu, c, model, wc = fit.getNormalizedFitData(0, 0, divideByMu = False)
+        #gind = indexForBins(mu, 25)
+        #meanVecFinal, varVecFinal, wyb, sigyb = binData(mu, c, gind, wc)            
+
+        meanVecFinal = mu
+        varVecFinal = c
         print ("mu: ", mu)
-        gind = index_for_bins(mu, 25) #from group
-        xb, yb, wyb, sigyb = bin_data(mu,c,gind, wc)  # from group
-        chi2bin = (sigyb*wyb).mean() # chi2 of enforcing the same value in each bin
-        z = pl.errorbar(xb,yb+amp*offset,yerr=sigyb, marker = 'o', linestyle='none', markersize = 7, color=points.get_color(), label="ch %d"%amp)
-        aij = fit.getA()[i,j]
-        bij = fit.getB()[i,j]
-        la.append(aij)
-        lb.append(bij)
-        lcov.append(fit.getACov()[i,j,i,j])
-        lchi2.append(chi2)
-        print('%i : slope %g b %g  chi2 %f chi2bin %f'%(amp, aij , bij, chi2, chi2bin))
-    # end loop on amps
-    la = np.array(la)
-    lb = np.array(lb)
-    lcov = np.array(lcov)
-    lchi2 = np.array(lchi2)
-    mue = np.array(mue)
-    rese = np.array(rese)
-    wce = np.array(wce)
+        print ("c (variance): ", c)
+        #stop
+        #meanVecOriginal = np.array(dataset.rawMeans[amp])
+        #varVecOriginal = np.array(dataset.rawVars[amp])
+        #mask = dataset.visitMask[amp]
+        #meanVecFinal = meanVecOriginal[mask]
+        #varVecFinal = varVecOriginal[mask]
+        #meanVecOutliers = meanVecOriginal[np.invert(mask)]
+        #varVecOutliers = varVecOriginal[np.invert(mask)]
+        #pars, parsErr = dataset.ptcFitPars[amp], dataset.ptcFitParsError[amp]
+
+        """
+        if ptcFitType == 'ASTIERAPPROXIMATION':
+            if len(meanVecFinal):
+                ptcA00, ptcA00error = pars[0], parsErr[0]
+                ptcGain, ptcGainError = pars[1], parsErr[1]
+                ptcNoise = np.sqrt(np.fabs(pars[2]))
+                ptcNoiseError = 0.5*(parsErr[2]/np.fabs(pars[2]))*np.sqrt(np.fabs(pars[2]))
+                stringLegend = (f"a00: {ptcA00:.2e}+/-{ptcA00error:.2e} 1/e"
+                                    f"\n Gain: {ptcGain:.4}+/-{ptcGainError:.2e} e/DN"
+                                    f"\n Noise: {ptcNoise:.4}+/-{ptcNoiseError:.2e} e \n")
+
+        if ptcFitType == 'POLYNOMIAL':
+            if len(meanVecFinal):
+                ptcGain, ptcGainError = 1./pars[1], np.fabs(1./pars[1])*(parsErr[1]/pars[1])
+                ptcNoise = np.sqrt(np.fabs(pars[0]))*ptcGain
+                ptcNoiseError = (0.5*(parsErr[0]/np.fabs(pars[0]))*(np.sqrt(np.fabs(pars[0]))))*ptcGain
+                stringLegend = (f"Noise: {ptcNoise:.4}+/-{ptcNoiseError:.2e} e \n"
+                                    f"Gain: {ptcGain:.4}+/-{ptcGainError:.2e} e/DN \n")
+             
+            a.set_xlabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
+            a.set_ylabel(r'Variance (DN$^2$)', fontsize=labelFontSize)
+            a.tick_params(labelsize=11)
+            a.set_xscale('linear', fontsize=labelFontSize)
+            a.set_yscale('linear', fontsize=labelFontSize)
+
+            a2.set_xlabel(r'Mean Signal ($\mu$, DN)', fontsize=labelFontSize)
+            a2.set_ylabel(r'Variance (DN$^2$)', fontsize=labelFontSize)
+            a2.tick_params(labelsize=11)
+            a2.set_xscale('log')
+            a2.set_yscale('log')
+        """
+        if len(meanVecFinal):  # Empty if the whole amp is bad, for example.
+            minMeanVecFinal = np.min(meanVecFinal)
+            maxMeanVecFinal = np.max(meanVecFinal)
+            #meanVecFit = np.linspace(minMeanVecFinal, maxMeanVecFinal, 100*len(meanVecFinal))
+            #minMeanVecOriginal = np.min(meanVecOriginal)
+            #maxMeanVecOriginal = np.max(meanVecOriginal)
+            #deltaXlim = maxMeanVecOriginal - minMeanVecOriginal
+
+            #a.plot(meanVecFit, ptcFunc(pars, meanVecFit), color='red')
+            #a.plot(meanVecFinal, pars[0] + pars[1]*meanVecFinal, color='green', linestyle='--')
+            a.scatter(meanVecFinal, varVecFinal, c='blue', marker='o', s=markerSize)
+            #a.scatter(meanVecOutliers, varVecOutliers, c='magenta', marker='s', s=markerSize)
+            #a.text(0.03, 0.8, stringLegend, transform=a.transAxes, fontsize=legendFontSize)
+            #a.set_title(amp, fontsize=titleFontSize)
+            #a.set_xlim([minMeanVecOriginal - 0.2*deltaXlim, maxMeanVecOriginal + 0.2*deltaXlim])
+
+            # Same, but in log-scale
+            #a2.plot(meanVecFit, ptcFunc(pars, meanVecFit), color='red')
+            a2.scatter(meanVecFinal, varVecFinal, c='blue', marker='o', s=markerSize)
+            #a2.scatter(meanVecOutliers, varVecOutliers, c='magenta', marker='s', s=markerSize)
+            #a2.text(0.03, 0.8, stringLegend, transform=a2.transAxes, fontsize=legendFontSize)
+            #a2.set_title(amp, fontsize=titleFontSize)
+            #a2.set_xlim([minMeanVecOriginal, maxMeanVecOriginal])
+        else:
+            print ("hola")
+            #a.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
+            #a2.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
+
+    #f.suptitle("PTC \n Fit: " + stringTitle, fontsize=20)
+    pdfPages.savefig(f)
+    #f2.suptitle("PTC (log-log)", fontsize=20)
+    pdfPages.savefig(f2)
+
     
-    #pl.legend(loc='upper left')
-    pl.xlabel("$\mu (el)$",fontsize='x-large')
-    pl.ylabel("$C_{%d%d}/\mu + Cst (el)$"%(i,j),fontsize='x-large')
-    #gind = group.find_groups(mue, 2000.)
-    gind = index_for_bins(mue, 25) # group
-    xb, yb, wyb, sigyb = bin_data(mue,rese , gind, wce) # group 
-    #pl.errorbar(xb,yb,yerr=sigyb, fmt='o', label='data')
-
-    ax1 = pl.subplot(gs[1], sharex = ax0)
-    pl.errorbar(xb,yb, yerr=sigyb, marker='o', linestyle='none')
-    pl.plot(xb,[0]*len(xb),'--')
-    #pl.plot(xb,model,'--')
-    pl.ticklabel_format(style='sci', axis='x', scilimits=(0,0))
-    pl.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
-    pl.xlabel('$\mu (el)$',fontsize='x-large')
-    pl.ylabel('$C_{%d%d}/\mu$ -model (el)'%(i,j),fontsize='x-large')
-    pl.tight_layout()
-    pl.show()
-
-    print('      & $a_{%d%d}$ & '%(j,i),' & $b_{%d%d}$ & '%(j,i),' & $\chi^2/N_{dof}$ \\\\ \ hline')
-    print('value & %9.3g & %9.3g & %5.2f\\\\'%(la.mean(), lb.mean(), lchi2.mean()))
-    print('scatter & %8.3g & %8.3g & %5.2f\\\\ \hline'%(la.std(), lb.std(), lchi2.std()))
-
-    a_expected_rms = np.sqrt(lcov.mean())
-    print("expected rms of a_%1d%1d = %g"%(j,i, a_expected_rms))
-    #print('i,j = %d %d r2 = %8.3g +/- %8.3g (exp: %8.3g)'%(i,j,r2,r2_rms,r2_rms_expected))
-    #print('%8.3g +/- %8.3g %8.3g +/- %8.3g %8.2g +/- %7.2g'%(lp0.mean(), np.sqrt(lcov[:,0,0].mean()), lp1.mean(), np.sqrt(lcov[:,1,1].mean()), lp2.mean(), np.sqrt(lcov[:,2,2].mean()) ))
-    #print('offset : %g +r/- %g, expected rms = %g'%(lp2.mean(), lp2.std(), np.sqrt(lcov[:,2,2].mean())))
-
 def plot_cov_2(fits, fits_nb, i, j, pdfPages, offset=0.004, figname=None, plot_data = True, top_plot=False):
     lchi2, la, lb, lcov = [],[], [], []
 
@@ -137,8 +169,8 @@ def plot_cov_2(fits, fits_nb, i, j, pdfPages, offset=0.004, figname=None, plot_d
         # the corresponding fit
         fit_curve, = pl.plot(mu,model + counter*offset, '-', linewidth=4.0)
         # bin plot 
-        gind = index_for_bins(mu, 25) #group
-        xb, yb, wyb, sigyb = bin_data(mu,c,gind, wc) # group 
+        gind = indexForBins(mu, 25) #group
+        xb, yb, wyb, sigyb = binData(mu,c,gind, wc) # group 
         chi2bin = (sigyb*wyb).mean() # chi2 of enforcing the same value in each bin
         z = pl.errorbar(xb,yb+counter*offset,yerr=sigyb, marker = 'o', linestyle='none', markersize = 7,
                 color=fit_curve.get_color(), label=f"ch {amp}")
@@ -164,21 +196,20 @@ def plot_cov_2(fits, fits_nb, i, j, pdfPages, offset=0.004, figname=None, plot_d
     mue_nb = np.array(mue_nb)
     rese_nb = np.array(rese_nb)
     wce_nb = np.array(wce_nb)
-
-    
+ 
     pl.xlabel("$\mu (el)$",fontsize='x-large')
     pl.ylabel("$C_{%d%d}/\mu + Cst (el)$"%(i,j),fontsize='x-large')
     if (not top_plot):
-        #gind = group.find_groups(mue, 2000.)
-        gind = index_for_bins(mue, 25)
-        xb, yb, wyb, sigyb = bin_data(mue,rese , gind, wce)
+        #gind = group.findGroups(mue, 2000.)
+        gind = indexForBins(mue, 25)
+        xb, yb, wyb, sigyb = binData(mue,rese , gind, wce)
         #pl.errorbar(xb,yb,yerr=sigyb, fmt='o', label='data')
         print('yb0 %g'%yb[0])
     
         ax1 = pl.subplot(gs[1], sharex = ax0)
         ax1.errorbar(xb,yb, yerr=sigyb, marker='o', linestyle='none', label='full fit')
-        gind_nb = index_for_bins(mue_nb, 25)
-        xb2, yb2, wyb2, sigyb2 = bin_data(mue_nb,rese_nb , gind_nb, wce_nb)
+        gind_nb = indexForBins(mue_nb, 25)
+        xb2, yb2, wyb2, sigyb2 = binData(mue_nb,rese_nb , gind_nb, wce_nb)
         print('yb0 %g %g'%(yb[0],yb2[0]))
     
         ax1.errorbar(xb2,yb2, yerr=sigyb2, marker='o', linestyle='none', label='b = 0')
@@ -339,8 +370,8 @@ def do_cov_exposure_plot(fit, pdfPages, profile_plot=True):
         mu,var,model,w = fit.getNormalizedFitData(i,j, divideByMu=False)
 
         if profile_plot : 
-            gind = find_groups(mu, 1000.)
-            xb, yb, wyb, sigyb = bin_data(mu, var, gind, w)
+            gind = findGroups(mu, 1000.)
+            xb, yb, wyb, sigyb = binData(mu, var, gind, w)
         else :
             xb,yb,wyb,sigyb = mu, var, mu/np.sqrt(var), np.sqrt(var)/mu
         ax = pl.subplot(2,2,i-2*j+3)
@@ -390,10 +421,10 @@ def plot_ptc(fit, pdfPages) :
     pl.legend(loc='upper left',fontsize='large')
     #
     # residuals
-    gind = index_for_bins(mu, 50)
+    gind = indexForBins(mu, 50)
 
     ax1 = pl.subplot(gs[1], sharex = ax0)
-    xb, yb, wyb, sigyb = bin_data(mu, var - model, gind, w)
+    xb, yb, wyb, sigyb = binData(mu, var - model, gind, w)
     pl.errorbar(xb, yb, yerr=sigyb, marker='.', ls='none')
     # draw a line at y=0 : 
     pl.plot([0, mu.max()], [0,0], ls='--', color= 'k')
@@ -410,7 +441,7 @@ def plot_ptc(fit, pdfPages) :
     par3 = np.polyfit(mu, var, 3, w = w)
     m3 = np.polyval(par3, mu)
     chi2_3 = CHI2(var-m3,w)/(len(var)-4)
-    xb, yb, wyb, sigyb = bin_data(mu,  var - m2, gind, w)
+    xb, yb, wyb, sigyb = binData(mu,  var - m2, gind, w)
     pl.errorbar(xb, yb, yerr=sigyb, marker='.', color='r', ls='none')
     pl.plot([0,mu.max()], [0,0], ls='--', color= 'k')
     pl.setp(ax2.get_xticklabels(), visible=False)
@@ -425,7 +456,7 @@ def plot_ptc(fit, pdfPages) :
     fit_nob.fit()
     mu,var,model,w = fit_nob.getNormalizedFitData(0, 0, divideByMu=False)
     
-    xb, yb, wyb, sigyb = bin_data(mu, var - model, gind, w)
+    xb, yb, wyb, sigyb = binData(mu, var - model, gind, w)
     pl.errorbar(xb, yb, yerr=sigyb, marker='.', color='g', ls='none')
     pl.plot([0, mu.max()], [0,0], ls='--', color= 'k')
     ax3.ticklabel_format(style='sci', axis='x', scilimits=(0,0))
@@ -670,16 +701,26 @@ def avoid_overlapping_y_labels(figure):
         ax.set_yticklabels(labels)
 
     
-def plot_da(fits, fitsnb, mu_el, maxr=None, figname=None):
+def plotRelativeBiasACoeffs(fits, fitsnb, mu_el, pdfPages, maxr=None):
+    """Illustrates systematic bias from estimating 'a'
+    coefficients from the slope of correlations as opposed to the
+    full model in Astier+19.
+
+    Corresponds to Fig. 15 in Astier+19.
+    """
+    
     fig = pl.figure(figsize=(7,11))
-    title = ['a relative bias', 'a relative bias (b=0)']
-    data = [fits,fitsnb]
-    #
+    title = ["'a' relative bias", "'a' relative bias (b=0)"]
+    data = [fits, fitsnb]
+    
     for k in range(2):
         diffs=[]
         amean = []
-        for fit in data[k]:
-            if fit is None: continue
+        for fit in data[k].values():
+            print ("FIT: ", type(fit))
+            print (fit)
+            if fit is None: 
+                continue
             aOld = aCoeffsComputeOldFashion(fit, mu_el)
             a = fit.getA()
             amean.append(a)
@@ -688,7 +729,8 @@ def plot_da(fits, fitsnb, mu_el, maxr=None, figname=None):
         diff = np.array(diffs).mean(axis=0)
         diff=diff/amean
         diff[0,0] = 0
-        if maxr is None: maxr=diff.shape[0]
+        if maxr is None: 
+            maxr=diff.shape[0]
         diff = diff[:maxr, :maxr]
         ax0 = fig.add_subplot(2,1,k+1)
         im0 = ax0.imshow(diff.transpose(), origin='lower', interpolation='none')
@@ -697,9 +739,9 @@ def plot_da(fits, fitsnb, mu_el, maxr=None, figname=None):
         ax0.tick_params(axis='both', labelsize='x-large')
         pl.colorbar(im0)
         ax0.set_title(title[k])
-    #
+    
     pl.tight_layout()
-    if figname is not None: pl.savefig(figname)
+    pdfPages.savefig(fig)
 
 def eval_a_unweighted_quadratic_fit(fit) :
     model = fit.evalCovModel()

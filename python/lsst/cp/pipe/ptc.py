@@ -44,8 +44,7 @@ import numpy.polynomial.polynomial as poly
 from lsst.ip.isr.linearize import Linearizer
 import datetime
 
-from .astierCovPtcUtils import (findMask, fftSize, computeCovFft, loadFits, 
-                                saveFits, fitData)
+from .astierCovPtcUtils import (fftSize, computeCovFft, fitData)
 from .astierCovPtcPlots import covAstierMakeAllPlots
 
 import lsst.ip.isr.isrMock as isrMock # TEMP
@@ -394,10 +393,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             # covariances[0,0].
 
             tupleCovariancesWithTags = self.computeCovariancesAstier(dataRef, visitPairs, detector)
-            # use the np.recarray to obtain the covFit objects 
-            covFits, covFitsNoB = fitData (tupleCovariancesWithTags, 3e5, 3e5, 8)
-            # save the covFit objects
-            #saveFits(fits, fits_nb, 'fits.pkl')
+            # use the np.recarray to obtain the CovFit objects 
+            covFits, covFitsNoB = fitData (tupleCovariancesWithTags, 3e6, 3e6, 8)
             
             if self.config.makePlots:
                 self.plotCovariancesAstier(dataRef, covFits, covFitsNoB, tupleCovariancesWithTags)
@@ -513,6 +510,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         return covariancesWithTags
         
     def makeMockFlats (self, expTime, gain=1.0, readNoiseElectrons = 5, fluxElectrons = 1000):
+        import galsim 
+
         flatFlux = fluxElectrons # e/s
         flatMean = flatFlux*expTime # e
         readNoise = readNoiseElectrons  # e
@@ -533,8 +532,16 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         rng2 = np.random.RandomState(666)
         flatData2 = rng2.normal(flatMean, flatWidth, (shapeX, shapeY)) + rng1.normal(0.0, readNoise, (shapeX, shapeY))
 
-        flatExp1.image.array[:] = flatData1/gain # ADU
-        flatExp2.image.array[:] = flatData2/gain # ADU
+        # Simulate BF with power law model in galsim
+        cd = galsim.cdmodel.PowerLawCD(8, 1.1e-7, 1.1e-7, 1.0e-7, 1.0e-7, 0.0, 0.0, 0.0)
+        tempFlatData1 = galsim.Image(flatData1)
+        temp2FlatData1=cd.applyForward(tempFlatData1)
+
+        tempFlatData2 = galsim.Image(flatData2)
+        temp2FlatData2 = cd.applyForward(tempFlatData2)
+
+        flatExp1.image.array[:] = temp2FlatData1.array/gain # ADU
+        flatExp2.image.array[:] = temp2FlatData2.array/gain # ADU
         
         return flatExp1, flatExp2
 
@@ -570,7 +577,6 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         w1 = np.where (im1Area.getMask().getArray() == 0, 1, 0)
         w2 = np.where (im2Area.getMask().getArray() == 0, 1, 0) 
    
-        temp = findMask(im1Area.getImage().getArray(), 5.0)
         w12 = w1*w2
         wDiff =  np.where (diffIm.getMask().getArray() == 0, 1, 0)
         w = w12*wDiff
