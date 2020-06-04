@@ -1,26 +1,85 @@
+# This file is part of cp_pipe.
+#
+# Developed for the LSST Data Management System.
+# This product includes software developed by the LSST Project
+# (https://www.lsst.org).
+# See the COPYRIGHT file at the top-level directory of this distribution
+# for details of code ownership.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 import matplotlib.pyplot as pl
 from matplotlib import gridspec
 import numpy as np
 from .astierCovPtcFit import aCoeffsComputeOldFashion
 from .astierCovPtcUtils import (findGroups, binData, indexForBins, CHI2)
 
-def covAstierMakeAllPlots (fits, fits_nb, covariancesTuple, pdfPages, maxmu = 1.4e5, maxmu_el = 1e5, r=8):
 
-    plotStandardPtc (fits, pdfPages)
-    do_cov_exposure_plot(fits['C10'], pdfPages)
-    make_satur_plot(covariancesTuple, 'C10', pdfPages)
-    plot_ptc(fits['C10'], pdfPages)
-    ptc_table(fits, fits_nb, 0, 0)
-    plot_cov_2(fits, fits_nb, 0, 0, pdfPages, offset=0.01, top_plot=True)
-    plot_cov_2(fits, fits_nb, 0, 1, pdfPages)
-    plot_cov_2(fits, fits_nb, 1, 0, pdfPages)
-    plot_a_b(fits, pdfPages)
-    ab_vs_dist(fits, pdfPages, brange=4)
-    #make_distant_cov_plot(fits, covariancesTuple, pdfPages)
-    plot_a_sum(fits, pdfPages)
-    plotRelativeBiasACoeffs (fits, fits_nb, maxmu_el, pdfPages)
+def covAstierMakeAllPlots(covFits, covFitsNoB, covTuple, pdfPages,
+                          maxMu=1e9, maxMuElectrons=1e9, maxCovlag=8):
+    """Make plots for MeasurePhotonTransferCurve task when doCovariancesAstier=True.
 
-def plotStandardPtc (fits, pdfPages): 
+    This function call other functions that mostly reproduce the plots in Astier+19.
+    Most of the code is ported from Pierre Astier's repository https://github.com/PierreAstier/bfptc
+
+    Parameters
+    ----------
+    covFits: `dict`
+        Dictionary of CovFit objects, with amp names as keys.
+
+    covFitsNoB: `dict`
+       Dictionary of CovFit objects, with amp names as keys (b=0 in Eq. 20 of Astier+19).
+
+    covTuple: `numpy.recarray`
+        Recarray with rows with at least( mu1, mu2, cov, var, i, j, npix), where:
+            mu1: mean value of flat1
+            mu2: mean value of flat2
+            cov: covariance value at lag(i, j)
+            var: variance(covariance value at lag(0, 0))
+            i: lag dimension
+            j: lag dimension
+            npix: number of pixels used for covariance calculation.
+
+    pdfPages: `matplotlib.backends.backend_pdf.PdfPages`
+        PDF file where the plots will be saved.
+
+    maxMu: `float`
+        Maximum signal, in ADU.
+
+    maxMuElectrons: `float`
+       Maximum signal, in electrons.
+
+    maxCovLag: `int`
+        maximum lag in covariances.
+    """
+    plotStandardPtc(covFits, pdfPages)
+    do_cov_exposure_plot(covFits['C10'], pdfPages)
+    make_satur_plot(covTuple, 'C10', pdfPages)
+    plot_ptc(covFits['C10'], pdfPages)
+    ptc_table(covFits, covFitsNoB, 0, 0)
+    plot_cov_2(covFits, covFitsNoB, 0, 0, pdfPages, offset=0.01, top_plot=True)
+    plot_cov_2(covFits, covFitsNoB, 0, 1, pdfPages)
+    plot_cov_2(covFits, covFitsNoB, 1, 0, pdfPages)
+    plot_a_b(covFits, pdfPages)
+    ab_vs_dist(covFits, pdfPages, brange=4)
+    #  make_distant_cov_plot(covFits, covariancesTuple, pdfPages)
+    plot_a_sum(covFits, pdfPages)
+    plotRelativeBiasACoeffs(covFits, covFitsNoB, maxMuElectrons, pdfPages)
+
+
+def plotStandardPtc(covFits, pdfPages):
+    """Plot PTC from covariances (var = cov[0, 0])"""
 
     legendFontSize = 7
     labelFontSize = 7
@@ -28,7 +87,7 @@ def plotStandardPtc (fits, pdfPages):
     supTitleFontSize = 18
     markerSize = 25
 
-    nAmps = len(fits)
+    nAmps = len(covFits)
     if nAmps == 2:
         nRows, nCols = 2, 1
     nRows = np.sqrt(nAmps)
@@ -39,127 +98,82 @@ def plotStandardPtc (fits, pdfPages):
     else:
         nRows = int(nRows)
         nCols = nRows
-        
+
     f, ax = pl.subplots(nrows=nRows, ncols=nCols, sharex='col', sharey='row', figsize=(13, 10))
     f2, ax2 = pl.subplots(nrows=nRows, ncols=nCols, sharex='col', sharey='row', figsize=(13, 10))
 
-    for i, (fitPair, a, a2) in enumerate(zip(fits.items(), ax.flatten(), ax2.flatten())):
-        
-        ampName = fitPair[0]
+    for i, (fitPair, a, a2) in enumerate(zip(covFits.items(), ax.flatten(), ax2.flatten())):
+
+        amp = fitPair[0]
         fit = fitPair[1]
 
-        mu, c, model, wc = fit.getNormalizedFitData(0, 0, divideByMu = False)
-        #gind = indexForBins(mu, 25)
-        #meanVecFinal, varVecFinal, wyb, sigyb = binData(mu, c, gind, wc)            
+        meanVecFinal, varVecFinal, varVecModel, wc = fit.getNormalizedFitData(0, 0, divideByMu=False)
 
-        meanVecFinal = mu
-        varVecFinal = c
-        print ("mu: ", mu)
-        print ("c (variance): ", c)
-        #stop
-        #meanVecOriginal = np.array(dataset.rawMeans[amp])
-        #varVecOriginal = np.array(dataset.rawVars[amp])
-        #mask = dataset.visitMask[amp]
-        #meanVecFinal = meanVecOriginal[mask]
-        #varVecFinal = varVecOriginal[mask]
-        #meanVecOutliers = meanVecOriginal[np.invert(mask)]
-        #varVecOutliers = varVecOriginal[np.invert(mask)]
-        #pars, parsErr = dataset.ptcFitPars[amp], dataset.ptcFitParsError[amp]
+        if len(meanVecFinal):  # Empty if the whole amp is bad, for example.
+            stringLegend = f"Gain: {fit.getGain():.4} e/DN \n Noise: {fit.getRon():.4} e"
+            minMeanVecFinal = np.min(meanVecFinal)
+            maxMeanVecFinal = np.max(meanVecFinal)
+            deltaXlim = maxMeanVecFinal - minMeanVecFinal
 
-        """
-        if ptcFitType == 'ASTIERAPPROXIMATION':
-            if len(meanVecFinal):
-                ptcA00, ptcA00error = pars[0], parsErr[0]
-                ptcGain, ptcGainError = pars[1], parsErr[1]
-                ptcNoise = np.sqrt(np.fabs(pars[2]))
-                ptcNoiseError = 0.5*(parsErr[2]/np.fabs(pars[2]))*np.sqrt(np.fabs(pars[2]))
-                stringLegend = (f"a00: {ptcA00:.2e}+/-{ptcA00error:.2e} 1/e"
-                                    f"\n Gain: {ptcGain:.4}+/-{ptcGainError:.2e} e/DN"
-                                    f"\n Noise: {ptcNoise:.4}+/-{ptcNoiseError:.2e} e \n")
-
-        if ptcFitType == 'POLYNOMIAL':
-            if len(meanVecFinal):
-                ptcGain, ptcGainError = 1./pars[1], np.fabs(1./pars[1])*(parsErr[1]/pars[1])
-                ptcNoise = np.sqrt(np.fabs(pars[0]))*ptcGain
-                ptcNoiseError = (0.5*(parsErr[0]/np.fabs(pars[0]))*(np.sqrt(np.fabs(pars[0]))))*ptcGain
-                stringLegend = (f"Noise: {ptcNoise:.4}+/-{ptcNoiseError:.2e} e \n"
-                                    f"Gain: {ptcGain:.4}+/-{ptcGainError:.2e} e/DN \n")
-             
             a.set_xlabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
             a.set_ylabel(r'Variance (DN$^2$)', fontsize=labelFontSize)
             a.tick_params(labelsize=11)
             a.set_xscale('linear', fontsize=labelFontSize)
             a.set_yscale('linear', fontsize=labelFontSize)
 
+            a.scatter(meanVecFinal, varVecFinal, c='blue', marker='o', s=markerSize)
+            a.plot(meanVecFinal, varVecModel, color='red', lineStyle='-')
+            a.text(0.03, 0.8, stringLegend, transform=a.transAxes, fontsize=legendFontSize)
+            a.set_title(amp, fontsize=titleFontSize)
+            a.set_xlim([minMeanVecFinal - 0.2*deltaXlim, maxMeanVecFinal + 0.2*deltaXlim])
+
+            # Same, but in log-scale
             a2.set_xlabel(r'Mean Signal ($\mu$, DN)', fontsize=labelFontSize)
             a2.set_ylabel(r'Variance (DN$^2$)', fontsize=labelFontSize)
             a2.tick_params(labelsize=11)
             a2.set_xscale('log')
             a2.set_yscale('log')
-        """
-        if len(meanVecFinal):  # Empty if the whole amp is bad, for example.
-            minMeanVecFinal = np.min(meanVecFinal)
-            maxMeanVecFinal = np.max(meanVecFinal)
-            #meanVecFit = np.linspace(minMeanVecFinal, maxMeanVecFinal, 100*len(meanVecFinal))
-            #minMeanVecOriginal = np.min(meanVecOriginal)
-            #maxMeanVecOriginal = np.max(meanVecOriginal)
-            #deltaXlim = maxMeanVecOriginal - minMeanVecOriginal
-
-            #a.plot(meanVecFit, ptcFunc(pars, meanVecFit), color='red')
-            #a.plot(meanVecFinal, pars[0] + pars[1]*meanVecFinal, color='green', linestyle='--')
-            a.scatter(meanVecFinal, varVecFinal, c='blue', marker='o', s=markerSize)
-            #a.scatter(meanVecOutliers, varVecOutliers, c='magenta', marker='s', s=markerSize)
-            #a.text(0.03, 0.8, stringLegend, transform=a.transAxes, fontsize=legendFontSize)
-            #a.set_title(amp, fontsize=titleFontSize)
-            #a.set_xlim([minMeanVecOriginal - 0.2*deltaXlim, maxMeanVecOriginal + 0.2*deltaXlim])
-
-            # Same, but in log-scale
-            #a2.plot(meanVecFit, ptcFunc(pars, meanVecFit), color='red')
+            a2.plot(meanVecFinal, varVecModel, color='red', lineStyle='-')
             a2.scatter(meanVecFinal, varVecFinal, c='blue', marker='o', s=markerSize)
-            #a2.scatter(meanVecOutliers, varVecOutliers, c='magenta', marker='s', s=markerSize)
-            #a2.text(0.03, 0.8, stringLegend, transform=a2.transAxes, fontsize=legendFontSize)
-            #a2.set_title(amp, fontsize=titleFontSize)
-            #a2.set_xlim([minMeanVecOriginal, maxMeanVecOriginal])
+            a2.text(0.03, 0.8, stringLegend, transform=a2.transAxes, fontsize=legendFontSize)
+            a2.set_title(amp, fontsize=titleFontSize)
+            a2.set_xlim([minMeanVecFinal, maxMeanVecFinal])
         else:
-            print ("hola")
-            #a.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
-            #a2.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
+            a.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
+            a2.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
 
-    #f.suptitle("PTC \n Fit: " + stringTitle, fontsize=20)
+    f.suptitle("PTC from covariances as in Astier+19 \n Fit: Eq. 20, Astier+19", fontsize=20)
     pdfPages.savefig(f)
-    #f2.suptitle("PTC (log-log)", fontsize=20)
+    f2.suptitle("PTC PTC from covariances as in Astier+19 (log-log) \n Fit: Eq. 20, Astier+19", fontsize=20)
     pdfPages.savefig(f2)
 
-    
-def plot_cov_2(fits, fits_nb, i, j, pdfPages, offset=0.004, figname=None, plot_data = True, top_plot=False):
+
+def plot_cov_2(covFits, covFitsNoB, i, j, pdfPages, offset=0.004, figname=None, 
+               plot_data=True, top_plot=False):
     lchi2, la, lb, lcov = [],[], [], []
 
-    if (not top_plot) :
+    if (not top_plot):
         fig = pl.figure(figsize=(8,10))
         gs = gridspec.GridSpec(2,1, height_ratios=[3, 1])
         gs.update(hspace=0)
         ax0=pl.subplot(gs[0])
         pl.setp(ax0.get_xticklabels(), visible=False)
-    else :
+    else:
         fig = pl.figure(figsize=(8,8))
         ax0 = pl.subplot(111)
         ax0.ticklabel_format(style='sci', axis='x', scilimits=(0,0))
     ax0.tick_params(axis='both', labelsize='x-large')
     mue, rese, wce = [], [], []
     mue_nb, rese_nb, wce_nb = [], [], []
-    for counter, (amp, fit) in enumerate(fits.items()):
-        print ("AMP: ", amp)
+    for counter, (amp, fit) in enumerate(covFits.items()):
         mu, c, model, wc = fit.getNormalizedFitData(i, j, divideByMu = True)
-        print ("mu: ", mu)
-        print ("c: ", c)
-        print ("model: ", model)
         chi2 = CHI2(c-model,wc)/(len(mu)-3)
         chi2bin= 0
         mue += list(mu)
         rese += list(c - model)
         wce += list(wc)
 
-        fit_nb = fits_nb[amp]
+        fit_nb = covFitsNoB[amp]
         mu_nb, c_nb, model_nb, wc_nb = fit_nb.getNormalizedFitData(i, j, divideByMu = True)
         mue_nb += list(mu_nb)
         rese_nb += list(c_nb - model_nb)
@@ -175,7 +189,7 @@ def plot_cov_2(fits, fits_nb, i, j, pdfPages, offset=0.004, figname=None, plot_d
         z = pl.errorbar(xb,yb+counter*offset,yerr=sigyb, marker = 'o', linestyle='none', markersize = 7,
                 color=fit_curve.get_color(), label=f"ch {amp}")
         # plot the data
-        if plot_data :
+        if plot_data:
             points, = pl.plot(mu,c+counter*offset, '.', color = fit_curve.get_color())
 
         aij = fit.getA()[i,j]
@@ -184,7 +198,7 @@ def plot_cov_2(fits, fits_nb, i, j, pdfPages, offset=0.004, figname=None, plot_d
         lb.append(bij)
         lcov.append(fit.getACov()[i,j,i,j])
         lchi2.append(chi2)
-        print('%s : slope %g b %g  chi2 %f chi2bin %f'%(amp, aij , bij, chi2, chi2bin))
+        print('%s: slope %g b %g  chi2 %f chi2bin %f'%(amp, aij , bij, chi2, chi2bin))
     # end loop on amps
     la = np.array(la)
     lb = np.array(lb)
@@ -242,10 +256,10 @@ def plot_cov_2(fits, fits_nb, i, j, pdfPages, offset=0.004, figname=None, plot_d
     #    pl.savefig(figname)
     pdfPages.savefig(fig)
 
-def plot_chi2_diff(fits, fits_nob) :
+def plot_chi2_diff(covFits, covFits_nob):
     chi2_diff = []
-    for amp in fits.keys() :
-        dchi2 =  ((fits_nob[amp].wres())**2).sum(axis=0)-((fits[amp].wres())**2).sum(axis=0)
+    for amp in covFits.keys():
+        dchi2 =  ((covFits_nob[amp].wres())**2).sum(axis=0)-((covFits[amp].wres())**2).sum(axis=0)
         print(dchi2.sum())
         chi2_diff.append(dchi2)
     chi2_diff = np.array(chi2_diff).mean(axis=0)
@@ -258,9 +272,9 @@ def plot_chi2_diff(fits, fits_nob) :
 import matplotlib as mpl
 from matplotlib.ticker import MaxNLocator
 
-def plot_a_sum(fits, pdfPages) :
+def plot_a_sum(covFits, pdfPages):
     a, b = [],[]
-    for amp,fit in fits.items():
+    for amp,fit in covFits.items():
         a.append(fit.getA())
         b.append(fit.getB())
     print ("a: ", a)
@@ -287,9 +301,9 @@ def plot_a_sum(fits, pdfPages) :
     pdfPages.savefig(fig)
     
 
-def plot_a_b(fits, pdfPages, brange=3) :
+def plot_a_b(covFits, pdfPages, brange=3):
     a, b = [],[]
-    for amp,fit in fits.items() :
+    for amp,fit in covFits.items():
         a.append(fit.getA())
         b.append(fit.getB())
     a = np.array(a).mean(axis=0)
@@ -319,34 +333,34 @@ def plot_a_b(fits, pdfPages, brange=3) :
 import copy
 
 
-def ptc_table(fits, fits_nb, i=0, j=0):
-    amps = fits.keys()
+def ptc_table(covFits, covFitsNoB, i=0, j=0):
+    amps = covFits.keys()
     print ("HOLA:" , amps)
-    print ("fits['C10']: ", fits['C10'])
-    print ("fits[amp].getA(): ", fits['C10'].getA())
+    print ("covFits['C10']: ", covFits['C10'])
+    print ("covFits[amp].getA(): ", covFits['C10'].getA())
     # collect arrays of everything, for stats 
-    chi2_tot = np.array([fits[amp].chi2()/fits[amp].ndof() for amp in amps])
-    a_00 = np.array([fits[amp].getA()[i,j] for amp in amps])
-    sa_00 = np.array([fits[amp].getASig()[i,j] for amp in amps])
-    b_00 = np.array([fits[amp].getB()[i,j] for amp in amps])
-    n = np.sqrt(np.array([fits[amp].getNoise()[i,j] for amp in amps]))
-    gains = np.array([fits[amp].getGain() for amp in amps])
+    chi2_tot = np.array([covFits[amp].chi2()/covFits[amp].ndof() for amp in amps])
+    a_00 = np.array([covFits[amp].getA()[i,j] for amp in amps])
+    sa_00 = np.array([covFits[amp].getASig()[i,j] for amp in amps])
+    b_00 = np.array([covFits[amp].getB()[i,j] for amp in amps])
+    n = np.sqrt(np.array([covFits[amp].getNoise()[i,j] for amp in amps]))
+    gains = np.array([covFits[amp].getGain() for amp in amps])
     chi2_2 = []
     chi2_3 = []
     chi2 = []
     chi2_nb = []
     ndof = []
-    for amp in amps :
-        mu,var,model,w = fits[amp].getNormalizedFitData(i,j, divideByMu=False)
+    for amp in amps:
+        mu,var,model,w = covFits[amp].getNormalizedFitData(i,j, divideByMu=False)
         par2 = np.polyfit(mu, var, 2, w = w)
         m2 = np.polyval(par2, mu)
         chi2_2.append(CHI2(var-m2,w)/(len(var)-3))
         par3 = np.polyfit(mu, var, 3, w = w)
         m3 = np.polyval(par3, mu)
         chi2_3.append(CHI2(var-m3,w)/(len(var)-4))
-        chi2.append(((fits[amp].wres()[: ,i,j])**2).sum())
-        chi2_nb.append(((fits_nb[amp].wres()[: ,i,j])**2).sum())
-        ndof.append(len(fits[amp].mu-4))
+        chi2.append(((covFits[amp].wres()[: ,i,j])**2).sum())
+        chi2_nb.append(((covFitsNoB[amp].wres()[: ,i,j])**2).sum())
+        ndof.append(len(covFits[amp].mu-4))
         
     chi2_2 = np.array(chi2_2)
     chi2_3 = np.array(chi2_3)
@@ -358,21 +372,21 @@ def ptc_table(fits, fits_nb, i=0, j=0):
     chi2 /= ndof
     stuff = [a_00, b_00, gains, chi2, chi2_nb, chi2_diff, chi2_2, chi2_3, n , sa_00] 
     names = ['a_%d%d'%(i,j), 'b_%d%d'%(i,j), 'gains', 'chi2', 'chi2_nb', 'chi2_diff', 'chi2_2', 'chi2_3', 'n', 'sa_00']
-    for x,n in zip(stuff, names) :
-        print('%s : %g %g'%(n,x.mean(), x.std()))
+    for x,n in zip(stuff, names):
+        print('%s: %g %g'%(n,x.mean(), x.std()))
         
 def do_cov_exposure_plot(fit, pdfPages, profile_plot=True):
     # Argument is expected to be a covFit
     li = [0,1,1, 0]
     lj = [1,1,0, 0]
     fig=pl.figure(figsize=(8,8))
-    for (i,j) in zip(li,lj) :
+    for (i,j) in zip(li,lj):
         mu,var,model,w = fit.getNormalizedFitData(i,j, divideByMu=False)
 
-        if profile_plot : 
+        if profile_plot: 
             gind = findGroups(mu, 1000.)
             xb, yb, wyb, sigyb = binData(mu, var, gind, w)
-        else :
+        else:
             xb,yb,wyb,sigyb = mu, var, mu/np.sqrt(var), np.sqrt(var)/mu
         ax = pl.subplot(2,2,i-2*j+3)
 
@@ -386,7 +400,7 @@ def do_cov_exposure_plot(fit, pdfPages, profile_plot=True):
     pdfPages.savefig(fig)
 
     
-def plot_ptc_data(nt, i=0, j=0) :
+def plot_ptc_data(nt, i=0, j=0):
     amps = set(nt['ampName'].astype(str))
     pl.figure(figsize=(10,10))
     for k,amp in enumerate(amps):
@@ -400,7 +414,7 @@ def plot_ptc_data(nt, i=0, j=0) :
     pl.show()
 
 
-def plot_ptc(fit, pdfPages) :
+def plot_ptc(fit, pdfPages):
     # Firsdt Argument is expected to be a covFit
     fig=pl.figure(figsize=(6,12))
     gs = gridspec.GridSpec(4,1, height_ratios=[3, 1, 1, 1])
@@ -426,7 +440,7 @@ def plot_ptc(fit, pdfPages) :
     ax1 = pl.subplot(gs[1], sharex = ax0)
     xb, yb, wyb, sigyb = binData(mu, var - model, gind, w)
     pl.errorbar(xb, yb, yerr=sigyb, marker='.', ls='none')
-    # draw a line at y=0 : 
+    # draw a line at y=0: 
     pl.plot([0, mu.max()], [0,0], ls='--', color= 'k')
     pl.setp(ax1.get_xticklabels(), visible=False)
     ax1.text(0.1, 0.85, 'Residuals to full fit',
@@ -469,16 +483,16 @@ def plot_ptc(fit, pdfPages) :
     pl.tight_layout()
 #    pl.show()
     # remove the 'largest' y label (unelegant overwritings occur)
-    for ax in [ax1,ax2,ax3] :
+    for ax in [ax1,ax2,ax3]:
         pl.setp(ax.get_yticklabels()[-1], visible = False)
     
     pdfPages.savefig(fig) 
     #pl.savefig('ptc_fit_plot.pdf')
 
-def ab_vs_dist(fits, pdfPages, brange=4) :
-    a = np.array([f.getA() for f in fits.values()])
+def ab_vs_dist(covFits, pdfPages, brange=4):
+    a = np.array([f.getA() for f in covFits.values()])
     y = a.mean(axis = 0)
-    sy = a.std(axis = 0)/np.sqrt(len(fits))
+    sy = a.std(axis = 0)/np.sqrt(len(covFits))
     i, j = np.indices(y.shape)
     upper = (i>=j).ravel()
     r = np.sqrt(i**2+j**2).ravel()
@@ -498,9 +512,9 @@ def ab_vs_dist(fits, pdfPages, brange=4) :
     #axb.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
     #
     axb = fig.add_subplot(212)
-    b = np.array([f.getB() for f in fits.values()])
+    b = np.array([f.getB() for f in covFits.values()])
     yb = b.mean(axis = 0)
-    syb = b.std(axis = 0)/np.sqrt(len(fits))
+    syb = b.std(axis = 0)/np.sqrt(len(covFits))
     ib, jb = np.indices(yb.shape)
     upper = (ib>jb).ravel()
     rb = np.sqrt(i**2+j**2).ravel()
@@ -526,9 +540,9 @@ def ab_vs_dist(fits, pdfPages, brange=4) :
 
 from mpl_toolkits.mplot3d import Axes3D       
 
-def make_noise_plot(fits) :
-    size = fits[0].r
-    n = np.array([c.params['noise'].full.reshape(size,size) for c in fits]).mean(axis=0)
+def make_noise_plot(covFits):
+    size = covFits[0].r
+    n = np.array([c.params['noise'].full.reshape(size,size) for c in covFits]).mean(axis=0)
     fig = pl.figure(figsize=(15,15))
     ax = fig.add_subplot(111, projection='3d')
     #ax.view_init(elev=20, azim=45)
@@ -550,7 +564,7 @@ def eval_nonlin_draw(tuple, knots=20, verbose= False):
     pl.figure(figsize=(9,14))
     gs = gridspec.GridSpec(len(ccd),1)
     gs.update(hspace=0) # stack subplots
-    for amp in range(len(ccd)) :
+    for amp in range(len(ccd)):
         x = ccd[amp]
         if x is None:
             continue
@@ -564,38 +578,22 @@ def eval_nonlin_draw(tuple, knots=20, verbose= False):
     return res
 
     
-def make_distant_cov_plot(fits, tuple_name, pdfPages):
-    # need the fits to get the gains, and the tuple to get the distant
+def make_distant_cov_plot(covFits, tuple_name, pdfPages):
+    # need the covFits to get the gains, and the tuple to get the distant
     # covariances
     #ntuple = croaks.NTuple.fromfile(tuple_name)
     
     ntuple = tuple_name
     
     # convert all inputs to electrons
-    print ("fits.keys(): ", fits.keys())
-    print ("len(fits): ", len(fits))
-    print ("len(ntuple)", len(ntuple))
-    print ("len(ntuple)", len(ntuple['mu1']))
     
-    gain_amp = np.array([fits[i].getGain() if fits[i] != None else 1.0 for i in list(fits.keys())])
-
-    print ("first  gain_amp: ",  gain_amp)
-    print ("len(gain_amp[ntuple['ext'].astype(int)])", len(gain_amp[ntuple['ext'].astype(int)]))
-    print ("gain = gain_amp[ntuple['ext'].astype(int)]: ", gain_amp[ntuple['ext'].astype(int)])
-
-    print ("gain_amp the other way: ", gain_amp)
-
-    print ("ntuple['ext'].astype(int)", ntuple['ext'].astype(int))
+    gain_amp = np.array([covFits[i].getGain() if covFits[i] != None else 1.0 for i in list(covFits.keys())])
 
     gain = gain_amp[ntuple['ext'].astype(int)]
     
     #gain = gain_amp
 
     mu = 0.5*(ntuple['mu1'] + ntuple['mu2'])*gain
-    print ("mu: ", mu)
-
-    print ("ntuple['i']: ", ntuple['i'])
-    print ("ntuple['j']: ", ntuple['j'])
 
     cov = 0.5*ntuple['cov']*(gain**2) 
     npix = (ntuple['npix'])
@@ -604,7 +602,6 @@ def make_distant_cov_plot(fits, tuple_name, pdfPages):
     ax = pl.subplot(3,1,1)
     #idx = (ntuple['i']**2+ntuple['j']**2 >= 225) & (mu>2.5e4) & (mu<1e5)  
     idx = (ntuple['i']**2+ntuple['j']**2 >= 225) & (mu<2e5) # & (ntuple['sp1']<4) & (ntuple['sp2']<4)
-    print ("idx: ", idx)
     
     binplot(mu[idx], cov[idx],nbins=20, data=False)
     ax.set_xlabel('$\mu$ (el)',fontsize='x-large')
@@ -628,7 +625,7 @@ def make_distant_cov_plot(fits, tuple_name, pdfPages):
     ax.set_ylabel('$<C_{i0}>$ (el$^2$)',fontsize='x-large')
     ax.text(0.2, 0.85, 'cuts: $i>4$ & $j=0$ & $50000<\mu<100000$', horizontalalignment='left', transform=ax.transAxes, fontsize='x-large')
     # big fonts on axes in all plots: 
-    for ax in fig.get_axes() :
+    for ax in fig.get_axes():
         ax.tick_params(axis='both', labelsize='x-large')
     pl.tight_layout()
     #pl.show()
@@ -637,7 +634,7 @@ def make_distant_cov_plot(fits, tuple_name, pdfPages):
 
     
 def make_satur_plot(tuple_name, ampName, pdfPages):
-    # need the fits to get the gains, and the tuple to get the distant
+    # need the covFits to get the gains, and the tuple to get the distant
     # covariances
     #ntuple = croaks.NTuple.fromfile(tuple_name)
     
@@ -658,15 +655,15 @@ def make_satur_plot(tuple_name, ampName, pdfPages):
     axes =[]
     texts = ['Variance','Nearest parallel \nneighbor covariance','Nearest serial \nneighbor covariance']
     # var vs mu, cov01 vs mu, cov10 vs mu
-    for k, indices in enumerate([(0,0), (0,1), (1,0)]) :
+    for k, indices in enumerate([(0,0), (0,1), (1,0)]):
         if k == 0:
             ax = pl.subplot(gs[k])
             ax0 = ax
             ax.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
-        else :
+        else:
             ax = pl.subplot(gs[k], sharex = ax0)
         axes.append(ax)
-        if k == 1 : ax.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
+        if k == 1: ax.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
         i,j= indices
         nt = nt0[(nt0['i'] == i) & (nt0['j'] == j)]
         mu = 0.5*(nt['mu1'] + nt['mu2'])
@@ -677,10 +674,10 @@ def make_satur_plot(tuple_name, ampName, pdfPages):
         ax.set_ylabel(u'$C_{%d%d}$ (ADU$^2$)'%(i,j), fontsize='x-large')
         ax.text(0.1, 0.7, texts[k], fontsize='x-large', transform=ax.transAxes)
         
-        if k != 2 :
+        if k != 2:
             pl.setp(ax.get_xticklabels(), visible=False)
             ax.xaxis.offsetText.set_visible(False)
-        else :
+        else:
             ax.set_xlabel('$\mu$ (ADU)', fontsize='x-large')
             ax.ticklabel_format(style='sci', axis='x', scilimits=(0,0))
 
@@ -695,13 +692,13 @@ def avoid_overlapping_y_labels(figure):
     figure.canvas.draw() # make sure the labels are instanciated 
     # suppress the bottom labels, but removes
     # any decorator such as offset or multiplicator !
-    for ax in axes :
+    for ax in axes:
         labels = [item.get_text() for item in ax.get_yticklabels()]
         labels[0] = ''
         ax.set_yticklabels(labels)
 
     
-def plotRelativeBiasACoeffs(fits, fitsnb, mu_el, pdfPages, maxr=None):
+def plotRelativeBiasACoeffs(covFits, covFitsNoB, mu_el, pdfPages, maxr=None):
     """Illustrates systematic bias from estimating 'a'
     coefficients from the slope of correlations as opposed to the
     full model in Astier+19.
@@ -711,14 +708,12 @@ def plotRelativeBiasACoeffs(fits, fitsnb, mu_el, pdfPages, maxr=None):
     
     fig = pl.figure(figsize=(7,11))
     title = ["'a' relative bias", "'a' relative bias (b=0)"]
-    data = [fits, fitsnb]
+    data = [covFits, covFitsNoB]
     
     for k in range(2):
         diffs=[]
         amean = []
         for fit in data[k].values():
-            print ("FIT: ", type(fit))
-            print (fit)
             if fit is None: 
                 continue
             aOld = aCoeffsComputeOldFashion(fit, mu_el)
@@ -731,7 +726,7 @@ def plotRelativeBiasACoeffs(fits, fitsnb, mu_el, pdfPages, maxr=None):
         diff[0,0] = 0
         if maxr is None: 
             maxr=diff.shape[0]
-        diff = diff[:maxr, :maxr]
+        diff = diff[:maxr,:maxr]
         ax0 = fig.add_subplot(2,1,k+1)
         im0 = ax0.imshow(diff.transpose(), origin='lower', interpolation='none')
         ax0.yaxis.set_major_locator(MaxNLocator(integer=True))
@@ -743,7 +738,7 @@ def plotRelativeBiasACoeffs(fits, fitsnb, mu_el, pdfPages, maxr=None):
     pl.tight_layout()
     pdfPages.savefig(fig)
 
-def eval_a_unweighted_quadratic_fit(fit) :
+def eval_a_unweighted_quadratic_fit(fit):
     model = fit.evalCovModel()
     adm = np.zeros_like(fit.getA())
     for i in range(adm.shape[0]):
@@ -755,14 +750,14 @@ def eval_a_unweighted_quadratic_fit(fit) :
     return adm
     
 
-def plot_da_dm(fits, fitsnb, maxr=None, figname=None):
+def plot_da_dm(covFits, covFitsNoB, maxr=None, figname=None):
     """
     same as above, but consider now that the a are extracted from 
     a quadratic fit to Cov vs mu (above it was Cov/C_00 vs mu)
     """
     fig = pl.figure(figsize=(7,11))
     title = ['a relative bias', 'a relative bias (b=0)']
-    data = [fits,fitsnb]
+    data = [covFits,covFitsNoB]
     #
     for k in range(2):
         diffs=[]
@@ -873,7 +868,6 @@ def binplot(x, y, nbins=10, robust=False, data=True,
             yerr = np.array([np.sqrt(1 / sum(w))
                              for e, w, a in zip(ybinned, wbinned, yplot)])
         scale = False
-        print (yplot)
     else:
         yplot = [np.mean(e) for e in ybinned]
         yerr = np.array([np.std(e) for e in ybinned])

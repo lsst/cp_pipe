@@ -18,7 +18,6 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-#
 
 import numpy as np
 import copy
@@ -104,7 +103,7 @@ def makeCovArray(inputTuple, maxRangeFromTuple=8):
     Parameters
     ----------
     inputTuple: `numpy.recarray`
-        Recarray with at least( mu1, mu2, cov, var, i, j, npix), where:
+        Recarray with rows with at least( mu1, mu2, cov, var, i, j, npix), where:
         mu1: mean value of flat1
         mu2: mean value of flat2
         cov: covariance value at lag(i, j)
