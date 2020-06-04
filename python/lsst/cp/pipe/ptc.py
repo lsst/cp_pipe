@@ -47,7 +47,8 @@ import datetime
 from .astierCovPtcUtils import (fftSize, computeCovFft, fitData)
 from .astierCovPtcPlots import covAstierMakeAllPlots
 
-import lsst.ip.isr.isrMock as isrMock # TEMP
+import lsst.ip.isr.isrMock as isrMock  # TEMP
+
 
 class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
     """Config class for photon transfer curve measurement task"""
@@ -103,7 +104,7 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
         doc="Compute full covariances as in Astier+19?",
         default=False,
     )
-    maximumRangeCovAstier = pexConfig.Field(
+    maximumRangeCovariancesAstier = pexConfig.Field(
         dtype=int,
         doc="Maximum range of covariances as in Astier+19",
         default=8,
@@ -214,13 +215,32 @@ class LinearityResidualsAndLinearizersDataset:
     fractionalNonLinearityResidual: list
     meanSignalVsTimePolyFitReducedChiSq: float
 
+
 class PhotonTransferCurveCovAstierDataset:
     """A simple class to hold the output from the PTC task when doCovariancesAstier=True
+
+    New items cannot be added to the class to save accidentally saving to the
+    wrong property, and the class can be frozen if desired.
     """
     def __init__(self):
         self.__dict__["covariancesTuple"] = []
         self.__dict__["covariancesFits"] = {}
         self.__dict__["covariancesFitsWithNoB"] = {}
+        self.__dict__["gain"] = {}
+        self.__dict__["noise"] = {}
+        self.__dict__["meanSignal"] = {}
+        self.__dict__["var"] = {}
+        self.__dict__["varModel"] = {}
+
+    def __setattr__(self, attribute, value):
+        """Protect class attributes"""
+        if attribute not in self.__dict__:
+            raise AttributeError(f"{attribute} is not already a member of"
+                                 " PhotonTransferCurveCovAstierDataset, which"
+                                 " does not support setting of new attributes.")
+        else:
+            self.__dict__[attribute] = value
+
 
 class PhotonTransferCurveDataset:
     """A simple class to hold the output data from the PTC task.
@@ -308,9 +328,9 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
     The Photon Transfer Curve (var(signal) vs mean(signal)) is a standard tool
     used in astronomical detectors characterization (e.g., Janesick 2001,
-    Janesick 2007). This task calculates the PTC from a series of pairs of
-    flat-field images; each pair taken at identical exposure times. The
-    difference image of each pair is formed to eliminate fixed pattern noise,
+    Janesick 2007). If doCovariancesAstier = False,  this task calculates the
+    PTC from a series of pairs of flat-field images; each pair taken at identical exposure
+    times. The difference image of each pair is formed to eliminate fixed pattern noise,
     and then the variance of the difference image and the mean of the average image
     are used to produce the PTC. An n-degree polynomial or the approximation in Equation
     16 of Astier+19 ("The Shape of the Photon Transfer Curve of CCD sensors",
@@ -320,6 +340,12 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
     Linearizers to correct for signal-chain non-linearity are also calculated.
     The `Linearizer` class, in general, can support per-amp linearizers, but in this
     task this is not supported.
+
+    If doCovariancesAstier = True, the covariances of the difference images are calculated via the
+    DFT methods described in Astier+19 and the variances for the PTC are given by the cov[0,0] elements
+    at each signal level. The full model in Equation 20 of Astier+19 is fit to the PTC to get the gain
+    and the noise.
+
     Parameters
     ----------
 
@@ -390,27 +416,37 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         if self.config.doCovariancesAstier:
             # Calculate the full covariances as in Astier+19. The variances for the PTC will be
-            # covariances[0,0].
+            # cov[0,0].
 
             tupleCovariancesWithTags = self.computeCovariancesAstier(dataRef, visitPairs, detector)
-            # use the np.recarray to obtain the CovFit objects 
-            covFits, covFitsNoB = fitData (tupleCovariancesWithTags, 3e6, 3e6, 8)
-            
+            # use the np.recarray to obtain the CovFit objects
+            covFits, covFitsNoB = fitData(tupleCovariancesWithTags, maxMu=self.config.maxMeanSignal,
+                                          maxMuElectrons=self.config.maxMeanSignal,
+                                          r=self.config.maximumRangeCovariancesAstier)
+
             if self.config.makePlots:
-                self.plotCovariancesAstier(dataRef, covFits, covFitsNoB, tupleCovariancesWithTags)
+                self.plotCovariancesAstier(dataRef, covFits, covFitsNoB, tupleCovariancesWithTags,
+                                           log=self.log)
 
             datasetCovAstier = PhotonTransferCurveCovAstierDataset()
             datasetCovAstier.covariancesTuple = tupleCovariancesWithTags
             datasetCovAstier.covariancesFits = covFits
             datasetCovAstier.covariancesFitsWithNoB = covFitsNoB
-            
+
+            gains, noise, signalFinal, varFinal, varModelFinal = self.getOutputPtcDataCovAstier(covFits)
+            datasetCovAstier.gain = gains
+            datasetCovAstier.noise = noise
+            datasetCovAstier.meanSignal = signalFinal
+            datasetCovAstier.var = varFinal
+            datasetCovAstier.varModel = varModelFinal
+
             self.log.info(f"Writing Astier+19 covariances data")
             dataRef.put(datasetCovAstier, datasetType="photonTransferCurveCovAstierDataset")
 
         else:
             # Calculate the PTC in the standard way (variances vs mean), and linearity by fitting mean_signal
             # vs expTime.
-            
+
             dataset, lookupTableArray = self.computeStandardPtcAndNonLinearity(dataRef, visitPairs, detector)
             if self.config.makePlots:
                 self.plot(dataRef, dataset, ptcFitType=self.config.ptcFitType)
@@ -449,6 +485,45 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         return pipeBase.Struct(exitStatus=0)
 
+    def getOutputPtcDataCovAstier(self, covFits):
+        """Get output data for PhotonTransferCurveCovAstierDataset from CovFit objects.
+
+        Parameters
+        ----------
+        covFits: `dict`
+            Dictionary of CovFit objects, with amp names as keys.
+
+        Returns
+        -------
+        gains : `dict`
+            Dictionary with the gains from fitting Eq. 20 of Astier+19, with amp names as keys.
+
+        noise : `dict`
+            Dictionary with readout noise from fitting Eq. 20 of Astier+19, with amp names as keys.
+
+        signal : `dict`
+            Dictionary with mean signals, with amp names as keys.
+
+        var : `dict`
+            Dictionary with measured variances from data, with amp names as keys.
+
+        varModel : `dict`
+            Dictionary with modeled variance from data, with amp names as keys.
+        """
+        gains, noise = {}, {}
+        signal, var, varModel = {}, {}, {}
+
+        for i, fitPair in enumerate(covFits.items()):
+            amp, fit = fitPair
+            meanVecFinal, varVecFinal, varVecModel, wc = fit.getNormalizedFitData(0, 0, divideByMu=False)
+            gains.setdefault(amp, []).append(fit.getGain())
+            noise.setdefault(amp, []).append(fit.getRon())
+            signal.setdefault(amp, []).append(meanVecFinal)
+            var.setdefault(amp, []).append(varVecFinal)
+            varModel.setdefault(amp, []).append(varVecModel)
+
+        return gains, noise, signal, var, varModel
+
     def computeCovariancesAstier(self, dataRef, visitPairs, detector):
         """Iterate over pairs of flats to calculate full covariances from the difference image.
         This follows the treatment in Astier+19
@@ -476,7 +551,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                                                                                         detector.getId()))
 
         for (v1, v2) in visitPairs:
-            """
+            """ TEMP
             # Perform ISR on each exposure
             dataRef.dataId['expId'] = v1
             exp1 = self.isr.runDataRef(dataRef).exposure
@@ -487,20 +562,17 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             checkExpLengthEqual(exp1, exp2, v1, v2, raiseWithMessage=True)
             expTime = exp1.getInfo().getVisitInfo().getExposureTime()
             """
-            #TEMP
-            assert(v1==v2) # visits numbers are expTimes in this case
+            # TEMP
+            assert(v1 == v2)  # visits numbers are expTimes in this case
             expTime = v1
-            mockExp1, mockExp2 = self.makeMockFlats (expTime, gain=0.75)
+            mockExp1, mockExp2 = self.makeMockFlats(expTime, gain=0.75)
             # TEMP
 
             tupleRows = []
-            #gainVecTemp = np.linspace(0.75, 0.85, 16)
+            # gainVecTemp = np.linspace(0.75, 0.85, 16)
             for ampNumber, amp in enumerate(detector):
                 # covs: (i, j, var, cov, npix)
-                #mu1, mu2, covs = self.getCovariancesAstier(exp1, exp2, region=amp.getBBox())
-                #if not amp.getName() == 'C10':
-                #     continue
-                #mockExp1, mockExp2 = self.makeMockFlats (expTime, gain=gainVecTemp[ampNumber])
+                # mu1, mu2, covs = self.getCovariancesAstier(exp1, exp2, region=amp.getBBox()) TEMP
                 mu1, mu2, covs = self.getCovariancesAstier(mockExp1, mockExp2)
                 tupleRows += [(mu1, mu2) + cov + (ampNumber, expTime, amp.getName()) for cov in covs]
                 tags = ['mu1', 'mu2', 'i', 'j', 'var', 'cov', 'npix', 'ext', 'expTime', 'ampName']
@@ -508,12 +580,12 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             tupleRecords += tupleRows
         covariancesWithTags = np.core.records.fromrecords(tupleRecords, names=allTags)
         return covariancesWithTags
-        
-    def makeMockFlats (self, expTime, gain=1.0, readNoiseElectrons = 5, fluxElectrons = 1000):
-        import galsim 
 
-        flatFlux = fluxElectrons # e/s
-        flatMean = flatFlux*expTime # e
+    def makeMockFlats(self, expTime, gain=1.0, readNoiseElectrons=5, fluxElectrons=1000):
+        import galsim
+
+        flatFlux = fluxElectrons  # e/s
+        flatMean = flatFlux*expTime  # e
         readNoise = readNoiseElectrons  # e
         mockImageConfig = isrMock.IsrMock.ConfigClass()
 
@@ -528,21 +600,23 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         flatWidth = np.sqrt(flatMean)
 
         rng1 = np.random.RandomState(1984)
-        flatData1 = rng1.normal(flatMean, flatWidth, (shapeX, shapeY)) + rng1.normal(0.0, readNoise, (shapeX, shapeY))
+        flatData1 = rng1.normal(flatMean, flatWidth, (shapeX, shapeY)) + rng1.normal(0.0, readNoise,
+                    (shapeX, shapeY))
         rng2 = np.random.RandomState(666)
-        flatData2 = rng2.normal(flatMean, flatWidth, (shapeX, shapeY)) + rng1.normal(0.0, readNoise, (shapeX, shapeY))
+        flatData2 = rng2.normal(flatMean, flatWidth, (shapeX, shapeY)) + rng1.normal(0.0, readNoise,
+                    (shapeX, shapeY))
 
         # Simulate BF with power law model in galsim
         cd = galsim.cdmodel.PowerLawCD(8, 1.1e-7, 1.1e-7, 1.0e-7, 1.0e-7, 0.0, 0.0, 0.0)
         tempFlatData1 = galsim.Image(flatData1)
-        temp2FlatData1=cd.applyForward(tempFlatData1)
+        temp2FlatData1 = cd.applyForward(tempFlatData1)
 
         tempFlatData2 = galsim.Image(flatData2)
         temp2FlatData2 = cd.applyForward(tempFlatData2)
 
-        flatExp1.image.array[:] = temp2FlatData1.array/gain # ADU
-        flatExp2.image.array[:] = temp2FlatData2.array/gain # ADU
-        
+        flatExp1.image.array[:] = temp2FlatData1.array/gain  # ADU
+        flatExp2.image.array[:] = temp2FlatData2.array/gain  # ADU
+
         return flatExp1, flatExp2
 
     def getCovariancesAstier(self, exposure1, exposure2, region=None):
@@ -572,18 +646,18 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         diffIm *= mu2
         diffIm -= temp
         diffIm /= mu
-       
+
         # Get the mask and identify good pixels as '1', and the rest as '0'.
-        w1 = np.where (im1Area.getMask().getArray() == 0, 1, 0)
-        w2 = np.where (im2Area.getMask().getArray() == 0, 1, 0) 
-   
+        w1 = np.where(im1Area.getMask().getArray() == 0, 1, 0)
+        w2 = np.where(im2Area.getMask().getArray() == 0, 1, 0) 
+
         w12 = w1*w2
-        wDiff =  np.where (diffIm.getMask().getArray() == 0, 1, 0)
+        wDiff = np.where(diffIm.getMask().getArray() == 0, 1, 0)
         w = w12*wDiff
 
         shapeDiff = diffIm.getImage().getArray().shape
-        
-        maxRangeCov = self.config.maximumRangeCovAstier
+
+        maxRangeCov = self.config.maximumRangeCovariancesAstier
         fftShape = (fftSize(shapeDiff[0] + maxRangeCov), fftSize(shapeDiff[1]+maxRangeCov))
         covs = computeCovFft(diffIm.getImage().getArray(), w, fftShape, maxRangeCov)
         
@@ -640,7 +714,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             # TEMP
 
             for amp in detector:
-                #mu, varDiff = self.measureMeanVarPair(exp1, exp2, region=amp.getBBox()) 
+                # mu, varDiff = self.measureMeanVarPair(exp1, exp2, region=amp.getBBox()) 
                 mu, varDiff = self.measureMeanVarPair(mockExp1, mockExp2)
                 ampName = amp.getName()
 
@@ -1273,7 +1347,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         return dataset
 
-    def plotCovariancesAstier(self, dataRef, covAstierFits, covAstierFitsWithoutB, tupleCovariancesWithTags):
+    def plotCovariancesAstier(self, dataRef, covAstierFits, covAstierFitsWithoutB, tupleCovariancesWithTags,
+                              log=None):
         dirname = dataRef.getUri(datasetType='cpPipePlotRoot', write=True)
         if not os.path.exists(dirname):
             os.makedirs(dirname)
@@ -1282,7 +1357,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         filename = f"PTC_COVS_ASTIER_det{detNum}.pdf"
         filenameFull = os.path.join(dirname, filename)
         with PdfPages(filenameFull) as pdfPages:
-            covAstierMakeAllPlots(covAstierFits, covAstierFitsWithoutB, tupleCovariancesWithTags, pdfPages)
+            covAstierMakeAllPlots(covAstierFits, covAstierFitsWithoutB, tupleCovariancesWithTags, pdfPages,
+                                  log=log)
 
     def plot(self, dataRef, dataset, ptcFitType):
         dirname = dataRef.getUri(datasetType='cpPipePlotRoot', write=True)

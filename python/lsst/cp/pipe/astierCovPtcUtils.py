@@ -347,12 +347,37 @@ def loadData(tupleName, params):
     return covFitList
 
 
-def fitData(tupleName, maxMu=1.4e5, maxMuElectrons=1e5, r=8):
-    """
-    The first argument can be a tuple, instead of the name of a tuple file.
-    returns 2 dictionnaries, one of full fits, and one with b=0
+def fitData(tupleName, maxMu=1e9, maxMuElectrons=1e9, r=8):
+    """Fit data to models in Astier+19.
 
-    The behavior of this routine should be controlled by other means.
+    Parameters
+    ----------
+    tupleName: `numpy.recarray`
+        Recarray with rows with at least ( mu1, mu2, cov ,var, i, j, npix), where:
+            mu1: mean value of flat1
+            mu2: mean value of flat2
+            cov: covariance value at lag (i, j)
+            var: variance (covariance value at lag (0, 0))
+            i: lag dimension
+            j: lag dimension
+            npix: number of pixels used for covariance calculation.
+
+    r: `int`, optional
+        Maximum lag considered (e.g., to eliminate data beyond a separation "r": ignored in the fit).
+
+    maxMu: `float`, optional
+        Maximum signal, in ADU (e.g., to eliminate data beyond saturation).
+
+    maxMuElectrons: `float`, optional
+        Maximum signal in electrons.
+
+    Returns
+    -------
+    covFitList: `dict`
+        Dictionary of CovFit objects, with amp names as keys.
+
+    covFitNoBList: `dict`
+       Dictionary of CovFit objects, with amp names as keys (b=0 in Eq. 20 of Astier+19).
     """
     lparams = LoadParams()
     lparams.subtractDistantValue = False
