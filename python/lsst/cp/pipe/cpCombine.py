@@ -104,7 +104,7 @@ class CalibCombineConnections(pipeBase.PipelineTaskConnections,
     inputScales = cT.Input(
         name="cpScales",
         doc="Input scale factors to use.",
-        storageClass="StructuredDataDictYaml",
+        storageClass="StructuredDataDict",
         dimensions=("instrument", ),
         multiple=False,
     )

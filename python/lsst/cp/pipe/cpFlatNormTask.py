@@ -152,7 +152,7 @@ class CpFlatNormalizationConnections(pipeBase.PipelineTaskConnections,
     outputScales = cT.Output(
         name="cpFlatNormScales",
         doc="Output combined proposed calibration.",
-        storageClass="StructuredDataDictYaml",
+        storageClass="StructuredDataDict",
         dimensions=("instrument", "physical_filter"),
     )
 
