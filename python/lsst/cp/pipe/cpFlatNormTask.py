@@ -293,15 +293,15 @@ class CpFlatNormalizationTask(pipeBase.PipelineTask,
             for detId, det in enumerate(detSet):
                 for amp in camera[detId]:
                     for expId, exp in enumerate(expSet):
-                        outputScales['expScale'][det][amp.getName()][exp] = expScales[expId]
-                outputScales['detScale'][det] = detScales[detId]
+                        outputScales['expScale'][det][amp.getName()][exp] = expScales[expId].tolist()
+                outputScales['detScale'][det] = detScales[detId].tolist()
         elif self.config.level == 'AMP':
             for detId, det in enumerate(detSet):
                 for ampIdx, amp in enumerate(camera[detId]):
                     for expId, exp in enumerate(expSet):
-                        outputScales['expScale'][det][amp.getName()][exp] = expScales[expId]
+                        outputScales['expScale'][det][amp.getName()][exp] = expScales[expId].tolist()
                     detAmpId = detId + ampIdx
-                    outputScales['detScale'][det][amp.getName()] = detScales[detAmpId]
+                    outputScales['detScale'][det][amp.getName()] = detScales[detAmpId].tolist()
 
         return pipeBase.Struct(
             outputScales=outputScales,
