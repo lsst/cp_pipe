@@ -35,6 +35,7 @@ import lsst.utils.tests
 import lsst.cp.pipe as cpPipe
 import lsst.ip.isr.isrMock as isrMock
 from lsst.cp.pipe.ptc import PhotonTransferCurveDataset
+from lsst.cp.pipe.astierCovPtcUtils import fitData
 
 
 class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
@@ -65,7 +66,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         self.flatExp1 = isrMock.FlatMock(config=mockImageConfig).run()
         self.flatExp2 = self.flatExp1.clone()
         (shapeY, shapeX) = self.flatExp1.getDimensions()
-        
+
         self.flatWidth = np.sqrt(self.flatMean) + self.readNoiseAdu
 
         self.rng1 = np.random.RandomState(1984)
@@ -94,6 +95,57 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         for ampName in self.ampNames:  # just the expTimes and means here - vars vary per function
             self.dataset.rawExpTimes[ampName] = timeVec
             self.dataset.rawMeans[ampName] = muVec
+
+    def makeMockFlats(self, expTime, gain=1.0, readNoiseElectrons=5, fluxElectrons=1000):
+        flatFlux = fluxElectrons  # e/s
+        flatMean = flatFlux*expTime  # e
+        readNoise = readNoiseElectrons  # e
+
+        mockImageConfig = isrMock.IsrMock.ConfigClass()
+
+        mockImageConfig.flatDrop = 0.99999
+        mockImageConfig.isTrimmed = True
+
+        flatExp1 = isrMock.FlatMock(config=mockImageConfig).run()
+        flatExp2 = flatExp1.clone()
+        (shapeY, shapeX) = flatExp1.getDimensions()
+        flatWidth = np.sqrt(flatMean)
+
+        rng1 = np.random.RandomState(1984)
+        flatData1 = (rng1.normal(flatMean, flatWidth, (shapeX, shapeY)) +
+                     rng1.normal(0.0, readNoise, (shapeX, shapeY)))
+        rng2 = np.random.RandomState(666)
+        flatData2 = (rng2.normal(flatMean, flatWidth, (shapeX, shapeY)) +
+                     rng2.normal(0.0, readNoise, (shapeX, shapeY)))
+
+        flatExp1.image.array[:] = flatData1/gain  # ADU
+        flatExp2.image.array[:] = flatData2/gain  # ADU
+
+        return flatExp1, flatExp2
+
+    def test_getGainCovAstier(self):
+        config = copy.copy(self.defaultConfig)
+        task = cpPipe.ptc.MeasurePhotonTransferCurveTask(config=config)
+
+        expTimes = np.arange(5, 205, 5)
+        tupleRecords = []
+        allTags = []
+        for expTime in expTimes:
+            mockExp1, mockExp2 = self.makeMockFlats(expTime, gain=0.75)
+            tupleRows = []
+            for ampNumber, amp in enumerate(self.ampNames):
+                # covs: (i, j, var, cov, npix)
+                mu1, mu2, covs = task.getCovariancesAstier(mockExp1, mockExp2)
+                tupleRows += [(mu1, mu2) + cov + (ampNumber, expTime, amp) for cov in covs]
+                tags = ['mu1', 'mu2', 'i', 'j', 'var', 'cov', 'npix', 'ext', 'expTime', 'ampName']
+            allTags += tags
+            tupleRecords += tupleRows
+        covariancesWithTags = np.core.records.fromrecords(tupleRecords, names=allTags)
+        covFits, covFitsNoB = fitData(covariancesWithTags)
+        dataset = task.getOutputPtcDataCovAstier(covFits)
+
+        for amp in self.ampNames:
+            self.assertAlmostEqual(dataset.gain[amp][0], 0.75, places=2)
 
     def ptcFitAndCheckPtc(self, order=None, fitType='', doTableArray=False):
         localDataset = copy.copy(self.dataset)

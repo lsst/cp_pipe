@@ -216,6 +216,20 @@ class LinearityResidualsAndLinearizersDataset:
     meanSignalVsTimePolyFitReducedChiSq: float
 
 
+@dataclass
+class OutputPtcDataCovAstierDataset:
+    """A simple class to hold the output from the
+       `getOutputPtcDataCovAstier` function.
+    """
+    gain: dict
+    noise: dict
+    signal: dict
+    var: dict
+    varModel: dict
+    a00: dict
+    b00: dict
+
+
 class PhotonTransferCurveCovAstierDataset:
     """A simple class to hold the output from the PTC task when doCovariancesAstier=True
 
@@ -231,6 +245,8 @@ class PhotonTransferCurveCovAstierDataset:
         self.__dict__["meanSignal"] = {}
         self.__dict__["var"] = {}
         self.__dict__["varModel"] = {}
+        self.__dict__["a00"] = {}
+        self.__dict__["b00"] = {}
 
     def __setattr__(self, attribute, value):
         """Protect class attributes"""
@@ -433,12 +449,15 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             datasetCovAstier.covariancesFits = covFits
             datasetCovAstier.covariancesFitsWithNoB = covFitsNoB
 
-            gains, noise, signalFinal, varFinal, varModelFinal = self.getOutputPtcDataCovAstier(covFits)
-            datasetCovAstier.gain = gains
-            datasetCovAstier.noise = noise
-            datasetCovAstier.meanSignal = signalFinal
-            datasetCovAstier.var = varFinal
-            datasetCovAstier.varModel = varModelFinal
+            dataset = self.getOutputPtcDataCovAstier(covFits)
+
+            datasetCovAstier.gain = dataset.gain
+            datasetCovAstier.noise = dataset.noise
+            datasetCovAstier.meanSignal = dataset.signal
+            datasetCovAstier.var = dataset.var
+            datasetCovAstier.varModel = dataset.varModel
+            datasetCovAstier.a00 = dataset.a00
+            datasetCovAstier.b00 = dataset.b00
 
             self.log.info(f"Writing Astier+19 covariances data")
             dataRef.put(datasetCovAstier, datasetType="photonTransferCurveCovAstierDataset")
@@ -495,34 +514,45 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         Returns
         -------
-        gains : `dict`
+        dataset :`lsst.cp.pipe.ptc.OutputPtcDataCovAstierDataset`
+            The dataset with the gains, reoudout noise, measured signal, measured variance, modeled variance,
+            a00, and b00 coefficients (see Astier+19) per amplifier. Explicitly:
+
+        dataset.gains : `dict`
             Dictionary with the gains from fitting Eq. 20 of Astier+19, with amp names as keys.
 
-        noise : `dict`
+        dataset.noise : `dict`
             Dictionary with readout noise from fitting Eq. 20 of Astier+19, with amp names as keys.
 
-        signal : `dict`
+        dataset.signal : `dict`
             Dictionary with mean signals, with amp names as keys.
 
-        var : `dict`
+        dataset.var : `dict`
             Dictionary with measured variances from data, with amp names as keys.
 
-        varModel : `dict`
+        dataset.varModel : `dict`
             Dictionary with modeled variance from data, with amp names as keys.
+
+        dataset.a00 : `dict`
+            Dictionary with a00 coefficients from full cov model in Astier+19, with amp names as keys.
+
+        daaset.b00 : `dict`
+            Dictionary with b00 coefficients from full cov model in Astier+19, with amp names as keys.
         """
-        gains, noise = {}, {}
-        signal, var, varModel = {}, {}, {}
+        dataset = OutputPtcDataCovAstierDataset({}, {}, {}, {}, {}, {}, {})
 
-        for i, fitPair in enumerate(covFits.items()):
-            amp, fit = fitPair
+        for i, amp in enumerate(covFits):
+            fit = covFits[amp]
             meanVecFinal, varVecFinal, varVecModel, wc = fit.getNormalizedFitData(0, 0, divideByMu=False)
-            gains.setdefault(amp, []).append(fit.getGain())
-            noise.setdefault(amp, []).append(fit.getRon())
-            signal.setdefault(amp, []).append(meanVecFinal)
-            var.setdefault(amp, []).append(varVecFinal)
-            varModel.setdefault(amp, []).append(varVecModel)
+            dataset.gain.setdefault(amp, []).append(fit.getGain())
+            dataset.noise.setdefault(amp, []).append(np.sqrt(fit.getRon()))
+            dataset.signal.setdefault(amp, []).append(meanVecFinal)
+            dataset.var.setdefault(amp, []).append(varVecFinal)
+            dataset.varModel.setdefault(amp, []).append(varVecModel)
+            dataset.a00.setdefault(amp, []).append(fit.getA()[0, 0])
+            dataset.b00.setdefault(amp, []).append(fit.getB()[0, 0])
 
-        return gains, noise, signal, var, varModel
+        return dataset
 
     def computeCovariancesAstier(self, dataRef, visitPairs, detector):
         """Iterate over pairs of flats to calculate full covariances from the difference image.
@@ -565,7 +595,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             # TEMP
             assert(v1 == v2)  # visits numbers are expTimes in this case
             expTime = v1
-            mockExp1, mockExp2 = self.makeMockFlats(expTime, gain=0.75)
+            mockExp1, mockExp2 = self.makeMockFlats(expTime, gain=0.75, readNoiseElectrons=6.5)
             # TEMP
 
             tupleRows = []
@@ -600,11 +630,11 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         flatWidth = np.sqrt(flatMean)
 
         rng1 = np.random.RandomState(1984)
-        flatData1 = rng1.normal(flatMean, flatWidth, (shapeX, shapeY)) + rng1.normal(0.0, readNoise,
-                    (shapeX, shapeY))
+        flatData1 = (rng1.normal(flatMean, flatWidth, (shapeX, shapeY)) +
+                     rng1.normal(0.0, readNoise, (shapeX, shapeY)))
         rng2 = np.random.RandomState(666)
-        flatData2 = rng2.normal(flatMean, flatWidth, (shapeX, shapeY)) + rng1.normal(0.0, readNoise,
-                    (shapeX, shapeY))
+        flatData2 = (rng2.normal(flatMean, flatWidth, (shapeX, shapeY)) +
+                     rng2.normal(0.0, readNoise, (shapeX, shapeY)))
 
         # Simulate BF with power law model in galsim
         cd = galsim.cdmodel.PowerLawCD(8, 1.1e-7, 1.1e-7, 1.0e-7, 1.0e-7, 0.0, 0.0, 0.0)
@@ -649,7 +679,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         # Get the mask and identify good pixels as '1', and the rest as '0'.
         w1 = np.where(im1Area.getMask().getArray() == 0, 1, 0)
-        w2 = np.where(im2Area.getMask().getArray() == 0, 1, 0) 
+        w2 = np.where(im2Area.getMask().getArray() == 0, 1, 0)
 
         w12 = w1*w2
         wDiff = np.where(diffIm.getMask().getArray() == 0, 1, 0)
@@ -660,7 +690,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         maxRangeCov = self.config.maximumRangeCovariancesAstier
         fftShape = (fftSize(shapeDiff[0] + maxRangeCov), fftSize(shapeDiff[1]+maxRangeCov))
         covs = computeCovFft(diffIm.getImage().getArray(), w, fftShape, maxRangeCov)
-        
+
         return mu1, mu2, covs
 
     def computeStandardPtcAndNonLinearity(self, dataRef, visitPairs, detector):
@@ -706,15 +736,15 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
             checkExpLengthEqual(exp1, exp2, v1, v2, raiseWithMessage=True)
             expTime = exp1.getInfo().getVisitInfo().getExposureTime()
-            """ 
-            # TEMP 
-            assert(v1==v2)
+            """
+            # TEMP
+            assert (v1 == v2)
             expTime = v1
-            mockExp1, mockExp2 = self.makeMockFlats (expTime, gain=0.75)
+            mockExp1, mockExp2 = self.makeMockFlats(expTime, gain=0.75)
             # TEMP
 
             for amp in detector:
-                # mu, varDiff = self.measureMeanVarPair(exp1, exp2, region=amp.getBBox()) 
+                # mu, varDiff = self.measureMeanVarPair(exp1, exp2, region=amp.getBBox())
                 mu, varDiff = self.measureMeanVarPair(mockExp1, mockExp2)
                 ampName = amp.getName()
 

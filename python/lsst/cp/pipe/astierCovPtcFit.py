@@ -333,7 +333,7 @@ class CovFit:
         # define parameters: c corresponds to a*b in the Astier+19.
         self.params = FitParameters([('a', lenA), ('c', lenA), ('noise', lenA), ('gain', 1)])
         self.params['gain'] = 1.
-        # obvious: c=0 in a first go.
+        # c=0 in a first go.
         self.params['c'].fix(val=0.)
         # plumbing: extract stuff from the parameter structure
         a = self.params['a'].full.reshape(self.r, self.r)
@@ -344,6 +344,7 @@ class CovFit:
         # the chi2 does not necessarily go down, so one could
         # stop when it increases
 
+        oldChi2 = 1e30
         for _ in range(5):
             model = self.evalCovModel()  # this computes the full model.
             # loop on lags
@@ -358,6 +359,10 @@ class CovFit:
                     if(i + j == 0):
                         gain = 1./(1/gain+p[1])
                         self.params['gain'].full[0] = gain
+            chi2 = self.chi2()
+            if chi2 > oldChi2:
+                break
+            oldChi2 = chi2
 
     def getParamValues(self):
         """Return an array of free parameter values (it is a copy).
@@ -479,6 +484,7 @@ class CovFit:
         return(self.weightedRes()**2).sum()
 
     def wres(self, params=None):
+        """to be used in weightedRes"""
         if params is not None:
             self.setParamValues(params)
         covModel = self.evalCovModel()
