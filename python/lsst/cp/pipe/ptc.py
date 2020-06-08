@@ -595,7 +595,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             # TEMP
             assert(v1 == v2)  # visits numbers are expTimes in this case
             expTime = v1
-            mockExp1, mockExp2 = self.makeMockFlats(expTime, gain=0.75, readNoiseElectrons=6.5)
+            mockExp1, mockExp2 = self.makeMockFlats(expTime, gain=0.75, readNoiseElectrons=3.5)
             # TEMP
 
             tupleRows = []
@@ -637,7 +637,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                      rng2.normal(0.0, readNoise, (shapeX, shapeY)))
 
         # Simulate BF with power law model in galsim
-        cd = galsim.cdmodel.PowerLawCD(8, 1.1e-7, 1.1e-7, 1.0e-7, 1.0e-7, 0.0, 0.0, 0.0)
+        cd = galsim.cdmodel.PowerLawCD(8, 1.2e-7, 1.2e-7, 1.0e-7, 1.0e-7, 0.0, 0.0, 0.0)
         tempFlatData1 = galsim.Image(flatData1)
         temp2FlatData1 = cd.applyForward(tempFlatData1)
 
@@ -740,7 +740,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             # TEMP
             assert (v1 == v2)
             expTime = v1
-            mockExp1, mockExp2 = self.makeMockFlats(expTime, gain=0.75)
+            mockExp1, mockExp2 = self.makeMockFlats(expTime, gain=0.75, readNoiseElectrons=8.5)
             # TEMP
 
             for amp in detector:
