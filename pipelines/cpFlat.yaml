@@ -1,0 +1,41 @@
+description: cp_pipe FLAT calibration construction optimized for single-CCD cameras
+tasks:
+  isr:
+    class: lsst.ip.isr.isrTask.IsrTask
+    config:
+      connections.ccdExposure: 'raw'
+      connections.outputExposure: 'cpFlatProc'
+      doBias: True
+      doVariance: True
+      doLinearize: True
+      doCrosstalk: True
+      doDefect: True
+      doNanMasking: True
+      doInterpolate: True
+      doDark: True
+      doBrighterFatter: False
+      doFlat: False
+      doFringe: False
+      doApplyGains: False
+  cpFlatMeasure:
+    class: lsst.cp.pipe.cpFlatNormTask.CpFlatMeasureTask
+    config:
+      connections.inputExp: 'cpFlatProc'
+      connections.outputStats: 'flatStats'
+  cpFlatNorm:
+    class: lsst.cp.pipe.cpFlatNormTask.CpFlatNormalizationTask
+    config:
+      connections.inputMDs: 'flatStats'
+      connections.outputScales: 'cpFlatNormScales'
+  cpCombine:
+    class: lsst.cp.pipe.cpCombine.CalibCombineTask
+    config:
+      connections.inputExps: 'cpFlatProc'
+      connections.inputScales: 'cpFlatNormScales'
+      connections.outputData: 'flatProposal'
+      calibrationType: 'flat'
+      calibrationDimensions: ['physical_filter']
+      exposureScaling: InputList
+      scalingLevel: AMP
+contracts:
+  - isr.doFlat == False

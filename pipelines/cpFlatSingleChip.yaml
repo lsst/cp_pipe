@@ -1,0 +1,31 @@
+description: cp_pipe FLAT calibration construction
+tasks:
+  isr:
+    class: lsst.ip.isr.isrTask.IsrTask
+    config:
+      connections.ccdExposure: 'raw'
+      connections.outputExposure: 'cpFlatProc'
+      doBias: True
+      doVariance: True
+      doLinearize: True
+      doCrosstalk: True
+      doDefect: True
+      doNanMasking: True
+      doInterpolate: True
+      doDark: True
+      doBrighterFatter: False
+      doFlat: False
+      doFringe: False
+      doApplyGains: False
+  cpCombine:
+    class: lsst.cp.pipe.cpCombine.CalibCombineTask
+    config:
+      connections.inputExps: 'cpFlatProc'
+      connections.outputData: 'flatProposal'
+      calibrationType: 'flat'
+      calibrationDimensions: ['physical_filter']
+      exposureScaling: None
+      exposureScaling: MeanStats
+contracts:
+  - isr.doFlat == False
+  - cpCombine.calibrationType == "flat"

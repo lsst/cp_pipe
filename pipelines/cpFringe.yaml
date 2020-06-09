@@ -1,0 +1,35 @@
+description: cp_pipe FRINGE calibration construction
+tasks:
+  isr:
+    class: lsst.ip.isr.isrTask.IsrTask
+    config:
+      connections.ccdExposure: 'raw'
+      connections.outputExposure: 'cpFringeIsr'
+      doBias: True
+      doVariance: True
+      doLinearize: True
+      doCrosstalk: True
+      doDefect: True
+      doNanMasking: True
+      doInterpolate: True
+      doDark: True
+      doFlat: True
+      doApplyGains: False
+      doFringe: False
+  cpFringe:
+    class: lsst.cp.pipe.cpFringeTask.CpFringeTask
+    config:
+      connections.inputExp: 'cpFringeIsr'
+      connections.outputExp: 'cpFringeProc'
+  cpCombine:
+    class: lsst.cp.pipe.cpCombine.CalibCombineTask
+    config:
+      connections.inputExps: 'cpFringeProc'
+      connections.outputData: 'fringeProposal'
+      calibrationType: 'fringe'
+      calibrationDimensions: ['physical_filter']
+      exposureScaling: "None"
+contracts:
+  - isr.doFringe == False
+  - cpCombine.calibrationType == "fringe"
+  - cpCombine.exposureScaling == "None"
