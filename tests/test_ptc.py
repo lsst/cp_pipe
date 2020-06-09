@@ -125,18 +125,32 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         return flatExp1, flatExp2
 
     def test_covAstier(self):
+        """Test to check getCovariancesAstier
+
+        We check that the gain is the same as the imput gain from the mock data, that
+        the covariances via FFT (as it is in MeasurePhotonTransferCurveTask when
+        doCovariancesAstier=True) are the same as calculated in real space, and that
+        Cov[0, 0] (i.e., the variances) are similar to the variances calculated with the standard
+        method (when doCovariancesAstier=false),
+        """
         config = copy.copy(self.defaultConfig)
         task = cpPipe.ptc.MeasurePhotonTransferCurveTask(config=config)
 
-        expTimes = np.arange(5, 205, 5)
+        expTimes = np.arange(5, 170, 5)
         tupleRecords = []
         allTags = []
+        muStandard, varStandard = {}, {}
         for expTime in expTimes:
             mockExp1, mockExp2 = self.makeMockFlats(expTime, gain=0.75)
             tupleRows = []
+
             for ampNumber, amp in enumerate(self.ampNames):
                 # cov has (i, j, var, cov, npix)
                 mu1, mu2, covs = task.getCovariancesAstier(mockExp1, mockExp2)
+                # calculate mean and variance of difference image in the standard way
+                mu, varDiff = task.measureMeanVarPair(mockExp1, mockExp2)
+                muStandard.setdefault(amp, []).append(mu)
+                varStandard.setdefault(amp, []).append(varDiff)
                 # Calculate covariances in an independent way: direct space
                 _, _, covsDirect = self.getCovariancesAstierDirect(mockExp1, mockExp2, config)
                 # Test that the arrays "covs" (FFT) and "covDirect" (direct space) are the same
@@ -151,9 +165,12 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         covFits, _ = fitData(covariancesWithTags)
         dataset = task.getOutputPtcDataCovAstier(covFits)
 
-        # Chek the gain
+        # Chek the gain and that the ratio of the variance caclulated via cov Astier (FFT) and
+        # that calculated with the standard PTC is close to 1.
         for amp in self.ampNames:
             self.assertAlmostEqual(dataset.gain[amp][0], 0.75, places=2)
+            for v1, v2 in zip(varStandard[amp], dataset.varAdu[amp][0]):
+                self.assertAlmostEqual(v1/v2, 1.0, places=1)
 
     def getCovariancesAstierDirect(self, exposure1, exposure2, config, region=None):
         """Calculate covariances of a difference image in real space"""
@@ -250,7 +267,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
     def covDirectValue(self, diffImage, weightImage, dx, dy):
         """Compute covariances of diffImage in real space at lag (dx, dy).
 
-        Taken from https://github.com/PierreAstier/bfptc/
+        Taken from https://github.com/PierreAstier/bfptc/ (c.f., appendix of Astier+19).
 
         Parameters
         ----------

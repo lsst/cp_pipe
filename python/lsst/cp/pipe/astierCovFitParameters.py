@@ -4,14 +4,12 @@
 #  at LPNHE (Paris). Just copied here."
 
 """
-
 This module contains utility classes to handle parameters in linear and
 non-linear least square fits implemented in linearmodels and
 nonlinearmodels. It provide 2 main features:
 
 - `StructArray`: a derivative of numpy class ndarray to manage large
 vectors organized into named subgroups.
-
 
 - `FitParameters` : a class to manage large parameter vectors.  It
 allows to easily fix/release specific parameters or entire subgroups,

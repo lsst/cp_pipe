@@ -271,7 +271,7 @@ class CovFit:
         self.sqrtW = 1./np.sqrt(self.vcov)
         self.r = self.cov.shape[1]
 
-    def subtractDistantOffset(self, maxLag=8, startLag=15, polDegree=1):
+    def subtractDistantOffset(self, maxLag=8, startLag=5, polDegree=1):
         """Subtract a background/offset to the measured covariances.
 
         Parameters
@@ -505,7 +505,7 @@ class CovFit:
             p0 = self.getParamValues()
         nOutliers = 1
         counter = 1
-        maxFitIter = 4
+        maxFitIter = 5
         while nOutliers != 0:
             coeffs, covParams, _, mesg, ierr = leastsq(self.weightedRes, p0, full_output=True)
             wres = self.weightedRes(coeffs)

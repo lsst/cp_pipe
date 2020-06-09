@@ -47,8 +47,6 @@ import datetime
 from .astierCovPtcUtils import (fftSize, computeCovFft, fitData)
 from .astierCovPtcPlots import covAstierMakeAllPlots
 
-import lsst.ip.isr.isrMock as isrMock  # TEMP
-
 
 class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
     """Config class for photon transfer curve measurement task"""
@@ -226,6 +224,9 @@ class OutputPtcDataCovAstierDataset:
     signal: dict
     var: dict
     varModel: dict
+    signalAdu: dict
+    varAdu: dict
+    varModelAdu: dict
     a00: dict
     b00: dict
 
@@ -245,6 +246,9 @@ class PhotonTransferCurveCovAstierDataset:
         self.__dict__["meanSignal"] = {}
         self.__dict__["var"] = {}
         self.__dict__["varModel"] = {}
+        self.__dict__["meanSignalAdu"] = {}
+        self.__dict__["varAdu"] = {}
+        self.__dict__["varModelAdu"] = {}
         self.__dict__["a00"] = {}
         self.__dict__["b00"] = {}
 
@@ -456,6 +460,9 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             datasetCovAstier.meanSignal = dataset.signal
             datasetCovAstier.var = dataset.var
             datasetCovAstier.varModel = dataset.varModel
+            datasetCovAstier.meanSignalAdu = dataset.signalAdu
+            datasetCovAstier.varAdu = dataset.varAdu
+            datasetCovAstier.varModelAdu = dataset.varModelAdu
             datasetCovAstier.a00 = dataset.a00
             datasetCovAstier.b00 = dataset.b00
 
@@ -533,22 +540,35 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         dataset.varModel : `dict`
             Dictionary with modeled variance from data, with amp names as keys.
 
+        dataset.signalAdu : `dict`
+            Dictionary with mean signals in ADU, with amp names as keys.
+
+        dataset.varAdu : `dict`
+            Dictionary with measured variances in ADU^2 from data, with amp names as keys.
+
+        dataset.varModelAdu : `dict`
+            Dictionary with modeled variance in ADU^2 from data, with amp names as keys.
+
         dataset.a00 : `dict`
             Dictionary with a00 coefficients from full cov model in Astier+19, with amp names as keys.
 
         daaset.b00 : `dict`
             Dictionary with b00 coefficients from full cov model in Astier+19, with amp names as keys.
         """
-        dataset = OutputPtcDataCovAstierDataset({}, {}, {}, {}, {}, {}, {})
+        dataset = OutputPtcDataCovAstierDataset({}, {}, {}, {}, {}, {}, {}, {}, {}, {})
 
         for i, amp in enumerate(covFits):
             fit = covFits[amp]
             meanVecFinal, varVecFinal, varVecModel, wc = fit.getNormalizedFitData(0, 0, divideByMu=False)
-            dataset.gain.setdefault(amp, []).append(fit.getGain())
+            gain = fit.getGain()
+            dataset.gain.setdefault(amp, []).append(gain)
             dataset.noise.setdefault(amp, []).append(np.sqrt(fit.getRon()))
             dataset.signal.setdefault(amp, []).append(meanVecFinal)
             dataset.var.setdefault(amp, []).append(varVecFinal)
             dataset.varModel.setdefault(amp, []).append(varVecModel)
+            dataset.signalAdu.setdefault(amp, []).append(meanVecFinal/gain)
+            dataset.varAdu.setdefault(amp, []).append(varVecFinal/(gain**2))
+            dataset.varModelAdu.setdefault(amp, []).append(varVecModel/gain**2)
             dataset.a00.setdefault(amp, []).append(fit.getA()[0, 0])
             dataset.b00.setdefault(amp, []).append(fit.getB()[0, 0])
 
@@ -581,7 +601,6 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                                                                                         detector.getId()))
 
         for (v1, v2) in visitPairs:
-            """ TEMP
             # Perform ISR on each exposure
             dataRef.dataId['expId'] = v1
             exp1 = self.isr.runDataRef(dataRef).exposure
@@ -591,63 +610,17 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
             checkExpLengthEqual(exp1, exp2, v1, v2, raiseWithMessage=True)
             expTime = exp1.getInfo().getVisitInfo().getExposureTime()
-            """
-            # TEMP
-            assert(v1 == v2)  # visits numbers are expTimes in this case
-            expTime = v1
-            mockExp1, mockExp2 = self.makeMockFlats(expTime, gain=0.75, readNoiseElectrons=3.5)
-            # TEMP
 
             tupleRows = []
-            # gainVecTemp = np.linspace(0.75, 0.85, 16)
             for ampNumber, amp in enumerate(detector):
                 # covs: (i, j, var, cov, npix)
-                # mu1, mu2, covs = self.getCovariancesAstier(exp1, exp2, region=amp.getBBox()) TEMP
-                mu1, mu2, covs = self.getCovariancesAstier(mockExp1, mockExp2)
+                mu1, mu2, covs = self.getCovariancesAstier(exp1, exp2, region=amp.getBBox())
                 tupleRows += [(mu1, mu2) + cov + (ampNumber, expTime, amp.getName()) for cov in covs]
                 tags = ['mu1', 'mu2', 'i', 'j', 'var', 'cov', 'npix', 'ext', 'expTime', 'ampName']
             allTags += tags
             tupleRecords += tupleRows
         covariancesWithTags = np.core.records.fromrecords(tupleRecords, names=allTags)
         return covariancesWithTags
-
-    def makeMockFlats(self, expTime, gain=1.0, readNoiseElectrons=5, fluxElectrons=1000):
-        import galsim
-
-        flatFlux = fluxElectrons  # e/s
-        flatMean = flatFlux*expTime  # e
-        readNoise = readNoiseElectrons  # e
-        mockImageConfig = isrMock.IsrMock.ConfigClass()
-
-        # flatDrop is not really relevant as we replace the data
-        # but good to note it in case we change how this image is made
-        mockImageConfig.flatDrop = 0.99999
-        mockImageConfig.isTrimmed = True
-
-        flatExp1 = isrMock.FlatMock(config=mockImageConfig).run()
-        flatExp2 = flatExp1.clone()
-        (shapeY, shapeX) = flatExp1.getDimensions()
-        flatWidth = np.sqrt(flatMean)
-
-        rng1 = np.random.RandomState(1984)
-        flatData1 = (rng1.normal(flatMean, flatWidth, (shapeX, shapeY)) +
-                     rng1.normal(0.0, readNoise, (shapeX, shapeY)))
-        rng2 = np.random.RandomState(666)
-        flatData2 = (rng2.normal(flatMean, flatWidth, (shapeX, shapeY)) +
-                     rng2.normal(0.0, readNoise, (shapeX, shapeY)))
-
-        # Simulate BF with power law model in galsim
-        cd = galsim.cdmodel.PowerLawCD(8, 1.2e-7, 1.2e-7, 1.0e-7, 1.0e-7, 0.0, 0.0, 0.0)
-        tempFlatData1 = galsim.Image(flatData1)
-        temp2FlatData1 = cd.applyForward(tempFlatData1)
-
-        tempFlatData2 = galsim.Image(flatData2)
-        temp2FlatData2 = cd.applyForward(tempFlatData2)
-
-        flatExp1.image.array[:] = temp2FlatData1.array/gain  # ADU
-        flatExp2.image.array[:] = temp2FlatData2.array/gain  # ADU
-
-        return flatExp1, flatExp2
 
     def getCovariancesAstier(self, exposure1, exposure2, region=None):
         if region is not None:
@@ -726,7 +699,6 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         self.log.info('Measuring PTC using %s visits for detector %s' % (visitPairs, detector.getId()))
 
         for (v1, v2) in visitPairs:
-            """ TEMP
             # Perform ISR on each exposure
             dataRef.dataId['expId'] = v1
             exp1 = self.isr.runDataRef(dataRef).exposure
@@ -736,16 +708,9 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
             checkExpLengthEqual(exp1, exp2, v1, v2, raiseWithMessage=True)
             expTime = exp1.getInfo().getVisitInfo().getExposureTime()
-            """
-            # TEMP
-            assert (v1 == v2)
-            expTime = v1
-            mockExp1, mockExp2 = self.makeMockFlats(expTime, gain=0.75, readNoiseElectrons=8.5)
-            # TEMP
 
             for amp in detector:
-                # mu, varDiff = self.measureMeanVarPair(exp1, exp2, region=amp.getBBox())
-                mu, varDiff = self.measureMeanVarPair(mockExp1, mockExp2)
+                mu, varDiff = self.measureMeanVarPair(exp1, exp2, region=amp.getBBox())
                 ampName = amp.getName()
 
                 dataset.rawExpTimes[ampName].append(expTime)

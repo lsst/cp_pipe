@@ -173,7 +173,7 @@ def plotCovariances(covFits, pdfPages):
                             s=markerSize, label='Full fit')
             aResVar.scatter(meanVecFinal, varVecFinal - varModelQuadratic, c='red', marker='.',
                             s=markerSize, label='Quadratic fit')
-            aResVar.scatter(meanVecFinal, varVecFinalNoB - varVecModelNoB, c='green', marker='.',
+            aResVar.scatter(meanVecFinalNoB, varVecFinalNoB - varVecModelNoB, c='green', marker='.',
                             s=markerSize, label='Full fit with b=0')
             aResVar.axhline(color='black')
             aResVar.set_title(amp, fontsize=titleFontSize)

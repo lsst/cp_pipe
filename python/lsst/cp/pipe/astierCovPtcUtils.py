@@ -293,7 +293,7 @@ class LoadParams:
         self.maxMu = 1e9
         self.maxMuElectrons = 1e9
         self.subtractDistantValue = False
-        self.start = 12
+        self.start = 5
         self.offsetDegree = 1
 
 
@@ -326,8 +326,8 @@ def loadData(tupleName, params):
     for ext in exts:
         ntext = tupleName[tupleName['ampName'] == ext]
         if params.subtractDistantValue:
-            c = CovFit(ntext, r=None)
-            c.subtract_distant_offset(params.r, params.start, params.offsetDegree)
+            c = CovFit(ntext, params.r)
+            c.subtractDistantOffset(params.r, params.start, params.offsetDegree)
         else:
             c = CovFit(ntext, params.r)
         thisMaxMu = params.maxMu
