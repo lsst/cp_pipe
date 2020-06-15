@@ -25,7 +25,7 @@ import numpy as np
 import matplotlib as mpl
 from matplotlib.ticker import MaxNLocator
 
-from .astierCovPtcFit import aCoeffsComputeOldFashion
+from .astierCovPtcFit import computeApproximateAcoeffs
 from .astierCovPtcUtils import (binData, indexForBins, CHI2)
 
 
@@ -513,7 +513,7 @@ def plotRelativeBiasACoeffs(covFits, covFitsNoB, mu_el, pdfPages, maxr=None):
         for fit in data[k].values():
             if fit is None:
                 continue
-            aOld = aCoeffsComputeOldFashion(fit, mu_el)
+            aOld = computeApproximateAcoeffs(fit, mu_el)
             a = fit.getA()
             amean.append(a)
             diffs.append((aOld-a))

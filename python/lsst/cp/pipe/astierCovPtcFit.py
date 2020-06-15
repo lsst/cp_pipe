@@ -30,11 +30,11 @@ from .astierCovFitParameters import FitParameters
 __all__ = ["CovFit", "WeightedRes"]
 
 
-def aCoeffsComputeOldFashion(fit, muEl):
-    """Compute the "a" coefficients of the Antilogus model the old way: 1501.01577 (eq. 16).
+def computeApproximateAcoeffs(fit, muEl):
+    """Compute the "a" coefficients of the Antilogus+14 (1402.0725) model as in
+    Guyonnet+15 (1501.01577, eq. 16, the slope of cov/var at a given flux mu in electrons).
 
-    The 'old way' refers to the treatement in, e.g., 1501.01577(eq. 16), as opposed to the more complete
-    model in Astier+19(1905.08677).
+    Eq. 16 of 1501.01577 is an approximation to the more complete model in Astier+19 (1905.08677).
 
     Parameters
     ---------
@@ -49,15 +49,15 @@ def aCoeffsComputeOldFashion(fit, muEl):
     Notes
     -----
     Returns the "a" array, computed this way, to be compared to the actual a_array from the full model
-   (fit.geA()).
+    (fit.geA()).
     """
 
     gain = fit.getGain()
     muAdu = np.array([muEl/gain])
     model = fit.evalCovModel(muAdu)
-    var = model[0, 0, 0]
-    # The model is in ADU**2, so is var, mu is in adu.
-    # So for a result in electrons^-1, we have to convert mu to electrons
+    var = model[0, 0, 0]  # ADU
+    # For a result in electrons^-1, we have to use mu in electrons.
+
     return model[0, :, :]/(var*muEl)
 
 
