@@ -27,7 +27,7 @@ from scipy.signal import fftconvolve
 from scipy.optimize import leastsq
 from .astierCovFitParameters import FitParameters
 
-__all__ = ["CovFit", "WeightedRes"]
+__all__ = ["CovFit"]
 
 
 def computeApproximateAcoeffs(fit, muEl):
@@ -385,8 +385,8 @@ class CovFit:
         # assumes that mu is 1d
         bigMu = mu[:, np.newaxis, np.newaxis]*gain
         # c(=a*b in Astier+19) also has a contribution to the last term, that is absent for now.
-        covModel = (bigMu/(gain*gain)*(a1*bigMu+2./3.*(bigMu*bigMu)*(a2+c1) +
-                    (1./3.*a3+5./6.*ac)*(bigMu*bigMu*bigMu)) + noise[np.newaxis, :, :]/gain**2)
+        covModel = (bigMu/(gain*gain)*(a1*bigMu+2./3.*(bigMu*bigMu)*(a2 + c1) +
+                    (1./3.*a3 + 5./6.*ac)*(bigMu*bigMu*bigMu)) + noise[np.newaxis, :, :]/gain**2)
         # add the Poisson term, and the read out noise (variance)
         covModel[:, 0, 0] += mu/gain
 
@@ -556,19 +556,3 @@ class CovFit:
         chi2 = self.chi2()
 
         return chi2
-
-
-class WeightedRes:
-    def __init__(self, model, x, y, sigma=None):
-        self.x = x
-        self.y = y
-        self.model = model
-        self.sigma = sigma
-
-# could probably be more efficient(i.e. have two different functions)
-    def __call__(self, params):
-        if self.sigma is None:
-            res = self.y-self.model(self.x, *params)
-        else:
-            res = (self.y-self.model(self.x, *params))/self.sigma
-        return res
