@@ -22,48 +22,12 @@
 import numpy as np
 import copy
 import itertools
+import scipy.stats.median_absolute_deviation as mad
 from scipy.signal import fftconvolve
 from scipy.optimize import leastsq
 from .astierCovFitParameters import FitParameters
 
 __all__ = ["CovFit", "WeightedRes"]
-
-
-def mad(data, axis=0, scale=1.4826):
-    """Median of absolute deviation along a given axis.
-
-    Parameters
-    ----------
-    data: `numpy array`
-        Input numpy array
-
-    axis: `int`, optional
-        Dimension along which to calculate MAD
-
-    scale: `float`
-         Scale factor that depends on the distribution. An estimator
-         of the standard deviation is given by sigma=scale*MAD(scale=1.4826
-         for a Gaussian distribution)
-
-    Returns
-    -------
-    sigma: `float`
-        Estimator of the standard deviation(sigma=scale*MAD).
-    """
-
-    if data.ndim == 1:
-        med = np.ma.median(data)
-        ret = np.ma.median(np.abs(data-med))
-    else:
-        med = np.ma.median(data, axis=axis)
-        if axis > 0:
-            sw = np.ma.swapaxes(data, 0, axis)
-        else:
-            sw = data
-        ret = np.ma.median(np.abs(sw-med), axis=0)
-    sigma = scale*ret
-
-    return sigma
 
 
 def aCoeffsComputeOldFashion(fit, muEl):

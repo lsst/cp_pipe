@@ -18,6 +18,9 @@ and remap the remaining free parameters into a contiguous vector.
 
 import numpy as np
 
+import lsst.pipe.base as pipeBase
+
+
 
 class Structure(object):
     """ Collection of named slices
