@@ -50,34 +50,6 @@ from .astierCovPtcPlots import covAstierMakeAllPlots
 
 class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
     """Config class for photon transfer curve measurement task"""
-    isr = pexConfig.ConfigurableField(
-        target=IsrTask,
-        doc="""Task to perform instrumental signature removal.""",
-    )
-    isrMandatorySteps = pexConfig.ListField(
-        dtype=str,
-        doc="isr operations that must be performed for valid results. Raises if any of these are False.",
-        default=['doAssembleCcd']
-    )
-    isrForbiddenSteps = pexConfig.ListField(
-        dtype=str,
-        doc="isr operations that must NOT be performed for valid results. Raises if any of these are True",
-        default=['doFlat', 'doFringe', 'doBrighterFatter', 'doUseOpticsTransmission',
-                 'doUseFilterTransmission', 'doUseSensorTransmission', 'doUseAtmosphereTransmission']
-    )
-    isrDesirableSteps = pexConfig.ListField(
-        dtype=str,
-        doc="isr operations that it is advisable to perform, but are not mission-critical." +
-        " WARNs are logged for any of these found to be False.",
-        default=['doBias', 'doDark', 'doCrosstalk', 'doDefect']
-    )
-    isrUndesirableSteps = pexConfig.ListField(
-        dtype=str,
-        doc="isr operations that it is *not* advisable to perform in the general case, but are not" +
-        " forbidden as some use-cases might warrant them." +
-        " WARNs are logged for any of these found to be True.",
-        default=['doLinearize']
-    )
     ccdKey = pexConfig.Field(
         dtype=str,
         doc="The key by which to pull a detector from a dataId, e.g. 'ccd' or 'detector'.",
@@ -384,10 +356,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
     def __init__(self, *args, **kwargs):
         pipeBase.CmdLineTask.__init__(self, *args, **kwargs)
-        self.makeSubtask("isr")
         plt.interactive(False)  # stop windows popping up when plotting. When headless, use 'agg' backend too
-        validateIsrConfig(self.isr, self.config.isrMandatorySteps,
-                          self.config.isrForbiddenSteps, self.config.isrDesirableSteps, checkTrim=False)
         self.config.validate()
         self.config.freeze()
 
@@ -407,7 +376,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         """Run the Photon Transfer Curve (PTC) measurement task.
 
         For a dataRef (which is each detector here),
-        and given a list of visit pairs at different exposure times,
+        and given a list of visit pairs (postISR) at different exposure times,
         measure the PTC.
 
         Parameters
@@ -603,9 +572,9 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         for (v1, v2) in visitPairs:
             # Perform ISR on each exposure
             dataRef.dataId['expId'] = v1
-            exp1 = self.isr.runDataRef(dataRef).exposure
+            exp1 = dataRef.get("postISRCCD", immediate=True) 
             dataRef.dataId['expId'] = v2
-            exp2 = self.isr.runDataRef(dataRef).exposure
+            exp2 = dataRef.get("postISRCCD", immediate=True) 
             del dataRef.dataId['expId']
 
             checkExpLengthEqual(exp1, exp2, v1, v2, raiseWithMessage=True)
@@ -701,9 +670,9 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         for (v1, v2) in visitPairs:
             # Perform ISR on each exposure
             dataRef.dataId['expId'] = v1
-            exp1 = self.isr.runDataRef(dataRef).exposure
+            exp1 = dataRef.get("postISRCCD", immediate=True)
             dataRef.dataId['expId'] = v2
-            exp2 = self.isr.runDataRef(dataRef).exposure
+            exp2 = dataRef.get("postISRCCD", immediate=True)
             del dataRef.dataId['expId']
 
             checkExpLengthEqual(exp1, exp2, v1, v2, raiseWithMessage=True)

@@ -22,7 +22,7 @@
 import numpy as np
 import copy
 import itertools
-import scipy.stats.median_absolute_deviation as mad
+from scipy.stats import median_absolute_deviation as mad
 from scipy.signal import fftconvolve
 from scipy.optimize import leastsq
 from .astierCovFitParameters import FitParameters
@@ -211,26 +211,25 @@ class CovFit:
     Astier+19: https://arxiv.org/pdf/1905.08677.pdf
     For the time being it uses as input a numpy recarray (tuple with named tags) which
     contains one row per covariance and per pair: see the routine makeCovArray.
+
+    Parameters
+    ----------
+    inputTuple: `numpy.recarray`
+        Tuple with at least( mu1, mu2, cov, var, i, j, npix), where:
+
+        mu1: mean value of flat1
+        mu2: mean value of flat2
+        cov: covariance value at lag(i, j)
+        var: variance(covariance value at lag(0, 0))
+        i: lag dimension
+        j: lag dimension
+        npix: number of pixels used for covariance calculation.
+
+    maxRangeFromTuple: `int`
+        Maximum range to select from tuple.
     """
 
     def __init__(self, inputTuple, maxRangeFromTuple=8):
-        """
-        Parameters
-        ----------
-        inputTuple: `numpy.recarray`
-            Tuple with at least( mu1, mu2, cov, var, i, j, npix), where:
-
-            mu1: mean value of flat1
-            mu2: mean value of flat2
-            cov: covariance value at lag(i, j)
-            var: variance(covariance value at lag(0, 0))
-            i: lag dimension
-            j: lag dimension
-            npix: number of pixels used for covariance calculation.
-
-        maxRangeFromTuple: `int`
-            Maximum range to select from tuple.
-        """
         self.cov, self.vcov, self.mu = makeCovArray(inputTuple, maxRangeFromTuple)
         self.sqrtW = 1./np.sqrt(self.vcov)
         self.r = self.cov.shape[1]
