@@ -386,20 +386,12 @@ def fitData(tupleName, maxMu=1e9, maxMuElectrons=1e9, r=8):
     lparams.r = r
 
     covFitList = loadData(tupleName, lparams)
-    alist = []
-    blist = []
     covFitNoBList = {}  # [None]*(exts[-1]+1)
     for ext, c in covFitList.items():
         c.fit()
         covFitNoBList[ext] = c.copy()
         c.params['c'].release()
         c.fit()
-        a = c.getA()
-        alist.append(a)
-        b = c.getB()
-        blist.append(b)
-    a = np.asarray(alist)
-    b = np.asarray(blist)
 
     return covFitList, covFitNoBList
 

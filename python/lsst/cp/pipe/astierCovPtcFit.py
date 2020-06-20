@@ -27,6 +27,7 @@ from scipy.signal import fftconvolve
 from scipy.optimize import leastsq
 from .astierCovFitParameters import FitParameters
 
+
 __all__ = ["CovFit"]
 
 
@@ -117,12 +118,12 @@ def makeCovArray(inputTuple, maxRangeFromTuple=8):
     else:
         cutTuple = inputTuple
     # increasing mu order, so that we can group measurements with the same mu
-    muTemp = (cutTuple['mu1'] + cutTuple['mu2'])*0.5
+    muTemp = cutTuple['mu']
     ind = np.argsort(muTemp)
 
     cutTuple = cutTuple[ind]
     # should group measurements on the same image pairs(same average)
-    mu = 0.5*(cutTuple['mu1'] + cutTuple['mu2'])
+    mu = cutTuple['mu']
     xx = np.hstack(([mu[0]], mu))
     delta = xx[1:] - xx[:-1]
     steps, = np.where(delta > 0)
@@ -293,7 +294,7 @@ class CovFit:
         """
         # number of parameters for 'a' array.
         lenA = self.r*self.r
-        # define parameters: c corresponds to a*b in the Astier+19.
+        # define parameters: c corresponds to a*b in Astier+19 (Eq. 20).
         self.params = FitParameters([('a', lenA), ('c', lenA), ('noise', lenA), ('gain', 1)])
         self.params['gain'] = 1.
         # c=0 in a first go.
@@ -306,7 +307,6 @@ class CovFit:
         # iterate the fit to account for higher orders
         # the chi2 does not necessarily go down, so one could
         # stop when it increases
-
         oldChi2 = 1e30
         for _ in range(5):
             model = self.evalCovModel()  # this computes the full model.
@@ -314,13 +314,13 @@ class CovFit:
             for i in range(self.r):
                 for j in range(self.r):
                     # fit a given lag with a parabola
-                    p = np.polyfit(self.mu, self.cov[:, i, j] - model[:, i, j],
-                                   2, w=self.sqrtW[:, i, j])
+                    parsFit = np.polyfit(self.mu, self.cov[:, i, j] - model[:, i, j],
+                                         2, w=self.sqrtW[:, i, j])
                     # model equation(Eq. 20) in Astier+19:
-                    a[i, j] += p[0]
-                    noise[i, j] += p[2]*gain*gain
+                    a[i, j] += parsFit[0]
+                    noise[i, j] += parsFit[2]*gain*gain
                     if(i + j == 0):
-                        gain = 1./(1/gain+p[1])
+                        gain = 1./(1/gain+parsFit[1])
                         self.params['gain'].full[0] = gain
             chi2 = self.chi2()
             if chi2 > oldChi2:
@@ -404,6 +404,7 @@ class CovFit:
         return self.params['c'].full.reshape(self.r, self.r)
 
     def _getCovParams(self, what):
+        """Get covariance matrix of parameters form fit"""
         indices = self.params[what].indexof()
         i1 = indices[:, np.newaxis]
         i2 = indices[np.newaxis, :]
@@ -411,15 +412,19 @@ class CovFit:
         return covp
 
     def getACov(self):
+        """Get covariance matrix of "a" coefficients from fit"""
         cova = self._getCovParams('a')
         return cova.reshape((self.r, self.r, self.r, self.r))
 
     def getASig(self):
+        """Square root of diagonal of "a" covariance matrix"""
         cova = self._getCovParams('a')
         return np.sqrt(cova.diagonal()).reshape((self.r, self.r))
 
     def getBCov(self):
-        # b = c/a
+        """Get covariance matrix of "a" coefficients from fit
+        b = c /a
+        """
         covb = self._getCovParams('c')
         aval = self.getA().flatten()
         factor = np.outer(aval, aval)
@@ -427,17 +432,28 @@ class CovFit:
         return covb.reshape((self.r, self.r, self.r, self.r))
 
     def getCCov(self):
+        """Get covariance matrix of "c" coefficients from fit"""
         cova = self._getCovParams('c')
         return cova.reshape((self.r, self.r, self.r, self.r))
 
     def getGain(self):
+        """Get gain (e/ADU)"""
         return self.params['gain'].full[0]
 
     def getRon(self):
+        """Get readout noise (e^2)"""
         return self.params['noise'].full[0]
 
     def getNoise(self):
+        """Get noise matrix"""
         return self.params['noise'].full.reshape(self.r, self.r)
+
+    def getMaskVar(self):
+        """Get mask of var = cov[0,0]"""
+        gain = self.getGain()
+        weights = self.sqrtW[:, 0, 0]/(gain**2)
+        mask = weights != 0
+        return mask
 
     def setAandB(self, a, b):
         self.params['a'].full = a.flatten()
@@ -484,6 +500,7 @@ class CovFit:
         if ierr not in [1, 2, 3, 4]:
             raise RuntimeError("minimisation failed: " + mesg)
         self.covParams = covParams
+
         return coeffs
 
     def ndof(self):
@@ -539,9 +556,11 @@ class CovFit:
 
         # select data used for the fit:
         mask = weights != 0
+
         weights = weights[mask]
         model = model[mask]
         mu = mu[mask]
+
         covariance = covariance[mask]
         if(divideByMu):
             covariance /= mu
