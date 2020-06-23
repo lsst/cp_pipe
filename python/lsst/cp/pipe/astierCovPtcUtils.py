@@ -152,112 +152,111 @@ def computeCovFft(diff, w, fftSize, maxRange):
     return c.reportCovFft(maxRange)
 
 
-def findGroups(x, maxDiff):
-    """Group data into bins, with at most maxDiff distance between bins.
+def computeCovDirect(diffImage, weightImage, maxRange):
+    """Compute covariances of diffImage in real space.
+
+    For lags larger than ~25, it is slower than the FFT way.
+    Taken from https://github.com/PierreAstier/bfptc/
 
     Parameters
     ----------
-    x: `list`
-        Data to bin.
+    diffImage : `numpy.array`
+        Image to compute the covariance of.
 
-    maxDiff: `int`
-        Maximum distance between bins.
+    weightImage : `numpy.array`
+        Weight image of diffImage (1's and 0's for good and bad pixels, respectively).
+
+    maxRange : `int`
+        Last index of the covariance to be computed.
 
     Returns
     -------
-    index: `list`
-        Bin indices.
+    outList : `list`
+        List with tuples of the form (dx, dy, var, cov, npix), where:
+        dx : `int`
+            Lag in x
+        dy : `int`
+            Lag in y
+        var : `float`
+            Variance at (dx, dy).
+        cov : `float`
+            Covariance at (dx, dy).
+        nPix : `int`
+            Number of pixel pairs used to evaluate var and cov.
     """
-    ix = np.argsort(x)
-    xsort = np.sort(x)
-    index = np.zeros_like(x, dtype=np.int32)
-    xc = xsort[0]
-    group = 0
-    ng = 1
+    outList = []
+    var = 0
+    # (dy,dx) = (0,0) has to be first
+    for dy in range(maxRange + 1):
+        for dx in range(0, maxRange + 1):
+            if (dx*dy > 0):
+                cov1, nPix1 = covDirectValue(diffImage, weightImage, dx, dy)
+                cov2, nPix2 = covDirectValue(diffImage, weightImage, dx, -dy)
+                cov = 0.5*(cov1 + cov2)
+                nPix = nPix1 + nPix2
+            else:
+                cov, nPix = covDirectValue(diffImage, weightImage, dx, dy)
+            if (dx == 0 and dy == 0):
+                var = cov
+            outList.append((dx, dy, var, cov, nPix))
 
-    for i in range(1, len(ix)):
-        xval = xsort[i]
-        if (xval - xc < maxDiff):
-            xc = (ng*xc + xval)/(ng+1)
-            ng += 1
-            index[ix[i]] = group
-        else:
-            group += 1
-            ng = 1
-            index[ix[i]] = group
-            xc = xval
+    return outList
 
-    return index
+def covDirectValue(diffImage, weightImage, dx, dy):
+    """Compute covariances of diffImage in real space at lag (dx, dy).
 
-
-def indexForBins(x, nBins):
-    """Builds an index with regular binning. The result can be fed into binData.
+    Taken from https://github.com/PierreAstier/bfptc/ (c.f., appendix of Astier+19).
 
     Parameters
     ----------
-    x: `numpy.array`
-        Data to bin.
-    nBins: `int`
-        Number of bin.
+    diffImage : `numpy.array`
+        Image to compute the covariance of.
+
+    weightImage : `numpy.array`
+        Weight image of diffImage (1's and 0's for good and bad pixels, respectively).
+
+    dx : `int`
+        Lag in x.
+
+    dy : `int`
+        Lag in y.
 
     Returns
     -------
-    np.digitize(x, bins): `numpy.array`
-        Bin indices.
+    cov : `float`
+        Covariance at (dx, dy)
+
+    nPix : `int`
+        Number of pixel pairs used to evaluate var and cov.
     """
+    (nCols, nRows) = diffImage.shape
+    # switching both signs does not change anything:
+    # it just swaps im1 and im2 below
+    if (dx < 0):
+        (dx, dy) = (-dx, -dy)
+    # now, we have dx >0. We have to distinguish two cases
+    # depending on the sign of dy
+    if dy >= 0:
+        im1 = diffImage[dy:, dx:]
+        w1 = weightImage[dy:, dx:]
+        im2 = diffImage[:nCols - dy, :nRows - dx]
+        w2 = weightImage[:nCols - dy, :nRows - dx]
+    else:
+        im1 = diffImage[:nCols + dy, dx:]
+        w1 = weightImage[:nCols + dy, dx:]
+        im2 = diffImage[-dy:, :nRows - dx]
+        w2 = weightImage[-dy:, :nRows - dx]
+    # use the same mask for all 3 calculations
+    wAll = w1*w2
+    # do not use mean() because weightImage=0 pixels would then count
+    nPix = wAll.sum()
+    im1TimesW = im1*wAll
+    s1 = im1TimesW.sum()/nPix
+    s2 = (im2*wAll).sum()/nPix
+    p = (im1TimesW*im2).sum()/nPix
+    cov = p - s1*s2
 
-    bins = np.linspace(x.min(), x.max() + abs(x.max() * 1e-7), nBins + 1)
-
-    return np.digitize(x, bins)
-
-
-def binData(x, y, binIndex, wy=None):
-    """Bin data (usually for display purposes).
-
-    Patrameters
-    -----------
-    x: `numpy.array`
-        Data to bin.
-
-    y: `numpy.array`
-        Data to bin.
-
-    binIdex: `list`
-        Bin number of each datum.
-
-    wy: `numpy.array`
-        Inverse rms of each datum to use when averaging (the actual weight is wy**2).
-
-    Returns:
-    -------
-
-    xbin: `numpy.array`
-        Binned data in x.
-
-    ybin: `numpy.array`
-        Binned data in y.
-
-    wybin: `numpy.array`
-        Binned weights in y, computed from wy's in each bin.
-
-    sybin: `numpy.array`
-        Uncertainty on the bin average, considering actual scatter, and ignoring weights.
-    """
-
-    if wy is None:
-        wy = np.ones_like(x)
-    binIndexSet = set(binIndex)
-    w2 = wy*wy
-    xw2 = x*(w2)
-    xbin = np.array([xw2[binIndex == i].sum()/w2[binIndex == i].sum() for i in binIndexSet])
-
-    yw2 = y*w2
-    ybin = np.array([yw2[binIndex == i].sum()/w2[binIndex == i].sum() for i in binIndexSet])
-
-    wybin = np.sqrt(np.array([w2[binIndex == i].sum() for i in binIndexSet]))
-    sybin = np.array([y[binIndex == i].std()/np.sqrt(np.array([binIndex == i]).sum()) for i in binIndexSet])
-
-    return xbin, ybin, wybin, sybin
+    return cov, nPix
 
 
 class LoadParams:

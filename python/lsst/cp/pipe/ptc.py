@@ -26,8 +26,6 @@ __all__ = ['MeasurePhotonTransferCurveTask',
 
 import numpy as np
 import matplotlib.pyplot as plt
-import os
-from matplotlib.backends.backend_pdf import PdfPages
 from sqlite3 import OperationalError
 from collections import Counter
 from dataclasses import dataclass
@@ -42,8 +40,7 @@ from scipy.optimize import least_squares
 from lsst.ip.isr.linearize import Linearizer
 import datetime
 
-from .astierCovPtcUtils import (fftSize, computeCovFft, fitData)
-from .astierCovPtcPlots import covAstierMakeAllPlots
+from .astierCovPtcUtils import (fftSize, computeCovFft, computeCovDirect, fitData)
 
 
 class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
@@ -53,29 +50,25 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
         doc="The key by which to pull a detector from a dataId, e.g. 'ccd' or 'detector'.",
         default='ccd',
     )
-    makePlots = pexConfig.Field(
-        dtype=bool,
-        doc="Plot the PTC curves?",
-        default=False,
-    )
     ptcFitType = pexConfig.ChoiceField(
         dtype=str,
         doc="Fit PTC to approximation in Astier+19 (Equation 16) or to a polynomial.",
         default="POLYNOMIAL",
         allowed={
             "POLYNOMIAL": "n-degree polynomial (use 'polynomialFitDegree' to set 'n').",
-            "ASTIERAPPROXIMATION": "Approximation in Astier+19 (Eq. 16)."
+            "ASTIERAPPROXIMATION": "Approximation in Astier+19 (Eq. 16).",
+            "ASTIERFULL": "Full covariances model in Astier+19 (Eq. 20)"
         }
-    )
-    doCovariancesAstier = pexConfig.Field(
-        dtype=bool,
-        doc="Compute full covariances as in Astier+19?",
-        default=False,
     )
     maximumRangeCovariancesAstier = pexConfig.Field(
         dtype=int,
         doc="Maximum range of covariances as in Astier+19",
         default=8,
+    )
+    covAstierRealSpace = pexConfig.Field(
+        dtype=bool,
+        doc="Calculate covariances in real space or via FFT? (see appendix A of Astier+19).",
+        default=False,
     )
     polynomialFitDegree = pexConfig.Field(
         dtype=int,
@@ -153,11 +146,6 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
         doc="Use bootstrap for the PTC fit parameters and errors?.",
         default=False,
     )
-    linResidualTimeIndex = pexConfig.Field(
-        dtype=int,
-        doc="Index position in time array for reference time in linearity residual calculation.",
-        default=2,
-    )
     maxAduForLookupTableLinearizer = pexConfig.Field(
         dtype=int,
         doc="Maximum DN value for the LookupTable linearizer.",
@@ -181,8 +169,6 @@ class LinearityResidualsAndLinearizersDataset:
     quadraticPolynomialLinearizerCoefficient: float
     # LUT array row for the amplifier at hand
     linearizerTableRow: list
-    # Linearity residual, Eq. 2.2. of Janesick (2001)
-    linearityResidual: list
     meanSignalVsTimePolyFitPars: list
     meanSignalVsTimePolyFitParsErr: list
     fractionalNonLinearityResidual: list
@@ -216,6 +202,7 @@ class PhotonTransferCurveDataset:
         # instance variables
         self.__dict__["ampNames"] = ampNames
         self.__dict__["badAmps"] = []
+        self.__dict__["ptcFitType"] = {ampName: "" for ampName in ampNames}
 
         # raw data variables
         self.__dict__["inputVisitPairs"] = {ampName: [] for ampName in ampNames}
@@ -232,7 +219,6 @@ class PhotonTransferCurveDataset:
 
         # For Standard PTC calculation
         # fit information
-        self.__dict__["ptcFitType"] = {ampName: "" for ampName in ampNames}
         self.__dict__["ptcFitPars"] = {ampName: [] for ampName in ampNames}
         self.__dict__["ptcFitParsError"] = {ampName: [] for ampName in ampNames}
         self.__dict__["ptcFitReducedChiSquared"] = {ampName: [] for ampName in ampNames}
@@ -240,7 +226,6 @@ class PhotonTransferCurveDataset:
         # For nonlinearity
         self.__dict__["nonLinearity"] = {ampName: [] for ampName in ampNames}
         self.__dict__["nonLinearityError"] = {ampName: [] for ampName in ampNames}
-        self.__dict__["nonLinearityResiduals"] = {ampName: [] for ampName in ampNames}
         self.__dict__["fractionalNonLinearityResiduals"] = {ampName: [] for ampName in ampNames}
         self.__dict__["nonLinearityReducedChiSquared"] = {ampName: [] for ampName in ampNames}
         self.__dict__["coefficientsLinearizePolynomial"] = {ampName: [] for ampName in ampNames}
@@ -271,7 +256,7 @@ class PhotonTransferCurveDataset:
 
         If no mask has been created yet, all visits are returned.
         """
-        if self.visitMask[ampName] == []:
+        if len(self.visitMask[ampName]) == 0:
             return self.inputVisitPairs[ampName]
 
         # if the mask exists it had better be the same length as the visitPairs
@@ -291,7 +276,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
     The Photon Transfer Curve (var(signal) vs mean(signal)) is a standard tool
     used in astronomical detectors characterization (e.g., Janesick 2001,
-    Janesick 2007). If doCovariancesAstier = False,  this task calculates the
+    Janesick 2007). If ptcFitType is "ASTIERAPPROXIMATION" or "POLYNOMIAL",  this task calculates the
     PTC from a series of pairs of flat-field images; each pair taken at identical exposure
     times. The difference image of each pair is formed to eliminate fixed pattern noise,
     and then the variance of the difference image and the mean of the average image
@@ -304,7 +289,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
     The `Linearizer` class, in general, can support per-amp linearizers, but in this
     task this is not supported.
 
-    If doCovariancesAstier = True, the covariances of the difference images are calculated via the
+    If ptcFitType is "ASTIERFULL", the covariances of the difference images are calculated via the
     DFT methods described in Astier+19 and the variances for the PTC are given by the cov[0,0] elements
     at each signal level. The full model in Equation 20 of Astier+19 is fit to the PTC to get the gain
     and the noise.
@@ -397,7 +382,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             for ampNumber, amp in enumerate(detector):
                 ampName = amp.getName()
                 # covAstier: (i, j, var (cov[0,0]), cov, npix)
-                muDiff, varDiff, covAstier = self.measureMeanVarCov(exp1, exp2, region=amp.getBBox())
+                muDiff, varDiff, covAstier = self.measureMeanVarCov(exp1, exp2, region=amp.getBBox(),
+                                                                    covAstierRealSpace=self.config.covAstierRealSpace)
 
                 datasetPtc.rawExpTimes[ampName].append(expTime)
                 datasetPtc.rawMeans[ampName].append(muDiff)
@@ -410,14 +396,13 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             tupleRecords += tupleRows
         covariancesWithTags = np.core.records.fromrecords(tupleRecords, names=allTags)
 
-        if self.config.doCovariancesAstier:
+        if self.config.ptcFitType in ["ASTIERFULL", ]:
             # Calculate covariances and fit them, including the PTC, to Astier+19 full model (Eq. 20)
             datasetPtc = self.fitCovariancesAstier(datasetPtc, covariancesWithTags)
-        else:
+        elif self.config.ptcFitType in ["ASTIERAPPROXIMATION", "POLYNOMIAL"]:
             # Fit the PTC to a polynomial or to Astier+19 approximation (Eq. 16)
             # Fill up PhotonTransferCurveDataset object.
             datasetPtc = self.fitPtc(datasetPtc, self.config.ptcFitType)
-
         # Fit a poynomial to calculate non-linearity and persist linearizer.
         if self.config.doCreateLinearizer:
             numberAmps = len(amps)
@@ -455,14 +440,6 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                                                         log=self.log)
                 butler.put(linearizer, datasetType=dataType, dataId={'detector': detNum,
                            'detectorName': detName, 'calibDate': calibDate})
-
-        if self.config.makePlots:
-            if self.config.doCovariancesAstier:
-                self.plotCovariancesAstier(dataRef, datasetPtc.covariancesFits,
-                                           datasetPtc.covariancesFitsWithNoB, datasetPtc.covariancesTuple,
-                                           log=self.log)
-            else:
-                self.plot(dataRef, datasetPtc, ptcFitType=self.config.ptcFitType)
 
         self.log.info(f"Writing PTC data to {dataRef.getUri(write=True)}")
         dataRef.put(datasetPtc, datasetType="photonTransferCurveDataset")
@@ -535,15 +512,15 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             dataset.gainErr[amp] = 1.0
             dataset.noise[amp] = np.sqrt(fit.getRon())
             dataset.noiseErr[amp] = 1.0
-            dataset.finalVars[amp].append(varVecFinal)
-            dataset.finalModelVars[amp].append(varVecModel)
+            dataset.finalVars[amp].append(varVecFinal/(gain**2))
+            dataset.finalModelVars[amp].append(varVecModel/(gain**2))
             dataset.finalMeans[amp].append(meanVecFinal/gain)
             dataset.aMatrix[amp].append(fit.getA())
             dataset.bMatrix[amp].append(fit.getB())
 
         return dataset
 
-    def measureMeanVarCov(self, exposure1, exposure2, region=None):
+    def measureMeanVarCov(self, exposure1, exposure2, region=None, covAstierRealSpace=False):
         """Calculate the mean of each of two exposures and the variance and covariance of their difference.
 
         The variance is calculated via afwMath, and the covariance via the methods in Astier+19 (appendix A).
@@ -558,8 +535,12 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         exposure2 : `lsst.afw.image.exposure.exposure.ExposureF`
             Second exposure of flat field pair.
 
-        region : `lsst.geom.Box2I`
+        region : `lsst.geom.Box2I`, optional
             Region of each exposure where to perform the calculations (e.g, an amplifier).
+        
+        covAstierRealSpace : `bool`, optional
+            Should the covariannces in Astier+19 be calculated in real space or via FFT?
+            See Appendix A of Astier+19.
 
         Return
         ------
@@ -610,13 +591,124 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         wDiff = np.where(diffIm.getMask().getArray() == 0, 1, 0)
         w = w12*wDiff
 
-        shapeDiff = diffIm.getImage().getArray().shape
-
         maxRangeCov = self.config.maximumRangeCovariancesAstier
-        fftShape = (fftSize(shapeDiff[0] + maxRangeCov), fftSize(shapeDiff[1]+maxRangeCov))
-        covDiffAstier = computeCovFft(diffIm.getImage().getArray(), w, fftShape, maxRangeCov)
+        if covAstierRealSpace:
+            covDiffAstier = computeCovDirect(diffIm.getImage().getArray(), w, maxRangeCov)
+        else:
+            shapeDiff = diffIm.getImage().getArray().shape
+            fftShape = (fftSize(shapeDiff[0] + maxRangeCov), fftSize(shapeDiff[1]+maxRangeCov))
+            covDiffAstier = computeCovFft(diffIm.getImage().getArray(), w, fftShape, maxRangeCov)
 
         return mu, varDiff, covDiffAstier
+
+    def computeCovDirect(self, diffImage, weightImage, maxRange):
+        """Compute covariances of diffImage in real space.
+
+        For lags larger than ~25, it is slower than the FFT way.
+        Taken from https://github.com/PierreAstier/bfptc/
+
+        Parameters
+        ----------
+        diffImage : `numpy.array`
+            Image to compute the covariance of.
+
+        weightImage : `numpy.array`
+            Weight image of diffImage (1's and 0's for good and bad pixels, respectively).
+
+        maxRange : `int`
+            Last index of the covariance to be computed.
+
+        Returns
+        -------
+        outList : `list`
+            List with tuples of the form (dx, dy, var, cov, npix), where:
+            dx : `int`
+                Lag in x
+            dy : `int`
+                Lag in y
+            var : `float`
+                Variance at (dx, dy).
+            cov : `float`
+                Covariance at (dx, dy).
+            nPix : `int`
+                Number of pixel pairs used to evaluate var and cov.
+        """
+        outList = []
+        var = 0
+        # (dy,dx) = (0,0) has to be first
+        for dy in range(maxRange + 1):
+            for dx in range(0, maxRange + 1):
+                if (dx*dy > 0):
+                    cov1, nPix1 = self.covDirectValue(diffImage, weightImage, dx, dy)
+                    cov2, nPix2 = self.covDirectValue(diffImage, weightImage, dx, -dy)
+                    cov = 0.5*(cov1 + cov2)
+                    nPix = nPix1 + nPix2
+                else:
+                    cov, nPix = self.covDirectValue(diffImage, weightImage, dx, dy)
+                if (dx == 0 and dy == 0):
+                    var = cov
+                outList.append((dx, dy, var, cov, nPix))
+
+        return outList
+
+    def covDirectValue(self, diffImage, weightImage, dx, dy):
+        """Compute covariances of diffImage in real space at lag (dx, dy).
+
+        Taken from https://github.com/PierreAstier/bfptc/ (c.f., appendix of Astier+19).
+
+        Parameters
+        ----------
+        diffImage : `numpy.array`
+            Image to compute the covariance of.
+
+        weightImage : `numpy.array`
+            Weight image of diffImage (1's and 0's for good and bad pixels, respectively).
+
+        dx : `int`
+            Lag in x.
+
+        dy : `int`
+            Lag in y.
+
+        Returns
+        -------
+        cov : `float`
+            Covariance at (dx, dy)
+
+        nPix : `int`
+            Number of pixel pairs used to evaluate var and cov.
+        """
+        (nCols, nRows) = diffImage.shape
+        # switching both signs does not change anything:
+        # it just swaps im1 and im2 below
+        if (dx < 0):
+            (dx, dy) = (-dx, -dy)
+        # now, we have dx >0. We have to distinguish two cases
+        # depending on the sign of dy
+        if dy >= 0:
+            im1 = diffImage[dy:, dx:]
+            w1 = weightImage[dy:, dx:]
+            im2 = diffImage[:nCols - dy, :nRows - dx]
+            w2 = weightImage[:nCols - dy, :nRows - dx]
+        else:
+            im1 = diffImage[:nCols + dy, dx:]
+            w1 = weightImage[:nCols + dy, dx:]
+            im2 = diffImage[-dy:, :nRows - dx]
+            w2 = weightImage[-dy:, :nRows - dx]
+        # use the same mask for all 3 calculations
+        wAll = w1*w2
+        # do not use mean() because weightImage=0 pixels would then count
+        nPix = wAll.sum()
+        im1TimesW = im1*wAll
+        s1 = im1TimesW.sum()/nPix
+        s2 = (im2*wAll).sum()/nPix
+        p = (im1TimesW*im2).sum()/nPix
+        cov = p - s1*s2
+
+        return cov, nPix
+
+
+
 
     def buildLinearizerObject(self, dataset, detector, calibDate, linearizerType, instruName='',
                               tableArray=None, log=None):
@@ -790,10 +882,6 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
            to mean vs time curve. This array will be one row (for the particular amplifier at hand)
            of the table array for LinearizeLookupTable.
 
-        dataset.linearityResidual : `list` of `float`
-            Linearity residual from the mean vs time curve, defined as
-            100*(1 - meanSignalReference/expTimeReference/(meanSignal/expTime).
-
         dataset.meanSignalVsTimePolyFitPars  : `list` of `float`
             Parameters from n-order polynomial fit to meanSignalVector vs exposureTimeVector.
 
@@ -844,23 +932,14 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         # Coefficient for LinearizedSquared. Called "c0" in linearize.py
         c0 = polynomialLinearizerCoefficients[2]
 
-        # Linearity residual
-        linResidualTimeIndex = self.config.linResidualTimeIndex
-        if exposureTimeVector[linResidualTimeIndex] == 0.0:
-            raise RuntimeError("Reference time for linearity residual can't be 0.0")
-        linResidual = 100*(1 - ((meanSignalVector[linResidualTimeIndex] /
-                           exposureTimeVector[linResidualTimeIndex]) /
-                           (meanSignalVector/exposureTimeVector)))
-
         # Fractional non-linearity residual, w.r.t linear part of polynomial fit
         linearPart = parsFit[0] + k1*exposureTimeVector
         fracNonLinearityResidual = 100*(linearPart - meanSignalVector)/linearPart
 
-        dataset = LinearityResidualsAndLinearizersDataset([], None, [], [], [], [], [], None)
+        dataset = LinearityResidualsAndLinearizersDataset([], None, [], [], [], [], None)
         dataset.polynomialLinearizerCoefficients = polynomialLinearizerCoefficients
         dataset.quadraticPolynomialLinearizerCoefficient = c0
         dataset.linearizerTableRow = linearizerTableRow
-        dataset.linearityResidual = linResidual
         dataset.meanSignalVsTimePolyFitPars = parsFit
         dataset.meanSignalVsTimePolyFitParsErr = parsFitErr
         dataset.fractionalNonLinearityResidual = fracNonLinearityResidual
@@ -975,7 +1054,6 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 dataset.noiseErr[ampName] = np.nan
                 dataset.nonLinearity[ampName] = np.nan
                 dataset.nonLinearityError[ampName] = np.nan
-                dataset.nonLinearityResiduals[ampName] = np.nan
                 dataset.fractionalNonLinearityResiduals[ampName] = np.nan
                 dataset.coefficientLinearizeSquared[ampName] = np.nan
                 dataset.ptcFitPars[ampName] = np.nan
@@ -991,7 +1069,6 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             else:
                 parsFit, parsFitErr, reducedChiSqPtc = fitLeastSq(parsIniPtc, meanVecFinal,
                                                                   varVecFinal, ptcFunc)
-
             dataset.ptcFitPars[ampName] = parsFit
             dataset.ptcFitParsError[ampName] = parsFitErr
             dataset.ptcFitReducedChiSquared[ampName] = reducedChiSqPtc
@@ -1052,7 +1129,6 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 tableArray[i, :] = datasetLinRes.linearizerTableRow
             dataset.nonLinearity[ampName] = datasetLinRes.meanSignalVsTimePolyFitPars
             dataset.nonLinearityError[ampName] = datasetLinRes.meanSignalVsTimePolyFitParsErr
-            dataset.nonLinearityResiduals[ampName] = datasetLinRes.linearityResidual
             dataset.fractionalNonLinearityResiduals[ampName] = datasetLinRes.fractionalNonLinearityResidual
             dataset.nonLinearityReducedChiSquared[ampName] = datasetLinRes.meanSignalVsTimePolyFitReducedChiSq
             # Slice correction coefficients (starting at 2) for polynomial linearizer. The first
@@ -1064,214 +1140,3 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             dataset.coefficientLinearizeSquared[ampName] = quadPolyLinCoeff
 
         return dataset
-
-    def plotCovariancesAstier(self, dataRef, covAstierFits, covAstierFitsWithoutB, tupleCovariancesWithTags,
-                              log=None):
-        dirname = dataRef.getUri(datasetType='cpPipePlotRoot', write=True)
-        if not os.path.exists(dirname):
-            os.makedirs(dirname)
-
-        detNum = dataRef.dataId[self.config.ccdKey]
-        filename = f"PTC_COVS_ASTIER_det{detNum}.pdf"
-        filenameFull = os.path.join(dirname, filename)
-        with PdfPages(filenameFull) as pdfPages:
-            covAstierMakeAllPlots(covAstierFits, covAstierFitsWithoutB, tupleCovariancesWithTags, pdfPages,
-                                  log=log)
-
-    def plot(self, dataRef, dataset, ptcFitType):
-        dirname = dataRef.getUri(datasetType='cpPipePlotRoot', write=True)
-        if not os.path.exists(dirname):
-            os.makedirs(dirname)
-
-        detNum = dataRef.dataId[self.config.ccdKey]
-        filename = f"PTC_det{detNum}.pdf"
-        filenameFull = os.path.join(dirname, filename)
-        with PdfPages(filenameFull) as pdfPages:
-            self._plotPtc(dataset, ptcFitType, pdfPages)
-
-    def _plotPtc(self, dataset, ptcFitType, pdfPages):
-        """Plot PTC, linearity, and linearity residual per amplifier"""
-
-        reducedChiSqPtc = dataset.ptcFitReducedChiSquared
-        if ptcFitType == 'ASTIERAPPROXIMATION':
-            ptcFunc = funcAstier
-            stringTitle = (r"Var = $\frac{1}{2g^2a_{00}}(\exp (2a_{00} \mu g) - 1) + \frac{n_{00}}{g^2}$ "
-                           r" ($chi^2$/dof = %g)" % (reducedChiSqPtc))
-        if ptcFitType == 'POLYNOMIAL':
-            ptcFunc = funcPolynomial
-            stringTitle = r"Polynomial (degree: %g)" % (self.config.polynomialFitDegree)
-
-        legendFontSize = 7
-        labelFontSize = 7
-        titleFontSize = 9
-        supTitleFontSize = 18
-        markerSize = 25
-
-        # General determination of the size of the plot grid
-        nAmps = len(dataset.ampNames)
-        if nAmps == 2:
-            nRows, nCols = 2, 1
-        nRows = np.sqrt(nAmps)
-        mantissa, _ = np.modf(nRows)
-        if mantissa > 0:
-            nRows = int(nRows) + 1
-            nCols = nRows
-        else:
-            nRows = int(nRows)
-            nCols = nRows
-
-        f, ax = plt.subplots(nrows=nRows, ncols=nCols, sharex='col', sharey='row', figsize=(13, 10))
-        f2, ax2 = plt.subplots(nrows=nRows, ncols=nCols, sharex='col', sharey='row', figsize=(13, 10))
-
-        for i, (amp, a, a2) in enumerate(zip(dataset.ampNames, ax.flatten(), ax2.flatten())):
-            meanVecOriginal = np.array(dataset.rawMeans[amp])
-            varVecOriginal = np.array(dataset.rawVars[amp])
-            mask = dataset.visitMask[amp]
-            meanVecFinal = meanVecOriginal[mask]
-            varVecFinal = varVecOriginal[mask]
-            meanVecOutliers = meanVecOriginal[np.invert(mask)]
-            varVecOutliers = varVecOriginal[np.invert(mask)]
-            pars, parsErr = dataset.ptcFitPars[amp], dataset.ptcFitParsError[amp]
-
-            if ptcFitType == 'ASTIERAPPROXIMATION':
-                if len(meanVecFinal):
-                    ptcA00, ptcA00error = pars[0], parsErr[0]
-                    ptcGain, ptcGainError = pars[1], parsErr[1]
-                    ptcNoise = np.sqrt(np.fabs(pars[2]))
-                    ptcNoiseError = 0.5*(parsErr[2]/np.fabs(pars[2]))*np.sqrt(np.fabs(pars[2]))
-                    stringLegend = (f"a00: {ptcA00:.2e}+/-{ptcA00error:.2e} 1/e"
-                                    f"\n Gain: {ptcGain:.4}+/-{ptcGainError:.2e} e/DN"
-                                    f"\n Noise: {ptcNoise:.4}+/-{ptcNoiseError:.2e} e \n")
-
-            if ptcFitType == 'POLYNOMIAL':
-                if len(meanVecFinal):
-                    ptcGain, ptcGainError = 1./pars[1], np.fabs(1./pars[1])*(parsErr[1]/pars[1])
-                    ptcNoise = np.sqrt(np.fabs(pars[0]))*ptcGain
-                    ptcNoiseError = (0.5*(parsErr[0]/np.fabs(pars[0]))*(np.sqrt(np.fabs(pars[0]))))*ptcGain
-                    stringLegend = (f"Noise: {ptcNoise:.4}+/-{ptcNoiseError:.2e} e \n"
-                                    f"Gain: {ptcGain:.4}+/-{ptcGainError:.2e} e/DN \n")
-
-                a.set_xlabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
-                a.set_ylabel(r'Variance (DN$^2$)', fontsize=labelFontSize)
-                a.tick_params(labelsize=11)
-                a.set_xscale('linear', fontsize=labelFontSize)
-                a.set_yscale('linear', fontsize=labelFontSize)
-
-                a2.set_xlabel(r'Mean Signal ($\mu$, DN)', fontsize=labelFontSize)
-                a2.set_ylabel(r'Variance (DN$^2$)', fontsize=labelFontSize)
-                a2.tick_params(labelsize=11)
-                a2.set_xscale('log')
-                a2.set_yscale('log')
-
-            if len(meanVecFinal):  # Empty if the whole amp is bad, for example.
-                minMeanVecFinal = np.min(meanVecFinal)
-                maxMeanVecFinal = np.max(meanVecFinal)
-                meanVecFit = np.linspace(minMeanVecFinal, maxMeanVecFinal, 100*len(meanVecFinal))
-                minMeanVecOriginal = np.min(meanVecOriginal)
-                maxMeanVecOriginal = np.max(meanVecOriginal)
-                deltaXlim = maxMeanVecOriginal - minMeanVecOriginal
-
-                a.plot(meanVecFit, ptcFunc(pars, meanVecFit), color='red')
-                a.plot(meanVecFinal, pars[0] + pars[1]*meanVecFinal, color='green', linestyle='--')
-                a.scatter(meanVecFinal, varVecFinal, c='blue', marker='o', s=markerSize)
-                a.scatter(meanVecOutliers, varVecOutliers, c='magenta', marker='s', s=markerSize)
-                a.text(0.03, 0.8, stringLegend, transform=a.transAxes, fontsize=legendFontSize)
-                a.set_title(amp, fontsize=titleFontSize)
-                a.set_xlim([minMeanVecOriginal - 0.2*deltaXlim, maxMeanVecOriginal + 0.2*deltaXlim])
-
-                # Same, but in log-scale
-                a2.plot(meanVecFit, ptcFunc(pars, meanVecFit), color='red')
-                a2.scatter(meanVecFinal, varVecFinal, c='blue', marker='o', s=markerSize)
-                a2.scatter(meanVecOutliers, varVecOutliers, c='magenta', marker='s', s=markerSize)
-                a2.text(0.03, 0.8, stringLegend, transform=a2.transAxes, fontsize=legendFontSize)
-                a2.set_title(amp, fontsize=titleFontSize)
-                a2.set_xlim([minMeanVecOriginal, maxMeanVecOriginal])
-            else:
-                a.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
-                a2.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
-
-        f.suptitle("PTC \n Fit: " + stringTitle, fontsize=20)
-        pdfPages.savefig(f)
-        f2.suptitle("PTC (log-log)", fontsize=20)
-        pdfPages.savefig(f2)
-
-        # Plot mean vs time
-        f, ax = plt.subplots(nrows=4, ncols=4, sharex='col', sharey='row', figsize=(13, 10))
-        for i, (amp, a) in enumerate(zip(dataset.ampNames, ax.flatten())):
-            meanVecFinal = np.array(dataset.rawMeans[amp])[dataset.visitMask[amp]]
-            timeVecFinal = np.array(dataset.rawExpTimes[amp])[dataset.visitMask[amp]]
-
-            a.set_xlabel('Time (sec)', fontsize=labelFontSize)
-            a.set_ylabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
-            a.tick_params(labelsize=labelFontSize)
-            a.set_xscale('linear', fontsize=labelFontSize)
-            a.set_yscale('linear', fontsize=labelFontSize)
-
-            if len(meanVecFinal):
-                pars, parsErr = dataset.nonLinearity[amp], dataset.nonLinearityError[amp]
-                k0, k0Error = pars[0], parsErr[0]
-                k1, k1Error = pars[1], parsErr[1]
-                k2, k2Error = pars[2], parsErr[2]
-                stringLegend = (f"k0: {k0:.4}+/-{k0Error:.2e} DN\n k1: {k1:.4}+/-{k1Error:.2e} DN/t"
-                                f"\n k2: {k2:.2e}+/-{k2Error:.2e} DN/t^2 \n")
-                a.scatter(timeVecFinal, meanVecFinal)
-                a.plot(timeVecFinal, funcPolynomial(pars, timeVecFinal), color='red')
-                a.text(0.03, 0.75, stringLegend, transform=a.transAxes, fontsize=legendFontSize)
-                a.set_title(f"{amp}", fontsize=titleFontSize)
-            else:
-                a.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
-
-        f.suptitle("Linearity \n Fit: Polynomial (degree: %g)"
-                   % (self.config.polynomialFitDegreeNonLinearity),
-                   fontsize=supTitleFontSize)
-        pdfPages.savefig(f)
-
-        # Plot linearity residual
-        f, ax = plt.subplots(nrows=4, ncols=4, sharex='col', sharey='row', figsize=(13, 10))
-        for i, (amp, a) in enumerate(zip(dataset.ampNames, ax.flatten())):
-            meanVecFinal = np.array(dataset.rawMeans[amp])[dataset.visitMask[amp]]
-            linRes = np.array(dataset.nonLinearityResiduals[amp])
-
-            a.set_xlabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
-            a.set_ylabel('LR (%)', fontsize=labelFontSize)
-            a.set_xscale('linear', fontsize=labelFontSize)
-            a.set_yscale('linear', fontsize=labelFontSize)
-            if len(meanVecFinal):
-                a.axvline(x=timeVecFinal[self.config.linResidualTimeIndex], color='g', linestyle='--')
-                a.scatter(meanVecFinal, linRes)
-                a.set_title(f"{amp}", fontsize=titleFontSize)
-                a.axhline(y=0, color='k')
-                a.tick_params(labelsize=labelFontSize)
-            else:
-                a.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
-
-        f.suptitle(r"Linearity Residual: $100\times(1 - \mu_{\rm{ref}}/t_{\rm{ref}})/(\mu / t))$" + "\n" +
-                   r"$t_{\rm{ref}}$: " + f"{timeVecFinal[2]} s", fontsize=supTitleFontSize)
-        pdfPages.savefig(f)
-
-        # Plot fractional non-linearity residual (w.r.t linear part of polynomial fit)
-        f, ax = plt.subplots(nrows=4, ncols=4, sharex='col', sharey='row', figsize=(13, 10))
-        for i, (amp, a) in enumerate(zip(dataset.ampNames, ax.flatten())):
-            meanVecFinal = np.array(dataset.rawMeans[amp])[dataset.visitMask[amp]]
-            fracLinRes = np.array(dataset.fractionalNonLinearityResiduals[amp])
-
-            a.axhline(y=0, color='k')
-            a.axvline(x=0, color='k', linestyle='-')
-            a.set_xlabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
-            a.set_ylabel('Fractional nonlinearity (%)', fontsize=labelFontSize)
-            a.tick_params(labelsize=labelFontSize)
-            a.set_xscale('linear', fontsize=labelFontSize)
-            a.set_yscale('linear', fontsize=labelFontSize)
-
-            if len(meanVecFinal):
-                a.scatter(meanVecFinal, fracLinRes, c='g')
-                a.set_title(amp, fontsize=titleFontSize)
-            else:
-                a.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
-
-        f.suptitle(r"Fractional NL residual" + "\n" +
-                   r"$100\times \frac{(k_0 + k_1*Time-\mu)}{k_0+k_1*Time}$",
-                   fontsize=supTitleFontSize)
-        pdfPages.savefig(f)
-
-        return

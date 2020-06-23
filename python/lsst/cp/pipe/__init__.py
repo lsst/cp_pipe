@@ -32,3 +32,4 @@ from .defects import *
 from .ptc import *
 from .cpCombine import *
 from .cpCertify import *
+from .plotPtc import *

@@ -36,7 +36,7 @@ import lsst.cp.pipe as cpPipe
 import lsst.ip.isr.isrMock as isrMock
 from lsst.cp.pipe.ptc import PhotonTransferCurveDataset
 from lsst.cp.pipe.astierCovPtcUtils import fitData
-import lsst.afw.math as afwMath
+from lsst.cp.pipe.utils import funcPolynomial
 
 
 class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
@@ -44,15 +44,6 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
     def setUp(self):
         self.defaultConfig = cpPipe.ptc.MeasurePhotonTransferCurveTask.ConfigClass()
-        self.defaultConfig.isr.doFlat = False
-        self.defaultConfig.isr.doFringe = False
-        self.defaultConfig.isr.doCrosstalk = False
-        self.defaultConfig.isr.doUseOpticsTransmission = False
-        self.defaultConfig.isr.doUseFilterTransmission = False
-        self.defaultConfig.isr.doUseSensorTransmission = False
-        self.defaultConfig.isr.doUseAtmosphereTransmission = False
-        self.defaultConfig.isr.doAttachTransmissionCurve = False
-
         self.defaultTask = cpPipe.ptc.MeasurePhotonTransferCurveTask(config=self.defaultConfig)
 
         self.flatMean = 2000
@@ -133,6 +124,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         Cov[0, 0] (i.e., the variances) are similar to the variances calculated with the standard
         method (when doCovariancesAstier=false),
         """
+        localDataset = copy.copy(self.dataset)
         config = copy.copy(self.defaultConfig)
         task = cpPipe.ptc.MeasurePhotonTransferCurveTask(config=config)
 
@@ -146,179 +138,31 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
             for ampNumber, amp in enumerate(self.ampNames):
                 # cov has (i, j, var, cov, npix)
-                mu1, mu2, covs = task.getCovariancesAstier(mockExp1, mockExp2)
-                # calculate mean and variance of difference image in the standard way
-                mu, varDiff = task.measureMeanVarPair(mockExp1, mockExp2)
-                muStandard.setdefault(amp, []).append(mu)
+                muDiff, varDiff, covAstier = task.measureMeanVarCov(mockExp1, mockExp2)
+                muStandard.setdefault(amp, []).append(muDiff)
                 varStandard.setdefault(amp, []).append(varDiff)
+
                 # Calculate covariances in an independent way: direct space
-                _, _, covsDirect = self.getCovariancesAstierDirect(mockExp1, mockExp2, config)
+                _, _, covsDirect = task.measureMeanVarCov(mockExp1, mockExp2, covAstierRealSpace=True)
+
                 # Test that the arrays "covs" (FFT) and "covDirect" (direct space) are the same
-                for row1, row2 in zip(covs, covsDirect):
+                for row1, row2 in zip(covAstier, covsDirect):
                     for a, b in zip(row1, row2):
                         self.assertAlmostEqual(a, b)
-                tupleRows += [(mu1, mu2) + cov + (ampNumber, expTime, amp) for cov in covs]
-                tags = ['mu1', 'mu2', 'i', 'j', 'var', 'cov', 'npix', 'ext', 'expTime', 'ampName']
+                tupleRows += [(muDiff, ) + covRow + (ampNumber, expTime, amp) for covRow in covAstier]
+                tags = ['mu', 'i', 'j', 'var', 'cov', 'npix', 'ext', 'expTime', 'ampName']
             allTags += tags
             tupleRecords += tupleRows
         covariancesWithTags = np.core.records.fromrecords(tupleRecords, names=allTags)
         covFits, _ = fitData(covariancesWithTags)
-        dataset = task.getOutputPtcDataCovAstier(covFits)
+        localDataset = task.getOutputPtcDataCovAstier(localDataset, covFits)
 
         # Chek the gain and that the ratio of the variance caclulated via cov Astier (FFT) and
         # that calculated with the standard PTC is close to 1.
         for amp in self.ampNames:
-            self.assertAlmostEqual(dataset.gain[amp][0], 0.75, places=2)
-            for v1, v2 in zip(varStandard[amp], dataset.varAdu[amp][0]):
-                self.assertAlmostEqual(v1/v2, 1.0, places=1)
-
-    def getCovariancesAstierDirect(self, exposure1, exposure2, config, region=None):
-        """Calculate covariances of a difference image in real space"""
-        if region is not None:
-            im1Area = exposure1.maskedImage[region]
-            im2Area = exposure2.maskedImage[region]
-        else:
-            im1Area = exposure1.maskedImage
-            im2Area = exposure2.maskedImage
-
-        im1Area = afwMath.binImage(im1Area, config.binSize)
-        im2Area = afwMath.binImage(im2Area, config.binSize)
-
-        statsCtrl = afwMath.StatisticsControl()
-        statsCtrl.setNumSigmaClip(config.nSigmaClipPtc)
-        statsCtrl.setNumIter(config.nIterSigmaClipPtc)
-        #  Clipped mean of images; then average of mean.
-        mu1 = afwMath.makeStatistics(im1Area, afwMath.MEANCLIP, statsCtrl).getValue()
-        mu2 = afwMath.makeStatistics(im2Area, afwMath.MEANCLIP, statsCtrl).getValue()
-        mu = 0.5*(mu1 + mu2)
-
-        # Take difference of pairs
-        # symmetric formula: diff = (mu2*im1-mu1*im2)/(0.5*(mu1+mu2))
-        temp = im2Area.clone()
-        temp *= mu1
-        diffIm = im1Area.clone()
-        diffIm *= mu2
-        diffIm -= temp
-        diffIm /= mu
-
-        # Get the mask and identify good pixels as '1', and the rest as '0'.
-        w1 = np.where(im1Area.getMask().getArray() == 0, 1, 0)
-        w2 = np.where(im2Area.getMask().getArray() == 0, 1, 0)
-
-        w12 = w1*w2
-        wDiff = np.where(diffIm.getMask().getArray() == 0, 1, 0)
-        w = w12*wDiff
-
-        maxRangeCov = config.maximumRangeCovariancesAstier
-        covs = self.computeCovDirect(diffIm.getImage().getArray(), w, maxRangeCov)
-
-        return mu1, mu2, covs
-
-    def computeCovDirect(self, diffImage, weightImage, maxRange):
-        """Compute covariances of diffImage in real space.
-
-        For lags larger than ~25, it is slower than the FFT way.
-        Taken from https://github.com/PierreAstier/bfptc/
-
-        Parameters
-        ----------
-        diffImage : `numpy.array`
-            Image to compute the covariance of.
-
-        weightImage : `numpy.array`
-            Weight image of diffImage (1's and 0's for good and bad pixels, respectively).
-
-        maxRange : `int`
-            Last index of the covariance to be computed.
-
-        Returns
-        -------
-        outList : `list`
-            List with tuples of the form (dx, dy, var, cov, npix), where:
-            dx : `int`
-                Lag in x
-            dy : `int`
-                Lag in y
-            var : `float`
-                Variance at (dx, dy).
-            cov : `float`
-                Covariance at (dx, dy).
-            nPix : `int`
-                Number of pixel pairs used to evaluate var and cov.
-        """
-        outList = []
-        var = 0
-        # (dy,dx) = (0,0) has to be first
-        for dy in range(maxRange + 1):
-            for dx in range(0, maxRange + 1):
-                if (dx*dy > 0):
-                    cov1, nPix1 = self.covDirectValue(diffImage, weightImage, dx, dy)
-                    cov2, nPix2 = self.covDirectValue(diffImage, weightImage, dx, -dy)
-                    cov = 0.5*(cov1 + cov2)
-                    nPix = nPix1 + nPix2
-                else:
-                    cov, nPix = self.covDirectValue(diffImage, weightImage, dx, dy)
-                if (dx == 0 and dy == 0):
-                    var = cov
-                outList.append((dx, dy, var, cov, nPix))
-
-        return outList
-
-    def covDirectValue(self, diffImage, weightImage, dx, dy):
-        """Compute covariances of diffImage in real space at lag (dx, dy).
-
-        Taken from https://github.com/PierreAstier/bfptc/ (c.f., appendix of Astier+19).
-
-        Parameters
-        ----------
-        diffImage : `numpy.array`
-            Image to compute the covariance of.
-
-        weightImage : `numpy.array`
-            Weight image of diffImage (1's and 0's for good and bad pixels, respectively).
-
-        dx : `int`
-            Lag in x.
-
-        dy : `int`
-            Lag in y.
-
-        Returns
-        -------
-        cov : `float`
-            Covariance at (dx, dy)
-
-        nPix : `int`
-            Number of pixel pairs used to evaluate var and cov.
-        """
-        (nCols, nRows) = diffImage.shape
-        # switching both signs does not change anything:
-        # it just swaps im1 and im2 below
-        if (dx < 0):
-            (dx, dy) = (-dx, -dy)
-        # now, we have dx >0. We have to distinguish two cases
-        # depending on the sign of dy
-        if dy >= 0:
-            im1 = diffImage[dy:, dx:]
-            w1 = weightImage[dy:, dx:]
-            im2 = diffImage[:nCols - dy, :nRows - dx]
-            w2 = weightImage[:nCols - dy, :nRows - dx]
-        else:
-            im1 = diffImage[:nCols + dy, dx:]
-            w1 = weightImage[:nCols + dy, dx:]
-            im2 = diffImage[-dy:, :nRows - dx]
-            w2 = weightImage[-dy:, :nRows - dx]
-        # use the same mask for all 3 calculations
-        wAll = w1*w2
-        # do not use mean() because weightImage=0 pixels would then count
-        nPix = wAll.sum()
-        im1TimesW = im1*wAll
-        s1 = im1TimesW.sum()/nPix
-        s2 = (im2*wAll).sum()/nPix
-        p = (im1TimesW*im2).sum()/nPix
-        cov = p - s1*s2
-
-        return cov, nPix
+            self.assertAlmostEqual(localDataset.gain[amp], 0.75, places=2)
+            for v1, v2 in zip(varStandard[amp], localDataset.finalVars[amp][0]):
+                self.assertAlmostEqual(v1/v2, 1.0, places=4)
 
     def ptcFitAndCheckPtc(self, order=None, fitType='', doTableArray=False):
         localDataset = copy.copy(self.dataset)
@@ -348,13 +192,16 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         task = cpPipe.ptc.MeasurePhotonTransferCurveTask(config=config)
 
         if doTableArray:
+            # Non-linearity
             numberAmps = len(self.ampNames)
             numberAduValues = config.maxAduForLookupTableLinearizer
             lookupTableArray = np.zeros((numberAmps, numberAduValues), dtype=np.float32)
-            returnedDataset = task.fitPtcAndNonLinearity(localDataset, ptcFitType=fitType,
-                                                         tableArray=lookupTableArray)
+            localDataset = task.fitPtc(localDataset, ptcFitType=fitType)
+            returnedDataset = task.fitNonLinearity(localDataset, tableArray=lookupTableArray)
         else:
-            returnedDataset = task.fitPtcAndNonLinearity(localDataset, ptcFitType=fitType)
+            # Standartd PTC
+            localDataset = task.fitPtc(localDataset, ptcFitType=fitType)
+            returnedDataset = task.fitNonLinearity(localDataset)
 
         if doTableArray:
             # check that the linearizer table has been filled out properly
@@ -362,8 +209,8 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                 tMax = (config.maxAduForLookupTableLinearizer)/self.flux
                 timeRange = np.linspace(0., tMax, config.maxAduForLookupTableLinearizer)
                 signalIdeal = timeRange*self.flux
-                signalUncorrected = task.funcPolynomial(np.array([0.0, self.flux, self.k2NonLinearity]),
-                                                        timeRange)
+                signalUncorrected = funcPolynomial(np.array([0.0, self.flux, self.k2NonLinearity]),
+                                                   timeRange)
                 linearizerTableRow = signalIdeal - signalUncorrected
                 self.assertEqual(len(linearizerTableRow), len(lookupTableArray[i, :]))
                 for j in np.arange(len(linearizerTableRow)):
@@ -374,16 +221,14 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             maskAmp = localDataset.visitMask[ampName]
             finalMuVec = localDataset.rawMeans[ampName][maskAmp]
             finalTimeVec = localDataset.rawExpTimes[ampName][maskAmp]
-            inputNonLinearityResiduals = 100*(1 - ((finalMuVec[2]/finalTimeVec[2])/(finalMuVec/finalTimeVec)))
             linearPart = self.flux*finalTimeVec
             inputFracNonLinearityResiduals = 100*(linearPart - finalMuVec)/linearPart
-
             self.assertEqual(fitType, localDataset.ptcFitType[ampName])
             self.assertAlmostEqual(self.gain, localDataset.gain[ampName])
             if fitType == 'POLYNOMIAL':
                 self.assertAlmostEqual(self.c1, localDataset.ptcFitPars[ampName][1])
                 self.assertAlmostEqual(np.sqrt(self.noiseSq)*self.gain, localDataset.noise[ampName])
-            else:
+            if fitType == 'ASTIERAPPROXIMATION':
                 self.assertAlmostEqual(self.a00, localDataset.ptcFitPars[ampName][0])
                 # noise already in electrons for 'ASTIERAPPROXIMATION' fit
                 self.assertAlmostEqual(np.sqrt(self.noiseSq), localDataset.noise[ampName])
@@ -395,13 +240,6 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             # Non-linearity coefficient for quadratic linearizer
             self.assertAlmostEqual(-self.k2NonLinearity/(self.flux**2),
                                    localDataset.coefficientLinearizeSquared[ampName])
-
-            # Linearity residuals
-            self.assertEqual(len(localDataset.nonLinearityResiduals[ampName]),
-                             len(inputNonLinearityResiduals))
-            for calc, truth in zip(localDataset.nonLinearityResiduals[ampName],
-                                   inputNonLinearityResiduals):
-                self.assertAlmostEqual(calc, truth)
 
             # Fractional nonlinearity residuals
             self.assertEqual(len(localDataset.fractionalNonLinearityResiduals[ampName]),
@@ -426,7 +264,6 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             maskAmp = returnedDataset.visitMask[ampName]
             finalMuVec = returnedDataset.rawMeans[ampName][maskAmp]
             finalTimeVec = returnedDataset.rawExpTimes[ampName][maskAmp]
-            inputNonLinearityResiduals = 100*(1 - ((finalMuVec[2]/finalTimeVec[2])/(finalMuVec/finalTimeVec)))
             linearPart = self.flux*finalTimeVec
             inputFracNonLinearityResiduals = 100*(linearPart - finalMuVec)/linearPart
 
@@ -449,13 +286,6 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             self.assertAlmostEqual(-self.k2NonLinearity/(self.flux**2),
                                    returnedDataset.coefficientLinearizeSquared[ampName])
 
-            # Linearity residuals
-            self.assertEqual(len(returnedDataset.nonLinearityResiduals[ampName]),
-                             len(inputNonLinearityResiduals))
-            for calc, truth in zip(returnedDataset.nonLinearityResiduals[ampName],
-                                   inputNonLinearityResiduals):
-                self.assertAlmostEqual(calc, truth)
-
             # Fractional nonlinearity residuals
             self.assertEqual(len(returnedDataset.fractionalNonLinearityResiduals[ampName]),
                              len(inputFracNonLinearityResiduals))
@@ -476,13 +306,12 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
     def test_ptcFit(self):
         for createArray in [True, False]:
-            for typeAndOrder in [('POLYNOMIAL', 2), ('POLYNOMIAL', 3), ('ASTIERAPPROXIMATION', None)]:
-                self.ptcFitAndCheckPtc(fitType=typeAndOrder[0], order=typeAndOrder[1],
-                                       doTableArray=createArray)
+            for (fitType, order) in [('POLYNOMIAL', 2), ('POLYNOMIAL', 3), ('ASTIERAPPROXIMATION', None)]:
+                self.ptcFitAndCheckPtc(fitType=fitType, order=order, doTableArray=createArray)
 
     def test_meanVarMeasurement(self):
         task = self.defaultTask
-        mu, varDiff = task.measureMeanVarPair(self.flatExp1, self.flatExp2)
+        mu, varDiff, _ = task.measureMeanVarCov(self.flatExp1, self.flatExp2)
 
         self.assertLess(self.flatWidth - np.sqrt(varDiff), 1)
         self.assertLess(self.flatMean - mu, 1)
