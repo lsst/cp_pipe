@@ -1,7 +1,4 @@
-#  Code taken from Pierre Astier's bfptc gitHub repository, where the following
-#  is written:
-#  "I don't know how wrote that. It belonged to "saunerie", developed
-#  at LPNHE (Paris). Just copied here."
+#  Code developed at LPNHE ("saunerie", Paris)
 
 """
 This module contains utility classes to handle parameters in linear and
@@ -17,9 +14,6 @@ and remap the remaining free parameters into a contiguous vector.
 """
 
 import numpy as np
-
-import lsst.pipe.base as pipeBase
-
 
 
 class Structure(object):

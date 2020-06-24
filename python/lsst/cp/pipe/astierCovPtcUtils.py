@@ -120,36 +120,9 @@ class CovFft:
 
 
 def fftSize(s):
+    """Calculate the size fof one dimension for the FFT"""
     x = int(np.log(s)/np.log(2.))
     return int(2**(x+1))
-
-
-def computeCovFft(diff, w, fftSize, maxRange):
-    """Compute covariances via FFT
-
-    Parameters
-    ----------
-    diff: `lsst.afw.image.exposure.exposure.ExposureF`
-        Difference image from a pair of flats taken at the same exposure time.
-
-    w: `numpy array`
-        Mask array with 1's (good pixels) and 0's (bad pixels).
-
-    fftSize: `tuple`
-        Size of the DFT: (xSize, ySize)
-
-    maxRange: `int`
-        Maximum range of covariances
-
-    Returns
-    -------
-    CovFft.reportCovFft(maxRange): `list`
-        List with covariance tuples,
-    """
-
-    c = CovFft(diff, w, fftSize, maxRange)
-
-    return c.reportCovFft(maxRange)
 
 
 def computeCovDirect(diffImage, weightImage, maxRange):
@@ -201,6 +174,7 @@ def computeCovDirect(diffImage, weightImage, maxRange):
             outList.append((dx, dy, var, cov, nPix))
 
     return outList
+
 
 def covDirectValue(diffImage, weightImage, dx, dy):
     """Compute covariances of diffImage in real space at lag (dx, dy).
@@ -393,8 +367,3 @@ def fitData(tupleName, maxMu=1e9, maxMuElectrons=1e9, r=8):
         c.fit()
 
     return covFitList, covFitNoBList
-
-
-def CHI2(res, wy):
-    wres = res*wy
-    return (wres*wres).sum()

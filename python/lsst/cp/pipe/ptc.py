@@ -40,7 +40,7 @@ from scipy.optimize import least_squares
 from lsst.ip.isr.linearize import Linearizer
 import datetime
 
-from .astierCovPtcUtils import (fftSize, computeCovFft, computeCovDirect, fitData)
+from .astierCovPtcUtils import (fftSize, CovFft, computeCovDirect, fitData)
 
 
 class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
@@ -73,7 +73,7 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
     polynomialFitDegree = pexConfig.Field(
         dtype=int,
         doc="Degree of polynomial to fit the PTC, when 'ptcFitType'=POLYNOMIAL.",
-        default=2,
+        default=3,
     )
     doCreateLinearizer = pexConfig.Field(
         dtype=bool,
@@ -339,6 +339,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         ----------
         dataRef : list of lsst.daf.persistence.ButlerDataRef
             dataRef for the detector for the visits to be fit.
+
         visitPairs : `iterable` of `tuple` of `int`
             Pairs of visit numbers to be processed together
         """
@@ -382,8 +383,9 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             for ampNumber, amp in enumerate(detector):
                 ampName = amp.getName()
                 # covAstier: (i, j, var (cov[0,0]), cov, npix)
+                doRealSpace = self.config.covAstierRealSpace
                 muDiff, varDiff, covAstier = self.measureMeanVarCov(exp1, exp2, region=amp.getBBox(),
-                                                                    covAstierRealSpace=self.config.covAstierRealSpace)
+                                                                    covAstierRealSpace=doRealSpace)
 
                 datasetPtc.rawExpTimes[ampName].append(expTime)
                 datasetPtc.rawMeans[ampName].append(muDiff)
@@ -403,6 +405,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             # Fit the PTC to a polynomial or to Astier+19 approximation (Eq. 16)
             # Fill up PhotonTransferCurveDataset object.
             datasetPtc = self.fitPtc(datasetPtc, self.config.ptcFitType)
+
         # Fit a poynomial to calculate non-linearity and persist linearizer.
         if self.config.doCreateLinearizer:
             numberAmps = len(amps)
@@ -411,9 +414,12 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
             # Fit (non)linearity of signal vs time curve.
             # Fill up PhotonTransferCurveDataset object.
-            # Fill up array for LUT linearizer.
+            # Fill up array for LUT linearizer (tableArray).
             # Produce coefficients for Polynomial ans Squared linearizers.
-            datasetPtc = self.fitNonLinearity(datasetPtc, tableArray=lookupTableArray)
+            # Build linearizer objects.
+            datasetPtc, linsArray = self.fitNonLinearityAndBuildLinearizers(datasetPtc, detector,
+                                                                            tableArray=lookupTableArray,
+                                                                            log=self.log)
 
             butler = dataRef.getButler()
             self.log.info("Writing linearizers: \n "
@@ -421,23 +427,11 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                           "polynomial (coefficients for a polynomial correction), \n "
                           "and squared linearizer (quadratic coefficient from polynomial)")
 
-            detName = detector.getName()
-            now = datetime.datetime.utcnow()
-            calibDate = now.strftime("%Y-%m-%d")
+            for (linearizer, dataType) in linsArray:
+                detName = detector.getName()
+                now = datetime.datetime.utcnow()
+                calibDate = now.strftime("%Y-%m-%d")
 
-            for linType, dataType in [("LOOKUPTABLE", 'linearizeLut'),
-                                      ("LINEARIZEPOLYNOMIAL", 'linearizePolynomial'),
-                                      ("LINEARIZESQUARED", 'linearizeSquared')]:
-
-                if linType == "LOOKUPTABLE":
-                    tableArray = lookupTableArray
-                else:
-                    tableArray = None
-
-                linearizer = self.buildLinearizerObject(datasetPtc, detector, calibDate, linType,
-                                                        instruName=self.config.instrumentName,
-                                                        tableArray=tableArray,
-                                                        log=self.log)
                 butler.put(linearizer, datasetType=dataType, dataId={'detector': detNum,
                            'detectorName': detName, 'calibDate': calibDate})
 
@@ -446,12 +440,92 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         return pipeBase.Struct(exitStatus=0)
 
-    def fitCovariancesAstier(self, dataset, tupleCovariancesWithTags):
-        covFits, covFitsNoB = fitData(tupleCovariancesWithTags, maxMu=self.config.maxMeanSignal,
+    def fitNonLinearityAndBuildLinearizers(self, dataset, detector, tableArray=None, log=None):
+        """Fit non-linearity function and build linearizer objects.
+
+        Parameters
+        ----------
+        dataset : `lsst.cp.pipe.ptc.PhotonTransferCurveDataset`
+            The dataset containing information such as the means, variances and exposure times.
+
+        detector : `lsst.afw.cameraGeom.Detector`
+            Detector object.
+
+        tableArray : `np.array`, optional
+            Optional. Look-up table array with size rows=nAmps and columns=DN values.
+            It will be modified in-place if supplied.
+
+        log : `lsst.log.Log`, optional
+            Logger to handle messages.
+
+        Returns
+        -------
+        dataset: `lsst.cp.pipe.ptc.PhotonTransferCurveDataset`
+            This is the same dataset as the input paramter, however, it has been modified
+            to include information such as the fit vectors and the fit parameters. See
+            the class `PhotonTransferCurveDatase`.
+
+        linArray : `list`
+            List with (linearizer object, linearizer data type) as entries.
+        """
+
+        # Fit NonLinearity
+        dataset = self.fitNonLinearity(dataset, tableArray=tableArray)
+
+        # Produce linearizer
+        now = datetime.datetime.utcnow()
+        calibDate = now.strftime("%Y-%m-%d")
+
+        linArray = []
+        for linType, dataType in [("LOOKUPTABLE", 'linearizeLut'),
+                                  ("LINEARIZEPOLYNOMIAL", 'linearizePolynomial'),
+                                  ("LINEARIZESQUARED", 'linearizeSquared')]:
+
+            if linType == "LOOKUPTABLE":
+                tableArray = tableArray
+            else:
+                tableArray = None
+
+            linearizer = self.buildLinearizerObject(dataset, detector, calibDate, linType,
+                                                    instruName=self.config.instrumentName,
+                                                    tableArray=tableArray,
+                                                    log=log)
+            linArray.append((linearizer, dataType))
+
+        return dataset, linArray
+
+    def fitCovariancesAstier(self, dataset, covariancesWithTagsArray):
+        """Fit measured flat covariances to full model in Astier+19.
+
+        Parameters
+        ----------
+        dataset : `lsst.cp.pipe.ptc.PhotonTransferCurveDataset`
+            The dataset containing information such as the means, variances and exposure times.
+
+        covariancesWithTagsArray : `numpy.recarray`
+            Tuple with at least (mu, cov, var, i, j, npix), where:
+            mu : 0.5*(m1 + m2), where:
+                mu1: mean value of flat1
+                mu2: mean value of flat2
+            cov: covariance value at lag(i, j)
+            var: variance(covariance value at lag(0, 0))
+            i: lag dimension
+            j: lag dimension
+            npix: number of pixels used for covariance calculation.
+
+        Returns
+        -------
+        dataset: `lsst.cp.pipe.ptc.PhotonTransferCurveDataset`
+            This is the same dataset as the input paramter, however, it has been modified
+            to include information such as the fit vectors and the fit parameters. See
+            the class `PhotonTransferCurveDatase`.
+        """
+
+        covFits, covFitsNoB = fitData(covariancesWithTagsArray, maxMu=self.config.maxMeanSignal,
                                       maxMuElectrons=self.config.maxMeanSignal,
                                       r=self.config.maximumRangeCovariancesAstier)
 
-        dataset.covariancesTuple = tupleCovariancesWithTags
+        dataset.covariancesTuple = covariancesWithTagsArray
         dataset.covariancesFits = covFits
         dataset.covariancesFitsWithNoB = covFitsNoB
         dataset = self.getOutputPtcDataCovAstier(dataset, covFits)
@@ -463,45 +537,20 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         Parameters
         ----------
+        dataset : `lsst.cp.pipe.ptc.PhotonTransferCurveDataset`
+            The dataset containing information such as the means, variances and exposure times.
+
         covFits: `dict`
             Dictionary of CovFit objects, with amp names as keys.
 
         Returns
         -------
-        dataset :`lsst.cp.pipe.ptc.OutputPtcDataCovAstierDataset`
-            The dataset with the gains, reoudout noise, measured signal, measured variance, modeled variance,
-            a00, and b00 coefficients (see Astier+19) per amplifier. Explicitly:
-
-        dataset.gains : `dict`
-            Dictionary with the gains from fitting Eq. 20 of Astier+19, with amp names as keys.
-
-        dataset.noise : `dict`
-            Dictionary with readout noise from fitting Eq. 20 of Astier+19, with amp names as keys.
-
-        dataset.signal : `dict`
-            Dictionary with mean signals, with amp names as keys.
-
-        dataset.var : `dict`
-            Dictionary with measured variances from data, with amp names as keys.
-
-        dataset.varModel : `dict`
-            Dictionary with modeled variance from data, with amp names as keys.
-
-        dataset.signalAdu : `dict`
-            Dictionary with mean signals in ADU, with amp names as keys.
-
-        dataset.varAdu : `dict`
-            Dictionary with measured variances in ADU^2 from data, with amp names as keys.
-
-        dataset.varModelAdu : `dict`
-            Dictionary with modeled variance in ADU^2 from data, with amp names as keys.
-
-        dataset.a00 : `dict`
-            Dictionary with a00 coefficients from full cov model in Astier+19, with amp names as keys.
-
-        daaset.b00 : `dict`
-            Dictionary with b00 coefficients from full cov model in Astier+19, with amp names as keys.
-        """
+        dataset : `lsst.cp.pipe.ptc.PhotonTransferCurveDataset`
+            This is the same dataset as the input paramter, however, it has been modified
+            to include extra information such as the mask 1D array, gains, reoudout noise, measured signal,
+            measured variance, modeled variance, a, and b coefficient matrices (see Astier+19) per amplifier.
+            See the class `PhotonTransferCurveDatase`.
+            """
 
         for i, amp in enumerate(covFits):
             fit = covFits[amp]
@@ -537,14 +586,13 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         region : `lsst.geom.Box2I`, optional
             Region of each exposure where to perform the calculations (e.g, an amplifier).
-        
+
         covAstierRealSpace : `bool`, optional
             Should the covariannces in Astier+19 be calculated in real space or via FFT?
             See Appendix A of Astier+19.
 
-        Return
-        ------
-
+        Returns
+        -------
         mu : `float`
             0.5*(mu1 + mu2), where mu1, and mu2 are the clipped means of the regions in
             both exposures.
@@ -552,6 +600,19 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         varDiff : `float`
             Half of the clipped variance of the difference of the regions inthe two input
             exposures.
+
+        covDiffAstier : `list`
+            List with tuples of the form (dx, dy, var, cov, npix), where:
+                dx : `int`
+                    Lag in x
+                dy : `int`
+                    Lag in y
+                var : `float`
+                    Variance at (dx, dy).
+                cov : `float`
+                    Covariance at (dx, dy).
+                nPix : `int`
+                    Number of pixel pairs used to evaluate var and cov.
         """
 
         if region is not None:
@@ -597,7 +658,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         else:
             shapeDiff = diffIm.getImage().getArray().shape
             fftShape = (fftSize(shapeDiff[0] + maxRangeCov), fftSize(shapeDiff[1]+maxRangeCov))
-            covDiffAstier = computeCovFft(diffIm.getImage().getArray(), w, fftShape, maxRangeCov)
+            c = CovFft(diffIm.getImage().getArray(), w, fftShape, maxRangeCov)
+            covDiffAstier = c.reportCovFft(maxRangeCov)
 
         return mu, varDiff, covDiffAstier
 
@@ -622,16 +684,16 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         -------
         outList : `list`
             List with tuples of the form (dx, dy, var, cov, npix), where:
-            dx : `int`
-                Lag in x
-            dy : `int`
-                Lag in y
-            var : `float`
-                Variance at (dx, dy).
-            cov : `float`
-                Covariance at (dx, dy).
-            nPix : `int`
-                Number of pixel pairs used to evaluate var and cov.
+                dx : `int`
+                    Lag in x
+                dy : `int`
+                    Lag in y
+                var : `float`
+                    Variance at (dx, dy).
+                cov : `float`
+                    Covariance at (dx, dy).
+                nPix : `int`
+                    Number of pixel pairs used to evaluate var and cov.
         """
         outList = []
         var = 0
@@ -707,9 +769,6 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         return cov, nPix
 
-
-
-
     def buildLinearizerObject(self, dataset, detector, calibDate, linearizerType, instruName='',
                               tableArray=None, log=None):
         """Build linearizer object to persist.
@@ -718,16 +777,22 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         ----------
         dataset : `lsst.cp.pipe.ptc.PhotonTransferCurveDataset`
             The dataset containing the means, variances, and exposure times
+
         detector : `lsst.afw.cameraGeom.Detector`
             Detector object
+
         calibDate : `datetime.datetime`
             Calibration date
+
         linearizerType : `str`
             'LOOKUPTABLE', 'LINEARIZESQUARED', or 'LINEARIZEPOLYNOMIAL'
+
         instruName : `str`, optional
             Instrument name
+
         tableArray : `np.array`, optional
             Look-up table array with size rows=nAmps and columns=DN values
+
         log : `lsst.log.Log`, optional
             Logger to handle messages
 
@@ -864,12 +929,12 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         dataset.polynomialLinearizerCoefficients : `list` of `float`
             Coefficients for LinearizePolynomial, where corrImage = uncorrImage + sum_i c_i uncorrImage^(2 +
             i).
-            c_(j-2) = -k_j/(k_1^j) with units (DN^(1-j)). The units of k_j are DN/t^j, and they are fit from
-            meanSignalVector = k0 + k1*exposureTimeVector + k2*exposureTimeVector^2 +...
-                             + kn*exposureTimeVector^n, with n = "polynomialFitDegreeNonLinearity".
-            k_0 and k_1 and degenerate with bias level and gain, and are not used by the non-linearity
-            correction. Therefore, j = 2...n in the above expression (see `LinearizePolynomial` class in
-            `linearize.py`.)
+            c_(j-2) = -k_j/(k_1^j) with units DN^(1-j) (c.f., Eq. 37 of 2003.05978). The units of k_j are
+            DN/t^j, and they are fit from meanSignalVector = k0 + k1*exposureTimeVector +
+            k2*exposureTimeVector^2 + ... + kn*exposureTimeVector^n, with
+            n = "polynomialFitDegreeNonLinearity". k_0 and k_1 and degenerate with bias level and gain,
+            and are not used by the non-linearity correction. Therefore, j = 2...n in the above expression
+            (see `LinearizePolynomial` class in `linearize.py`.)
 
         dataset.quadraticPolynomialLinearizerCoefficient : `float`
             Coefficient for LinearizeSquared, where corrImage = uncorrImage + c0*uncorrImage^2.

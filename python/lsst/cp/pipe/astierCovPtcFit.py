@@ -68,9 +68,10 @@ def makeCovArray(inputTuple, maxRangeFromTuple=8):
     Parameters
     ----------
     inputTuple: `numpy.recarray`
-        Recarray with rows with at least( mu1, mu2, cov, var, i, j, npix), where:
-        mu1: mean value of flat1
-        mu2: mean value of flat2
+        Recarray with rows with at least (mu, cov, var, i, j, npix), where:
+        mu : 0.5*(m1 + m2), where:
+            mu1: mean value of flat1
+            mu2: mean value of flat2
         cov: covariance value at lag(i, j)
         var: variance(covariance value at lag(0, 0))
         i: lag dimension
@@ -94,8 +95,8 @@ def makeCovArray(inputTuple, maxRangeFromTuple=8):
     Notes
     -----
 
-    The input tuple should contain, at least, the following rows:
-    (mu1, mu2, cov, var, i, j, npix), with one entry per lag, and image pair.
+    The input tuple should contain  the following rows:
+    (mu, cov, var, i, j, npix), with one entry per lag, and image pair.
     Different lags(i.e. different i and j) from the same
     image pair have the same values of mu1 and mu2. When i==j==0, cov
     = var.
@@ -198,10 +199,12 @@ class Pol2d:
         ij = itertools.product(range(self.orderx+1), range(self.ordery+1))
         for k, (i, j) in enumerate(ij):
             G[..., k] = x**i * y**j
+        
         return G
 
     def eval(self, x, y):
         G = self.monomials(x, y)
+        
         return np.dot(G, self.coeff)
 
 
@@ -216,10 +219,10 @@ class CovFit:
     Parameters
     ----------
     inputTuple: `numpy.recarray`
-        Tuple with at least( mu1, mu2, cov, var, i, j, npix), where:
-
-        mu1: mean value of flat1
-        mu2: mean value of flat2
+        Tuple with at least (mu, cov, var, i, j, npix), where:
+        mu : 0.5*(m1 + m2), where:
+            mu1: mean value of flat1
+            mu2: mean value of flat2
         cov: covariance value at lag(i, j)
         var: variance(covariance value at lag(0, 0))
         i: lag dimension
@@ -265,6 +268,8 @@ class CovFit:
         self.vcov = self.vcov[:, :maxLag, :maxLag]
         self.sqrtW = self.sqrtW[:, :maxLag, :maxLag]
 
+        return
+
     def setMaxMu(self, maxMu):
         """Select signal level based on max average signal in ADU"""
         # mus are sorted at construction
@@ -274,6 +279,8 @@ class CovFit:
         self.cov = self.cov[:k, ...]
         self.vcov = self.vcov[:k, ...]
         self.sqrtW = self.sqrtW[:k, ...]
+        
+        return
 
     def setMaxMuElectrons(self, maxMuEl):
         """Select signal level based on max average signal in electrons"""
@@ -281,7 +288,10 @@ class CovFit:
         kill = (self.mu*g > maxMuEl)
         self.sqrtW[kill, :, :] = 0
 
+        return 
+
     def copy(self):
+        """Make a copy of params"""
         cop = copy.deepcopy(self)
         # deepcopy does not work for FitParameters.
         if hasattr(self, 'params'):
@@ -327,13 +337,16 @@ class CovFit:
                 break
             oldChi2 = chi2
 
+        return
+
     def getParamValues(self):
-        """Return an array of free parameter values (it is a copy).
-        """
+        """Return an array of free parameter values (it is a copy)."""
         return self.params.free + 0.
 
     def setParamValues(self, p):
+        """Set parameter values."""
         self.params.free = p
+        return
 
     def evalCovModel(self, mu=None):
         """Computes full covariances model (Eq. 20 of Astier+19).
@@ -480,6 +493,8 @@ class CovFit:
         return self.wres(params).flatten()
 
     def fit(self, p0=None, nsig=5):
+        """"""
+        
         if p0 is None:
             p0 = self.getParamValues()
         nOutliers = 1

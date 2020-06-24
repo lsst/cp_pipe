@@ -37,7 +37,6 @@ from .utils import (funcAstier, funcPolynomial, NonexistentDatasetTaskDataIdCont
 from matplotlib.ticker import MaxNLocator
 
 from .astierCovPtcFit import computeApproximateAcoeffs
-from .astierCovPtcUtils import CHI2
 
 
 class PlotPhotonTransferCurveTaskConfig(pexConfig.Config):
@@ -344,7 +343,8 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         mueNoB, reseNoB, wceNoB = [], [], []
         for counter, (amp, fit) in enumerate(covFits.items()):
             mu, c, model, wc = fit.getNormalizedFitData(i, j, divideByMu=True)
-            chi2 = CHI2(c-model, wc)/(len(mu)-3)
+            wres = (c-model)*wc
+            chi2 = ((wres*wres).sum())/(len(mu)-3)
             chi2bin = 0
             mue += list(mu)
             rese += list(c - model)
@@ -359,9 +359,9 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             # the corresponding fit
             fit_curve, = plt.plot(mu, model + counter*offset, '-', linewidth=4.0)
             # bin plot. len(mu) = no binning
-            gind = indexForBins(mu, len(mu))
+            gind = self.indexForBins(mu, len(mu))
 
-            xb, yb, wyb, sigyb = binData(mu, c, gind, wc)
+            xb, yb, wyb, sigyb = self.binData(mu, c, gind, wc)
             chi2bin = (sigyb*wyb).mean()  # chi2 of enforcing the same value in each bin
             plt.errorbar(xb, yb+counter*offset, yerr=sigyb, marker='o', linestyle='none', markersize=6.5,
                          color=fit_curve.get_color(), label=f"{amp}")
@@ -391,13 +391,13 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         plt.xlabel(r"$\mu (el)$", fontsize='x-large')
         plt.ylabel(r"$C_{%d%d}/\mu + Cst (el)$"%(i, j), fontsize='x-large')
         if (not topPlot):
-            gind = indexForBins(mue, len(mue))
-            xb, yb, wyb, sigyb = binData(mue, rese, gind, wce)
+            gind = self.indexForBins(mue, len(mue))
+            xb, yb, wyb, sigyb = self.binData(mue, rese, gind, wce)
 
             ax1 = plt.subplot(gs[1], sharex=ax0)
             ax1.errorbar(xb, yb, yerr=sigyb, marker='o', linestyle='none', label='Full fit')
-            gindNoB = indexForBins(mueNoB, len(mueNoB))
-            xb2, yb2, wyb2, sigyb2 = binData(mueNoB, reseNoB, gindNoB, wceNoB)
+            gindNoB = self.indexForBins(mueNoB, len(mueNoB))
+            xb2, yb2, wyb2, sigyb2 = self.binData(mueNoB, reseNoB, gindNoB, wceNoB)
 
             ax1.errorbar(xb2, yb2, yerr=sigyb2, marker='o', linestyle='none', label='b = 0')
             ax1.tick_params(axis='both', labelsize='x-large')
@@ -482,82 +482,6 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         ax1.set_title(r'$b \times 10^6$', fontsize='x-large')
         ax1.xaxis.set_ticks_position('bottom')
         plt.tight_layout()
-        pdfPages.savefig(fig)
-
-        return
-
-    def plotPtcAndResiduals(self, covFits, ampName, pdfPages):
-        """Fig. 7 in Astier+19
-
-        Photon transfer curve of each amplifier  fitted with three different models: the full model,
-        a quadratic fit, and the “simple model” with b = 0
-        """
-
-        fit = covFits[ampName]
-        fig = plt.figure(figsize=(6, 12))
-        gs = gridspec.GridSpec(4, 1, height_ratios=[3, 1, 1, 1])
-        gs.update(hspace=0)  # stack subplots
-        fontsize = 'x-large'
-        # extract the data and model
-        mu, var, model, w = fit.getNormalizedFitData(0, 0, divideByMu=False)
-
-        # var vs mu
-        ax0 = plt.subplot(gs[0])
-        # allows factors of 10 on the scale
-        ax0.ticklabel_format(style='sci', axis='y', scilimits=(0, 0))
-        ax0.set_ylabel("$C_{00}$ (el$^2$)", fontsize=fontsize)
-        plt.plot(mu, var, '.', label='data')
-        plt.plot(mu, model, '-', label='full model')
-        plt.setp(ax0.get_xticklabels(), visible=False)
-        plt.legend(loc='upper left', fontsize='large')
-        #
-        # residuals
-        gind = indexForBins(mu, 50)
-
-        ax1 = plt.subplot(gs[1], sharex=ax0)
-        xb, yb, wyb, sigyb = binData(mu, var - model, gind, w)
-        plt.errorbar(xb, yb, yerr=sigyb, marker='.', ls='none')
-        # draw a line at y=0:
-        plt.plot([0, mu.max()], [0, 0], ls='--', color='k')
-        plt.setp(ax1.get_xticklabels(), visible=False)
-        ax1.text(0.1, 0.85, 'Residuals to full fit',
-                 verticalalignment='top', horizontalalignment='left',
-                 transform=ax1.transAxes, fontsize=15)
-        #
-        #  quadratic fit
-        ax2 = plt.subplot(gs[2], sharex=ax0, sharey=ax1)
-        par2 = np.polyfit(mu, var, 2, w=w)
-        m2 = np.polyval(par2, mu)
-        xb, yb, wyb, sigyb = binData(mu, var-m2, gind, w)
-        plt.errorbar(xb, yb, yerr=sigyb, marker='.', color='r', ls='none')
-        plt.plot([0, mu.max()], [0, 0], ls='--', color='k')
-        plt.setp(ax2.get_xticklabels(), visible=False)
-        ax2.text(0.1, 0.85, 'Quadratic fit',
-                 verticalalignment='top', horizontalalignment='left',
-                 transform=ax2.transAxes, fontsize=15)
-
-        # fit with b=0
-        ax3 = plt.subplot(gs[3], sharex=ax0, sharey=ax1)
-        fit_nob = fit.copy()
-        fit_nob.params['c'].fix(val=0)
-        fit_nob.fit()
-        mu, var, model, w = fit_nob.getNormalizedFitData(0, 0, divideByMu=False)
-
-        xb, yb, wyb, sigyb = binData(mu, var-model, gind, w)
-        plt.errorbar(xb, yb, yerr=sigyb, marker='.', color='g', ls='none')
-        plt.plot([0, mu.max()], [0, 0], ls='--', color='k')
-        ax3.ticklabel_format(style='sci', axis='x', scilimits=(0, 0))
-        plt.xlabel(r'$\mu$ (el)', fontsize=fontsize)
-        ax3.text(0.1, 0.85, 'b=0',
-                 verticalalignment='top', horizontalalignment='left',
-                 transform=ax3.transAxes, fontsize=15)
-
-        plt.tight_layout()
-        # remove the 'largest' y label (unelegant overwritings occur)
-        for ax in [ax1, ax2, ax3]:
-            plt.setp(ax.get_yticklabels()[-1], visible=False)
-
-        fig.suptitle("PTC from covariances and model residuals for amplifier %s"%ampName, fontsize=11)
         pdfPages.savefig(fig)
 
         return
