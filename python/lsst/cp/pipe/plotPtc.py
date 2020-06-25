@@ -688,38 +688,39 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         f2.suptitle("PTC (log-log)", fontsize=20)
         pdfPages.savefig(f2)
 
-        # Plot mean vs time
-        f, ax = plt.subplots(nrows=4, ncols=4, sharex='col', sharey='row', figsize=(13, 10))
-        for i, (amp, a) in enumerate(zip(dataset.ampNames, ax.flatten())):
-            meanVecFinal = np.array(dataset.rawMeans[amp])[dataset.visitMask[amp]]
-            timeVecFinal = np.array(dataset.rawExpTimes[amp])[dataset.visitMask[amp]]
-
-            a.set_xlabel('Time (sec)', fontsize=labelFontSize)
-            a.set_ylabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
-            a.tick_params(labelsize=labelFontSize)
-            a.set_xscale('linear', fontsize=labelFontSize)
-            a.set_yscale('linear', fontsize=labelFontSize)
-
-            if len(meanVecFinal):
-                pars, parsErr = dataset.nonLinearity[amp], dataset.nonLinearityError[amp]
-                k0, k0Error = pars[0], parsErr[0]
-                k1, k1Error = pars[1], parsErr[1]
-                k2, k2Error = pars[2], parsErr[2]
-                stringLegend = (f"k0: {k0:.4}+/-{k0Error:.2e} DN\n k1: {k1:.4}+/-{k1Error:.2e} DN/t"
-                                f"\n k2: {k2:.2e}+/-{k2Error:.2e} DN/t^2 \n")
-                a.scatter(timeVecFinal, meanVecFinal)
-                a.plot(timeVecFinal, funcPolynomial(pars, timeVecFinal), color='red')
-                a.text(0.03, 0.75, stringLegend, transform=a.transAxes, fontsize=legendFontSize)
-                a.set_title(f"{amp}", fontsize=titleFontSize)
-            else:
-                a.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
-
-        f.suptitle("Linearity \n Fit: Polynomial (degree: %g)"
-                   % (len(dataset.coefficientsLinearizePolynomial)+1),
-                   fontsize=supTitleFontSize)
-        pdfPages.savefig(f)
-
+        # If "ptc.py" built a linearizer
         if len(dataset.fractionalNonLinearityResiduals[amp]):
+            # Plot mean vs time
+            f, ax = plt.subplots(nrows=4, ncols=4, sharex='col', sharey='row', figsize=(13, 10))
+            for i, (amp, a) in enumerate(zip(dataset.ampNames, ax.flatten())):
+                meanVecFinal = np.array(dataset.rawMeans[amp])[dataset.visitMask[amp]]
+                timeVecFinal = np.array(dataset.rawExpTimes[amp])[dataset.visitMask[amp]]
+
+                a.set_xlabel('Time (sec)', fontsize=labelFontSize)
+                a.set_ylabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
+                a.tick_params(labelsize=labelFontSize)
+                a.set_xscale('linear', fontsize=labelFontSize)
+                a.set_yscale('linear', fontsize=labelFontSize)
+
+                if len(meanVecFinal):
+                    pars, parsErr = dataset.nonLinearity[amp], dataset.nonLinearityError[amp]
+                    k0, k0Error = pars[0], parsErr[0]
+                    k1, k1Error = pars[1], parsErr[1]
+                    k2, k2Error = pars[2], parsErr[2]
+                    stringLegend = (f"k0: {k0:.4}+/-{k0Error:.2e} DN\n k1: {k1:.4}+/-{k1Error:.2e} DN/t"
+                                    f"\n k2: {k2:.2e}+/-{k2Error:.2e} DN/t^2 \n")
+                    a.scatter(timeVecFinal, meanVecFinal)
+                    a.plot(timeVecFinal, funcPolynomial(pars, timeVecFinal), color='red')
+                    a.text(0.03, 0.75, stringLegend, transform=a.transAxes, fontsize=legendFontSize)
+                    a.set_title(f"{amp}", fontsize=titleFontSize)
+                else:
+                    a.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
+
+            f.suptitle("Linearity \n Fit: Polynomial (degree: %g)"
+                       % (len(dataset.coefficientsLinearizePolynomial)+1),
+                       fontsize=supTitleFontSize)
+            pdfPages.savefig(f)
+
             # Plot fractional non-linearity residual (w.r.t linear part of polynomial fit)
             f, ax = plt.subplots(nrows=4, ncols=4, sharex='col', sharey='row', figsize=(13, 10))
             for i, (amp, a) in enumerate(zip(dataset.ampNames, ax.flatten())):
