@@ -82,7 +82,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         self.c3 = -4.7e-12  # tuned so that it turns over for 200k mean
 
         self.ampNames = [amp.getName() for amp in self.flatExp1.getDetector().getAmplifiers()]
-        self.dataset = PhotonTransferCurveDataset(self.ampNames)  # pack raw data for fitting
+        self.dataset = PhotonTransferCurveDataset(self.ampNames, " ")  # pack raw data for fitting
 
         for ampName in self.ampNames:  # just the expTimes and means here - vars vary per function
             self.dataset.rawExpTimes[ampName] = timeVec
@@ -357,12 +357,12 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
 class MeasurePhotonTransferCurveDatasetTestCase(lsst.utils.tests.TestCase):
     def setUp(self):
-        self.ptcData = PhotonTransferCurveDataset(['C00', 'C01'])
+        self.ptcData = PhotonTransferCurveDataset(['C00', 'C01'], " ")
         self.ptcData.inputVisitPairs = {'C00': [(123, 234), (345, 456), (567, 678)],
                                         'C01': [(123, 234), (345, 456), (567, 678)]}
 
     def test_generalBehaviour(self):
-        test = PhotonTransferCurveDataset(['C00', 'C01'])
+        test = PhotonTransferCurveDataset(['C00', 'C01'], " ")
         test.inputVisitPairs = {'C00': [(123, 234), (345, 456), (567, 678)],
                                 'C01': [(123, 234), (345, 456), (567, 678)]}
 

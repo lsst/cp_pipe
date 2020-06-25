@@ -195,11 +195,12 @@ class PhotonTransferCurveDataset:
     with the length of the list corresponding to the order of the polynomial
     plus one.
     """
-    def __init__(self, ampNames):
+    def __init__(self, ampNames, ptcFitType):
         # add items to __dict__ directly because __setattr__ is overridden
 
         # Common
         # instance variables
+        self.__dict__["ptcFitType"] = ptcFitType
         self.__dict__["ampNames"] = ampNames
         self.__dict__["badAmps"] = []
         self.__dict__["ptcFitType"] = {ampName: "" for ampName in ampNames}
@@ -362,7 +363,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         amps = detector.getAmplifiers()
         ampNames = [amp.getName() for amp in amps]
-        datasetPtc = PhotonTransferCurveDataset(ampNames)
+        datasetPtc = PhotonTransferCurveDataset(ampNames, self.config.ptcFitType)
 
         self.log.info('Measuring PTC using %s visits for detector %s' % (visitPairs, detector.getId()))
 

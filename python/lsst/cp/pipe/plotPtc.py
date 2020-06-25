@@ -51,16 +51,6 @@ class PlotPhotonTransferCurveTaskConfig(pexConfig.Config):
         doc="The key by which to pull a detector from a dataId, e.g. 'ccd' or 'detector'.",
         default='detector',
     )
-    ptcFitType = pexConfig.ChoiceField(
-        dtype=str,
-        doc="Fit PTC to approximation in Astier+19 (Equation 16) or to a polynomial.",
-        default="POLYNOMIAL",
-        allowed={
-            "POLYNOMIAL": "n-degree polynomial (use 'polynomialFitDegree' to set 'n').",
-            "ASTIERAPPROXIMATION": "Approximation in Astier+19 (Eq. 16).",
-            "ASTIERFULL": "Full covariances model in Astier+19 (Eq. 20)"
-        }
-    )
 
 
 class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
@@ -125,14 +115,18 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
 
     def run(self, filenameFull, datasetPtc, log=None):
         """Make the plots for the PTC task"""
+        for key in datasetPtc.ptcFitType:
+            ptcFitType = datasetPtc.ptcFitType[key]
+            break
         with PdfPages(filenameFull) as pdfPages:
-            if self.config.ptcFitType in ["ASTIERFULL", ]:
+            if ptcFitType in ["ASTIERFULL", ]:
                 self.covAstierMakeAllPlots(datasetPtc.covariancesFits, datasetPtc.covariancesFitsWithNoB,
                                            pdfPages, log=log)
-            elif self.config.ptcFitType in ["ASTIERAPPROXIMATION", "POLYNOMIAL"]:
-                self.plotStandardPtc(datasetPtc, self.config.ptcFitType, pdfPages)
+            elif ptcFitType in ["ASTIERAPPROXIMATION", "POLYNOMIAL"]:
+                self._plotStandardPtc(datasetPtc, ptcFitType, pdfPages)
             else:
-                raise RuntimeError("Invalid plot type")
+                raise RuntimeError(f"The input dataset had an invalid dataset.ptcFitType: {ptcFitType}. \n" +
+                                   "Options: 'ASTIERFULL', ASTIERAPPROXIMATION, or 'POLYNOMIAL'.")
 
         return
 
@@ -583,17 +577,21 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         return
 
-    def plotStandardPtc(self, dataset, ptcFitType, pdfPages):
+    def _plotStandardPtc(self, dataset, ptcFitType, pdfPages):
         """Plot PTC, linearity, and linearity residual per amplifier"""
-
-        reducedChiSqPtc = dataset.ptcFitReducedChiSquared
+         
         if ptcFitType == 'ASTIERAPPROXIMATION':
             ptcFunc = funcAstier
-            stringTitle = (r"Var = $\frac{1}{2g^2a_{00}}(\exp (2a_{00} \mu g) - 1) + \frac{n_{00}}{g^2}$ "
-                           r" ($chi^2$/dof = %g)" % (reducedChiSqPtc))
-        if ptcFitType == 'POLYNOMIAL':
+            stringTitle = (r"Var = $\frac{1}{2g^2a_{00}}(\exp (2a_{00} \mu g) - 1) + \frac{n_{00}}{g^2}$ ")
+        elif ptcFitType == 'POLYNOMIAL':
             ptcFunc = funcPolynomial
-            stringTitle = r"Polynomial (degree: %g)" % (len(dataset.ptcFitPars)-1)
+            for key in dataset.ptcFitPars:
+                deg = len(dataset.ptcFitPars[key]) - 1
+                break
+            stringTitle = r"Polynomial (degree: %g)" % (deg)
+        else: 
+            raise RuntimeError(f"The input dataset had an invalid dataset.ptcFitType: {ptcFitType}. \n" +
+                                "Options: 'ASTIERFULL', ASTIERAPPROXIMATION, or 'POLYNOMIAL'.")
 
         legendFontSize = 7
         labelFontSize = 7
@@ -668,7 +666,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                 a.plot(meanVecFinal, pars[0] + pars[1]*meanVecFinal, color='green', linestyle='--')
                 a.scatter(meanVecFinal, varVecFinal, c='blue', marker='o', s=markerSize)
                 a.scatter(meanVecOutliers, varVecOutliers, c='magenta', marker='s', s=markerSize)
-                a.text(0.03, 0.8, stringLegend, transform=a.transAxes, fontsize=legendFontSize)
+                a.text(0.03, 0.7, stringLegend, transform=a.transAxes, fontsize=legendFontSize)
                 a.set_title(amp, fontsize=titleFontSize)
                 a.set_xlim([minMeanVecOriginal - 0.2*deltaXlim, maxMeanVecOriginal + 0.2*deltaXlim])
 
@@ -676,7 +674,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                 a2.plot(meanVecFit, ptcFunc(pars, meanVecFit), color='red')
                 a2.scatter(meanVecFinal, varVecFinal, c='blue', marker='o', s=markerSize)
                 a2.scatter(meanVecOutliers, varVecOutliers, c='magenta', marker='s', s=markerSize)
-                a2.text(0.03, 0.8, stringLegend, transform=a2.transAxes, fontsize=legendFontSize)
+                a2.text(0.03, 0.7, stringLegend, transform=a2.transAxes, fontsize=legendFontSize)
                 a2.set_title(amp, fontsize=titleFontSize)
                 a2.set_xlim([minMeanVecOriginal, maxMeanVecOriginal])
             else:
@@ -717,7 +715,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                     a.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
 
             f.suptitle("Linearity \n Fit: Polynomial (degree: %g)"
-                       % (len(dataset.coefficientsLinearizePolynomial)+1),
+                       % (len(pars)-1),
                        fontsize=supTitleFontSize)
             pdfPages.savefig(f)
 
