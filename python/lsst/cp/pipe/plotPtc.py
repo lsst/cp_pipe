@@ -109,15 +109,13 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         filename = f"PTC_det{detNum}.pdf"
         filenameFull = os.path.join(dirname, filename)
 
-        self.run(filenameFull, datasetPtc)
+        self.run(filenameFull, datasetPtc, log=self.log)
 
         return pipeBase.Struct(exitStatus=0)
 
     def run(self, filenameFull, datasetPtc, log=None):
         """Make the plots for the PTC task"""
-        for key in datasetPtc.ptcFitType:
-            ptcFitType = datasetPtc.ptcFitType[key]
-            break
+        ptcFitType = datasetPtc.ptcFitType
         with PdfPages(filenameFull) as pdfPages:
             if ptcFitType in ["ASTIERFULL", ]:
                 self.covAstierMakeAllPlots(datasetPtc.covariancesFits, datasetPtc.covariancesFitsWithNoB,
@@ -219,7 +217,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             # fit with no 'b' coefficient (c = a*b in Eq. 20 of Astier+19)
             fitNoB = fit.copy()
             fitNoB.params['c'].fix(val=0)
-            fitNoB.fit()
+            fitNoB.fitFullModel()
             meanVecFinalNoB, varVecFinalNoB, varVecModelNoB, wcNoB = fitNoB.getNormalizedFitData(0, 0)
 
             if len(meanVecFinal):  # Empty if the whole amp is bad, for example.
@@ -259,12 +257,12 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                 aResVar.tick_params(labelsize=11)
                 aResVar.set_xscale('linear', fontsize=labelFontSize)
                 aResVar.set_yscale('linear', fontsize=labelFontSize)
-                aResVar.scatter(meanVecFinal, varVecFinal - varVecModel, c='blue', marker='.',
-                                s=markerSize, label='Full fit')
-                aResVar.scatter(meanVecFinal, varVecFinal - varModelQuadratic, c='red', marker='.',
-                                s=markerSize, label='Quadratic fit')
-                aResVar.scatter(meanVecFinalNoB, varVecFinalNoB - varVecModelNoB, c='green', marker='.',
-                                s=markerSize, label='Full fit with b=0')
+                aResVar.plot(meanVecFinal, varVecFinal - varVecModel, color='blue', lineStyle='-',
+                             label='Full fit')
+                aResVar.plot(meanVecFinal, varVecFinal - varModelQuadratic, color='red', lineStyle='-',
+                             label='Quadratic fit')
+                aResVar.plot(meanVecFinalNoB, varVecFinalNoB - varVecModelNoB, color='green', lineStyle='-',
+                             label='Full fit with b=0')
                 aResVar.axhline(color='black')
                 aResVar.set_title(amp, fontsize=titleFontSize)
                 aResVar.set_xlim([minMeanVecFinal - 0.2*deltaXlim, maxMeanVecFinal + 0.2*deltaXlim])
@@ -579,7 +577,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
 
     def _plotStandardPtc(self, dataset, ptcFitType, pdfPages):
         """Plot PTC, linearity, and linearity residual per amplifier"""
-         
+
         if ptcFitType == 'ASTIERAPPROXIMATION':
             ptcFunc = funcAstier
             stringTitle = (r"Var = $\frac{1}{2g^2a_{00}}(\exp (2a_{00} \mu g) - 1) + \frac{n_{00}}{g^2}$ ")
@@ -589,9 +587,9 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                 deg = len(dataset.ptcFitPars[key]) - 1
                 break
             stringTitle = r"Polynomial (degree: %g)" % (deg)
-        else: 
+        else:
             raise RuntimeError(f"The input dataset had an invalid dataset.ptcFitType: {ptcFitType}. \n" +
-                                "Options: 'ASTIERFULL', ASTIERAPPROXIMATION, or 'POLYNOMIAL'.")
+                               "Options: 'ASTIERFULL', ASTIERAPPROXIMATION, or 'POLYNOMIAL'.")
 
         legendFontSize = 7
         labelFontSize = 7

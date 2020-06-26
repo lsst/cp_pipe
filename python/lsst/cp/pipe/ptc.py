@@ -203,7 +203,6 @@ class PhotonTransferCurveDataset:
         self.__dict__["ptcFitType"] = ptcFitType
         self.__dict__["ampNames"] = ampNames
         self.__dict__["badAmps"] = []
-        self.__dict__["ptcFitType"] = {ampName: "" for ampName in ampNames}
 
         # raw data variables
         self.__dict__["inputVisitPairs"] = {ampName: [] for ampName in ampNames}
@@ -364,7 +363,6 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         amps = detector.getAmplifiers()
         ampNames = [amp.getName() for amp in amps]
         datasetPtc = PhotonTransferCurveDataset(ampNames, self.config.ptcFitType)
-
         self.log.info('Measuring PTC using %s visits for detector %s' % (visitPairs, detector.getId()))
 
         tupleRecords = []
@@ -559,9 +557,9 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             gain = fit.getGain()
             dataset.visitMask[amp] = fit.getMaskVar()
             dataset.gain[amp] = gain
-            dataset.gainErr[amp] = 1.0
-            dataset.noise[amp] = np.sqrt(fit.getRon())
-            dataset.noiseErr[amp] = 1.0
+            dataset.gainErr[amp] = fit.getGainErr()
+            dataset.noise[amp] = np.sqrt(np.fabs(fit.getRon()))
+            dataset.noiseErr[amp] = fit.getRonErr()
             dataset.finalVars[amp].append(varVecFinal/(gain**2))
             dataset.finalModelVars[amp].append(varVecModel/(gain**2))
             dataset.finalMeans[amp].append(meanVecFinal/gain)
@@ -1153,7 +1151,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             dataset.gainErr[ampName] = ptcGainErr
             dataset.noise[ampName] = ptcNoise
             dataset.noiseErr[ampName] = ptcNoiseErr
-            dataset.ptcFitType[ampName] = ptcFitType
+        if not dataset.ptcFitType:
+            dataset.ptcFitType = ptcFitType
 
         return dataset
 

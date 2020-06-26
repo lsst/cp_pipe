@@ -199,12 +199,12 @@ class Pol2d:
         ij = itertools.product(range(self.orderx+1), range(self.ordery+1))
         for k, (i, j) in enumerate(ij):
             G[..., k] = x**i * y**j
-        
+
         return G
 
     def eval(self, x, y):
         G = self.monomials(x, y)
-        
+
         return np.dot(G, self.coeff)
 
 
@@ -279,7 +279,7 @@ class CovFit:
         self.cov = self.cov[:k, ...]
         self.vcov = self.vcov[:k, ...]
         self.sqrtW = self.sqrtW[:k, ...]
-        
+
         return
 
     def setMaxMuElectrons(self, maxMuEl):
@@ -288,7 +288,7 @@ class CovFit:
         kill = (self.mu*g > maxMuEl)
         self.sqrtW[kill, :, :] = 0
 
-        return 
+        return
 
     def copy(self):
         """Make a copy of params"""
@@ -368,6 +368,16 @@ class CovFit:
         Returns cov[Nmu, self.r, self.r]. The variance for the PTC is cov[:, 0, 0].
         mu and cov are in ADUs and ADUs squared. To use electrons for both,
         the gain should be set to 1. This routine implements the model in Astier+19 (1905.08677).
+
+        The parameters of the full model for C_ij(mu) ("C_ij" and "mu" in ADU^2 and ADU, respectively)
+        in Astier+19 (Eq. 20) are:
+
+        "a" coefficients (r by r matrix), units: 1/e
+        "b" coefficients (r by r matrix), units: 1/e
+        noise matrix (r by r matrix), units: e^2
+        gain, units: e/ADU
+
+        "b" appears in Eq. 20 only through the "ab" combination, which is defined in this code as "c=ab".
         """
         sa = (self.r, self.r)
         a = self.params['a'].full.reshape(sa)
@@ -417,7 +427,7 @@ class CovFit:
         return self.params['c'].full.reshape(self.r, self.r)
 
     def _getCovParams(self, what):
-        """Get covariance matrix of parameters form fit"""
+        """Get covariance matrix of parameters from fit"""
         indices = self.params[what].indexof()
         i1 = indices[:, np.newaxis]
         i2 = indices[np.newaxis, :]
@@ -430,7 +440,7 @@ class CovFit:
         return cova.reshape((self.r, self.r, self.r, self.r))
 
     def getASig(self):
-        """Square root of diagonal of "a" covariance matrix"""
+        """Square root of diagonal of the parameter covariance of the fitted "a" matrix"""
         cova = self._getCovParams('a')
         return np.sqrt(cova.diagonal()).reshape((self.r, self.r))
 
@@ -449,6 +459,20 @@ class CovFit:
         cova = self._getCovParams('c')
         return cova.reshape((self.r, self.r, self.r, self.r))
 
+    def getGainErr(self):
+        """Get error on fitted gain parameter"""
+        return np.sqrt(self._getCovParams('gain')[0][0])
+
+    def getNoiseCov(self):
+        """Get covariances of noise matrix from fit"""
+        covNoise = self._getCovParams('noise')
+        return covNoise.reshape((self.r, self.r, self.r, self.r))
+
+    def getNoiseSig(self):
+        """Square root of diagonal of the parameter covariance of the fitted "noise" matrix"""
+        covNoise = self._getCovParams('noise')
+        return np.sqrt(covNoise.diagonal()).reshape((self.r, self.r))
+
     def getGain(self):
         """Get gain (e/ADU)"""
         return self.params['gain'].full[0]
@@ -456,6 +480,12 @@ class CovFit:
     def getRon(self):
         """Get readout noise (e^2)"""
         return self.params['noise'].full[0]
+
+    def getRonErr(self):
+        """Get error on readout noise parameter"""
+        ronSqrt = np.sqrt(np.fabs(self.getRon()))
+        noiseSigma = self.getNoiseSig()[0][0]
+        return 0.5*(noiseSigma/np.fabs(self.getRon()))*ronSqrt
 
     def getNoise(self):
         """Get noise matrix"""
@@ -469,14 +499,17 @@ class CovFit:
         return mask
 
     def setAandB(self, a, b):
+        """Set "a" and "b" coeffcients forfull Astier+19 model (Eq. 20). "c=a*b"."""
         self.params['a'].full = a.flatten()
         self.params['c'].full = a.flatten()*b.flatten()
+        return
 
     def chi2(self):
+        """Calculate weighte chi2 of full-model fit."""
         return(self.weightedRes()**2).sum()
 
     def wres(self, params=None):
-        """to be used in weightedRes"""
+        """To be used in weightedRes"""
         if params is not None:
             self.setParamValues(params)
         covModel = self.evalCovModel()
@@ -485,6 +518,8 @@ class CovFit:
     def weightedRes(self, params=None):
         """Weighted residuas.
 
+        Notes
+        -----
         To be used via:
         c = CovFit(nt)
         c.initFit()
@@ -492,20 +527,50 @@ class CovFit:
         """
         return self.wres(params).flatten()
 
-    def fit(self, p0=None, nsig=5):
-        """"""
-        
-        if p0 is None:
-            p0 = self.getParamValues()
+    def fitFullModel(self, pInit=None, nSigma=5):
+        """Fit measured covariances to full model in Astier+19 (Eq. 20)
+
+        Parameters
+        ----------
+        pInit : `list`
+            Initial parameters of the fit.
+            len(pInit) = #entries(a) + #entries(c) + #entries(noise) + 1
+            len(pInit) = r^2 + r^2 + r^2 + 1, where "r" is the maximum lag considered for the
+            covariances calculation, and the extra "1" is the gain.
+            If "b" is 0, then "c" is 0, and len(pInit) will have r^2 fewer entries.
+
+        nSigma : `int`
+            Sigma cut to get rid of outliers.
+
+        Returns
+        -------
+        params : `np.array`
+            Fit parameters (see "Notes" below).
+
+        Notes
+        -----
+        The parameters of the full model for C_ij(mu) ("C_ij" and "mu" in ADU^2 and ADU, respectively)
+        in Astier+19 (Eq. 20) are:
+
+            "a" coefficients (r by r matrix), units: 1/e
+            "b" coefficients (r by r matrix), units: 1/e
+            noise matrix (r by r matrix), units: e^2
+            gain, units: e/ADU
+
+        "b" appears in Eq. 20 only through the "ab" combination, which is defined in this code as "c=ab".
+        """
+
+        if pInit is None:
+            pInit = self.getParamValues()
         nOutliers = 1
         counter = 1
-        maxFitIter = 5
+        maxFitIter = 6
         while nOutliers != 0:
-            coeffs, covParams, _, mesg, ierr = leastsq(self.weightedRes, p0, full_output=True)
-            wres = self.weightedRes(coeffs)
+            params, paramsCov, _, mesg, ierr = leastsq(self.weightedRes, pInit, full_output=True)
+            wres = self.weightedRes(params)
             # Do not count the outliers as significant
             sig = mad(wres[wres != 0])
-            mask = (np.abs(wres) > (nsig * sig))
+            mask = (np.abs(wres) > (nSigma * sig))
             self.sqrtW.flat[mask] = 0  # flatten makes a copy
             nOutliers = mask.sum()
             counter += 1
@@ -513,10 +578,10 @@ class CovFit:
                 break
 
         if ierr not in [1, 2, 3, 4]:
-            raise RuntimeError("minimisation failed: " + mesg)
-        self.covParams = covParams
+            raise RuntimeError("Minimization failed: " + mesg)
+        self.covParams = paramsCov
 
-        return coeffs
+        return params
 
     def ndof(self):
         """Number of degrees of freedom

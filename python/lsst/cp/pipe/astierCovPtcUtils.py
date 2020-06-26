@@ -351,7 +351,20 @@ def fitData(tupleName, maxMu=1e9, maxMuElectrons=1e9, r=8):
 
     covFitNoBList: `dict`
        Dictionary of CovFit objects, with amp names as keys (b=0 in Eq. 20 of Astier+19).
+
+    Notes
+    -----
+    The parameters of the full model for C_ij(mu) ("C_ij" and "mu" in ADU^2 and ADU, respectively)
+    in Astier+19 (Eq. 20) are:
+
+        "a" coefficients (r by r matrix), units: 1/e
+        "b" coefficients (r by r matrix), units: 1/e
+        noise matrix (r by r matrix), units: e^2
+        gain, units: e/ADU
+
+    "b" appears in Eq. 20 only through the "ab" combination, which is defined in this code as "c=ab".
     """
+
     lparams = LoadParams()
     lparams.subtractDistantValue = False
     lparams.maxMu = maxMu
@@ -361,9 +374,8 @@ def fitData(tupleName, maxMu=1e9, maxMuElectrons=1e9, r=8):
     covFitList = loadData(tupleName, lparams)
     covFitNoBList = {}  # [None]*(exts[-1]+1)
     for ext, c in covFitList.items():
-        c.fit()
+        c.fitFullModel()
         covFitNoBList[ext] = c.copy()
         c.params['c'].release()
-        c.fit()
-
+        c.fitFullModel()
     return covFitList, covFitNoBList
