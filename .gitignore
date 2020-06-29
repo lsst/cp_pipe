@@ -18,5 +18,6 @@ doc/py-api/
 tests/.tests
 version.py
 .coverage
-bin
-.pytest*
+bin/
+.pytest_cache
+pytest_session.txt
