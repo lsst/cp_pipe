@@ -64,8 +64,8 @@ class MeasureCrosstalkTaskCases(lsst.utils.tests.TestCase):
         mockTask.config.readNoise = 100.0
 
         mcConfig = MeasureCrosstalkConfig()
-        mcConfig.threshold = 4000
-        mcConfig.isTrimmed = isTrimmed
+        mcConfig.extract.threshold = 4000
+        mcConfig.extract.isTrimmed = isTrimmed
         mct = MeasureCrosstalkTask(config=mcConfig)
         fullResult = []
 
@@ -82,15 +82,16 @@ class MeasureCrosstalkTaskCases(lsst.utils.tests.TestCase):
             mockTask.config.sourceY = ((np.random.random(size=nSources) * 50.0).tolist())
 
             exposure = mockTask.run()
-            result = mct.run(exposure, dataId=None)
-            fullResult.append(result)
+            result = mct.extract.run(exposure)
+            fullResult.append(result.outputRatios)
 
         # Generate the final measured CT ratios, uncertainties, pixel counts.
-        coeff, coeffSig, coeffNum = mct.reduce(fullResult)
+        finalResult = mct.solver.run(fullResult)
+        calib = finalResult.outputCrosstalk
 
         # Needed because measureCrosstalk cannot find coefficients equal to 0.0
-        coeff = np.nan_to_num(coeff)
-        coeffSig = np.nan_to_num(coeffSig)
+        coeff = np.nan_to_num(calib.coeffs)
+        coeffSig = np.nan_to_num(calib.coeffErr)
 
         # Compare result against expectation used to create the simulation.
         expectation = isrMock.CrosstalkCoeffMock().run()
