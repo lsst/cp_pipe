@@ -56,8 +56,8 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
         default="POLYNOMIAL",
         allowed={
             "POLYNOMIAL": "n-degree polynomial (use 'polynomialFitDegree' to set 'n').",
-            "ASTIERAPPROXIMATION": "Approximation in Astier+19 (Eq. 16).",
-            "ASTIERFULL": "Full covariances model in Astier+19 (Eq. 20)"
+            "EXPAPPROXIMATION": "Approximation in Astier+19 (Eq. 16).",
+            "FULLCOVARIANCE": "Full covariances model in Astier+19 (Eq. 20)"
         }
     )
     maximumRangeCovariancesAstier = pexConfig.Field(
@@ -194,17 +194,32 @@ class PhotonTransferCurveDataset:
     of polynomial term, i.e. par[0]*x^0 + par[1]*x + par[2]*x^2 etc
     with the length of the list corresponding to the order of the polynomial
     plus one.
+
+    Parameters
+    ----------
+    ampNames : `list`
+        List with the names of the amplifiers of the detector at hand.
+
+    ptcFitType : `str`
+        Type of model fitted to the PTC: "POLYNOMIAL", "EXPAPPROXIMATION", or "FULLCOVARIANCE".
+
+    Returns
+    -------
+    `lsst.cp.pipe.ptc.PhotonTransferCurveDataset`
+        Output dataset from MeasurePhotonTransferCurveTask.
     """
+
     def __init__(self, ampNames, ptcFitType):
         # add items to __dict__ directly because __setattr__ is overridden
 
-        # Common
         # instance variables
         self.__dict__["ptcFitType"] = ptcFitType
         self.__dict__["ampNames"] = ampNames
         self.__dict__["badAmps"] = []
 
         # raw data variables
+        # visitMask is the mask produced after outlier rejection. The mask produced by "FULLCOVARIANCE"
+        # may differ from the one produced in the other two PTC fit types.
         self.__dict__["inputVisitPairs"] = {ampName: [] for ampName in ampNames}
         self.__dict__["visitMask"] = {ampName: [] for ampName in ampNames}
         self.__dict__["rawExpTimes"] = {ampName: [] for ampName in ampNames}
@@ -217,7 +232,7 @@ class PhotonTransferCurveDataset:
         self.__dict__["noise"] = {ampName: -1. for ampName in ampNames}
         self.__dict__["noiseErr"] = {ampName: -1. for ampName in ampNames}
 
-        # For Standard PTC calculation
+        # if ptcFitTye in ["POLYNOMIAL", "EXPAPPROXIMATION"]
         # fit information
         self.__dict__["ptcFitPars"] = {ampName: [] for ampName in ampNames}
         self.__dict__["ptcFitParsError"] = {ampName: [] for ampName in ampNames}
@@ -231,17 +246,21 @@ class PhotonTransferCurveDataset:
         self.__dict__["coefficientsLinearizePolynomial"] = {ampName: [] for ampName in ampNames}
         self.__dict__["coefficientLinearizeSquared"] = {ampName: [] for ampName in ampNames}
 
-        # For full Astier+19 covariances
-
+        # if ptcFitTye in ["FULLCOVARIANCE"]
+        # "covariancesTuple" is a numpy recarray with entries of the form
+        # ['mu', 'i', 'j', 'var', 'cov', 'npix', 'ext', 'expTime', 'ampName']
+        # "covariancesFits" has CovFit objects that fit the measured covariances to Eq. 20 of Astier+19.
+        # In "covariancesFitsWithNoB", "b"=0 in the model described by Eq. 20 of Astier+19.
         self.__dict__["covariancesTuple"] = {ampName: [] for ampName in ampNames}
         self.__dict__["covariancesFitsWithNoB"] = {ampName: [] for ampName in ampNames}
         self.__dict__["covariancesFits"] = {ampName: [] for ampName in ampNames}
+        self.__dict__["aMatrix"] = {ampName: [] for ampName in ampNames}
+        self.__dict__["bMatrix"] = {ampName: [] for ampName in ampNames}
 
+        # "final" means that the "raw" vectors above had "visitMask" applied.
         self.__dict__["finalVars"] = {ampName: [] for ampName in ampNames}
         self.__dict__["finalModelVars"] = {ampName: [] for ampName in ampNames}
         self.__dict__["finalMeans"] = {ampName: [] for ampName in ampNames}
-        self.__dict__["aMatrix"] = {ampName: [] for ampName in ampNames}
-        self.__dict__["bMatrix"] = {ampName: [] for ampName in ampNames}
 
     def __setattr__(self, attribute, value):
         """Protect class attributes"""
@@ -276,7 +295,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
     The Photon Transfer Curve (var(signal) vs mean(signal)) is a standard tool
     used in astronomical detectors characterization (e.g., Janesick 2001,
-    Janesick 2007). If ptcFitType is "ASTIERAPPROXIMATION" or "POLYNOMIAL",  this task calculates the
+    Janesick 2007). If ptcFitType is "EXPAPPROXIMATION" or "POLYNOMIAL",  this task calculates the
     PTC from a series of pairs of flat-field images; each pair taken at identical exposure
     times. The difference image of each pair is formed to eliminate fixed pattern noise,
     and then the variance of the difference image and the mean of the average image
@@ -289,7 +308,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
     The `Linearizer` class, in general, can support per-amp linearizers, but in this
     task this is not supported.
 
-    If ptcFitType is "ASTIERFULL", the covariances of the difference images are calculated via the
+    If ptcFitType is "FULLCOVARIANCE", the covariances of the difference images are calculated via the
     DFT methods described in Astier+19 and the variances for the PTC are given by the cov[0,0] elements
     at each signal level. The full model in Equation 20 of Astier+19 is fit to the PTC to get the gain
     and the noise.
@@ -397,10 +416,10 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             tupleRecords += tupleRows
         covariancesWithTags = np.core.records.fromrecords(tupleRecords, names=allTags)
 
-        if self.config.ptcFitType in ["ASTIERFULL", ]:
+        if self.config.ptcFitType in ["FULLCOVARIANCE", ]:
             # Calculate covariances and fit them, including the PTC, to Astier+19 full model (Eq. 20)
             datasetPtc = self.fitCovariancesAstier(datasetPtc, covariancesWithTags)
-        elif self.config.ptcFitType in ["ASTIERAPPROXIMATION", "POLYNOMIAL"]:
+        elif self.config.ptcFitType in ["EXPAPPROXIMATION", "POLYNOMIAL"]:
             # Fit the PTC to a polynomial or to Astier+19 approximation (Eq. 16)
             # Fill up PhotonTransferCurveDataset object.
             datasetPtc = self.fitPtc(datasetPtc, self.config.ptcFitType)
@@ -1032,7 +1051,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             The dataset containing the means, variances and exposure times
         ptcFitType : `str`
             Fit a 'POLYNOMIAL' (degree: 'polynomialFitDegree') or
-            'ASTIERAPPROXIMATION' (Eq. 16 of Astier+19) to the PTC
+            'EXPAPPROXIMATION' (Eq. 16 of Astier+19) to the PTC
 
         Returns
         -------
@@ -1062,7 +1081,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                                                     self.config.initialNonLinearityExclusionThresholdNegative)
             mask = mask & goodPoints
 
-            if ptcFitType == 'ASTIERAPPROXIMATION':
+            if ptcFitType == 'EXPAPPROXIMATION':
                 ptcFunc = funcAstier
                 parsIniPtc = [-1e-9, 1.0, 10.]  # a00, gain, noise
                 bounds = self._boundsForAstier(parsIniPtc)
@@ -1137,7 +1156,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             dataset.ptcFitParsError[ampName] = parsFitErr
             dataset.ptcFitReducedChiSquared[ampName] = reducedChiSqPtc
 
-            if ptcFitType == 'ASTIERAPPROXIMATION':
+            if ptcFitType == 'EXPAPPROXIMATION':
                 ptcGain = parsFit[1]
                 ptcGainErr = parsFitErr[1]
                 ptcNoise = np.sqrt(np.fabs(parsFit[2]))

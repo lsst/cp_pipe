@@ -117,14 +117,14 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         """Make the plots for the PTC task"""
         ptcFitType = datasetPtc.ptcFitType
         with PdfPages(filenameFull) as pdfPages:
-            if ptcFitType in ["ASTIERFULL", ]:
+            if ptcFitType in ["FULLCOVARIANCE", ]:
                 self.covAstierMakeAllPlots(datasetPtc.covariancesFits, datasetPtc.covariancesFitsWithNoB,
                                            pdfPages, log=log)
-            elif ptcFitType in ["ASTIERAPPROXIMATION", "POLYNOMIAL"]:
+            elif ptcFitType in ["EXPAPPROXIMATION", "POLYNOMIAL"]:
                 self._plotStandardPtc(datasetPtc, ptcFitType, pdfPages)
             else:
                 raise RuntimeError(f"The input dataset had an invalid dataset.ptcFitType: {ptcFitType}. \n" +
-                                   "Options: 'ASTIERFULL', ASTIERAPPROXIMATION, or 'POLYNOMIAL'.")
+                                   "Options: 'FULLCOVARIANCE', EXPAPPROXIMATION, or 'POLYNOMIAL'.")
 
         return
 
@@ -168,6 +168,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         return
 
+    @staticmethod
     def plotCovariances(self, covFits, pdfPages):
         """Plot covariances and models: Cov00, Cov10, Cov01.
 
@@ -311,6 +312,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         return
 
+    @staticmethod
     def plotNormalizedCovariances(self, covFits, covFitsNoB, i, j, pdfPages, offset=0.004, figname=None,
                                   plotData=True, topPlot=False, log=None):
         """Plot C_ij/mu vs mu.
@@ -411,39 +413,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         return
 
-    def plotAcoeffsSum(self, covFits, pdfPages):
-        """Fig. 14. of Astier+19
-
-        Cumulative sum of a_ij as a function of maximum separation. This plot displays the average over
-        channels.
-        """
-        a, b = [], []
-        for amp, fit in covFits.items():
-            a.append(fit.getA())
-            b.append(fit.getB())
-        a = np.array(a).mean(axis=0)
-        b = np.array(b).mean(axis=0)
-        fig = plt.figure(figsize=(7, 6))
-        w = 4*np.ones_like(a)
-        w[0, 1:] = 2
-        w[1:, 0] = 2
-        w[0, 0] = 1
-        wa = w*a
-        indices = range(1, a.shape[0]+1)
-        sums = [wa[0:n, 0:n].sum() for n in indices]
-        ax = plt.subplot(111)
-        ax.plot(indices, sums/sums[0], 'o', color='b')
-        ax.set_yscale('log')
-        ax.set_xlim(indices[0]-0.5, indices[-1]+0.5)
-        ax.set_ylim(None, 1.2)
-        ax.set_ylabel(r'$[\sum_{|i|<n\  &\  |j|<n} a_{ij}] / |a_{00}|$', fontsize='x-large')
-        ax.set_xlabel('n', fontsize='x-large')
-        ax.tick_params(axis='both', labelsize='x-large')
-        plt.tight_layout()
-        pdfPages.savefig(fig)
-
-        return
-
+    @staticmethod
     def plot_a_b(self, covFits, pdfPages, brange=3):
         """Fig. 12 of Astier+19
 
@@ -478,6 +448,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         return
 
+    @staticmethod
     def ab_vs_dist(self, covFits, pdfPages, brange=4):
         """Fig. 13 of Astier+19.
 
@@ -533,6 +504,41 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         return
 
+    @staticmethod
+    def plotAcoeffsSum(self, covFits, pdfPages):
+        """Fig. 14. of Astier+19
+
+        Cumulative sum of a_ij as a function of maximum separation. This plot displays the average over
+        channels.
+        """
+        a, b = [], []
+        for amp, fit in covFits.items():
+            a.append(fit.getA())
+            b.append(fit.getB())
+        a = np.array(a).mean(axis=0)
+        b = np.array(b).mean(axis=0)
+        fig = plt.figure(figsize=(7, 6))
+        w = 4*np.ones_like(a)
+        w[0, 1:] = 2
+        w[1:, 0] = 2
+        w[0, 0] = 1
+        wa = w*a
+        indices = range(1, a.shape[0]+1)
+        sums = [wa[0:n, 0:n].sum() for n in indices]
+        ax = plt.subplot(111)
+        ax.plot(indices, sums/sums[0], 'o', color='b')
+        ax.set_yscale('log')
+        ax.set_xlim(indices[0]-0.5, indices[-1]+0.5)
+        ax.set_ylim(None, 1.2)
+        ax.set_ylabel(r'$[\sum_{|i|<n\  &\  |j|<n} a_{ij}] / |a_{00}|$', fontsize='x-large')
+        ax.set_xlabel('n', fontsize='x-large')
+        ax.tick_params(axis='both', labelsize='x-large')
+        plt.tight_layout()
+        pdfPages.savefig(fig)
+
+        return
+
+    @staticmethod
     def plotRelativeBiasACoeffs(self, covFits, covFitsNoB, mu_el, pdfPages, maxr=None):
         """Fig. 15 in Astier+19.
 
@@ -578,7 +584,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
     def _plotStandardPtc(self, dataset, ptcFitType, pdfPages):
         """Plot PTC, linearity, and linearity residual per amplifier"""
 
-        if ptcFitType == 'ASTIERAPPROXIMATION':
+        if ptcFitType == 'EXPAPPROXIMATION':
             ptcFunc = funcAstier
             stringTitle = (r"Var = $\frac{1}{2g^2a_{00}}(\exp (2a_{00} \mu g) - 1) + \frac{n_{00}}{g^2}$ ")
         elif ptcFitType == 'POLYNOMIAL':
@@ -589,7 +595,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             stringTitle = r"Polynomial (degree: %g)" % (deg)
         else:
             raise RuntimeError(f"The input dataset had an invalid dataset.ptcFitType: {ptcFitType}. \n" +
-                               "Options: 'ASTIERFULL', ASTIERAPPROXIMATION, or 'POLYNOMIAL'.")
+                               "Options: 'FULLCOVARIANCE', EXPAPPROXIMATION, or 'POLYNOMIAL'.")
 
         legendFontSize = 7
         labelFontSize = 7
@@ -622,7 +628,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             meanVecOutliers = meanVecOriginal[np.invert(mask)]
             varVecOutliers = varVecOriginal[np.invert(mask)]
             pars, parsErr = dataset.ptcFitPars[amp], dataset.ptcFitParsError[amp]
-            if ptcFitType == 'ASTIERAPPROXIMATION':
+            if ptcFitType == 'EXPAPPROXIMATION':
                 if len(meanVecFinal):
                     ptcA00, ptcA00error = pars[0], parsErr[0]
                     ptcGain, ptcGainError = pars[1], parsErr[1]
