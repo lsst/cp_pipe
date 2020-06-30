@@ -1,6 +1,40 @@
-#  Code developed at LPNHE ("saunerie", Paris)
+# This file is part of cp_pipe.
+#
+# Developed for the LSST Data Management System.
+# This product includes software developed by the LSST Project
+# (https://www.lsst.org).
+# See the COPYRIGHT file at the top-level directory of this distribution
+# for details of code ownership.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+# Code developed at LPNHE ("saunerie", Paris)
+
+import numpy as np
 
 """
+The classes in this file were taken from https://github.com/PierreAstier/bfptc
+by Pierre Astier (Laboratoire de Physique Nucléaire et de Hautes Energies (LPNHE),
+Sorbonne Université, Paris, France).
+
+File: bfptc/py/fitparameters.py
+Commit hash: d46ba836fd5feb1c0065b61472c5f31b73b8480f
+
+
+Notes from original code
+-----------------------
+
 This module contains utility classes to handle parameters in linear and
 non-linear least square fits implemented in linearmodels and
 nonlinearmodels. It provide 2 main features:
@@ -12,8 +46,6 @@ vectors organized into named subgroups.
 allows to easily fix/release specific parameters or entire subgroups,
 and remap the remaining free parameters into a contiguous vector.
 """
-
-import numpy as np
 
 
 class Structure(object):
