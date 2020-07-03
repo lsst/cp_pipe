@@ -320,7 +320,7 @@ def loadData(tupleName, params):
     return covFitList
 
 
-def fitData(tupleName, maxMu=1e9, maxMuElectrons=1e9, r=8):
+def fitData(tupleName, maxMu=1e9, r=8):
     """Fit data to models in Astier+19.
 
     Parameters
@@ -340,9 +340,6 @@ def fitData(tupleName, maxMu=1e9, maxMuElectrons=1e9, r=8):
 
     maxMu: `float`, optional
         Maximum signal, in ADU (e.g., to eliminate data beyond saturation).
-
-    maxMuElectrons: `float`, optional
-        Maximum signal in electrons.
 
     Returns
     -------
@@ -368,7 +365,6 @@ def fitData(tupleName, maxMu=1e9, maxMuElectrons=1e9, r=8):
     lparams = LoadParams()
     lparams.subtractDistantValue = False
     lparams.maxMu = maxMu
-    lparams.maxMu = maxMuElectrons
     lparams.r = r
 
     covFitList = loadData(tupleName, lparams)

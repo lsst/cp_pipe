@@ -850,8 +850,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         -------
         dataset : `lsst.cp.pipe.ptc.LinearityResidualsAndLinearizersDataset`
             The dataset containing the fit parameters, the NL correction coefficients, and the
-            LUT row for the amplifier at hand. 
-            
+            LUT row for the amplifier at hand.
+
         Notes
         -----
         datase members:
@@ -1215,7 +1215,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             dataset.gainErr[ampName] = ptcGainErr
             dataset.noise[ampName] = ptcNoise
             dataset.noiseErr[ampName] = ptcNoiseErr
-        if not dataset.ptcFitType:
+        if not len(dataset.ptcFitType) == 0:
             dataset.ptcFitType = ptcFitType
 
         return dataset

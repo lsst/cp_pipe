@@ -286,14 +286,39 @@ def fitBootstrap(initialParams, dataX, dataY, function, confidenceSigma=1.):
 
 
 def funcPolynomial(pars, x):
-    """Polynomial function definition"""
-    return poly.polyval(x, [*pars])
+    """Polynomial function definition
+    Parameters
+    ----------
+    params : `list`
+        Polynomial coefficients. Its length determines the polynomial order.
+
+    x : `numpy.array`
+        Signal mu (ADU).
+
+    Returns
+    -------
+    C_00 (variance) in ADU^2.
+    """
+    return poly.polyval(x, [*pars])  # C_00
 
 
 def funcAstier(pars, x):
-    """Single brighter-fatter parameter model for PTC; Equation 16 of Astier+19"""
+    """Single brighter-fatter parameter model for PTC; Equation 16 of Astier+19.
+
+    Parameters
+    ----------
+    params : `list`
+        Parameters of the model: a00 (brightter-fatter), gain (e/ADU), and noise (e^2).
+
+    x : `numpy.array`
+        Signal mu (ADU).
+
+    Returns
+    -------
+    C_00 (variance) in ADU^2.
+    """
     a00, gain, noise = pars
-    return 0.5/(a00*gain*gain)*(np.exp(2*a00*x*gain)-1) + noise/(gain*gain)
+    return 0.5/(a00*gain*gain)*(np.exp(2*a00*x*gain)-1) + noise/(gain*gain)  # C_00
 
 
 def checkExpLengthEqual(exp1, exp2, v1=None, v2=None, raiseWithMessage=False):
