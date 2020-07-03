@@ -420,7 +420,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             # Calculate covariances and fit them, including the PTC, to Astier+19 full model (Eq. 20)
             datasetPtc = self.fitCovariancesAstier(datasetPtc, covariancesWithTags)
         elif self.config.ptcFitType in ["EXPAPPROXIMATION", "POLYNOMIAL"]:
-            # Fit the PTC to a polynomial or to Astier+19 approximation (Eq. 16)
+            # Fit the PTC to a polynomial or to Astier+19 exponential approximation (Eq. 16)
             # Fill up PhotonTransferCurveDataset object.
             datasetPtc = self.fitPtc(datasetPtc, self.config.ptcFitType)
 
@@ -435,9 +435,9 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             # Fill up array for LUT linearizer (tableArray).
             # Produce coefficients for Polynomial ans Squared linearizers.
             # Build linearizer objects.
-            datasetPtc, linsArray = self.fitNonLinearityAndBuildLinearizers(datasetPtc, detector,
-                                                                            tableArray=lookupTableArray,
-                                                                            log=self.log)
+            linsArray = self.fitNonLinearityAndBuildLinearizers(datasetPtc, detector,
+                                                                tableArray=lookupTableArray,
+                                                                log=self.log)
 
             butler = dataRef.getButler()
             self.log.info("Writing linearizers: \n "
@@ -458,13 +458,14 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         return pipeBase.Struct(exitStatus=0)
 
-    def fitNonLinearityAndBuildLinearizers(self, dataset, detector, tableArray=None, log=None):
+    def fitNonLinearityAndBuildLinearizers(self, datasetPtc, detector, tableArray=None, log=None):
         """Fit non-linearity function and build linearizer objects.
 
         Parameters
         ----------
-        dataset : `lsst.cp.pipe.ptc.PhotonTransferCurveDataset`
+        datasePtct : `lsst.cp.pipe.ptc.PhotonTransferCurveDataset`
             The dataset containing information such as the means, variances and exposure times.
+            nLinearity
 
         detector : `lsst.afw.cameraGeom.Detector`
             Detector object.
@@ -478,17 +479,12 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         Returns
         -------
-        dataset: `lsst.cp.pipe.ptc.PhotonTransferCurveDataset`
-            This is the same dataset as the input paramter, however, it has been modified
-            to include information such as the fit vectors and the fit parameters. See
-            the class `PhotonTransferCurveDatase`.
-
         linArray : `list`
             List with (linearizer object, linearizer data type) as entries.
         """
 
         # Fit NonLinearity
-        dataset = self.fitNonLinearity(dataset, tableArray=tableArray)
+        datasetNonLinearity = self.fitNonLinearity(datasetPtc, tableArray=tableArray)
 
         # Produce linearizer
         now = datetime.datetime.utcnow()
@@ -504,13 +500,13 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             else:
                 tableArray = None
 
-            linearizer = self.buildLinearizerObject(dataset, detector, calibDate, linType,
+            linearizer = self.buildLinearizerObject(datasetNonLinearity, detector, calibDate, linType,
                                                     instruName=self.config.instrumentName,
                                                     tableArray=tableArray,
                                                     log=log)
             linArray.append((linearizer, dataType))
 
-        return dataset, linArray
+        return linArray
 
     def fitCovariancesAstier(self, dataset, covariancesWithTagsArray):
         """Fit measured flat covariances to full model in Astier+19.
@@ -787,14 +783,14 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         return cov, nPix
 
-    def buildLinearizerObject(self, dataset, detector, calibDate, linearizerType, instruName='',
+    def buildLinearizerObject(self, datasetNonLinearity, detector, calibDate, linearizerType, instruName='',
                               tableArray=None, log=None):
         """Build linearizer object to persist.
 
         Parameters
         ----------
-        dataset : `lsst.cp.pipe.ptc.PhotonTransferCurveDataset`
-            The dataset containing the means, variances, and exposure times
+        datasetNonLinearity : `dict`
+            Dictionary of `lsst.cp.pipe.ptc.LinearityResidualsAndLinearizersDataset` objects.
 
         detector : `lsst.afw.cameraGeom.Detector`
             Detector object
@@ -833,17 +829,30 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                                "Supported: 'LOOKUPTABLE', 'LINEARIZESQUARED', or 'LINEARIZEPOLYNOMIAL'")
         for i, amp in enumerate(detector.getAmplifiers()):
             ampName = amp.getName()
+            datasetLinRes = datasetNonLinearity[ampName]
             if linearizerType == "LOOKUPTABLE":
                 linearizer.linearityCoeffs[ampName] = [i, 0]
                 linearizer.linearityType[ampName] = "LookupTable"
             elif linearizerType == "LINEARIZESQUARED":
-                linearizer.linearityCoeffs[ampName] = [dataset.coefficientLinearizeSquared[ampName]]
+                linearizer.fitParams[ampName] = datasetLinRes.meanSignalVsTimePolyFitPars
+                linearizer.fitParamsErr[ampName] = datasetLinRes.meanSignalVsTimePolyFitParsErr
+                linearizer.linearityFitReducedChiSquared[ampName] = (
+                    datasetLinRes.meanSignalVsTimePolyFitReducedChiSq)
+                linearizer.linearityCoeffs[ampName] = [
+                    datasetLinRes.quadraticPolynomialLinearizerCoefficient]
                 linearizer.linearityType[ampName] = "Squared"
             elif linearizerType == "LINEARIZEPOLYNOMIAL":
-                linearizer.linearityCoeffs[ampName] = dataset.coefficientsLinearizePolynomial[ampName]
+                linearizer.fitParams[ampName] = datasetLinRes.meanSignalVsTimePolyFitPars
+                linearizer.fitParamsErr[ampName] = datasetLinRes.meanSignalVsTimePolyFitParsErr
+                linearizer.linearityFitReducedChiSquared[ampName] = (
+                    datasetLinRes.meanSignalVsTimePolyFitReducedChiSq)
+                # Slice correction coefficients (starting at 2) for polynomial linearizer
+                # (and squared linearizer above). The first and second are reduntant with
+                # the bias and gain, respectively, and are not used by LinearizerPolynomial.
+                polyLinCoeffs = np.array(datasetLinRes.polynomialLinearizerCoefficients[2:])
+                linearizer.linearityCoeffs[ampName] = polyLinCoeffs
                 linearizer.linearityType[ampName] = "Polynomial"
             linearizer.linearityBBox[ampName] = amp.getBBox()
-
         linearizer.validate()
         calibId = f"detectorName={detName} detector={detNum} calibDate={calibDate} ccd={detNum} filter=NONE"
 
@@ -1175,34 +1184,36 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         return dataset
 
-    def fitNonLinearity(self, dataset, tableArray=None):
+    def fitNonLinearity(self, datasetPtc, tableArray=None):
         """Fit a polynomial to signal vs effective time curve to calculate linearity and residuals.
 
         Parameters
         ----------
-        dataset : `lsst.cp.pipe.ptc.PhotonTransferCurveDataset`
-            The dataset containing the means, variances and exposure times
+        datasetPtc : `lsst.cp.pipe.ptc.PhotonTransferCurveDataset`
+            The dataset containing the means, variances and exposure times.
+
         tableArray : `np.array`
             Optional. Look-up table array with size rows=nAmps and columns=DN values.
             It will be modified in-place if supplied.
 
         Returns
         -------
-        dataset: `lsst.cp.pipe.ptc.PhotonTransferCurveDataset`
-            This is the same dataset as the input paramter, however, it has been modified
-            to include information such as the fit vectors and the fit parameters. See
-            the class `PhotonTransferCurveDatase`.
+        datasetNonLinearity : `dict`
+            Dictionary of `lsst.cp.pipe.ptc.LinearityResidualsAndLinearizersDataset`
+            dataclasses. Each one holds the output of `calculateLinearityResidualAndLinearizers` per
+            amplifier.
         """
-        for i, ampName in enumerate(dataset.ampNames):
+        datasetNonLinearity = {ampName: [] for ampName in datasetPtc.ampNames}
+        for i, ampName in enumerate(datasetPtc.ampNames):
             # If a mask is not found, use all points.
-            if (len(dataset.visitMask[ampName]) == 0):
+            if (len(datasetPtc.visitMask[ampName]) == 0):
                 self.log.warn(f"Mask not found for {ampName} in non-linearity fit. Using all points.")
-                mask = np.repeat(True, len(dataset.rawExpTimes[ampName]))
+                mask = np.repeat(True, len(datasetPtc.rawExpTimes[ampName]))
             else:
-                mask = dataset.visitMask[ampName]
+                mask = datasetPtc.visitMask[ampName]
 
-            timeVecFinal = np.array(dataset.rawExpTimes[ampName])[mask]
-            meanVecFinal = np.array(dataset.rawMeans[ampName])[mask]
+            timeVecFinal = np.array(datasetPtc.rawExpTimes[ampName])[mask]
+            meanVecFinal = np.array(datasetPtc.rawMeans[ampName])[mask]
 
             # Non-linearity residuals (NL of mean vs time curve): percentage, and fit to a quadratic function
             # In this case, len(parsIniNonLinearity) = 3 indicates that we want a quadratic fit
@@ -1211,16 +1222,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             # LinearizerLookupTable
             if tableArray is not None:
                 tableArray[i, :] = datasetLinRes.linearizerTableRow
-            dataset.nonLinearity[ampName] = datasetLinRes.meanSignalVsTimePolyFitPars
-            dataset.nonLinearityError[ampName] = datasetLinRes.meanSignalVsTimePolyFitParsErr
-            dataset.fractionalNonLinearityResiduals[ampName] = datasetLinRes.fractionalNonLinearityResidual
-            dataset.nonLinearityReducedChiSquared[ampName] = datasetLinRes.meanSignalVsTimePolyFitReducedChiSq
-            # Slice correction coefficients (starting at 2) for polynomial linearizer. The first
-            # and second are reduntant  with the bias and gain, respectively,
-            # and are not used by LinearizerPolynomial.
-            polyLinCoeffs = np.array(datasetLinRes.polynomialLinearizerCoefficients[2:])
-            dataset.coefficientsLinearizePolynomial[ampName] = polyLinCoeffs
-            quadPolyLinCoeff = datasetLinRes.quadraticPolynomialLinearizerCoefficient
-            dataset.coefficientLinearizeSquared[ampName] = quadPolyLinCoeff
 
-        return dataset
+            datasetNonLinearity[ampName] = datasetLinRes
+
+        return datasetNonLinearity
