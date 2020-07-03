@@ -29,6 +29,7 @@ from matplotlib import gridspec
 import os
 from matplotlib.backends.backend_pdf import PdfPages
 
+import lsst.ip.isr as isr
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 import pickle
@@ -43,7 +44,12 @@ class PlotPhotonTransferCurveTaskConfig(pexConfig.Config):
     """Config class for photon transfer curve measurement task"""
     datasetFileName = pexConfig.Field(
         dtype=str,
-        doc="datasetPtc file name",
+        doc="datasetPtc file name (pkl)",
+        default="",
+    )
+    linearizerFileName = pexConfig.Field(
+        dtype=str,
+        doc="linearizer file name (fits)",
         default="",
     )
     ccdKey = pexConfig.Field(
@@ -109,11 +115,15 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         filename = f"PTC_det{detNum}.pdf"
         filenameFull = os.path.join(dirname, filename)
 
-        self.run(filenameFull, datasetPtc, log=self.log)
+        if self.config.linearizerFileName:
+            linearizer = isr.linearize.Linearizer.readFits(self.config.linearizerFileName)
+        else:
+            linearizer = None
+        self.run(filenameFull, datasetPtc, linearizer=linearizer, log=self.log)
 
         return pipeBase.Struct(exitStatus=0)
 
-    def run(self, filenameFull, datasetPtc, log=None):
+    def run(self, filenameFull, datasetPtc, linearizer=None, log=None):
         """Make the plots for the PTC task"""
         ptcFitType = datasetPtc.ptcFitType
         with PdfPages(filenameFull) as pdfPages:
@@ -125,11 +135,13 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             else:
                 raise RuntimeError(f"The input dataset had an invalid dataset.ptcFitType: {ptcFitType}. \n" +
                                    "Options: 'FULLCOVARIANCE', EXPAPPROXIMATION, or 'POLYNOMIAL'.")
+            if linearizer:
+                self._plotLinearizer(datasetPtc, linearizer, pdfPages)
 
         return
 
     def covAstierMakeAllPlots(self, covFits, covFitsNoB, pdfPages,
-                              log=None, maxMu=1e9, maxMuElectrons=1e9):
+                              log=None, maxMu=1e9):
         """Make plots for MeasurePhotonTransferCurve task when doCovariancesAstier=True.
 
         This function call other functions that mostly reproduce the plots in Astier+19.
@@ -151,9 +163,6 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         maxMu: `float`, optional
             Maximum signal, in ADU.
-
-        maxMuElectrons: `float`, optional
-           Maximum signal, in electrons.
         """
 
         self.plotCovariances(covFits, pdfPages)
@@ -164,7 +173,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         self.plot_a_b(covFits, pdfPages)
         self.ab_vs_dist(covFits, pdfPages, brange=4)
         self.plotAcoeffsSum(covFits, pdfPages)
-        self.plotRelativeBiasACoeffs(covFits, covFitsNoB, maxMuElectrons, pdfPages)
+        self.plotRelativeBiasACoeffs(covFits, covFitsNoB, maxMu, pdfPages)
 
         return
 
@@ -539,7 +548,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         return
 
     @staticmethod
-    def plotRelativeBiasACoeffs(self, covFits, covFitsNoB, mu_el, pdfPages, maxr=None):
+    def plotRelativeBiasACoeffs(self, covFits, covFitsNoB, maxMu, pdfPages, maxr=None):
         """Fig. 15 in Astier+19.
 
         Illustrates systematic bias from estimating 'a'
@@ -557,7 +566,8 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             for fit in data[k].values():
                 if fit is None:
                     continue
-                aOld = computeApproximateAcoeffs(fit, mu_el)
+                maxMuEl = maxMu*fit.getGain()
+                aOld = computeApproximateAcoeffs(fit, maxMuEl)
                 a = fit.getA()
                 amean.append(a)
                 diffs.append((aOld-a))
@@ -685,70 +695,91 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                 a.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
                 a2.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
 
-        f.suptitle("PTC \n Fit: " + stringTitle, fontsize=20)
+        f.suptitle("PTC \n Fit: " + stringTitle, fontsize=supTitleFontSize)
         pdfPages.savefig(f)
-        f2.suptitle("PTC (log-log)", fontsize=20)
+        f2.suptitle("PTC (log-log)", fontsize=supTitleFontSize)
         pdfPages.savefig(f2)
 
-        # If "ptc.py" built a linearizer
-        if len(dataset.fractionalNonLinearityResiduals[amp]):
-            # Plot mean vs time
-            f, ax = plt.subplots(nrows=4, ncols=4, sharex='col', sharey='row', figsize=(13, 10))
-            for i, (amp, a) in enumerate(zip(dataset.ampNames, ax.flatten())):
-                meanVecFinal = np.array(dataset.rawMeans[amp])[dataset.visitMask[amp]]
-                timeVecFinal = np.array(dataset.rawExpTimes[amp])[dataset.visitMask[amp]]
-
-                a.set_xlabel('Time (sec)', fontsize=labelFontSize)
-                a.set_ylabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
-                a.tick_params(labelsize=labelFontSize)
-                a.set_xscale('linear', fontsize=labelFontSize)
-                a.set_yscale('linear', fontsize=labelFontSize)
-
-                if len(meanVecFinal):
-                    pars, parsErr = dataset.nonLinearity[amp], dataset.nonLinearityError[amp]
-                    k0, k0Error = pars[0], parsErr[0]
-                    k1, k1Error = pars[1], parsErr[1]
-                    k2, k2Error = pars[2], parsErr[2]
-                    stringLegend = (f"k0: {k0:.4}+/-{k0Error:.2e} DN\n k1: {k1:.4}+/-{k1Error:.2e} DN/t"
-                                    f"\n k2: {k2:.2e}+/-{k2Error:.2e} DN/t^2 \n")
-                    a.scatter(timeVecFinal, meanVecFinal)
-                    a.plot(timeVecFinal, funcPolynomial(pars, timeVecFinal), color='red')
-                    a.text(0.03, 0.75, stringLegend, transform=a.transAxes, fontsize=legendFontSize)
-                    a.set_title(f"{amp}", fontsize=titleFontSize)
-                else:
-                    a.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
-
-            f.suptitle("Linearity \n Fit: Polynomial (degree: %g)"
-                       % (len(pars)-1),
-                       fontsize=supTitleFontSize)
-            pdfPages.savefig(f)
-
-            # Plot fractional non-linearity residual (w.r.t linear part of polynomial fit)
-            f, ax = plt.subplots(nrows=4, ncols=4, sharex='col', sharey='row', figsize=(13, 10))
-            for i, (amp, a) in enumerate(zip(dataset.ampNames, ax.flatten())):
-                meanVecFinal = np.array(dataset.rawMeans[amp])[dataset.visitMask[amp]]
-                fracLinRes = np.array(dataset.fractionalNonLinearityResiduals[amp])
-
-                a.axhline(y=0, color='k')
-                a.axvline(x=0, color='k', linestyle='-')
-                a.set_xlabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
-                a.set_ylabel('Fractional nonlinearity (%)', fontsize=labelFontSize)
-                a.tick_params(labelsize=labelFontSize)
-                a.set_xscale('linear', fontsize=labelFontSize)
-                a.set_yscale('linear', fontsize=labelFontSize)
-
-                if len(meanVecFinal):
-                    a.scatter(meanVecFinal, fracLinRes, c='g')
-                    a.set_title(amp, fontsize=titleFontSize)
-                else:
-                    a.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
-
-            f.suptitle(r"Fractional NL residual" + "\n" +
-                       r"$100\times \frac{(k_0 + k_1*Time-\mu)}{k_0+k_1*Time}$",
-                       fontsize=supTitleFontSize)
-            pdfPages.savefig(f)
-
         return
+
+    def _plotLinearizer(self, dataset, linearizer, pdfPages):
+        """Plot linearity and linearity residual per amplifier
+
+        Parameters
+        ----------
+        dataset : `lsst.cp.pipe.ptc.PhotonTransferCurveDataset`
+            The dataset containing the means, variances, exposure times, and mask.
+
+        linearizer : `lsst.ip.isr.Linearizer`
+            Linearizer object
+        """
+        legendFontSize = 7
+        labelFontSize = 7
+        titleFontSize = 9
+        supTitleFontSize = 18
+
+        # General determination of the size of the plot grid
+        nAmps = len(dataset.ampNames)
+        if nAmps == 2:
+            nRows, nCols = 2, 1
+        nRows = np.sqrt(nAmps)
+        mantissa, _ = np.modf(nRows)
+        if mantissa > 0:
+            nRows = int(nRows) + 1
+            nCols = nRows
+        else:
+            nRows = int(nRows)
+            nCols = nRows
+
+        # Plot mean vs time (f1), and fractional residuals (f2)
+        f, ax = plt.subplots(nrows=nRows, ncols=nCols, sharex='col', sharey='row', figsize=(13, 10))
+        f2, ax2 = plt.subplots(nrows=nRows, ncols=nCols, sharex='col', sharey='row', figsize=(13, 10))
+        for i, (amp, a, a2) in enumerate(zip(dataset.ampNames, ax.flatten(), ax2.flatten())):
+            meanVecFinal = np.array(dataset.rawMeans[amp])[dataset.visitMask[amp]]
+            timeVecFinal = np.array(dataset.rawExpTimes[amp])[dataset.visitMask[amp]]
+
+            a.set_xlabel('Time (sec)', fontsize=labelFontSize)
+            a.set_ylabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
+            a.tick_params(labelsize=labelFontSize)
+            a.set_xscale('linear', fontsize=labelFontSize)
+            a.set_yscale('linear', fontsize=labelFontSize)
+
+            a2.axhline(y=0, color='k')
+            a2.axvline(x=0, color='k', linestyle='-')
+            a2.set_xlabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
+            a2.set_ylabel('Fractional nonlinearity (%)', fontsize=labelFontSize)
+            a2.tick_params(labelsize=labelFontSize)
+            a2.set_xscale('linear', fontsize=labelFontSize)
+            a2.set_yscale('linear', fontsize=labelFontSize)
+
+            if len(meanVecFinal):
+                pars, parsErr = linearizer.fitParams[amp], linearizer.fitParamsErr[amp]
+                k0, k0Error = pars[0], parsErr[0]
+                k1, k1Error = pars[1], parsErr[1]
+                k2, k2Error = pars[2], parsErr[2]
+                stringLegend = (f"k0: {k0:.4}+/-{k0Error:.2e} DN\n k1: {k1:.4}+/-{k1Error:.2e} DN/t"
+                                f"\n k2: {k2:.2e}+/-{k2Error:.2e} DN/t^2 \n")
+                a.scatter(timeVecFinal, meanVecFinal)
+                a.plot(timeVecFinal, funcPolynomial(pars, timeVecFinal), color='red')
+                a.text(0.03, 0.75, stringLegend, transform=a.transAxes, fontsize=legendFontSize)
+                a.set_title(f"{amp}", fontsize=titleFontSize)
+
+                linearPart = k0 + k1*timeVecFinal
+                fracLinRes = 100*(linearPart - meanVecFinal)/linearPart
+                a2.plot(meanVecFinal, fracLinRes, c='g')
+                a2.set_title(f"{amp}", fontsize=titleFontSize)
+            else:
+                a.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
+                a2.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
+
+        f.suptitle("Linearity \n Fit: Polynomial (degree: %g)"
+                   % (len(pars)-1),
+                   fontsize=supTitleFontSize)
+        f2.suptitle(r"Fractional NL residual" + "\n" +
+                    r"$100\times \frac{(k_0 + k_1*Time-\mu)}{k_0+k_1*Time}$",
+                    fontsize=supTitleFontSize)
+        pdfPages.savefig(f)
+        pdfPages.savefig(f2)
 
     def findGroups(self, x, maxDiff):
         """Group data into bins, with at most maxDiff distance between bins.

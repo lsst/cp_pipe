@@ -171,7 +171,6 @@ class LinearityResidualsAndLinearizersDataset:
     linearizerTableRow: list
     meanSignalVsTimePolyFitPars: list
     meanSignalVsTimePolyFitParsErr: list
-    fractionalNonLinearityResidual: list
     meanSignalVsTimePolyFitReducedChiSq: float
 
 
@@ -237,14 +236,6 @@ class PhotonTransferCurveDataset:
         self.__dict__["ptcFitPars"] = {ampName: [] for ampName in ampNames}
         self.__dict__["ptcFitParsError"] = {ampName: [] for ampName in ampNames}
         self.__dict__["ptcFitReducedChiSquared"] = {ampName: [] for ampName in ampNames}
-
-        # For nonlinearity
-        self.__dict__["nonLinearity"] = {ampName: [] for ampName in ampNames}
-        self.__dict__["nonLinearityError"] = {ampName: [] for ampName in ampNames}
-        self.__dict__["fractionalNonLinearityResiduals"] = {ampName: [] for ampName in ampNames}
-        self.__dict__["nonLinearityReducedChiSquared"] = {ampName: [] for ampName in ampNames}
-        self.__dict__["coefficientsLinearizePolynomial"] = {ampName: [] for ampName in ampNames}
-        self.__dict__["coefficientLinearizeSquared"] = {ampName: [] for ampName in ampNames}
 
         # if ptcFitTye in ["FULLCOVARIANCE"]
         # "covariancesTuple" is a numpy recarray with entries of the form
@@ -829,27 +820,27 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                                "Supported: 'LOOKUPTABLE', 'LINEARIZESQUARED', or 'LINEARIZEPOLYNOMIAL'")
         for i, amp in enumerate(detector.getAmplifiers()):
             ampName = amp.getName()
-            datasetLinRes = datasetNonLinearity[ampName]
+            datasetNonLinAmp = datasetNonLinearity[ampName]
             if linearizerType == "LOOKUPTABLE":
                 linearizer.linearityCoeffs[ampName] = [i, 0]
                 linearizer.linearityType[ampName] = "LookupTable"
             elif linearizerType == "LINEARIZESQUARED":
-                linearizer.fitParams[ampName] = datasetLinRes.meanSignalVsTimePolyFitPars
-                linearizer.fitParamsErr[ampName] = datasetLinRes.meanSignalVsTimePolyFitParsErr
+                linearizer.fitParams[ampName] = datasetNonLinAmp.meanSignalVsTimePolyFitPars
+                linearizer.fitParamsErr[ampName] = datasetNonLinAmp.meanSignalVsTimePolyFitParsErr
                 linearizer.linearityFitReducedChiSquared[ampName] = (
-                    datasetLinRes.meanSignalVsTimePolyFitReducedChiSq)
+                    datasetNonLinAmp.meanSignalVsTimePolyFitReducedChiSq)
                 linearizer.linearityCoeffs[ampName] = [
-                    datasetLinRes.quadraticPolynomialLinearizerCoefficient]
+                    datasetNonLinAmp.quadraticPolynomialLinearizerCoefficient]
                 linearizer.linearityType[ampName] = "Squared"
             elif linearizerType == "LINEARIZEPOLYNOMIAL":
-                linearizer.fitParams[ampName] = datasetLinRes.meanSignalVsTimePolyFitPars
-                linearizer.fitParamsErr[ampName] = datasetLinRes.meanSignalVsTimePolyFitParsErr
+                linearizer.fitParams[ampName] = datasetNonLinAmp.meanSignalVsTimePolyFitPars
+                linearizer.fitParamsErr[ampName] = datasetNonLinAmp.meanSignalVsTimePolyFitParsErr
                 linearizer.linearityFitReducedChiSquared[ampName] = (
-                    datasetLinRes.meanSignalVsTimePolyFitReducedChiSq)
+                    datasetNonLinAmp.meanSignalVsTimePolyFitReducedChiSq)
                 # Slice correction coefficients (starting at 2) for polynomial linearizer
                 # (and squared linearizer above). The first and second are reduntant with
                 # the bias and gain, respectively, and are not used by LinearizerPolynomial.
-                polyLinCoeffs = np.array(datasetLinRes.polynomialLinearizerCoefficients[2:])
+                polyLinCoeffs = np.array(datasetNonLinAmp.polynomialLinearizerCoefficients[2:])
                 linearizer.linearityCoeffs[ampName] = polyLinCoeffs
                 linearizer.linearityType[ampName] = "Polynomial"
             linearizer.linearityBBox[ampName] = amp.getBBox()
@@ -980,11 +971,6 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         dataset.meanSignalVsTimePolyFitParsErr : `list` of `float`
             Parameters from n-order polynomial fit to meanSignalVector vs exposureTimeVector.
 
-        dataset.fractionalNonLinearityResidual : `list` of `float`
-            Fractional residuals from the meanSignal vs exposureTime curve with respect to linear part of
-            polynomial fit: 100*(linearPart - meanSignal)/linearPart, where
-            linearPart = k0 + k1*exposureTimeVector.
-
         dataset.meanSignalVsTimePolyFitReducedChiSq  : `float`
             Reduced unweighted chi squared from polynomial fit to meanSignalVector vs exposureTimeVector.
         """
@@ -1024,17 +1010,12 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         # Coefficient for LinearizedSquared. Called "c0" in linearize.py
         c0 = polynomialLinearizerCoefficients[2]
 
-        # Fractional non-linearity residual, w.r.t linear part of polynomial fit
-        linearPart = parsFit[0] + k1*exposureTimeVector
-        fracNonLinearityResidual = 100*(linearPart - meanSignalVector)/linearPart
-
-        dataset = LinearityResidualsAndLinearizersDataset([], None, [], [], [], [], None)
+        dataset = LinearityResidualsAndLinearizersDataset([], None, [], [], [], None)
         dataset.polynomialLinearizerCoefficients = polynomialLinearizerCoefficients
         dataset.quadraticPolynomialLinearizerCoefficient = c0
         dataset.linearizerTableRow = linearizerTableRow
         dataset.meanSignalVsTimePolyFitPars = parsFit
         dataset.meanSignalVsTimePolyFitParsErr = parsFitErr
-        dataset.fractionalNonLinearityResidual = fracNonLinearityResidual
         dataset.meanSignalVsTimePolyFitReducedChiSq = reducedChiSquaredNonLinearityFit
 
         return dataset
@@ -1058,6 +1039,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         ----------
         dataset : `lsst.cp.pipe.ptc.PhotonTransferCurveDataset`
             The dataset containing the means, variances and exposure times
+
         ptcFitType : `str`
             Fit a 'POLYNOMIAL' (degree: 'polynomialFitDegree') or
             'EXPAPPROXIMATION' (Eq. 16 of Astier+19) to the PTC
@@ -1138,20 +1120,14 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 self.log.warn(msg)
                 # The first and second parameters of initial fit are discarded (bias and gain)
                 # for the final NL coefficients
-                lenNonLinPars = self.config.polynomialFitDegreeNonLinearity - 1
                 dataset.badAmps.append(ampName)
                 dataset.gain[ampName] = np.nan
                 dataset.gainErr[ampName] = np.nan
                 dataset.noise[ampName] = np.nan
                 dataset.noiseErr[ampName] = np.nan
-                dataset.nonLinearity[ampName] = np.nan
-                dataset.nonLinearityError[ampName] = np.nan
-                dataset.fractionalNonLinearityResiduals[ampName] = np.nan
-                dataset.coefficientLinearizeSquared[ampName] = np.nan
                 dataset.ptcFitPars[ampName] = np.nan
                 dataset.ptcFitParsError[ampName] = np.nan
                 dataset.ptcFitReducedChiSquared[ampName] = np.nan
-                dataset.coefficientsLinearizePolynomial[ampName] = [np.nan]*lenNonLinPars
                 continue
 
             # Fit the PTC
