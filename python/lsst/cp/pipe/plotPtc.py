@@ -182,6 +182,14 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         """Plot covariances and models: Cov00, Cov10, Cov01.
 
         Figs. 6 and 7 of Astier+19
+
+        Parameters
+        ----------
+        covFits: `dict`
+            Dictionary of CovFit objects, with amp names as keys.
+
+        pdfPages: `matplotlib.backends.backend_pdf.PdfPages`
+            PDF file where the plots will be saved.
         """
 
         legendFontSize = 7
@@ -322,11 +330,40 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         return
 
     @staticmethod
-    def plotNormalizedCovariances(self, covFits, covFitsNoB, i, j, pdfPages, offset=0.004, figname=None,
+    def plotNormalizedCovariances(self, covFits, covFitsNoB, i, j, pdfPages, offset=0.004,
                                   plotData=True, topPlot=False, log=None):
         """Plot C_ij/mu vs mu.
 
         Figs. 8, 10, and 11 of Astier+19
+
+        Parameters
+        ----------
+        covFits: `dict`
+            Dictionary of CovFit objects, with amp names as keys.
+
+        covFitsNoB: `dict`
+           Dictionary of CovFit objects, with amp names as keys (b=0 in Eq. 20 of Astier+19).
+
+        i : `int`
+            Covariane lag
+
+        j : `int
+            Covariance lag
+
+        pdfPages: `matplotlib.backends.backend_pdf.PdfPages`
+            PDF file where the plots will be saved.
+
+        offset : `float`, optional
+            Constant offset factor to plot covariances in same panel (so they don't overlap).
+
+        plotData : `bool`, optional
+            Plot the data points?
+
+        topPlot : `bool`, optional
+            Plot the top plot with the covariances, and the bottom plot with the model residuals?
+
+        log : `lsst.log.Log`, optional
+            Logger to handle messages.
         """
 
         lchi2, la, lb, lcov = [], [], [], []
@@ -423,10 +460,21 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         return
 
     @staticmethod
-    def plot_a_b(self, covFits, pdfPages, brange=3):
+    def plot_a_b(self, covFits, pdfPages, bRange=3):
         """Fig. 12 of Astier+19
 
         Color display of a and b arrays fits, averaged over channels.
+
+        Parameters
+        ----------
+        covFits: `dict`
+            Dictionary of CovFit objects, with amp names as keys.
+
+        pdfPages: `matplotlib.backends.backend_pdf.PdfPages`
+            PDF file where the plots will be saved.
+
+        bRange : `int`
+            Maximum lag for b arrays.
         """
         a, b = [], []
         for amp, fit in covFits.items():
@@ -447,7 +495,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         ax1.tick_params(axis='both', labelsize='x-large')
         ax1.yaxis.set_major_locator(MaxNLocator(integer=True))
         ax1.xaxis.set_major_locator(MaxNLocator(integer=True))
-        im1 = ax1.imshow(1e6*b[:brange, :brange].transpose(), origin='lower')
+        im1 = ax1.imshow(1e6*b[:bRange, :bRange].transpose(), origin='lower')
         cb1 = plt.colorbar(im1)
         cb1.ax.tick_params(labelsize='x-large')
         ax1.set_title(r'$b \times 10^6$', fontsize='x-large')
@@ -458,10 +506,21 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         return
 
     @staticmethod
-    def ab_vs_dist(self, covFits, pdfPages, brange=4):
+    def ab_vs_dist(self, covFits, pdfPages, bRange=4):
         """Fig. 13 of Astier+19.
 
         Values of a and b arrays fits, averaged over amplifiers, as a function of distance.
+
+        Parameters
+        ----------
+        covFits: `dict`
+            Dictionary of CovFit objects, with amp names as keys.
+
+        pdfPages: `matplotlib.backends.backend_pdf.PdfPages`
+            PDF file where the plots will be saved.
+
+        bRange : `int`
+            Maximum lag for b arrays.
         """
         a = np.array([f.getA() for f in covFits.values()])
         y = a.mean(axis=0)
@@ -495,7 +554,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         yb = yb.ravel()
         syb = syb.ravel()
         xmin = -0.2
-        xmax = brange
+        xmax = bRange
         axb.set_xlim([xmin, xmax+0.2])
         cutu = (r > xmin) & (r < xmax) & (upper)
         cutl = (r > xmin) & (r < xmax) & (~upper)
@@ -519,6 +578,14 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         Cumulative sum of a_ij as a function of maximum separation. This plot displays the average over
         channels.
+
+        Parameters
+        ----------
+        covFits: `dict`
+            Dictionary of CovFit objects, with amp names as keys.
+
+        pdfPages: `matplotlib.backends.backend_pdf.PdfPages`
+            PDF file where the plots will be saved.
         """
         a, b = [], []
         for amp, fit in covFits.items():
@@ -554,6 +621,23 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         Illustrates systematic bias from estimating 'a'
         coefficients from the slope of correlations as opposed to the
         full model in Astier+19.
+
+        Parameters
+        ----------
+        covFits: `dict`
+            Dictionary of CovFit objects, with amp names as keys.
+
+        covFitsNoB: `dict`
+           Dictionary of CovFit objects, with amp names as keys (b=0 in Eq. 20 of Astier+19).
+
+        maxMu: `float`, optional
+            Maximum signal, in ADU.
+
+        pdfPages: `matplotlib.backends.backend_pdf.PdfPages`
+            PDF file where the plots will be saved.
+
+        maxr: `int`, optional
+            Maximum lag.
         """
 
         fig = plt.figure(figsize=(7, 11))
