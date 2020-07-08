@@ -164,21 +164,20 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         maxMu: `float`, optional
             Maximum signal, in ADU.
         """
-
         self.plotCovariances(covFits, pdfPages)
         self.plotNormalizedCovariances(covFits, covFitsNoB, 0, 0, pdfPages, offset=0.01, topPlot=True,
                                        log=log)
         self.plotNormalizedCovariances(covFits, covFitsNoB, 0, 1, pdfPages, log=log)
         self.plotNormalizedCovariances(covFits, covFitsNoB, 1, 0, pdfPages, log=log)
         self.plot_a_b(covFits, pdfPages)
-        self.ab_vs_dist(covFits, pdfPages, brange=4)
+        self.ab_vs_dist(covFits, pdfPages, bRange=4)
         self.plotAcoeffsSum(covFits, pdfPages)
         self.plotRelativeBiasACoeffs(covFits, covFitsNoB, maxMu, pdfPages)
 
         return
 
     @staticmethod
-    def plotCovariances(self, covFits, pdfPages):
+    def plotCovariances(covFits, pdfPages):
         """Plot covariances and models: Cov00, Cov10, Cov01.
 
         Figs. 6 and 7 of Astier+19
@@ -329,7 +328,6 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         return
 
-    @staticmethod
     def plotNormalizedCovariances(self, covFits, covFitsNoB, i, j, pdfPages, offset=0.004,
                                   plotData=True, topPlot=False, log=None):
         """Plot C_ij/mu vs mu.
@@ -460,7 +458,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         return
 
     @staticmethod
-    def plot_a_b(self, covFits, pdfPages, bRange=3):
+    def plot_a_b(covFits, pdfPages, bRange=3):
         """Fig. 12 of Astier+19
 
         Color display of a and b arrays fits, averaged over channels.
@@ -506,7 +504,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         return
 
     @staticmethod
-    def ab_vs_dist(self, covFits, pdfPages, bRange=4):
+    def ab_vs_dist(covFits, pdfPages, bRange=4):
         """Fig. 13 of Astier+19.
 
         Values of a and b arrays fits, averaged over amplifiers, as a function of distance.
@@ -573,7 +571,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         return
 
     @staticmethod
-    def plotAcoeffsSum(self, covFits, pdfPages):
+    def plotAcoeffsSum(covFits, pdfPages):
         """Fig. 14. of Astier+19
 
         Cumulative sum of a_ij as a function of maximum separation. This plot displays the average over
@@ -615,7 +613,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         return
 
     @staticmethod
-    def plotRelativeBiasACoeffs(self, covFits, covFitsNoB, maxMu, pdfPages, maxr=None):
+    def plotRelativeBiasACoeffs(covFits, covFitsNoB, maxMu, pdfPages, maxr=None):
         """Fig. 15 in Astier+19.
 
         Illustrates systematic bias from estimating 'a'
@@ -676,7 +674,19 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         return
 
     def _plotStandardPtc(self, dataset, ptcFitType, pdfPages):
-        """Plot PTC, linearity, and linearity residual per amplifier"""
+        """Plot PTC, linearity, and linearity residual per amplifier
+
+        Parameters
+        ----------
+        dataset : `lsst.cp.pipe.ptc.PhotonTransferCurveDataset`
+            The dataset containing the means, variances, exposure times, and mask.
+
+        ptcFitType : `str`
+            Type of the model fit to the PTC. Options: 'FULLCOVARIANCE', EXPAPPROXIMATION, or 'POLYNOMIAL'.
+
+        pdfPages: `matplotlib.backends.backend_pdf.PdfPages`
+            PDF file where the plots will be saved.
+        """
 
         if ptcFitType == 'EXPAPPROXIMATION':
             ptcFunc = funcAstier
@@ -865,7 +875,8 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         pdfPages.savefig(f)
         pdfPages.savefig(f2)
 
-    def findGroups(self, x, maxDiff):
+    @staticmethod
+    def findGroups(x, maxDiff):
         """Group data into bins, with at most maxDiff distance between bins.
 
         Parameters
@@ -902,7 +913,8 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         return index
 
-    def indexForBins(self, x, nBins):
+    @staticmethod
+    def indexForBins(x, nBins):
         """Builds an index with regular binning. The result can be fed into binData.
 
         Parameters
@@ -922,7 +934,8 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         return np.digitize(x, bins)
 
-    def binData(self, x, y, binIndex, wy=None):
+    @staticmethod
+    def binData(x, y, binIndex, wy=None):
         """Bin data (usually for display purposes).
 
         Patrameters

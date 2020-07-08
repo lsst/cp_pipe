@@ -461,7 +461,11 @@ class CovFit:
 
     def getGainErr(self):
         """Get error on fitted gain parameter"""
-        return np.sqrt(self._getCovParams('gain')[0][0])
+        try:
+            gainErr = np.sqrt(self._getCovParams('gain')[0][0])
+        except ValueError:
+            gainErr = 0.0
+        return gainErr
 
     def getNoiseCov(self):
         """Get covariances of noise matrix from fit"""
