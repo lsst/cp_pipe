@@ -26,6 +26,8 @@ __all__ = ['PairedVisitListTaskRunner', 'SingleVisitListTaskRunner',
 
 import re
 import numpy as np
+from scipy.optimize import leastsq
+import numpy.polynomial.polynomial as poly
 
 import lsst.pipe.base as pipeBase
 import lsst.ip.isr as ipIsr
@@ -157,6 +159,166 @@ class NonexistentDatasetTaskDataIdContainer(pipeBase.DataIdContainer):
                 namespace.log.warn("No data found for dataId=%s", dataId)
                 continue
             self.refList += refList
+
+
+def fitLeastSq(initialParams, dataX, dataY, function):
+    """Do a fit and estimate the parameter errors using using scipy.optimize.leastq.
+
+    optimize.leastsq returns the fractional covariance matrix. To estimate the
+    standard deviation of the fit parameters, multiply the entries of this matrix
+    by the unweighted reduced chi squared and take the square root of the diagonal elements.
+
+    Parameters
+    ----------
+    initialParams : `list` of `float`
+        initial values for fit parameters. For ptcFitType=POLYNOMIAL, its length
+        determines the degree of the polynomial.
+
+    dataX : `numpy.array` of `float`
+        Data in the abscissa axis.
+
+    dataY : `numpy.array` of `float`
+        Data in the ordinate axis.
+
+    function : callable object (function)
+        Function to fit the data with.
+
+    Return
+    ------
+    pFitSingleLeastSquares : `list` of `float`
+        List with fitted parameters.
+
+    pErrSingleLeastSquares : `list` of `float`
+        List with errors for fitted parameters.
+
+    reducedChiSqSingleLeastSquares : `float`
+        Unweighted reduced chi squared
+    """
+
+    def errFunc(p, x, y):
+        return function(p, x) - y
+
+    pFit, pCov, infoDict, errMessage, success = leastsq(errFunc, initialParams,
+                                                        args=(dataX, dataY), full_output=1, epsfcn=0.0001)
+
+    if (len(dataY) > len(initialParams)) and pCov is not None:
+        reducedChiSq = (errFunc(pFit, dataX, dataY)**2).sum()/(len(dataY)-len(initialParams))
+        pCov *= reducedChiSq
+    else:
+        pCov = np.zeros((len(initialParams), len(initialParams)))
+        pCov[:, :] = np.inf
+        reducedChiSq = np.inf
+
+    errorVec = []
+    for i in range(len(pFit)):
+        errorVec.append(np.fabs(pCov[i][i])**0.5)
+
+    pFitSingleLeastSquares = pFit
+    pErrSingleLeastSquares = np.array(errorVec)
+
+    return pFitSingleLeastSquares, pErrSingleLeastSquares, reducedChiSq
+
+
+def fitBootstrap(initialParams, dataX, dataY, function, confidenceSigma=1.):
+    """Do a fit using least squares and bootstrap to estimate parameter errors.
+
+    The bootstrap error bars are calculated by fitting 100 random data sets.
+
+    Parameters
+    ----------
+    initialParams : `list` of `float`
+        initial values for fit parameters. For ptcFitType=POLYNOMIAL, its length
+        determines the degree of the polynomial.
+
+    dataX : `numpy.array` of `float`
+        Data in the abscissa axis.
+
+    dataY : `numpy.array` of `float`
+        Data in the ordinate axis.
+
+    function : callable object (function)
+        Function to fit the data with.
+
+    confidenceSigma : `float`
+        Number of sigmas that determine confidence interval for the bootstrap errors.
+
+    Return
+    ------
+    pFitBootstrap : `list` of `float`
+        List with fitted parameters.
+
+    pErrBootstrap : `list` of `float`
+        List with errors for fitted parameters.
+
+    reducedChiSqBootstrap : `float`
+        Reduced chi squared.
+    """
+
+    def errFunc(p, x, y):
+        return function(p, x) - y
+
+    # Fit first time
+    pFit, _ = leastsq(errFunc, initialParams, args=(dataX, dataY), full_output=0)
+
+    # Get the stdev of the residuals
+    residuals = errFunc(pFit, dataX, dataY)
+    sigmaErrTotal = np.std(residuals)
+
+    # 100 random data sets are generated and fitted
+    pars = []
+    for i in range(100):
+        randomDelta = np.random.normal(0., sigmaErrTotal, len(dataY))
+        randomDataY = dataY + randomDelta
+        randomFit, _ = leastsq(errFunc, initialParams,
+                               args=(dataX, randomDataY), full_output=0)
+        pars.append(randomFit)
+    pars = np.array(pars)
+    meanPfit = np.mean(pars, 0)
+
+    # confidence interval for parameter estimates
+    nSigma = confidenceSigma
+    errPfit = nSigma*np.std(pars, 0)
+    pFitBootstrap = meanPfit
+    pErrBootstrap = errPfit
+
+    reducedChiSq = (errFunc(pFitBootstrap, dataX, dataY)**2).sum()/(len(dataY)-len(initialParams))
+    return pFitBootstrap, pErrBootstrap, reducedChiSq
+
+
+def funcPolynomial(pars, x):
+    """Polynomial function definition
+    Parameters
+    ----------
+    params : `list`
+        Polynomial coefficients. Its length determines the polynomial order.
+
+    x : `numpy.array`
+        Signal mu (ADU).
+
+    Returns
+    -------
+    C_00 (variance) in ADU^2.
+    """
+    return poly.polyval(x, [*pars])  # C_00
+
+
+def funcAstier(pars, x):
+    """Single brighter-fatter parameter model for PTC; Equation 16 of Astier+19.
+
+    Parameters
+    ----------
+    params : `list`
+        Parameters of the model: a00 (brightter-fatter), gain (e/ADU), and noise (e^2).
+
+    x : `numpy.array`
+        Signal mu (ADU).
+
+    Returns
+    -------
+    C_00 (variance) in ADU^2.
+    """
+    a00, gain, noise = pars
+    return 0.5/(a00*gain*gain)*(np.exp(2*a00*x*gain)-1) + noise/(gain*gain)  # C_00
 
 
 def checkExpLengthEqual(exp1, exp2, v1=None, v2=None, raiseWithMessage=False):

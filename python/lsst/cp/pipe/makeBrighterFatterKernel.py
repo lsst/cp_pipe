@@ -582,7 +582,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         if self.config.level != 'DETECTOR':
             if self.config.doCalcGains:  # Run the PTC task for calculating the gains, put results
                 self.log.info('Calculating gains for detector %s using PTC task' % detNum)
-                ptcDataset = ptcTask.fitPtcAndNonLinearity(ptcDataset, ptcConfig.ptcFitType)
+                ptcDataset = ptcTask.fitPtc(ptcDataset, ptcConfig.ptcFitType)
                 dataRef.put(ptcDataset, datasetType='photonTransferCurveDataset')
                 self.log.debug('Finished gain estimation for detector %s' % detNum)
             else:  # load results  - confirmed to work much earlier on, so can be relied upon here

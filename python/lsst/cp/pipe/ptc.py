@@ -26,8 +26,6 @@ __all__ = ['MeasurePhotonTransferCurveTask',
 
 import numpy as np
 import matplotlib.pyplot as plt
-import os
-from matplotlib.backends.backend_pdf import PdfPages
 from sqlite3 import OperationalError
 from collections import Counter
 from dataclasses import dataclass
@@ -35,55 +33,22 @@ from dataclasses import dataclass
 import lsst.afw.math as afwMath
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
-from lsst.ip.isr import IsrTask
 from .utils import (NonexistentDatasetTaskDataIdContainer, PairedVisitListTaskRunner,
-                    checkExpLengthEqual, validateIsrConfig)
-from scipy.optimize import leastsq, least_squares
-import numpy.polynomial.polynomial as poly
+                    checkExpLengthEqual, fitLeastSq, fitBootstrap, funcPolynomial, funcAstier)
+from scipy.optimize import least_squares
 
 from lsst.ip.isr.linearize import Linearizer
 import datetime
 
+from .astierCovPtcUtils import (fftSize, CovFft, computeCovDirect, fitData)
+
 
 class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
     """Config class for photon transfer curve measurement task"""
-    isr = pexConfig.ConfigurableField(
-        target=IsrTask,
-        doc="""Task to perform instrumental signature removal.""",
-    )
-    isrMandatorySteps = pexConfig.ListField(
-        dtype=str,
-        doc="isr operations that must be performed for valid results. Raises if any of these are False.",
-        default=['doAssembleCcd']
-    )
-    isrForbiddenSteps = pexConfig.ListField(
-        dtype=str,
-        doc="isr operations that must NOT be performed for valid results. Raises if any of these are True",
-        default=['doFlat', 'doFringe', 'doBrighterFatter', 'doUseOpticsTransmission',
-                 'doUseFilterTransmission', 'doUseSensorTransmission', 'doUseAtmosphereTransmission']
-    )
-    isrDesirableSteps = pexConfig.ListField(
-        dtype=str,
-        doc="isr operations that it is advisable to perform, but are not mission-critical." +
-        " WARNs are logged for any of these found to be False.",
-        default=['doBias', 'doDark', 'doCrosstalk', 'doDefect']
-    )
-    isrUndesirableSteps = pexConfig.ListField(
-        dtype=str,
-        doc="isr operations that it is *not* advisable to perform in the general case, but are not" +
-        " forbidden as some use-cases might warrant them." +
-        " WARNs are logged for any of these found to be True.",
-        default=['doLinearize']
-    )
     ccdKey = pexConfig.Field(
         dtype=str,
         doc="The key by which to pull a detector from a dataId, e.g. 'ccd' or 'detector'.",
         default='ccd',
-    )
-    makePlots = pexConfig.Field(
-        dtype=bool,
-        doc="Plot the PTC curves?",
-        default=False,
     )
     ptcFitType = pexConfig.ChoiceField(
         dtype=str,
@@ -91,18 +56,44 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
         default="POLYNOMIAL",
         allowed={
             "POLYNOMIAL": "n-degree polynomial (use 'polynomialFitDegree' to set 'n').",
-            "ASTIERAPPROXIMATION": "Approximation in Astier+19 (Eq. 16)."
+            "EXPAPPROXIMATION": "Approximation in Astier+19 (Eq. 16).",
+            "FULLCOVARIANCE": "Full covariances model in Astier+19 (Eq. 20)"
         }
+    )
+    maximumRangeCovariancesAstier = pexConfig.Field(
+        dtype=int,
+        doc="Maximum range of covariances as in Astier+19",
+        default=8,
+    )
+    covAstierRealSpace = pexConfig.Field(
+        dtype=bool,
+        doc="Calculate covariances in real space or via FFT? (see appendix A of Astier+19).",
+        default=False,
     )
     polynomialFitDegree = pexConfig.Field(
         dtype=int,
         doc="Degree of polynomial to fit the PTC, when 'ptcFitType'=POLYNOMIAL.",
-        default=2,
+        default=3,
+    )
+    doCreateLinearizer = pexConfig.Field(
+        dtype=bool,
+        doc="Calculate non-linearity and persist linearizer?",
+        default=False,
+    )
+    linearizerType = pexConfig.ChoiceField(
+        dtype=str,
+        doc="Linearizer type, if doCreateLinearizer=True",
+        default="LINEARIZEPOLYNOMIAL",
+        allowed={
+            "LINEARIZEPOLYNOMIAL": "n-degree polynomial (use 'polynomialFitDegreeNonLinearity' to set 'n').",
+            "LINEARIZESQUARED": "c0 quadratic coefficient derived from coefficients of polynomiual fit",
+            "LOOKUPTABLE": "Loouk table formed from linear part of polynomial fit."
+        }
     )
     polynomialFitDegreeNonLinearity = pexConfig.Field(
         dtype=int,
-        doc="Degree of polynomial to fit the meanSignal vs exposureTime curve to produce" +
-        " the table for LinearizeLookupTable.",
+        doc="If doCreateLinearizer, degree of polynomial to fit the meanSignal vs exposureTime" +
+            " curve to produce the table for LinearizeLookupTable.",
         default=3,
     )
     binSize = pexConfig.Field(
@@ -165,11 +156,6 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
         doc="Use bootstrap for the PTC fit parameters and errors?.",
         default=False,
     )
-    linResidualTimeIndex = pexConfig.Field(
-        dtype=int,
-        doc="Index position in time array for reference time in linearity residual calculation.",
-        default=2,
-    )
     maxAduForLookupTableLinearizer = pexConfig.Field(
         dtype=int,
         doc="Maximum DN value for the LookupTable linearizer.",
@@ -193,11 +179,8 @@ class LinearityResidualsAndLinearizersDataset:
     quadraticPolynomialLinearizerCoefficient: float
     # LUT array row for the amplifier at hand
     linearizerTableRow: list
-    # Linearity residual, Eq. 2.2. of Janesick (2001)
-    linearityResidual: list
     meanSignalVsTimePolyFitPars: list
     meanSignalVsTimePolyFitParsErr: list
-    fractionalNonLinearityResidual: list
     meanSignalVsTimePolyFitReducedChiSq: float
 
 
@@ -211,7 +194,7 @@ class PhotonTransferCurveDataset:
     wrong property, and the class can be frozen if desired.
 
     inputVisitPairs records the visits used to produce the data.
-    When fitPtcAndNonLinearity() is run, a mask is built up, which is by definition
+    When fitPtc() or fitCovariancesAstier() is run, a mask is built up, which is by definition
     always the same length as inputVisitPairs, rawExpTimes, rawMeans
     and rawVars, and is a list of bools, which are incrementally set to False
     as points are discarded from the fits.
@@ -220,39 +203,65 @@ class PhotonTransferCurveDataset:
     of polynomial term, i.e. par[0]*x^0 + par[1]*x + par[2]*x^2 etc
     with the length of the list corresponding to the order of the polynomial
     plus one.
+
+    Parameters
+    ----------
+    ampNames : `list`
+        List with the names of the amplifiers of the detector at hand.
+
+    ptcFitType : `str`
+        Type of model fitted to the PTC: "POLYNOMIAL", "EXPAPPROXIMATION", or "FULLCOVARIANCE".
+
+    Returns
+    -------
+    `lsst.cp.pipe.ptc.PhotonTransferCurveDataset`
+        Output dataset from MeasurePhotonTransferCurveTask.
     """
-    def __init__(self, ampNames):
+
+    def __init__(self, ampNames, ptcFitType):
         # add items to __dict__ directly because __setattr__ is overridden
 
         # instance variables
+        self.__dict__["ptcFitType"] = ptcFitType
         self.__dict__["ampNames"] = ampNames
         self.__dict__["badAmps"] = []
 
         # raw data variables
+        # visitMask is the mask produced after outlier rejection. The mask produced by "FULLCOVARIANCE"
+        # may differ from the one produced in the other two PTC fit types.
         self.__dict__["inputVisitPairs"] = {ampName: [] for ampName in ampNames}
         self.__dict__["visitMask"] = {ampName: [] for ampName in ampNames}
         self.__dict__["rawExpTimes"] = {ampName: [] for ampName in ampNames}
         self.__dict__["rawMeans"] = {ampName: [] for ampName in ampNames}
         self.__dict__["rawVars"] = {ampName: [] for ampName in ampNames}
 
-        # fit information
-        self.__dict__["ptcFitType"] = {ampName: "" for ampName in ampNames}
-        self.__dict__["ptcFitPars"] = {ampName: [] for ampName in ampNames}
-        self.__dict__["ptcFitParsError"] = {ampName: [] for ampName in ampNames}
-        self.__dict__["ptcFitReducedChiSquared"] = {ampName: [] for ampName in ampNames}
-        self.__dict__["nonLinearity"] = {ampName: [] for ampName in ampNames}
-        self.__dict__["nonLinearityError"] = {ampName: [] for ampName in ampNames}
-        self.__dict__["nonLinearityResiduals"] = {ampName: [] for ampName in ampNames}
-        self.__dict__["fractionalNonLinearityResiduals"] = {ampName: [] for ampName in ampNames}
-        self.__dict__["nonLinearityReducedChiSquared"] = {ampName: [] for ampName in ampNames}
-
-        # final results
+        # Gain and noise
         self.__dict__["gain"] = {ampName: -1. for ampName in ampNames}
         self.__dict__["gainErr"] = {ampName: -1. for ampName in ampNames}
         self.__dict__["noise"] = {ampName: -1. for ampName in ampNames}
         self.__dict__["noiseErr"] = {ampName: -1. for ampName in ampNames}
-        self.__dict__["coefficientsLinearizePolynomial"] = {ampName: [] for ampName in ampNames}
-        self.__dict__["coefficientLinearizeSquared"] = {ampName: [] for ampName in ampNames}
+
+        # if ptcFitTye in ["POLYNOMIAL", "EXPAPPROXIMATION"]
+        # fit information
+        self.__dict__["ptcFitPars"] = {ampName: [] for ampName in ampNames}
+        self.__dict__["ptcFitParsError"] = {ampName: [] for ampName in ampNames}
+        self.__dict__["ptcFitReducedChiSquared"] = {ampName: [] for ampName in ampNames}
+
+        # if ptcFitTye in ["FULLCOVARIANCE"]
+        # "covariancesTuple" is a numpy recarray with entries of the form
+        # ['mu', 'i', 'j', 'var', 'cov', 'npix', 'ext', 'expTime', 'ampName']
+        # "covariancesFits" has CovFit objects that fit the measured covariances to Eq. 20 of Astier+19.
+        # In "covariancesFitsWithNoB", "b"=0 in the model described by Eq. 20 of Astier+19.
+        self.__dict__["covariancesTuple"] = {ampName: [] for ampName in ampNames}
+        self.__dict__["covariancesFitsWithNoB"] = {ampName: [] for ampName in ampNames}
+        self.__dict__["covariancesFits"] = {ampName: [] for ampName in ampNames}
+        self.__dict__["aMatrix"] = {ampName: [] for ampName in ampNames}
+        self.__dict__["bMatrix"] = {ampName: [] for ampName in ampNames}
+
+        # "final" means that the "raw" vectors above had "visitMask" applied.
+        self.__dict__["finalVars"] = {ampName: [] for ampName in ampNames}
+        self.__dict__["finalModelVars"] = {ampName: [] for ampName in ampNames}
+        self.__dict__["finalMeans"] = {ampName: [] for ampName in ampNames}
 
     def __setattr__(self, attribute, value):
         """Protect class attributes"""
@@ -267,7 +276,7 @@ class PhotonTransferCurveDataset:
 
         If no mask has been created yet, all visits are returned.
         """
-        if self.visitMask[ampName] == []:
+        if len(self.visitMask[ampName]) == 0:
             return self.inputVisitPairs[ampName]
 
         # if the mask exists it had better be the same length as the visitPairs
@@ -287,9 +296,9 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
     The Photon Transfer Curve (var(signal) vs mean(signal)) is a standard tool
     used in astronomical detectors characterization (e.g., Janesick 2001,
-    Janesick 2007). This task calculates the PTC from a series of pairs of
-    flat-field images; each pair taken at identical exposure times. The
-    difference image of each pair is formed to eliminate fixed pattern noise,
+    Janesick 2007). If ptcFitType is "EXPAPPROXIMATION" or "POLYNOMIAL",  this task calculates the
+    PTC from a series of pairs of flat-field images; each pair taken at identical exposure
+    times. The difference image of each pair is formed to eliminate fixed pattern noise,
     and then the variance of the difference image and the mean of the average image
     are used to produce the PTC. An n-degree polynomial or the approximation in Equation
     16 of Astier+19 ("The Shape of the Photon Transfer Curve of CCD sensors",
@@ -299,6 +308,12 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
     Linearizers to correct for signal-chain non-linearity are also calculated.
     The `Linearizer` class, in general, can support per-amp linearizers, but in this
     task this is not supported.
+
+    If ptcFitType is "FULLCOVARIANCE", the covariances of the difference images are calculated via the
+    DFT methods described in Astier+19 and the variances for the PTC are given by the cov[0,0] elements
+    at each signal level. The full model in Equation 20 of Astier+19 is fit to the PTC to get the gain
+    and the noise.
+
     Parameters
     ----------
 
@@ -317,10 +332,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
     def __init__(self, *args, **kwargs):
         pipeBase.CmdLineTask.__init__(self, *args, **kwargs)
-        self.makeSubtask("isr")
         plt.interactive(False)  # stop windows popping up when plotting. When headless, use 'agg' backend too
-        validateIsrConfig(self.isr, self.config.isrMandatorySteps,
-                          self.config.isrForbiddenSteps, self.config.isrDesirableSteps, checkTrim=False)
         self.config.validate()
         self.config.freeze()
 
@@ -340,13 +352,14 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         """Run the Photon Transfer Curve (PTC) measurement task.
 
         For a dataRef (which is each detector here),
-        and given a list of visit pairs at different exposure times,
+        and given a list of visit pairs (postISR) at different exposure times,
         measure the PTC.
 
         Parameters
         ----------
         dataRef : list of lsst.daf.persistence.ButlerDataRef
             dataRef for the detector for the visits to be fit.
+
         visitPairs : `iterable` of `tuple` of `int`
             Pairs of visit numbers to be processed together
         """
@@ -369,147 +382,172 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         amps = detector.getAmplifiers()
         ampNames = [amp.getName() for amp in amps]
-        dataset = PhotonTransferCurveDataset(ampNames)
+        datasetPtc = PhotonTransferCurveDataset(ampNames, self.config.ptcFitType)
+        self.log.info('Measuring PTC using %s visits for detector %s' % (visitPairs, detector.getId()))
 
-        self.log.info('Measuring PTC using %s visits for detector %s' % (visitPairs, detNum))
-
+        tupleRecords = []
+        allTags = []
         for (v1, v2) in visitPairs:
-            # Perform ISR on each exposure
+            # Get postISR exposures.
             dataRef.dataId['expId'] = v1
-            exp1 = self.isr.runDataRef(dataRef).exposure
+            exp1 = dataRef.get("postISRCCD", immediate=True)
             dataRef.dataId['expId'] = v2
-            exp2 = self.isr.runDataRef(dataRef).exposure
+            exp2 = dataRef.get("postISRCCD", immediate=True)
             del dataRef.dataId['expId']
 
             checkExpLengthEqual(exp1, exp2, v1, v2, raiseWithMessage=True)
             expTime = exp1.getInfo().getVisitInfo().getExposureTime()
 
-            for amp in detector:
-                mu, varDiff = self.measureMeanVarPair(exp1, exp2, region=amp.getBBox())
+            tupleRows = []
+            for ampNumber, amp in enumerate(detector):
                 ampName = amp.getName()
+                # covAstier: (i, j, var (cov[0,0]), cov, npix)
+                doRealSpace = self.config.covAstierRealSpace
+                muDiff, varDiff, covAstier = self.measureMeanVarCov(exp1, exp2, region=amp.getBBox(),
+                                                                    covAstierRealSpace=doRealSpace)
 
-                dataset.rawExpTimes[ampName].append(expTime)
-                dataset.rawMeans[ampName].append(mu)
-                dataset.rawVars[ampName].append(varDiff)
-                dataset.inputVisitPairs[ampName].append((v1, v2))
+                datasetPtc.rawExpTimes[ampName].append(expTime)
+                datasetPtc.rawMeans[ampName].append(muDiff)
+                datasetPtc.rawVars[ampName].append(varDiff)
+                datasetPtc.inputVisitPairs[ampName].append((v1, v2))
 
-        numberAmps = len(detector.getAmplifiers())
-        numberAduValues = self.config.maxAduForLookupTableLinearizer
-        lookupTableArray = np.zeros((numberAmps, numberAduValues), dtype=np.float32)
+                tupleRows += [(muDiff, ) + covRow + (ampNumber, expTime, ampName) for covRow in covAstier]
+                tags = ['mu', 'i', 'j', 'var', 'cov', 'npix', 'ext', 'expTime', 'ampName']
+            allTags += tags
+            tupleRecords += tupleRows
+        covariancesWithTags = np.core.records.fromrecords(tupleRecords, names=allTags)
 
-        # Fit PTC and (non)linearity of signal vs time curve.
-        # Fill up PhotonTransferCurveDataset object.
-        # Fill up array for LUT linearizer.
-        # Produce coefficients for Polynomial ans Squared linearizers.
-        dataset = self.fitPtcAndNonLinearity(dataset, self.config.ptcFitType,
-                                             tableArray=lookupTableArray)
+        if self.config.ptcFitType in ["FULLCOVARIANCE", ]:
+            # Calculate covariances and fit them, including the PTC, to Astier+19 full model (Eq. 20)
+            datasetPtc = self.fitCovariancesAstier(datasetPtc, covariancesWithTags)
+        elif self.config.ptcFitType in ["EXPAPPROXIMATION", "POLYNOMIAL"]:
+            # Fit the PTC to a polynomial or to Astier+19 exponential approximation (Eq. 16)
+            # Fill up PhotonTransferCurveDataset object.
+            datasetPtc = self.fitPtc(datasetPtc, self.config.ptcFitType)
 
-        if self.config.makePlots:
-            self.plot(dataRef, dataset, ptcFitType=self.config.ptcFitType)
+        # Fit a poynomial to calculate non-linearity and persist linearizer.
+        if self.config.doCreateLinearizer:
+            numberAmps = len(amps)
+            numberAduValues = self.config.maxAduForLookupTableLinearizer
+            lookupTableArray = np.zeros((numberAmps, numberAduValues), dtype=np.float32)
 
-        # Save data, PTC fit, and NL fit dictionaries
-        self.log.info(f"Writing PTC and NL data to {dataRef.getUri(write=True)}")
-        dataRef.put(dataset, datasetType="photonTransferCurveDataset")
+            # Fit (non)linearity of signal vs time curve.
+            # Fill up PhotonTransferCurveDataset object.
+            # Fill up array for LUT linearizer (tableArray).
+            # Produce coefficients for Polynomial ans Squared linearizers.
+            # Build linearizer objects.
+            linearizer = self.fitNonLinearityAndBuildLinearizers(datasetPtc, detector,
+                                                                 tableArray=lookupTableArray,
+                                                                 log=self.log)
 
-        butler = dataRef.getButler()
-        self.log.info("Writing linearizers: \n "
-                      "lookup table (linear component of polynomial fit), \n "
-                      "polynomial (coefficients for a polynomial correction), \n "
-                      "and squared linearizer (quadratic coefficient from polynomial)")
-
-        detName = detector.getName()
-        now = datetime.datetime.utcnow()
-        calibDate = now.strftime("%Y-%m-%d")
-
-        for linType, dataType in [("LOOKUPTABLE", 'linearizeLut'),
-                                  ("LINEARIZEPOLYNOMIAL", 'linearizePolynomial'),
-                                  ("LINEARIZESQUARED", 'linearizeSquared')]:
-
-            if linType == "LOOKUPTABLE":
-                tableArray = lookupTableArray
+            if self.config.linearizerType == "LINEARIZEPOLYNOMIAL":
+                linDataType = 'linearizePolynomial'
+                linMsg = "polynomial (coefficients for a polynomial correction)."
+            elif self.config.linearizerType == "LINEARIZESQUARED":
+                linDataType = 'linearizePolynomial'
+                linMsg = "squared (c0, derived from k_i coefficients of a polynomial fit)."
+            elif self.config.linearizerType == "LOOKUPTABLE":
+                linDataType = 'linearizePolynomial'
+                linMsg = "lookup table (linear component of polynomial fit)."
             else:
-                tableArray = None
+                raise RuntimeError("Invalid config.linearizerType {selg.config.linearizerType}. "
+                                   "Supported: 'LOOKUPTABLE', 'LINEARIZESQUARED', or 'LINEARIZEPOLYNOMIAL'")
 
-            linearizer = self.buildLinearizerObject(dataset, detector, calibDate, linType,
-                                                    instruName=self.config.instrumentName,
-                                                    tableArray=tableArray,
-                                                    log=self.log)
-            butler.put(linearizer, datasetType=dataType, dataId={'detector': detNum,
+            butler = dataRef.getButler()
+            self.log.info(f"Writing linearizer: \n {linMsg}")
+
+            detName = detector.getName()
+            now = datetime.datetime.utcnow()
+            calibDate = now.strftime("%Y-%m-%d")
+
+            butler.put(linearizer, datasetType=linDataType, dataId={'detector': detNum,
                        'detectorName': detName, 'calibDate': calibDate})
 
-        self.log.info('Finished measuring PTC for in detector %s' % detNum)
+        self.log.info(f"Writing PTC data to {dataRef.getUri(write=True)}")
+        dataRef.put(datasetPtc, datasetType="photonTransferCurveDataset")
 
         return pipeBase.Struct(exitStatus=0)
 
-    def buildLinearizerObject(self, dataset, detector, calibDate, linearizerType, instruName='',
-                              tableArray=None, log=None):
-        """Build linearizer object to persist.
+    def fitCovariancesAstier(self, dataset, covariancesWithTagsArray):
+        """Fit measured flat covariances to full model in Astier+19.
 
         Parameters
         ----------
         dataset : `lsst.cp.pipe.ptc.PhotonTransferCurveDataset`
-            The dataset containing the means, variances, and exposure times
-        detector : `lsst.afw.cameraGeom.Detector`
-            Detector object
-        calibDate : `datetime.datetime`
-            Calibration date
-        linearizerType : `str`
-            'LOOKUPTABLE', 'LINEARIZESQUARED', or 'LINEARIZEPOLYNOMIAL'
-        instruName : `str`, optional
-            Instrument name
-        tableArray : `np.array`, optional
-            Look-up table array with size rows=nAmps and columns=DN values
-        log : `lsst.log.Log`, optional
-            Logger to handle messages
+            The dataset containing information such as the means, variances and exposure times.
+
+        covariancesWithTagsArray : `numpy.recarray`
+            Tuple with at least (mu, cov, var, i, j, npix), where:
+            mu : 0.5*(m1 + m2), where:
+                mu1: mean value of flat1
+                mu2: mean value of flat2
+            cov: covariance value at lag(i, j)
+            var: variance(covariance value at lag(0, 0))
+            i: lag dimension
+            j: lag dimension
+            npix: number of pixels used for covariance calculation.
 
         Returns
         -------
-        linearizer : `lsst.ip.isr.Linearizer`
-            Linearizer object
+        dataset: `lsst.cp.pipe.ptc.PhotonTransferCurveDataset`
+            This is the same dataset as the input paramter, however, it has been modified
+            to include information such as the fit vectors and the fit parameters. See
+            the class `PhotonTransferCurveDatase`.
         """
-        detName = detector.getName()
-        detNum = detector.getId()
-        if linearizerType == "LOOKUPTABLE":
-            if tableArray is not None:
-                linearizer = Linearizer(detector=detector, table=tableArray, log=log)
-            else:
-                raise RuntimeError("tableArray must be provided when creating a LookupTable linearizer")
-        elif linearizerType in ("LINEARIZESQUARED", "LINEARIZEPOLYNOMIAL"):
-            linearizer = Linearizer(log=log)
-        else:
-            raise RuntimeError("Invalid linearizerType {linearizerType} to build a Linearizer object. "
-                               "Supported: 'LOOKUPTABLE', 'LINEARIZESQUARED', or 'LINEARIZEPOLYNOMIAL'")
-        for i, amp in enumerate(detector.getAmplifiers()):
-            ampName = amp.getName()
-            if linearizerType == "LOOKUPTABLE":
-                linearizer.linearityCoeffs[ampName] = [i, 0]
-                linearizer.linearityType[ampName] = "LookupTable"
-            elif linearizerType == "LINEARIZESQUARED":
-                linearizer.linearityCoeffs[ampName] = [dataset.coefficientLinearizeSquared[ampName]]
-                linearizer.linearityType[ampName] = "Squared"
-            elif linearizerType == "LINEARIZEPOLYNOMIAL":
-                linearizer.linearityCoeffs[ampName] = dataset.coefficientsLinearizePolynomial[ampName]
-                linearizer.linearityType[ampName] = "Polynomial"
-            linearizer.linearityBBox[ampName] = amp.getBBox()
 
-        linearizer.validate()
-        calibId = f"detectorName={detName} detector={detNum} calibDate={calibDate} ccd={detNum} filter=NONE"
+        covFits, covFitsNoB = fitData(covariancesWithTagsArray, maxMu=self.config.maxMeanSignal,
+                                      r=self.config.maximumRangeCovariancesAstier)
 
-        try:
-            raftName = detName.split("_")[0]
-            calibId += f" raftName={raftName}"
-        except Exception:
-            raftname = "NONE"
-            calibId += f" raftName={raftname}"
+        dataset.covariancesTuple = covariancesWithTagsArray
+        dataset.covariancesFits = covFits
+        dataset.covariancesFitsWithNoB = covFitsNoB
+        dataset = self.getOutputPtcDataCovAstier(dataset, covFits)
 
-        serial = detector.getSerial()
-        linearizer.updateMetadata(instrumentName=instruName, detectorId=f"{detNum}",
-                                  calibId=calibId, serial=serial, detectorName=f"{detName}")
+        return dataset
 
-        return linearizer
+    def getOutputPtcDataCovAstier(self, dataset, covFits):
+        """Get output data for PhotonTransferCurveCovAstierDataset from CovFit objects.
 
-    def measureMeanVarPair(self, exposure1, exposure2, region=None):
-        """Calculate the mean signal of two exposures and the variance of their difference.
+        Parameters
+        ----------
+        dataset : `lsst.cp.pipe.ptc.PhotonTransferCurveDataset`
+            The dataset containing information such as the means, variances and exposure times.
+
+        covFits: `dict`
+            Dictionary of CovFit objects, with amp names as keys.
+
+        Returns
+        -------
+        dataset : `lsst.cp.pipe.ptc.PhotonTransferCurveDataset`
+            This is the same dataset as the input paramter, however, it has been modified
+            to include extra information such as the mask 1D array, gains, reoudout noise, measured signal,
+            measured variance, modeled variance, a, and b coefficient matrices (see Astier+19) per amplifier.
+            See the class `PhotonTransferCurveDatase`.
+        """
+
+        for i, amp in enumerate(covFits):
+            fit = covFits[amp]
+            meanVecFinal, varVecFinal, varVecModel, wc = fit.getNormalizedFitData(0, 0, divideByMu=False)
+            gain = fit.getGain()
+            dataset.visitMask[amp] = fit.getMaskVar()
+            dataset.gain[amp] = gain
+            dataset.gainErr[amp] = fit.getGainErr()
+            dataset.noise[amp] = np.sqrt(np.fabs(fit.getRon()))
+            dataset.noiseErr[amp] = fit.getRonErr()
+            dataset.finalVars[amp].append(varVecFinal/(gain**2))
+            dataset.finalModelVars[amp].append(varVecModel/(gain**2))
+            dataset.finalMeans[amp].append(meanVecFinal/gain)
+            dataset.aMatrix[amp].append(fit.getA())
+            dataset.bMatrix[amp].append(fit.getB())
+
+        return dataset
+
+    def measureMeanVarCov(self, exposure1, exposure2, region=None, covAstierRealSpace=False):
+        """Calculate the mean of each of two exposures and the variance and covariance of their difference.
+
+        The variance is calculated via afwMath, and the covariance via the methods in Astier+19 (appendix A).
+        In theory, var = covariance[0,0]. This should be validated, and in the future, we may decide to just
+        keep one (covariance).
 
         Parameters
         ----------
@@ -519,12 +557,15 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         exposure2 : `lsst.afw.image.exposure.exposure.ExposureF`
             Second exposure of flat field pair.
 
-        region : `lsst.geom.Box2I`
+        region : `lsst.geom.Box2I`, optional
             Region of each exposure where to perform the calculations (e.g, an amplifier).
 
-        Return
-        ------
+        covAstierRealSpace : `bool`, optional
+            Should the covariannces in Astier+19 be calculated in real space or via FFT?
+            See Appendix A of Astier+19.
 
+        Returns
+        -------
         mu : `float`
             0.5*(mu1 + mu2), where mu1, and mu2 are the clipped means of the regions in
             both exposures.
@@ -532,6 +573,19 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         varDiff : `float`
             Half of the clipped variance of the difference of the regions inthe two input
             exposures.
+
+        covDiffAstier : `list`
+            List with tuples of the form (dx, dy, var, cov, npix), where:
+                dx : `int`
+                    Lag in x
+                dy : `int`
+                    Lag in y
+                var : `float`
+                    Variance at (dx, dy).
+                cov : `float`
+                    Covariance at (dx, dy).
+                nPix : `int`
+                    Number of pixel pairs used to evaluate var and cov.
         """
 
         if region is not None:
@@ -563,138 +617,406 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         varDiff = 0.5*(afwMath.makeStatistics(diffIm, afwMath.VARIANCECLIP, statsCtrl).getValue())
 
-        return mu, varDiff
+        # Get the mask and identify good pixels as '1', and the rest as '0'.
+        w1 = np.where(im1Area.getMask().getArray() == 0, 1, 0)
+        w2 = np.where(im2Area.getMask().getArray() == 0, 1, 0)
 
-    def _fitLeastSq(self, initialParams, dataX, dataY, function):
-        """Do a fit and estimate the parameter errors using using scipy.optimize.leastq.
+        w12 = w1*w2
+        wDiff = np.where(diffIm.getMask().getArray() == 0, 1, 0)
+        w = w12*wDiff
 
-        optimize.leastsq returns the fractional covariance matrix. To estimate the
-        standard deviation of the fit parameters, multiply the entries of this matrix
-        by the unweighted reduced chi squared and take the square root of the diagonal elements.
-
-        Parameters
-        ----------
-        initialParams : `list` of `float`
-            initial values for fit parameters. For ptcFitType=POLYNOMIAL, its length
-            determines the degree of the polynomial.
-
-        dataX : `numpy.array` of `float`
-            Data in the abscissa axis.
-
-        dataY : `numpy.array` of `float`
-            Data in the ordinate axis.
-
-        function : callable object (function)
-            Function to fit the data with.
-
-        Return
-        ------
-        pFitSingleLeastSquares : `list` of `float`
-            List with fitted parameters.
-
-        pErrSingleLeastSquares : `list` of `float`
-            List with errors for fitted parameters.
-
-        reducedChiSqSingleLeastSquares : `float`
-            Unweighted reduced chi squared
-        """
-
-        def errFunc(p, x, y):
-            return function(p, x) - y
-
-        pFit, pCov, infoDict, errMessage, success = leastsq(errFunc, initialParams,
-                                                            args=(dataX, dataY), full_output=1, epsfcn=0.0001)
-
-        if (len(dataY) > len(initialParams)) and pCov is not None:
-            reducedChiSq = (errFunc(pFit, dataX, dataY)**2).sum()/(len(dataY)-len(initialParams))
-            pCov *= reducedChiSq
+        maxRangeCov = self.config.maximumRangeCovariancesAstier
+        if covAstierRealSpace:
+            covDiffAstier = computeCovDirect(diffIm.getImage().getArray(), w, maxRangeCov)
         else:
-            pCov = np.zeros((len(initialParams), len(initialParams)))
-            pCov[:, :] = np.inf
-            reducedChiSq = np.inf
+            shapeDiff = diffIm.getImage().getArray().shape
+            fftShape = (fftSize(shapeDiff[0] + maxRangeCov), fftSize(shapeDiff[1]+maxRangeCov))
+            c = CovFft(diffIm.getImage().getArray(), w, fftShape, maxRangeCov)
+            covDiffAstier = c.reportCovFft(maxRangeCov)
 
-        errorVec = []
-        for i in range(len(pFit)):
-            errorVec.append(np.fabs(pCov[i][i])**0.5)
+        return mu, varDiff, covDiffAstier
 
-        pFitSingleLeastSquares = pFit
-        pErrSingleLeastSquares = np.array(errorVec)
+    def computeCovDirect(self, diffImage, weightImage, maxRange):
+        """Compute covariances of diffImage in real space.
 
-        return pFitSingleLeastSquares, pErrSingleLeastSquares, reducedChiSq
-
-    def _fitBootstrap(self, initialParams, dataX, dataY, function, confidenceSigma=1.):
-        """Do a fit using least squares and bootstrap to estimate parameter errors.
-
-        The bootstrap error bars are calculated by fitting 100 random data sets.
+        For lags larger than ~25, it is slower than the FFT way.
+        Taken from https://github.com/PierreAstier/bfptc/
 
         Parameters
         ----------
-        initialParams : `list` of `float`
-            initial values for fit parameters. For ptcFitType=POLYNOMIAL, its length
-            determines the degree of the polynomial.
+        diffImage : `numpy.array`
+            Image to compute the covariance of.
 
-        dataX : `numpy.array` of `float`
-            Data in the abscissa axis.
+        weightImage : `numpy.array`
+            Weight image of diffImage (1's and 0's for good and bad pixels, respectively).
 
-        dataY : `numpy.array` of `float`
-            Data in the ordinate axis.
+        maxRange : `int`
+            Last index of the covariance to be computed.
 
-        function : callable object (function)
-            Function to fit the data with.
+        Returns
+        -------
+        outList : `list`
+            List with tuples of the form (dx, dy, var, cov, npix), where:
+                dx : `int`
+                    Lag in x
+                dy : `int`
+                    Lag in y
+                var : `float`
+                    Variance at (dx, dy).
+                cov : `float`
+                    Covariance at (dx, dy).
+                nPix : `int`
+                    Number of pixel pairs used to evaluate var and cov.
+        """
+        outList = []
+        var = 0
+        # (dy,dx) = (0,0) has to be first
+        for dy in range(maxRange + 1):
+            for dx in range(0, maxRange + 1):
+                if (dx*dy > 0):
+                    cov1, nPix1 = self.covDirectValue(diffImage, weightImage, dx, dy)
+                    cov2, nPix2 = self.covDirectValue(diffImage, weightImage, dx, -dy)
+                    cov = 0.5*(cov1 + cov2)
+                    nPix = nPix1 + nPix2
+                else:
+                    cov, nPix = self.covDirectValue(diffImage, weightImage, dx, dy)
+                if (dx == 0 and dy == 0):
+                    var = cov
+                outList.append((dx, dy, var, cov, nPix))
 
-        confidenceSigma : `float`
-            Number of sigmas that determine confidence interval for the bootstrap errors.
+        return outList
 
-        Return
-        ------
-        pFitBootstrap : `list` of `float`
-            List with fitted parameters.
+    def covDirectValue(self, diffImage, weightImage, dx, dy):
+        """Compute covariances of diffImage in real space at lag (dx, dy).
 
-        pErrBootstrap : `list` of `float`
-            List with errors for fitted parameters.
+        Taken from https://github.com/PierreAstier/bfptc/ (c.f., appendix of Astier+19).
 
-        reducedChiSqBootstrap : `float`
-            Reduced chi squared.
+        Parameters
+        ----------
+        diffImage : `numpy.array`
+            Image to compute the covariance of.
+
+        weightImage : `numpy.array`
+            Weight image of diffImage (1's and 0's for good and bad pixels, respectively).
+
+        dx : `int`
+            Lag in x.
+
+        dy : `int`
+            Lag in y.
+
+        Returns
+        -------
+        cov : `float`
+            Covariance at (dx, dy)
+
+        nPix : `int`
+            Number of pixel pairs used to evaluate var and cov.
+        """
+        (nCols, nRows) = diffImage.shape
+        # switching both signs does not change anything:
+        # it just swaps im1 and im2 below
+        if (dx < 0):
+            (dx, dy) = (-dx, -dy)
+        # now, we have dx >0. We have to distinguish two cases
+        # depending on the sign of dy
+        if dy >= 0:
+            im1 = diffImage[dy:, dx:]
+            w1 = weightImage[dy:, dx:]
+            im2 = diffImage[:nCols - dy, :nRows - dx]
+            w2 = weightImage[:nCols - dy, :nRows - dx]
+        else:
+            im1 = diffImage[:nCols + dy, dx:]
+            w1 = weightImage[:nCols + dy, dx:]
+            im2 = diffImage[-dy:, :nRows - dx]
+            w2 = weightImage[-dy:, :nRows - dx]
+        # use the same mask for all 3 calculations
+        wAll = w1*w2
+        # do not use mean() because weightImage=0 pixels would then count
+        nPix = wAll.sum()
+        im1TimesW = im1*wAll
+        s1 = im1TimesW.sum()/nPix
+        s2 = (im2*wAll).sum()/nPix
+        p = (im1TimesW*im2).sum()/nPix
+        cov = p - s1*s2
+
+        return cov, nPix
+
+    def fitNonLinearityAndBuildLinearizers(self, datasetPtc, detector, tableArray=None, log=None):
+        """Fit non-linearity function and build linearizer objects.
+
+        Parameters
+        ----------
+        datasePtct : `lsst.cp.pipe.ptc.PhotonTransferCurveDataset`
+            The dataset containing information such as the means, variances and exposure times.
+            nLinearity
+
+        detector : `lsst.afw.cameraGeom.Detector`
+            Detector object.
+
+        tableArray : `np.array`, optional
+            Optional. Look-up table array with size rows=nAmps and columns=DN values.
+            It will be modified in-place if supplied.
+
+        log : `lsst.log.Log`, optional
+            Logger to handle messages.
+
+        Returns
+        -------
+        linearizer : `lsst.ip.isr.Linearizer`
+            Linearizer object
         """
 
-        def errFunc(p, x, y):
-            return function(p, x) - y
+        # Fit NonLinearity
+        datasetNonLinearity = self.fitNonLinearity(datasetPtc, tableArray=tableArray)
 
-        # Fit first time
-        pFit, _ = leastsq(errFunc, initialParams, args=(dataX, dataY), full_output=0)
+        # Produce linearizer
+        now = datetime.datetime.utcnow()
+        calibDate = now.strftime("%Y-%m-%d")
+        linType = self.config.linearizerType
 
-        # Get the stdev of the residuals
-        residuals = errFunc(pFit, dataX, dataY)
-        sigmaErrTotal = np.std(residuals)
+        if linType == "LOOKUPTABLE":
+            tableArray = tableArray
+        else:
+            tableArray = None
 
-        # 100 random data sets are generated and fitted
-        pars = []
-        for i in range(100):
-            randomDelta = np.random.normal(0., sigmaErrTotal, len(dataY))
-            randomDataY = dataY + randomDelta
-            randomFit, _ = leastsq(errFunc, initialParams,
-                                   args=(dataX, randomDataY), full_output=0)
-            pars.append(randomFit)
-        pars = np.array(pars)
-        meanPfit = np.mean(pars, 0)
+        linearizer = self.buildLinearizerObject(datasetNonLinearity, detector, calibDate, linType,
+                                                instruName=self.config.instrumentName,
+                                                tableArray=tableArray,
+                                                log=log)
 
-        # confidence interval for parameter estimates
-        nSigma = confidenceSigma
-        errPfit = nSigma*np.std(pars, 0)
-        pFitBootstrap = meanPfit
-        pErrBootstrap = errPfit
+        return linearizer
 
-        reducedChiSq = (errFunc(pFitBootstrap, dataX, dataY)**2).sum()/(len(dataY)-len(initialParams))
-        return pFitBootstrap, pErrBootstrap, reducedChiSq
+    def fitNonLinearity(self, datasetPtc, tableArray=None):
+        """Fit a polynomial to signal vs effective time curve to calculate linearity and residuals.
 
-    def funcPolynomial(self, pars, x):
-        """Polynomial function definition"""
-        return poly.polyval(x, [*pars])
+        Parameters
+        ----------
+        datasetPtc : `lsst.cp.pipe.ptc.PhotonTransferCurveDataset`
+            The dataset containing the means, variances and exposure times.
 
-    def funcAstier(self, pars, x):
-        """Single brighter-fatter parameter model for PTC; Equation 16 of Astier+19"""
-        a00, gain, noise = pars
-        return 0.5/(a00*gain*gain)*(np.exp(2*a00*x*gain)-1) + noise/(gain*gain)
+        tableArray : `np.array`
+            Optional. Look-up table array with size rows=nAmps and columns=DN values.
+            It will be modified in-place if supplied.
+
+        Returns
+        -------
+        datasetNonLinearity : `dict`
+            Dictionary of `lsst.cp.pipe.ptc.LinearityResidualsAndLinearizersDataset`
+            dataclasses. Each one holds the output of `calculateLinearityResidualAndLinearizers` per
+            amplifier.
+        """
+        datasetNonLinearity = {ampName: [] for ampName in datasetPtc.ampNames}
+        for i, ampName in enumerate(datasetPtc.ampNames):
+            # If a mask is not found, use all points.
+            if (len(datasetPtc.visitMask[ampName]) == 0):
+                self.log.warn(f"Mask not found for {ampName} in non-linearity fit. Using all points.")
+                mask = np.repeat(True, len(datasetPtc.rawExpTimes[ampName]))
+            else:
+                mask = datasetPtc.visitMask[ampName]
+
+            timeVecFinal = np.array(datasetPtc.rawExpTimes[ampName])[mask]
+            meanVecFinal = np.array(datasetPtc.rawMeans[ampName])[mask]
+
+            # Non-linearity residuals (NL of mean vs time curve): percentage, and fit to a quadratic function
+            # In this case, len(parsIniNonLinearity) = 3 indicates that we want a quadratic fit
+            datasetLinRes = self.calculateLinearityResidualAndLinearizers(timeVecFinal, meanVecFinal)
+
+            # LinearizerLookupTable
+            if tableArray is not None:
+                tableArray[i, :] = datasetLinRes.linearizerTableRow
+
+            datasetNonLinearity[ampName] = datasetLinRes
+
+        return datasetNonLinearity
+
+    def calculateLinearityResidualAndLinearizers(self, exposureTimeVector, meanSignalVector):
+        """Calculate linearity residual and fit an n-order polynomial to the mean vs time curve
+        to produce corrections (deviation from linear part of polynomial) for a particular amplifier
+        to populate LinearizeLookupTable.
+        Use the coefficients of this fit to calculate the correction coefficients for  LinearizePolynomial
+        and LinearizeSquared."
+
+        Parameters
+        ---------
+
+        exposureTimeVector: `list` of `float`
+            List of exposure times for each flat pair
+
+        meanSignalVector: `list` of `float`
+            List of mean signal from diference image of flat pairs
+
+        Returns
+        -------
+        dataset : `lsst.cp.pipe.ptc.LinearityResidualsAndLinearizersDataset`
+            The dataset containing the fit parameters, the NL correction coefficients, and the
+            LUT row for the amplifier at hand.
+
+        Notes
+        -----
+        datase members:
+
+        dataset.polynomialLinearizerCoefficients : `list` of `float`
+            Coefficients for LinearizePolynomial, where corrImage = uncorrImage + sum_i c_i uncorrImage^(2 +
+            i).
+            c_(j-2) = -k_j/(k_1^j) with units DN^(1-j) (c.f., Eq. 37 of 2003.05978). The units of k_j are
+            DN/t^j, and they are fit from meanSignalVector = k0 + k1*exposureTimeVector +
+            k2*exposureTimeVector^2 + ... + kn*exposureTimeVector^n, with
+            n = "polynomialFitDegreeNonLinearity". k_0 and k_1 and degenerate with bias level and gain,
+            and are not used by the non-linearity correction. Therefore, j = 2...n in the above expression
+            (see `LinearizePolynomial` class in `linearize.py`.)
+
+        dataset.quadraticPolynomialLinearizerCoefficient : `float`
+            Coefficient for LinearizeSquared, where corrImage = uncorrImage + c0*uncorrImage^2.
+            c0 = -k2/(k1^2), where k1 and k2 are fit from
+            meanSignalVector = k0 + k1*exposureTimeVector + k2*exposureTimeVector^2 +...
+                               + kn*exposureTimeVector^n, with n = "polynomialFitDegreeNonLinearity".
+
+        dataset.linearizerTableRow : `list` of `float`
+           One dimensional array with deviation from linear part of n-order polynomial fit
+           to mean vs time curve. This array will be one row (for the particular amplifier at hand)
+           of the table array for LinearizeLookupTable.
+
+        dataset.meanSignalVsTimePolyFitPars  : `list` of `float`
+            Parameters from n-order polynomial fit to meanSignalVector vs exposureTimeVector.
+
+        dataset.meanSignalVsTimePolyFitParsErr : `list` of `float`
+            Parameters from n-order polynomial fit to meanSignalVector vs exposureTimeVector.
+
+        dataset.meanSignalVsTimePolyFitReducedChiSq  : `float`
+            Reduced unweighted chi squared from polynomial fit to meanSignalVector vs exposureTimeVector.
+        """
+
+        # Lookup table linearizer
+        parsIniNonLinearity = self._initialParsForPolynomial(self.config.polynomialFitDegreeNonLinearity + 1)
+        if self.config.doFitBootstrap:
+            parsFit, parsFitErr, reducedChiSquaredNonLinearityFit = fitBootstrap(parsIniNonLinearity,
+                                                                                 exposureTimeVector,
+                                                                                 meanSignalVector,
+                                                                                 funcPolynomial)
+        else:
+            parsFit, parsFitErr, reducedChiSquaredNonLinearityFit = fitLeastSq(parsIniNonLinearity,
+                                                                               exposureTimeVector,
+                                                                               meanSignalVector,
+                                                                               funcPolynomial)
+
+        # LinearizeLookupTable:
+        # Use linear part to get time at wich signal is maxAduForLookupTableLinearizer DN
+        tMax = (self.config.maxAduForLookupTableLinearizer - parsFit[0])/parsFit[1]
+        timeRange = np.linspace(0, tMax, self.config.maxAduForLookupTableLinearizer)
+        signalIdeal = parsFit[0] + parsFit[1]*timeRange
+        signalUncorrected = funcPolynomial(parsFit, timeRange)
+        linearizerTableRow = signalIdeal - signalUncorrected  # LinearizerLookupTable has corrections
+        # LinearizePolynomial and LinearizeSquared:
+        # Check that magnitude of higher order (>= 3) coefficents of the polyFit are small,
+        # i.e., less than threshold = 1e-10 (typical quadratic and cubic coefficents are ~1e-6
+        # and ~1e-12).
+        k1 = parsFit[1]
+        polynomialLinearizerCoefficients = []
+        for i, coefficient in enumerate(parsFit):
+            c = -coefficient/(k1**i)
+            polynomialLinearizerCoefficients.append(c)
+            if np.fabs(c) > 1e-10:
+                msg = f"Coefficient {c} in polynomial fit larger than threshold 1e-10."
+                self.log.warn(msg)
+        # Coefficient for LinearizedSquared. Called "c0" in linearize.py
+        c0 = polynomialLinearizerCoefficients[2]
+
+        dataset = LinearityResidualsAndLinearizersDataset([], None, [], [], [], None)
+        dataset.polynomialLinearizerCoefficients = polynomialLinearizerCoefficients
+        dataset.quadraticPolynomialLinearizerCoefficient = c0
+        dataset.linearizerTableRow = linearizerTableRow
+        dataset.meanSignalVsTimePolyFitPars = parsFit
+        dataset.meanSignalVsTimePolyFitParsErr = parsFitErr
+        dataset.meanSignalVsTimePolyFitReducedChiSq = reducedChiSquaredNonLinearityFit
+
+        return dataset
+
+    def buildLinearizerObject(self, datasetNonLinearity, detector, calibDate, linearizerType, instruName='',
+                              tableArray=None, log=None):
+        """Build linearizer object to persist.
+
+        Parameters
+        ----------
+        datasetNonLinearity : `dict`
+            Dictionary of `lsst.cp.pipe.ptc.LinearityResidualsAndLinearizersDataset` objects.
+
+        detector : `lsst.afw.cameraGeom.Detector`
+            Detector object
+
+        calibDate : `datetime.datetime`
+            Calibration date
+
+        linearizerType : `str`
+            'LOOKUPTABLE', 'LINEARIZESQUARED', or 'LINEARIZEPOLYNOMIAL'
+
+        instruName : `str`, optional
+            Instrument name
+
+        tableArray : `np.array`, optional
+            Look-up table array with size rows=nAmps and columns=DN values
+
+        log : `lsst.log.Log`, optional
+            Logger to handle messages
+
+        Returns
+        -------
+        linearizer : `lsst.ip.isr.Linearizer`
+            Linearizer object
+        """
+        detName = detector.getName()
+        detNum = detector.getId()
+        if linearizerType == "LOOKUPTABLE":
+            if tableArray is not None:
+                linearizer = Linearizer(detector=detector, table=tableArray, log=log)
+            else:
+                raise RuntimeError("tableArray must be provided when creating a LookupTable linearizer")
+        elif linearizerType in ("LINEARIZESQUARED", "LINEARIZEPOLYNOMIAL"):
+            linearizer = Linearizer(log=log)
+        else:
+            raise RuntimeError("Invalid linearizerType {linearizerType} to build a Linearizer object. "
+                               "Supported: 'LOOKUPTABLE', 'LINEARIZESQUARED', or 'LINEARIZEPOLYNOMIAL'")
+        for i, amp in enumerate(detector.getAmplifiers()):
+            ampName = amp.getName()
+            datasetNonLinAmp = datasetNonLinearity[ampName]
+            if linearizerType == "LOOKUPTABLE":
+                linearizer.linearityCoeffs[ampName] = [i, 0]
+                linearizer.linearityType[ampName] = "LookupTable"
+            elif linearizerType == "LINEARIZESQUARED":
+                linearizer.fitParams[ampName] = datasetNonLinAmp.meanSignalVsTimePolyFitPars
+                linearizer.fitParamsErr[ampName] = datasetNonLinAmp.meanSignalVsTimePolyFitParsErr
+                linearizer.linearityFitReducedChiSquared[ampName] = (
+                    datasetNonLinAmp.meanSignalVsTimePolyFitReducedChiSq)
+                linearizer.linearityCoeffs[ampName] = [
+                    datasetNonLinAmp.quadraticPolynomialLinearizerCoefficient]
+                linearizer.linearityType[ampName] = "Squared"
+            elif linearizerType == "LINEARIZEPOLYNOMIAL":
+                linearizer.fitParams[ampName] = datasetNonLinAmp.meanSignalVsTimePolyFitPars
+                linearizer.fitParamsErr[ampName] = datasetNonLinAmp.meanSignalVsTimePolyFitParsErr
+                linearizer.linearityFitReducedChiSquared[ampName] = (
+                    datasetNonLinAmp.meanSignalVsTimePolyFitReducedChiSq)
+                # Slice correction coefficients (starting at 2) for polynomial linearizer
+                # (and squared linearizer above). The first and second are reduntant with
+                # the bias and gain, respectively, and are not used by LinearizerPolynomial.
+                polyLinCoeffs = np.array(datasetNonLinAmp.polynomialLinearizerCoefficients[2:])
+                linearizer.linearityCoeffs[ampName] = polyLinCoeffs
+                linearizer.linearityType[ampName] = "Polynomial"
+            linearizer.linearityBBox[ampName] = amp.getBBox()
+        linearizer.validate()
+        calibId = f"detectorName={detName} detector={detNum} calibDate={calibDate} ccd={detNum} filter=NONE"
+
+        try:
+            raftName = detName.split("_")[0]
+            calibId += f" raftName={raftName}"
+        except Exception:
+            raftname = "NONE"
+            calibId += f" raftName={raftname}"
+
+        serial = detector.getSerial()
+        linearizer.updateMetadata(instrumentName=instruName, detectorId=f"{detNum}",
+                                  calibId=calibId, serial=serial, detectorName=f"{detName}")
+
+        return linearizer
 
     @staticmethod
     def _initialParsForPolynomial(order):
@@ -758,129 +1080,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         array[array == 0] = substituteValue
         return array
 
-    def calculateLinearityResidualAndLinearizers(self, exposureTimeVector, meanSignalVector):
-        """Calculate linearity residual and fit an n-order polynomial to the mean vs time curve
-        to produce corrections (deviation from linear part of polynomial) for a particular amplifier
-        to populate LinearizeLookupTable.
-        Use the coefficients of this fit to calculate the correction coefficients for  LinearizePolynomial
-        and LinearizeSquared."
-
-        Parameters
-        ---------
-
-        exposureTimeVector: `list` of `float`
-            List of exposure times for each flat pair
-
-        meanSignalVector: `list` of `float`
-            List of mean signal from diference image of flat pairs
-
-        Returns
-        -------
-        dataset : `lsst.cp.pipe.ptc.LinearityResidualsAndLinearizersDataset`
-            The dataset containing the fit parameters, the NL correction coefficients, and the
-            LUT row for the amplifier at hand. Explicitly:
-
-        dataset.polynomialLinearizerCoefficients : `list` of `float`
-            Coefficients for LinearizePolynomial, where corrImage = uncorrImage + sum_i c_i uncorrImage^(2 +
-            i).
-            c_(j-2) = -k_j/(k_1^j) with units (DN^(1-j)). The units of k_j are DN/t^j, and they are fit from
-            meanSignalVector = k0 + k1*exposureTimeVector + k2*exposureTimeVector^2 +...
-                             + kn*exposureTimeVector^n, with n = "polynomialFitDegreeNonLinearity".
-            k_0 and k_1 and degenerate with bias level and gain, and are not used by the non-linearity
-            correction. Therefore, j = 2...n in the above expression (see `LinearizePolynomial` class in
-            `linearize.py`.)
-
-        dataset.quadraticPolynomialLinearizerCoefficient : `float`
-            Coefficient for LinearizeSquared, where corrImage = uncorrImage + c0*uncorrImage^2.
-            c0 = -k2/(k1^2), where k1 and k2 are fit from
-            meanSignalVector = k0 + k1*exposureTimeVector + k2*exposureTimeVector^2 +...
-                               + kn*exposureTimeVector^n, with n = "polynomialFitDegreeNonLinearity".
-
-        dataset.linearizerTableRow : `list` of `float`
-           One dimensional array with deviation from linear part of n-order polynomial fit
-           to mean vs time curve. This array will be one row (for the particular amplifier at hand)
-           of the table array for LinearizeLookupTable.
-
-        dataset.linearityResidual : `list` of `float`
-            Linearity residual from the mean vs time curve, defined as
-            100*(1 - meanSignalReference/expTimeReference/(meanSignal/expTime).
-
-        dataset.meanSignalVsTimePolyFitPars  : `list` of `float`
-            Parameters from n-order polynomial fit to meanSignalVector vs exposureTimeVector.
-
-        dataset.meanSignalVsTimePolyFitParsErr : `list` of `float`
-            Parameters from n-order polynomial fit to meanSignalVector vs exposureTimeVector.
-
-        dataset.fractionalNonLinearityResidual : `list` of `float`
-            Fractional residuals from the meanSignal vs exposureTime curve with respect to linear part of
-            polynomial fit: 100*(linearPart - meanSignal)/linearPart, where
-            linearPart = k0 + k1*exposureTimeVector.
-
-        dataset.meanSignalVsTimePolyFitReducedChiSq  : `float`
-            Reduced unweighted chi squared from polynomial fit to meanSignalVector vs exposureTimeVector.
-        """
-
-        # Lookup table linearizer
-        parsIniNonLinearity = self._initialParsForPolynomial(self.config.polynomialFitDegreeNonLinearity + 1)
-        if self.config.doFitBootstrap:
-            parsFit, parsFitErr, reducedChiSquaredNonLinearityFit = self._fitBootstrap(parsIniNonLinearity,
-                                                                                       exposureTimeVector,
-                                                                                       meanSignalVector,
-                                                                                       self.funcPolynomial)
-        else:
-            parsFit, parsFitErr, reducedChiSquaredNonLinearityFit = self._fitLeastSq(parsIniNonLinearity,
-                                                                                     exposureTimeVector,
-                                                                                     meanSignalVector,
-                                                                                     self.funcPolynomial)
-
-        # LinearizeLookupTable:
-        # Use linear part to get time at wich signal is maxAduForLookupTableLinearizer DN
-        tMax = (self.config.maxAduForLookupTableLinearizer - parsFit[0])/parsFit[1]
-        timeRange = np.linspace(0, tMax, self.config.maxAduForLookupTableLinearizer)
-        signalIdeal = parsFit[0] + parsFit[1]*timeRange
-        signalUncorrected = self.funcPolynomial(parsFit, timeRange)
-        linearizerTableRow = signalIdeal - signalUncorrected  # LinearizerLookupTable has corrections
-        # LinearizePolynomial and LinearizeSquared:
-        # Check that magnitude of higher order (>= 3) coefficents of the polyFit are small,
-        # i.e., less than threshold = 1e-10 (typical quadratic and cubic coefficents are ~1e-6
-        # and ~1e-12).
-        k1 = parsFit[1]
-        polynomialLinearizerCoefficients = []
-        for i, coefficient in enumerate(parsFit):
-            c = -coefficient/(k1**i)
-            polynomialLinearizerCoefficients.append(c)
-            if np.fabs(c) > 1e-10:
-                msg = f"Coefficient {c} in polynomial fit larger than threshold 1e-10."
-                self.log.warn(msg)
-        # Coefficient for LinearizedSquared. Called "c0" in linearize.py
-        c0 = polynomialLinearizerCoefficients[2]
-
-        # Linearity residual
-        linResidualTimeIndex = self.config.linResidualTimeIndex
-        if exposureTimeVector[linResidualTimeIndex] == 0.0:
-            raise RuntimeError("Reference time for linearity residual can't be 0.0")
-        linResidual = 100*(1 - ((meanSignalVector[linResidualTimeIndex] /
-                           exposureTimeVector[linResidualTimeIndex]) /
-                           (meanSignalVector/exposureTimeVector)))
-
-        # Fractional non-linearity residual, w.r.t linear part of polynomial fit
-        linearPart = parsFit[0] + k1*exposureTimeVector
-        fracNonLinearityResidual = 100*(linearPart - meanSignalVector)/linearPart
-
-        dataset = LinearityResidualsAndLinearizersDataset([], None, [], [], [], [], [], None)
-        dataset.polynomialLinearizerCoefficients = polynomialLinearizerCoefficients
-        dataset.quadraticPolynomialLinearizerCoefficient = c0
-        dataset.linearizerTableRow = linearizerTableRow
-        dataset.linearityResidual = linResidual
-        dataset.meanSignalVsTimePolyFitPars = parsFit
-        dataset.meanSignalVsTimePolyFitParsErr = parsFitErr
-        dataset.fractionalNonLinearityResidual = fracNonLinearityResidual
-        dataset.meanSignalVsTimePolyFitReducedChiSq = reducedChiSquaredNonLinearityFit
-
-        return dataset
-
-    def fitPtcAndNonLinearity(self, dataset, ptcFitType, tableArray=None):
-        """Fit the photon transfer curve and calculate linearity and residuals.
+    def fitPtc(self, dataset, ptcFitType):
+        """Fit the photon transfer curve to a polynimial or to Astier+19 approximation.
 
         Fit the photon transfer curve with either a polynomial of the order
         specified in the task config, or using the Astier approximation.
@@ -898,12 +1099,10 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         ----------
         dataset : `lsst.cp.pipe.ptc.PhotonTransferCurveDataset`
             The dataset containing the means, variances and exposure times
+
         ptcFitType : `str`
             Fit a 'POLYNOMIAL' (degree: 'polynomialFitDegree') or
-            'ASTIERAPPROXIMATION' to the PTC
-        tableArray : `np.array`
-            Optional. Look-up table array with size rows=nAmps and columns=DN values.
-            It will be modified in-place if supplied.
+            'EXPAPPROXIMATION' (Eq. 16 of Astier+19) to the PTC
 
         Returns
         -------
@@ -933,12 +1132,12 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                                                     self.config.initialNonLinearityExclusionThresholdNegative)
             mask = mask & goodPoints
 
-            if ptcFitType == 'ASTIERAPPROXIMATION':
-                ptcFunc = self.funcAstier
+            if ptcFitType == 'EXPAPPROXIMATION':
+                ptcFunc = funcAstier
                 parsIniPtc = [-1e-9, 1.0, 10.]  # a00, gain, noise
                 bounds = self._boundsForAstier(parsIniPtc)
             if ptcFitType == 'POLYNOMIAL':
-                ptcFunc = self.funcPolynomial
+                ptcFunc = funcPolynomial
                 parsIniPtc = self._initialParsForPolynomial(self.config.polynomialFitDegree + 1)
                 bounds = self._boundsForPolynomial(parsIniPtc)
 
@@ -967,9 +1166,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 assert (len(mask) == len(timeVecOriginal) == len(meanVecOriginal) == len(varVecOriginal))
 
             dataset.visitMask[ampName] = mask  # store the final mask
-
             parsIniPtc = pars
-            timeVecFinal = timeVecOriginal[mask]
             meanVecFinal = meanVecOriginal[mask]
             varVecFinal = varVecOriginal[mask]
 
@@ -983,37 +1180,28 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 self.log.warn(msg)
                 # The first and second parameters of initial fit are discarded (bias and gain)
                 # for the final NL coefficients
-                lenNonLinPars = self.config.polynomialFitDegreeNonLinearity - 1
                 dataset.badAmps.append(ampName)
                 dataset.gain[ampName] = np.nan
                 dataset.gainErr[ampName] = np.nan
                 dataset.noise[ampName] = np.nan
                 dataset.noiseErr[ampName] = np.nan
-                dataset.nonLinearity[ampName] = np.nan
-                dataset.nonLinearityError[ampName] = np.nan
-                dataset.nonLinearityResiduals[ampName] = np.nan
-                dataset.fractionalNonLinearityResiduals[ampName] = np.nan
-                dataset.coefficientLinearizeSquared[ampName] = np.nan
                 dataset.ptcFitPars[ampName] = np.nan
                 dataset.ptcFitParsError[ampName] = np.nan
                 dataset.ptcFitReducedChiSquared[ampName] = np.nan
-                dataset.coefficientsLinearizePolynomial[ampName] = [np.nan]*lenNonLinPars
-                tableArray[i, :] = [np.nan]*self.config.maxAduForLookupTableLinearizer
                 continue
 
             # Fit the PTC
             if self.config.doFitBootstrap:
-                parsFit, parsFitErr, reducedChiSqPtc = self._fitBootstrap(parsIniPtc, meanVecFinal,
-                                                                          varVecFinal, ptcFunc)
+                parsFit, parsFitErr, reducedChiSqPtc = fitBootstrap(parsIniPtc, meanVecFinal,
+                                                                    varVecFinal, ptcFunc)
             else:
-                parsFit, parsFitErr, reducedChiSqPtc = self._fitLeastSq(parsIniPtc, meanVecFinal,
-                                                                        varVecFinal, ptcFunc)
-
+                parsFit, parsFitErr, reducedChiSqPtc = fitLeastSq(parsIniPtc, meanVecFinal,
+                                                                  varVecFinal, ptcFunc)
             dataset.ptcFitPars[ampName] = parsFit
             dataset.ptcFitParsError[ampName] = parsFitErr
             dataset.ptcFitReducedChiSquared[ampName] = reducedChiSqPtc
 
-            if ptcFitType == 'ASTIERAPPROXIMATION':
+            if ptcFitType == 'EXPAPPROXIMATION':
                 ptcGain = parsFit[1]
                 ptcGainErr = parsFitErr[1]
                 ptcNoise = np.sqrt(np.fabs(parsFit[2]))
@@ -1023,230 +1211,11 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 ptcGainErr = np.fabs(1./parsFit[1])*(parsFitErr[1]/parsFit[1])
                 ptcNoise = np.sqrt(np.fabs(parsFit[0]))*ptcGain
                 ptcNoiseErr = (0.5*(parsFitErr[0]/np.fabs(parsFit[0]))*(np.sqrt(np.fabs(parsFit[0]))))*ptcGain
-
             dataset.gain[ampName] = ptcGain
             dataset.gainErr[ampName] = ptcGainErr
             dataset.noise[ampName] = ptcNoise
             dataset.noiseErr[ampName] = ptcNoiseErr
-            dataset.ptcFitType[ampName] = ptcFitType
-
-            # Non-linearity residuals (NL of mean vs time curve): percentage, and fit to a quadratic function
-            # In this case, len(parsIniNonLinearity) = 3 indicates that we want a quadratic fit
-
-            datasetLinRes = self.calculateLinearityResidualAndLinearizers(timeVecFinal, meanVecFinal)
-
-            # LinearizerLookupTable
-            if tableArray is not None:
-                tableArray[i, :] = datasetLinRes.linearizerTableRow
-            dataset.nonLinearity[ampName] = datasetLinRes.meanSignalVsTimePolyFitPars
-            dataset.nonLinearityError[ampName] = datasetLinRes.meanSignalVsTimePolyFitParsErr
-            dataset.nonLinearityResiduals[ampName] = datasetLinRes.linearityResidual
-            dataset.fractionalNonLinearityResiduals[ampName] = datasetLinRes.fractionalNonLinearityResidual
-            dataset.nonLinearityReducedChiSquared[ampName] = datasetLinRes.meanSignalVsTimePolyFitReducedChiSq
-            # Slice correction coefficients (starting at 2) for polynomial linearizer. The first
-            # and second are reduntant  with the bias and gain, respectively,
-            # and are not used by LinearizerPolynomial.
-            polyLinCoeffs = np.array(datasetLinRes.polynomialLinearizerCoefficients[2:])
-            dataset.coefficientsLinearizePolynomial[ampName] = polyLinCoeffs
-            quadPolyLinCoeff = datasetLinRes.quadraticPolynomialLinearizerCoefficient
-            dataset.coefficientLinearizeSquared[ampName] = quadPolyLinCoeff
+        if not len(dataset.ptcFitType) == 0:
+            dataset.ptcFitType = ptcFitType
 
         return dataset
-
-    def plot(self, dataRef, dataset, ptcFitType):
-        dirname = dataRef.getUri(datasetType='cpPipePlotRoot', write=True)
-        if not os.path.exists(dirname):
-            os.makedirs(dirname)
-
-        detNum = dataRef.dataId[self.config.ccdKey]
-        filename = f"PTC_det{detNum}.pdf"
-        filenameFull = os.path.join(dirname, filename)
-        with PdfPages(filenameFull) as pdfPages:
-            self._plotPtc(dataset, ptcFitType, pdfPages)
-
-    def _plotPtc(self, dataset, ptcFitType, pdfPages):
-        """Plot PTC, linearity, and linearity residual per amplifier"""
-
-        reducedChiSqPtc = dataset.ptcFitReducedChiSquared
-        if ptcFitType == 'ASTIERAPPROXIMATION':
-            ptcFunc = self.funcAstier
-            stringTitle = (r"Var = $\frac{1}{2g^2a_{00}}(\exp (2a_{00} \mu g) - 1) + \frac{n_{00}}{g^2}$ "
-                           r" ($chi^2$/dof = %g)" % (reducedChiSqPtc))
-        if ptcFitType == 'POLYNOMIAL':
-            ptcFunc = self.funcPolynomial
-            stringTitle = r"Polynomial (degree: %g)" % (self.config.polynomialFitDegree)
-
-        legendFontSize = 7
-        labelFontSize = 7
-        titleFontSize = 9
-        supTitleFontSize = 18
-        markerSize = 25
-
-        # General determination of the size of the plot grid
-        nAmps = len(dataset.ampNames)
-        if nAmps == 2:
-            nRows, nCols = 2, 1
-        nRows = np.sqrt(nAmps)
-        mantissa, _ = np.modf(nRows)
-        if mantissa > 0:
-            nRows = int(nRows) + 1
-            nCols = nRows
-        else:
-            nRows = int(nRows)
-            nCols = nRows
-
-        f, ax = plt.subplots(nrows=nRows, ncols=nCols, sharex='col', sharey='row', figsize=(13, 10))
-        f2, ax2 = plt.subplots(nrows=nRows, ncols=nCols, sharex='col', sharey='row', figsize=(13, 10))
-
-        for i, (amp, a, a2) in enumerate(zip(dataset.ampNames, ax.flatten(), ax2.flatten())):
-            meanVecOriginal = np.array(dataset.rawMeans[amp])
-            varVecOriginal = np.array(dataset.rawVars[amp])
-            mask = dataset.visitMask[amp]
-            meanVecFinal = meanVecOriginal[mask]
-            varVecFinal = varVecOriginal[mask]
-            meanVecOutliers = meanVecOriginal[np.invert(mask)]
-            varVecOutliers = varVecOriginal[np.invert(mask)]
-            pars, parsErr = dataset.ptcFitPars[amp], dataset.ptcFitParsError[amp]
-
-            if ptcFitType == 'ASTIERAPPROXIMATION':
-                if len(meanVecFinal):
-                    ptcA00, ptcA00error = pars[0], parsErr[0]
-                    ptcGain, ptcGainError = pars[1], parsErr[1]
-                    ptcNoise = np.sqrt(np.fabs(pars[2]))
-                    ptcNoiseError = 0.5*(parsErr[2]/np.fabs(pars[2]))*np.sqrt(np.fabs(pars[2]))
-                    stringLegend = (f"a00: {ptcA00:.2e}+/-{ptcA00error:.2e} 1/e"
-                                    f"\n Gain: {ptcGain:.4}+/-{ptcGainError:.2e} e/DN"
-                                    f"\n Noise: {ptcNoise:.4}+/-{ptcNoiseError:.2e} e \n")
-
-            if ptcFitType == 'POLYNOMIAL':
-                if len(meanVecFinal):
-                    ptcGain, ptcGainError = 1./pars[1], np.fabs(1./pars[1])*(parsErr[1]/pars[1])
-                    ptcNoise = np.sqrt(np.fabs(pars[0]))*ptcGain
-                    ptcNoiseError = (0.5*(parsErr[0]/np.fabs(pars[0]))*(np.sqrt(np.fabs(pars[0]))))*ptcGain
-                    stringLegend = (f"Noise: {ptcNoise:.4}+/-{ptcNoiseError:.2e} e \n"
-                                    f"Gain: {ptcGain:.4}+/-{ptcGainError:.2e} e/DN \n")
-
-                a.set_xlabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
-                a.set_ylabel(r'Variance (DN$^2$)', fontsize=labelFontSize)
-                a.tick_params(labelsize=11)
-                a.set_xscale('linear', fontsize=labelFontSize)
-                a.set_yscale('linear', fontsize=labelFontSize)
-
-                a2.set_xlabel(r'Mean Signal ($\mu$, DN)', fontsize=labelFontSize)
-                a2.set_ylabel(r'Variance (DN$^2$)', fontsize=labelFontSize)
-                a2.tick_params(labelsize=11)
-                a2.set_xscale('log')
-                a2.set_yscale('log')
-
-            if len(meanVecFinal):  # Empty if the whole amp is bad, for example.
-                minMeanVecFinal = np.min(meanVecFinal)
-                maxMeanVecFinal = np.max(meanVecFinal)
-                meanVecFit = np.linspace(minMeanVecFinal, maxMeanVecFinal, 100*len(meanVecFinal))
-                minMeanVecOriginal = np.min(meanVecOriginal)
-                maxMeanVecOriginal = np.max(meanVecOriginal)
-                deltaXlim = maxMeanVecOriginal - minMeanVecOriginal
-
-                a.plot(meanVecFit, ptcFunc(pars, meanVecFit), color='red')
-                a.plot(meanVecFinal, pars[0] + pars[1]*meanVecFinal, color='green', linestyle='--')
-                a.scatter(meanVecFinal, varVecFinal, c='blue', marker='o', s=markerSize)
-                a.scatter(meanVecOutliers, varVecOutliers, c='magenta', marker='s', s=markerSize)
-                a.text(0.03, 0.8, stringLegend, transform=a.transAxes, fontsize=legendFontSize)
-                a.set_title(amp, fontsize=titleFontSize)
-                a.set_xlim([minMeanVecOriginal - 0.2*deltaXlim, maxMeanVecOriginal + 0.2*deltaXlim])
-
-                # Same, but in log-scale
-                a2.plot(meanVecFit, ptcFunc(pars, meanVecFit), color='red')
-                a2.scatter(meanVecFinal, varVecFinal, c='blue', marker='o', s=markerSize)
-                a2.scatter(meanVecOutliers, varVecOutliers, c='magenta', marker='s', s=markerSize)
-                a2.text(0.03, 0.8, stringLegend, transform=a2.transAxes, fontsize=legendFontSize)
-                a2.set_title(amp, fontsize=titleFontSize)
-                a2.set_xlim([minMeanVecOriginal, maxMeanVecOriginal])
-            else:
-                a.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
-                a2.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
-
-        f.suptitle("PTC \n Fit: " + stringTitle, fontsize=20)
-        pdfPages.savefig(f)
-        f2.suptitle("PTC (log-log)", fontsize=20)
-        pdfPages.savefig(f2)
-
-        # Plot mean vs time
-        f, ax = plt.subplots(nrows=4, ncols=4, sharex='col', sharey='row', figsize=(13, 10))
-        for i, (amp, a) in enumerate(zip(dataset.ampNames, ax.flatten())):
-            meanVecFinal = np.array(dataset.rawMeans[amp])[dataset.visitMask[amp]]
-            timeVecFinal = np.array(dataset.rawExpTimes[amp])[dataset.visitMask[amp]]
-
-            a.set_xlabel('Time (sec)', fontsize=labelFontSize)
-            a.set_ylabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
-            a.tick_params(labelsize=labelFontSize)
-            a.set_xscale('linear', fontsize=labelFontSize)
-            a.set_yscale('linear', fontsize=labelFontSize)
-
-            if len(meanVecFinal):
-                pars, parsErr = dataset.nonLinearity[amp], dataset.nonLinearityError[amp]
-                k0, k0Error = pars[0], parsErr[0]
-                k1, k1Error = pars[1], parsErr[1]
-                k2, k2Error = pars[2], parsErr[2]
-                stringLegend = (f"k0: {k0:.4}+/-{k0Error:.2e} DN\n k1: {k1:.4}+/-{k1Error:.2e} DN/t"
-                                f"\n k2: {k2:.2e}+/-{k2Error:.2e} DN/t^2 \n")
-                a.scatter(timeVecFinal, meanVecFinal)
-                a.plot(timeVecFinal, self.funcPolynomial(pars, timeVecFinal), color='red')
-                a.text(0.03, 0.75, stringLegend, transform=a.transAxes, fontsize=legendFontSize)
-                a.set_title(f"{amp}", fontsize=titleFontSize)
-            else:
-                a.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
-
-        f.suptitle("Linearity \n Fit: Polynomial (degree: %g)"
-                   % (self.config.polynomialFitDegreeNonLinearity),
-                   fontsize=supTitleFontSize)
-        pdfPages.savefig(f)
-
-        # Plot linearity residual
-        f, ax = plt.subplots(nrows=4, ncols=4, sharex='col', sharey='row', figsize=(13, 10))
-        for i, (amp, a) in enumerate(zip(dataset.ampNames, ax.flatten())):
-            meanVecFinal = np.array(dataset.rawMeans[amp])[dataset.visitMask[amp]]
-            linRes = np.array(dataset.nonLinearityResiduals[amp])
-
-            a.set_xlabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
-            a.set_ylabel('LR (%)', fontsize=labelFontSize)
-            a.set_xscale('linear', fontsize=labelFontSize)
-            a.set_yscale('linear', fontsize=labelFontSize)
-            if len(meanVecFinal):
-                a.axvline(x=timeVecFinal[self.config.linResidualTimeIndex], color='g', linestyle='--')
-                a.scatter(meanVecFinal, linRes)
-                a.set_title(f"{amp}", fontsize=titleFontSize)
-                a.axhline(y=0, color='k')
-                a.tick_params(labelsize=labelFontSize)
-            else:
-                a.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
-
-        f.suptitle(r"Linearity Residual: $100\times(1 - \mu_{\rm{ref}}/t_{\rm{ref}})/(\mu / t))$" + "\n" +
-                   r"$t_{\rm{ref}}$: " + f"{timeVecFinal[2]} s", fontsize=supTitleFontSize)
-        pdfPages.savefig(f)
-
-        # Plot fractional non-linearity residual (w.r.t linear part of polynomial fit)
-        f, ax = plt.subplots(nrows=4, ncols=4, sharex='col', sharey='row', figsize=(13, 10))
-        for i, (amp, a) in enumerate(zip(dataset.ampNames, ax.flatten())):
-            meanVecFinal = np.array(dataset.rawMeans[amp])[dataset.visitMask[amp]]
-            fracLinRes = np.array(dataset.fractionalNonLinearityResiduals[amp])
-
-            a.axhline(y=0, color='k')
-            a.axvline(x=0, color='k', linestyle='-')
-            a.set_xlabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
-            a.set_ylabel('Fractional nonlinearity (%)', fontsize=labelFontSize)
-            a.tick_params(labelsize=labelFontSize)
-            a.set_xscale('linear', fontsize=labelFontSize)
-            a.set_yscale('linear', fontsize=labelFontSize)
-
-            if len(meanVecFinal):
-                a.scatter(meanVecFinal, fracLinRes, c='g')
-                a.set_title(amp, fontsize=titleFontSize)
-            else:
-                a.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
-
-        f.suptitle(r"Fractional NL residual" + "\n" +
-                   r"$100\times \frac{(k_0 + k_1*Time-\mu)}{k_0+k_1*Time}$",
-                   fontsize=supTitleFontSize)
-        pdfPages.savefig(f)
-
-        return
