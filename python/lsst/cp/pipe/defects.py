@@ -413,7 +413,7 @@ class FindDefectsTask(pipeBase.CmdLineTask):
         """
         date = dafBase.DateTime(midTime, dafBase.DateTime.MJD).toPython().isoformat()
 
-        detName = self._getDetectorName(dataRef)
+        detName = self._getDetectorNameShort(dataRef)
         instrumentName = self._getInstrumentName(dataRef)
         detNum = self._getDetectorNumber(dataRef)
         if not self.config.ignoreFilters:
@@ -423,7 +423,7 @@ class FindDefectsTask(pipeBase.CmdLineTask):
 
         CALIB_ID = f"detectorName={detName} detector={detNum} calibDate={date} ccd={detNum} filter={filt}"
         try:
-            raftName = detName.split("_")[0]
+            raftName = self._getRaftName(dataRef)
             CALIB_ID += f" raftName={raftName}"
         except Exception:
             pass
@@ -444,7 +444,8 @@ class FindDefectsTask(pipeBase.CmdLineTask):
         templateFilename = dataRef.getUri(write=True)  # does not guarantee that full path exists
         baseDirName = os.path.dirname(templateFilename)
         # ingest curated calibs demands detectorName is lowercase
-        dirName = os.path.join(baseDirName, instrumentName, "defects", detName.lower())
+        detNameFull = self._getDetectorNameFull(dataRef)
+        dirName = os.path.join(baseDirName, instrumentName, "defects", detNameFull.lower())
         if not os.path.exists(dirName):
             os.makedirs(dirName)
 
@@ -466,6 +467,7 @@ class FindDefectsTask(pipeBase.CmdLineTask):
 
     @staticmethod
     def _getDetectorNumber(dataRef):
+        """The detector's integer identifier."""
         dataRefDetNum = dataRef.dataId['detector']
         camera = dataRef.get('camera')
         detectorDetNum = camera[dataRef.dataId['detector']].getId()
@@ -478,9 +480,24 @@ class FindDefectsTask(pipeBase.CmdLineTask):
         return camera.getName()
 
     @staticmethod
-    def _getDetectorName(dataRef):
+    def _getDetectorNameFull(dataRef):
+        """The detector's self-reported full name, e.g. R12_S01."""
         camera = dataRef.get('camera')
         return camera[dataRef.dataId['detector']].getName()
+
+    @staticmethod
+    def _getDetectorNameShort(dataRef):
+        """The detectorName per the butler, e.g. slot name, e.g. S12."""
+        butler = dataRef.getButler()
+        detectorName = butler.queryMetadata('raw', ['detectorName'], dataRef.dataId)[0]
+        return detectorName
+
+    @staticmethod
+    def _getRaftName(dataRef):
+        """The detectorName per the butler, e.g. slot name, e.g. S12."""
+        butler = dataRef.getButler()
+        raftName = butler.queryMetadata('raw', ['raftName'], dataRef.dataId)[0]
+        return raftName
 
     @staticmethod
     def _getMjd(exp, timescale=dafBase.DateTime.UTC):
