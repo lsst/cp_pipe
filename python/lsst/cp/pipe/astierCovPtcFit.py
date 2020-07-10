@@ -56,7 +56,7 @@ def computeApproximateAcoeffs(fit, muEl):
     gain = fit.getGain()
     muAdu = np.array([muEl/gain])
     model = fit.evalCovModel(muAdu)
-    var = model[0, 0, 0]  # ADU
+    var = model[0, 0, 0]  # ADU^2
     # For a result in electrons^-1, we have to use mu in electrons.
 
     return model[0, :, :]/(var*muEl)
@@ -495,10 +495,9 @@ class CovFit:
         """Get noise matrix"""
         return self.params['noise'].full.reshape(self.r, self.r)
 
-    def getMaskVar(self):
-        """Get mask of var = cov[0,0]"""
-        gain = self.getGain()
-        weights = self.sqrtW[:, 0, 0]/(gain**2)
+    def getMaskCov(self, i, j):
+        """Get mask of Cov[i,j]"""
+        weights = self.sqrtW[:, i, j]
         mask = weights != 0
         return mask
 
@@ -531,7 +530,7 @@ class CovFit:
         """
         return self.wres(params).flatten()
 
-    def fitFullModel(self, pInit=None, nSigma=5):
+    def fitFullModel(self, pInit=None, nSigma=5.0, maxFitIter=1):
         """Fit measured covariances to full model in Astier+19 (Eq. 20)
 
         Parameters
@@ -543,8 +542,11 @@ class CovFit:
             covariances calculation, and the extra "1" is the gain.
             If "b" is 0, then "c" is 0, and len(pInit) will have r^2 fewer entries.
 
-        nSigma : `int`
+        nSigma : `int`, optional
             Sigma cut to get rid of outliers.
+
+        maxFitIter : `int`, optional
+            Number of iterations for full model fit.
 
         Returns
         -------
@@ -567,8 +569,7 @@ class CovFit:
         if pInit is None:
             pInit = self.getParamValues()
         nOutliers = 1
-        counter = 1
-        maxFitIter = 6
+        counter = 0
         while nOutliers != 0:
             params, paramsCov, _, mesg, ierr = leastsq(self.weightedRes, pInit, full_output=True)
             wres = self.weightedRes(params)
@@ -599,8 +600,8 @@ class CovFit:
 
         return mask.sum() - len(self.params.free)
 
-    def getNormalizedFitData(self, i, j, divideByMu=False):
-        """Get measured signal and covariance, cov model and wigths
+    def getFitData(self, i, j, divideByMu=False, unitsElectrons=False, returnMasked=False):
+        """Get measured signal and covariance, cov model, weigths, and mask.
 
         Parameters
         ---------
@@ -613,45 +614,58 @@ class CovFit:
         divideByMu: `bool`, optional
             Divide covariance, model, and weights by signal mu?
 
+        unitsElectrons : `bool`, optional
+            mu, covariance, and model are in ADU (or powers of ADU) If tthis parameter is true, these are
+            multiplied by the adequte factors of the gain to return quantities in electrons
+            (or powers of electrons).
+
+        returneMasked : `bool`, optional
+            Use mask (based on weights) in returned arrays (mu, covariance, and model)?
+
         Returns
         -------
         mu: `numpy.array`
-            list of signal values(mu*gain).
+            list of signal values (mu).
 
         covariance: `numpy.array`
-            Covariance arrays, indexed by mean signal mu(self.cov[:, i, j]*gain**2).
+            Covariance arrays, indexed by mean signal mu (self.cov[:, i, j]).
 
         model: `numpy.array`
-            Covariance model(model*gain**2)
+            Covariance model (model).
 
         weights: `numpy.array`
-            Weights(self.sqrtW/gain**2)
+            Weights (self.sqrtW).
 
         Notes
         -----
-        Using a CovFit object, selects from(i, j) and returns
+        Using a CovFit object, selects from (i, j) and returns
         mu*gain, self.cov[:, i, j]*gain**2 model*gain**2, and self.sqrtW/gain**2
+        in electrons or ADU if unitsElectrons=False.
         """
-        gain = self.getGain()
+        if unitsElectrons:
+            gain = self.getGain()
+        else:
+            gain = 1.0
+
         mu = self.mu*gain
         covariance = self.cov[:, i, j]*(gain**2)
         model = self.evalCovModel()[:, i, j]*(gain**2)
         weights = self.sqrtW[:, i, j]/(gain**2)
 
         # select data used for the fit:
-        mask = weights != 0
+        mask = self.getMaskCov(i, j)
+        if returnMasked:
+            weights = weights[mask]
+            model = model[mask]
+            mu = mu[mask]
+            covariance = covariance[mask]
 
-        weights = weights[mask]
-        model = model[mask]
-        mu = mu[mask]
-
-        covariance = covariance[mask]
-        if(divideByMu):
+        if divideByMu:
             covariance /= mu
             model /= mu
             weights *= mu
 
-        return mu, covariance, model, weights
+        return mu, covariance, model, weights, mask
 
     def __call__(self, params):
         self.setParamValues(params)

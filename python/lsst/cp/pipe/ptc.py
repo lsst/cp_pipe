@@ -543,9 +543,10 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         for i, amp in enumerate(covFits):
             fit = covFits[amp]
-            meanVecFinal, varVecFinal, varVecModel, wc = fit.getNormalizedFitData(0, 0, divideByMu=False)
+            (meanVecFinal, varVecFinal, varVecModel,
+                wc, varMask) = fit.getFitData(0, 0, divideByMu=False, returnMasked=True)
             gain = fit.getGain()
-            dataset.visitMask[amp] = fit.getMaskVar()
+            dataset.visitMask[amp] = varMask
             dataset.gain[amp] = gain
             dataset.gainErr[amp] = fit.getGainErr()
             dataset.noise[amp] = np.sqrt(np.fabs(fit.getRon()))

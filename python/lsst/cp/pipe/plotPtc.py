@@ -223,19 +223,37 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             amp = fitPair[0]
             fit = fitPair[1]
 
-            meanVecFinal, varVecFinal, varVecModel, wc = fit.getNormalizedFitData(0, 0)
-            meanVecFinalCov01, varVecFinalCov01, varVecModelCov01, wcCov01 = fit.getNormalizedFitData(0, 1)
-            meanVecFinalCov10, varVecFinalCov10, varVecModelCov10, wcCov10 = fit.getNormalizedFitData(1, 0)
+            meanVecOriginal, varVecOriginal, varVecModelOriginal, wc, varMask = fit.getFitData(0, 0)
+            meanVecFinal, varVecFinal = meanVecOriginal[varMask], varVecOriginal[varMask]
+            varVecModelFinal = varVecModelOriginal[varMask]
+            meanVecOutliers = meanVecOriginal[np.invert(varMask)]
+            varVecOutliers = varVecOriginal[np.invert(varMask)]
+            wc = wc[varMask]
+
+            (meanVecOrigCov01, varVecOrigCov01, varVecModelOrigCov01,
+                _, maskCov01) = fit.getFitData(0, 1)
+            meanVecFinalCov01, varVecFinalCov01 = meanVecOrigCov01[maskCov01], varVecOrigCov01[maskCov01]
+            varVecModelFinalCov01 = varVecModelOrigCov01[maskCov01]
+            meanVecOutliersCov01 = meanVecOrigCov01[np.invert(maskCov01)]
+            varVecOutliersCov01 = varVecOrigCov01[np.invert(maskCov01)]
+
+            (meanVecOrigCov10, varVecOrigCov10, varVecModelOrigCov10,
+                _, maskCov10) = fit.getFitData(1, 0)
+            meanVecFinalCov10, varVecFinalCov10 = meanVecOrigCov10[maskCov10], varVecOrigCov10[maskCov10]
+            varVecModelFinalCov10 = varVecModelOrigCov10[maskCov10]
+            meanVecOutliersCov10 = meanVecOrigCov10[np.invert(maskCov10)]
+            varVecOutliersCov10 = varVecOrigCov10[np.invert(maskCov10)]
 
             # cuadratic fit for residuals below
             par2 = np.polyfit(meanVecFinal, varVecFinal, 2, w=wc)
-            varModelQuadratic = np.polyval(par2, meanVecFinal)
+            varModelFinalQuadratic = np.polyval(par2, meanVecFinal)
 
             # fit with no 'b' coefficient (c = a*b in Eq. 20 of Astier+19)
             fitNoB = fit.copy()
             fitNoB.params['c'].fix(val=0)
             fitNoB.fitFullModel()
-            meanVecFinalNoB, varVecFinalNoB, varVecModelNoB, wcNoB = fitNoB.getNormalizedFitData(0, 0)
+            (meanVecFinalNoB, varVecFinalNoB, varVecModelFinalNoB,
+                wcNoB, maskNoB) = fitNoB.getFitData(0, 0, returnMasked=True)
 
             if len(meanVecFinal):  # Empty if the whole amp is bad, for example.
                 stringLegend = (f"Gain: {fit.getGain():.4} e/DN \n Noise: {np.sqrt(fit.getRon()):.4} e \n" +
@@ -251,7 +269,8 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                 a.set_xscale('linear', fontsize=labelFontSize)
                 a.set_yscale('linear', fontsize=labelFontSize)
                 a.scatter(meanVecFinal, varVecFinal, c='blue', marker='o', s=markerSize)
-                a.plot(meanVecFinal, varVecModel, color='red', lineStyle='-')
+                a.scatter(meanVecOutliers, varVecOutliers, c='magenta', marker='s', s=markerSize)
+                a.plot(meanVecFinal, varVecModelFinal, color='red', lineStyle='-')
                 a.text(0.03, 0.7, stringLegend, transform=a.transAxes, fontsize=legendFontSize)
                 a.set_title(amp, fontsize=titleFontSize)
                 a.set_xlim([minMeanVecFinal - 0.2*deltaXlim, maxMeanVecFinal + 0.2*deltaXlim])
@@ -262,8 +281,9 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                 a2.tick_params(labelsize=11)
                 a2.set_xscale('log')
                 a2.set_yscale('log')
-                a2.plot(meanVecFinal, varVecModel, color='red', lineStyle='-')
+                a2.plot(meanVecFinal, varVecModelFinal, color='red', lineStyle='-')
                 a2.scatter(meanVecFinal, varVecFinal, c='blue', marker='o', s=markerSize)
+                a2.scatter(meanVecOutliers, varVecOutliers, c='magenta', marker='s', s=markerSize)
                 a2.text(0.03, 0.7, stringLegend, transform=a2.transAxes, fontsize=legendFontSize)
                 a2.set_title(amp, fontsize=titleFontSize)
                 a2.set_xlim([minMeanVecFinal, maxMeanVecFinal])
@@ -274,12 +294,12 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                 aResVar.tick_params(labelsize=11)
                 aResVar.set_xscale('linear', fontsize=labelFontSize)
                 aResVar.set_yscale('linear', fontsize=labelFontSize)
-                aResVar.plot(meanVecFinal, varVecFinal - varVecModel, color='blue', lineStyle='-',
+                aResVar.plot(meanVecFinal, varVecFinal - varVecModelFinal, color='blue', lineStyle='-',
                              label='Full fit')
-                aResVar.plot(meanVecFinal, varVecFinal - varModelQuadratic, color='red', lineStyle='-',
+                aResVar.plot(meanVecFinal, varVecFinal - varModelFinalQuadratic, color='red', lineStyle='-',
                              label='Quadratic fit')
-                aResVar.plot(meanVecFinalNoB, varVecFinalNoB - varVecModelNoB, color='green', lineStyle='-',
-                             label='Full fit with b=0')
+                aResVar.plot(meanVecFinalNoB, varVecFinalNoB - varVecModelFinalNoB, color='green',
+                             lineStyle='-', label='Full fit with b=0')
                 aResVar.axhline(color='black')
                 aResVar.set_title(amp, fontsize=titleFontSize)
                 aResVar.set_xlim([minMeanVecFinal - 0.2*deltaXlim, maxMeanVecFinal + 0.2*deltaXlim])
@@ -291,7 +311,8 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                 a3.set_xscale('linear', fontsize=labelFontSize)
                 a3.set_yscale('linear', fontsize=labelFontSize)
                 a3.scatter(meanVecFinalCov01, varVecFinalCov01, c='blue', marker='o', s=markerSize)
-                a3.plot(meanVecFinalCov01, varVecModelCov01, color='red', lineStyle='-')
+                a3.scatter(meanVecOutliersCov01, varVecOutliersCov01, c='magenta', marker='s', s=markerSize)
+                a3.plot(meanVecFinalCov01, varVecModelFinalCov01, color='red', lineStyle='-')
                 a3.set_title(amp, fontsize=titleFontSize)
                 a3.set_xlim([minMeanVecFinal - 0.2*deltaXlim, maxMeanVecFinal + 0.2*deltaXlim])
 
@@ -301,7 +322,8 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                 a4.set_xscale('linear', fontsize=labelFontSize)
                 a4.set_yscale('linear', fontsize=labelFontSize)
                 a4.scatter(meanVecFinalCov10, varVecFinalCov10, c='blue', marker='o', s=markerSize)
-                a4.plot(meanVecFinalCov10, varVecModelCov10, color='red', lineStyle='-')
+                a4.scatter(meanVecOutliersCov10, varVecOutliersCov10, c='magenta', marker='s', s=markerSize)
+                a4.plot(meanVecFinalCov10, varVecModelFinalCov10, color='red', lineStyle='-')
                 a4.set_title(amp, fontsize=titleFontSize)
                 a4.set_xlim([minMeanVecFinal - 0.2*deltaXlim, maxMeanVecFinal + 0.2*deltaXlim])
 
@@ -380,7 +402,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         mue, rese, wce = [], [], []
         mueNoB, reseNoB, wceNoB = [], [], []
         for counter, (amp, fit) in enumerate(covFits.items()):
-            mu, c, model, wc = fit.getNormalizedFitData(i, j, divideByMu=True)
+            mu, c, model, wc, _ = fit.getFitData(i, j, divideByMu=True, returnMasked=True)
             wres = (c-model)*wc
             chi2 = ((wres*wres).sum())/(len(mu)-3)
             chi2bin = 0
@@ -389,7 +411,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             wce += list(wc)
 
             fitNoB = covFitsNoB[amp]
-            muNoB, cNoB, modelNoB, wcNoB = fitNoB.getNormalizedFitData(i, j, divideByMu=True)
+            muNoB, cNoB, modelNoB, wcNoB, _ = fitNoB.getFitData(i, j, divideByMu=True, returnMasked=True)
             mueNoB += list(muNoB)
             reseNoB += list(cNoB - modelNoB)
             wceNoB += list(wcNoB)
@@ -747,8 +769,8 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                     ptcGain, ptcGainError = 1./pars[1], np.fabs(1./pars[1])*(parsErr[1]/pars[1])
                     ptcNoise = np.sqrt(np.fabs(pars[0]))*ptcGain
                     ptcNoiseError = (0.5*(parsErr[0]/np.fabs(pars[0]))*(np.sqrt(np.fabs(pars[0]))))*ptcGain
-                    stringLegend = (f"Noise: {ptcNoise:.4}+/-{ptcNoiseError:.2e} e \n"
-                                    f"Gain: {ptcGain:.4}+/-{ptcGainError:.2e} e/DN \n")
+                    stringLegend = (f"Gain: {ptcGain:.4}+/-{ptcGainError:.2e} e/DN \n"
+                                    f"Noise: {ptcNoise:.4}+/-{ptcNoiseError:.2e} e \n")
 
                 a.set_xlabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
                 a.set_ylabel(r'Variance (DN$^2$)', fontsize=labelFontSize)
