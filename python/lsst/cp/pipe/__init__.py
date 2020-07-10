@@ -34,3 +34,4 @@ from .cpCombine import *
 from .cpCertify import *
 from .plotPtc import *
 from .measureCrosstalk import *
+from .linearity import *

@@ -167,99 +167,87 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         else:
             RuntimeError("Enter a fit function type: 'POLYNOMIAL' or 'EXPAPPROXIMATION'")
 
-        config.maxAduForLookupTableLinearizer = 200000  # Max ADU in input mock flats
+        config.linearity.maxLookupTableAdu = 200000  # Max ADU in input mock flats
+        if doTableArray:
+            config.linearity.linearityType = "LookupTable"
+        else:
+            config.linearity.linearityType = "Polynomial"
         task = cpPipe.ptc.MeasurePhotonTransferCurveTask(config=config)
 
         if doTableArray:
             # Non-linearity
             numberAmps = len(self.ampNames)
-            numberAduValues = config.maxAduForLookupTableLinearizer
-            lookupTableArray = np.zeros((numberAmps, numberAduValues), dtype=np.float32)
             # localDataset: PTC dataset (lsst.cp.pipe.ptc.PhotonTransferCurveDataset)
             localDataset = task.fitPtc(localDataset, ptcFitType=fitType)
             # linDataset: Dictionary of `lsst.cp.pipe.ptc.LinearityResidualsAndLinearizersDataset`
-            linDataset = task.fitNonLinearity(localDataset, tableArray=lookupTableArray)
+            linDataset = task.linearity.run(localDataset,
+                                            camera=[self.flatExp1.getDetector()],
+                                            inputDims={'detector': 0})
+            linDataset = linDataset.outputLinearizer
         else:
             localDataset = task.fitPtc(localDataset, ptcFitType=fitType)
-            linDataset = task.fitNonLinearity(localDataset)
+            linDataset = task.linearity.run(localDataset,
+                                            camera=[self.flatExp1.getDetector()],
+                                            inputDims={'detector': 0})
+            linDataset = linDataset.outputLinearizer
 
         if doTableArray:
             # check that the linearizer table has been filled out properly
             for i in np.arange(numberAmps):
-                tMax = (config.maxAduForLookupTableLinearizer)/self.flux
-                timeRange = np.linspace(0., tMax, config.maxAduForLookupTableLinearizer)
+                tMax = (config.linearity.maxLookupTableAdu)/self.flux
+                timeRange = np.linspace(0., tMax, config.linearity.maxLookupTableAdu)
                 signalIdeal = timeRange*self.flux
                 signalUncorrected = funcPolynomial(np.array([0.0, self.flux, self.k2NonLinearity]),
                                                    timeRange)
                 linearizerTableRow = signalIdeal - signalUncorrected
-                self.assertEqual(len(linearizerTableRow), len(lookupTableArray[i, :]))
+                self.assertEqual(len(linearizerTableRow), len(linDataset.tableData[i, :]))
                 for j in np.arange(len(linearizerTableRow)):
-                    self.assertAlmostEqual(linearizerTableRow[j], lookupTableArray[i, :][j],
+                    self.assertAlmostEqual(linearizerTableRow[j], linDataset.tableData[i, :][j],
                                            places=placesTests)
+        else:
+            # check entries in localDataset, which was modified by the function
+            for ampName in self.ampNames:
+                maskAmp = localDataset.visitMask[ampName]
+                finalMuVec = localDataset.rawMeans[ampName][maskAmp]
+                finalTimeVec = localDataset.rawExpTimes[ampName][maskAmp]
+                linearPart = self.flux*finalTimeVec
+                inputFracNonLinearityResiduals = 100*(linearPart - finalMuVec)/linearPart
+                self.assertEqual(fitType, localDataset.ptcFitType)
+                self.assertAlmostEqual(self.gain, localDataset.gain[ampName])
+                if fitType == 'POLYNOMIAL':
+                    self.assertAlmostEqual(self.c1, localDataset.ptcFitPars[ampName][1])
+                    self.assertAlmostEqual(np.sqrt(self.noiseSq)*self.gain, localDataset.noise[ampName])
+                if fitType == 'EXPAPPROXIMATION':
+                    self.assertAlmostEqual(self.a00, localDataset.ptcFitPars[ampName][0])
+                    # noise already in electrons for 'EXPAPPROXIMATION' fit
+                    self.assertAlmostEqual(np.sqrt(self.noiseSq), localDataset.noise[ampName])
 
-        # check entries in localDataset, which was modified by the function
-        for ampName in self.ampNames:
-            maskAmp = localDataset.visitMask[ampName]
-            finalMuVec = localDataset.rawMeans[ampName][maskAmp]
-            finalTimeVec = localDataset.rawExpTimes[ampName][maskAmp]
-            linearPart = self.flux*finalTimeVec
-            inputFracNonLinearityResiduals = 100*(linearPart - finalMuVec)/linearPart
-            self.assertEqual(fitType, localDataset.ptcFitType)
-            self.assertAlmostEqual(self.gain, localDataset.gain[ampName])
-            if fitType == 'POLYNOMIAL':
-                self.assertAlmostEqual(self.c1, localDataset.ptcFitPars[ampName][1])
-                self.assertAlmostEqual(np.sqrt(self.noiseSq)*self.gain, localDataset.noise[ampName])
-            if fitType == 'EXPAPPROXIMATION':
-                self.assertAlmostEqual(self.a00, localDataset.ptcFitPars[ampName][0])
-                # noise already in electrons for 'EXPAPPROXIMATION' fit
-                self.assertAlmostEqual(np.sqrt(self.noiseSq), localDataset.noise[ampName])
+            # check entries in returned dataset (a dict of , for nonlinearity)
+            for ampName in self.ampNames:
+                maskAmp = localDataset.visitMask[ampName]
+                finalMuVec = localDataset.rawMeans[ampName][maskAmp]
+                finalTimeVec = localDataset.rawExpTimes[ampName][maskAmp]
+                linearPart = self.flux*finalTimeVec
+                inputFracNonLinearityResiduals = 100*(linearPart - finalMuVec)/linearPart
 
-        # check entries in returned dataset (a dict of , for nonlinearity)
-        for ampName in self.ampNames:
-            maskAmp = localDataset.visitMask[ampName]
-            finalMuVec = localDataset.rawMeans[ampName][maskAmp]
-            finalTimeVec = localDataset.rawExpTimes[ampName][maskAmp]
-            linearPart = self.flux*finalTimeVec
-            inputFracNonLinearityResiduals = 100*(linearPart - finalMuVec)/linearPart
+                # Nonlinearity fit parameters
+                self.assertAlmostEqual(0.0, linDataset.fitParams[ampName][0])
+                self.assertAlmostEqual(self.flux, linDataset.fitParams[ampName][1],
+                                       places=placesTests)
+                self.assertAlmostEqual(self.k2NonLinearity, linDataset.fitParams[ampName][2],
+                                       places=placesTests)
 
-            # Nonlinearity fit parameters
-            self.assertLess(np.fabs(linDataset[ampName].meanSignalVsTimePolyFitPars[0]), 0.01)
-            self.assertAlmostEqual(self.flux, linDataset[ampName].meanSignalVsTimePolyFitPars[1],
-                                   places=placesTests)
-            self.assertAlmostEqual(self.k2NonLinearity, linDataset[ampName].meanSignalVsTimePolyFitPars[2],
-                                   places=placesTests)
+                # Non-linearity coefficient for linearizer
+                self.assertAlmostEqual(-self.k2NonLinearity/(self.flux**2),
+                                       linDataset.linearityCoeffs[ampName][0],
+                                       places=placesTests)
 
-            # Non-linearity coefficient for linearizer
-            self.assertAlmostEqual(-self.k2NonLinearity/(self.flux**2),
-                                   linDataset[ampName].quadraticPolynomialLinearizerCoefficient,
-                                   places=placesTests)
-
-            linearPartModel = linDataset[ampName].meanSignalVsTimePolyFitPars[1]*finalTimeVec
-            outputFracNonLinearityResiduals = 100*(linearPartModel - finalMuVec)/linearPartModel
-            # Fractional nonlinearity residuals
-            self.assertEqual(len(outputFracNonLinearityResiduals), len(inputFracNonLinearityResiduals))
-            for calc, truth in zip(outputFracNonLinearityResiduals, inputFracNonLinearityResiduals):
-                self.assertAlmostEqual(calc, truth, places=placesTests)
-
-            # check calls to calculateLinearityResidualAndLinearizers
-            datasetLinResAndLinearizers = task.calculateLinearityResidualAndLinearizers(
-                localDataset.rawExpTimes[ampName], localDataset.rawMeans[ampName])
-
-            self.assertAlmostEqual(-self.k2NonLinearity/(self.flux**2),
-                                   datasetLinResAndLinearizers.quadraticPolynomialLinearizerCoefficient,
-                                   places=placesTests)
-            self.assertAlmostEqual(0.0, datasetLinResAndLinearizers.meanSignalVsTimePolyFitPars[0],
-                                   places=placesTests)
-            self.assertAlmostEqual(self.flux, datasetLinResAndLinearizers.meanSignalVsTimePolyFitPars[1],
-                                   places=placesTests)
-            self.assertAlmostEqual(self.k2NonLinearity,
-                                   datasetLinResAndLinearizers.meanSignalVsTimePolyFitPars[2],
-                                   places=placesTests)
-
-    def test_ptcFitBootstrap(self):
-        """Test the bootstrap fit option for the PTC"""
-        for (fitType, order) in [('POLYNOMIAL', 2), ('POLYNOMIAL', 3), ('EXPAPPROXIMATION', None)]:
-            self.ptcFitAndCheckPtc(fitType=fitType, order=order, doTableArray=False, doFitBootstrap=True)
+                linearPartModel = linDataset.fitParams[ampName][1]*finalTimeVec
+                outputFracNonLinearityResiduals = 100*(linearPartModel - finalMuVec)/linearPartModel
+                # Fractional nonlinearity residuals
+                self.assertEqual(len(outputFracNonLinearityResiduals), len(inputFracNonLinearityResiduals))
+                for calc, truth in zip(outputFracNonLinearityResiduals, inputFracNonLinearityResiduals):
+                    self.assertAlmostEqual(calc, truth, places=placesTests)
 
     def test_ptcFit(self):
         for createArray in [True, False]:
