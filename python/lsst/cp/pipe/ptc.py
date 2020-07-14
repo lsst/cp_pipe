@@ -136,6 +136,11 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
         doc="Sigma cut for outlier rejection in PTC.",
         default=5.0,
     )
+    maskNameList = pexConfig.ListField(
+        dtype=str,
+        doc="Mask list to exclude from statistics calculations.",
+        default=['DETECTED', 'BAD', 'NO_DATA'],
+    )
     nSigmaClipPtc = pexConfig.Field(
         dtype=float,
         doc="Sigma cut for afwMath.StatisticsControl()",
@@ -598,12 +603,21 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         im1Area = afwMath.binImage(im1Area, self.config.binSize)
         im2Area = afwMath.binImage(im2Area, self.config.binSize)
 
-        statsCtrl = afwMath.StatisticsControl()
-        statsCtrl.setNumSigmaClip(self.config.nSigmaClipPtc)
-        statsCtrl.setNumIter(self.config.nIterSigmaClipPtc)
+        im1MaskVal = exposure1.getMask().getPlaneBitMask(self.config.maskNameList)
+        im1StatsCtrl = afwMath.StatisticsControl(self.config.nSigmaClipPtc,
+                                                 self.config.nIterSigmaClipPtc,
+                                                 im1MaskVal)
+        im1StatsCtrl.setAndMask(im1MaskVal)
+
+        im2MaskVal = exposure2.getMask().getPlaneBitMask(self.config.maskNameList)
+        im2StatsCtrl = afwMath.StatisticsControl(self.config.nSigmaClipPtc,
+                                                 self.config.nIterSigmaClipPtc,
+                                                 im2MaskVal)
+        im2StatsCtrl.setAndMask(im2MaskVal)
+
         #  Clipped mean of images; then average of mean.
-        mu1 = afwMath.makeStatistics(im1Area, afwMath.MEANCLIP, statsCtrl).getValue()
-        mu2 = afwMath.makeStatistics(im2Area, afwMath.MEANCLIP, statsCtrl).getValue()
+        mu1 = afwMath.makeStatistics(im1Area, afwMath.MEANCLIP, im1StatsCtrl).getValue()
+        mu2 = afwMath.makeStatistics(im2Area, afwMath.MEANCLIP, im2StatsCtrl).getValue()
         mu = 0.5*(mu1 + mu2)
 
         # Take difference of pairs
@@ -615,7 +629,13 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         diffIm -= temp
         diffIm /= mu
 
-        varDiff = 0.5*(afwMath.makeStatistics(diffIm, afwMath.VARIANCECLIP, statsCtrl).getValue())
+        diffImMaskVal = diffIm.getMask().getPlaneBitMask(self.config.maskNameList)
+        diffImStatsCtrl = afwMath.StatisticsControl(self.config.nSigmaClipPtc,
+                                                    self.config.nIterSigmaClipPtc,
+                                                    diffImMaskVal)
+        diffImStatsCtrl.setAndMask(diffImMaskVal)
+
+        varDiff = 0.5*(afwMath.makeStatistics(diffIm, afwMath.VARIANCECLIP, diffImStatsCtrl).getValue())
 
         # Get the mask and identify good pixels as '1', and the rest as '0'.
         w1 = np.where(im1Area.getMask().getArray() == 0, 1, 0)
