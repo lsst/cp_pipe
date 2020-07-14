@@ -402,7 +402,6 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
             checkExpLengthEqual(exp1, exp2, v1, v2, raiseWithMessage=True)
             expTime = exp1.getInfo().getVisitInfo().getExposureTime()
-
             tupleRows = []
             nAmpsNan = 0
             for ampNumber, amp in enumerate(detector):
