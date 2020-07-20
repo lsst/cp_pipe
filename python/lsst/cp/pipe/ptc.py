@@ -139,7 +139,7 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
     maskNameList = pexConfig.ListField(
         dtype=str,
         doc="Mask list to exclude from statistics calculations.",
-        default=['DETECTED', 'BAD', 'NO_DATA'],
+        default=['SUSPECT', 'BAD', 'NO_DATA'],
     )
     nSigmaClipPtc = pexConfig.Field(
         dtype=float,
@@ -404,12 +404,18 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             expTime = exp1.getInfo().getVisitInfo().getExposureTime()
 
             tupleRows = []
+            nAmpsNan = 0
             for ampNumber, amp in enumerate(detector):
                 ampName = amp.getName()
                 # covAstier: (i, j, var (cov[0,0]), cov, npix)
                 doRealSpace = self.config.covAstierRealSpace
                 muDiff, varDiff, covAstier = self.measureMeanVarCov(exp1, exp2, region=amp.getBBox(),
                                                                     covAstierRealSpace=doRealSpace)
+                if np.isnan(muDiff) and np.isnan(varDiff) and np.isnan(covAstier):
+                    msg = f"NaN mean in amp {ampNumber} in visit pair {v1}, {v2} of detector {detNum}."
+                    self.log.warn(msg)
+                    nAmpsNan += 1
+                    continue
 
                 datasetPtc.rawExpTimes[ampName].append(expTime)
                 datasetPtc.rawMeans[ampName].append(muDiff)
@@ -418,6 +424,10 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
                 tupleRows += [(muDiff, ) + covRow + (ampNumber, expTime, ampName) for covRow in covAstier]
                 tags = ['mu', 'i', 'j', 'var', 'cov', 'npix', 'ext', 'expTime', 'ampName']
+            if nAmpsNan == len(ampNames):
+                msg = f"NaN mean in all amps of visit pair {v1}, {v2} of detector {detNum}."
+                self.log.warn(msg)
+                continue
             allTags += tags
             tupleRecords += tupleRows
         covariancesWithTags = np.core.records.fromrecords(tupleRecords, names=allTags)
@@ -618,6 +628,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         #  Clipped mean of images; then average of mean.
         mu1 = afwMath.makeStatistics(im1Area, afwMath.MEANCLIP, im1StatsCtrl).getValue()
         mu2 = afwMath.makeStatistics(im2Area, afwMath.MEANCLIP, im2StatsCtrl).getValue()
+        if np.isnan(mu1) or np.isnan(mu2):
+            return np.nan, np.nan, np.nan
         mu = 0.5*(mu1 + mu2)
 
         # Take difference of pairs
