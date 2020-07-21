@@ -618,12 +618,14 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         im1StatsCtrl = afwMath.StatisticsControl(self.config.nSigmaClipPtc,
                                                  self.config.nIterSigmaClipPtc,
                                                  im1MaskVal)
+        im1StatsCtrl.setNanSafe(True)
         im1StatsCtrl.setAndMask(im1MaskVal)
 
         im2MaskVal = exposure2.getMask().getPlaneBitMask(self.config.maskNameList)
         im2StatsCtrl = afwMath.StatisticsControl(self.config.nSigmaClipPtc,
                                                  self.config.nIterSigmaClipPtc,
                                                  im2MaskVal)
+        im2StatsCtrl.setNanSafe(True)
         im2StatsCtrl.setAndMask(im2MaskVal)
 
         #  Clipped mean of images; then average of mean.
@@ -646,6 +648,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         diffImStatsCtrl = afwMath.StatisticsControl(self.config.nSigmaClipPtc,
                                                     self.config.nIterSigmaClipPtc,
                                                     diffImMaskVal)
+        diffImStatsCtrl.setNanSafe(True)
         diffImStatsCtrl.setAndMask(diffImMaskVal)
 
         varDiff = 0.5*(afwMath.makeStatistics(diffIm, afwMath.VARIANCECLIP, diffImStatsCtrl).getValue())
