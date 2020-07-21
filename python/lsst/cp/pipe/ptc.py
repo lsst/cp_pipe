@@ -411,8 +411,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 doRealSpace = self.config.covAstierRealSpace
                 muDiff, varDiff, covAstier = self.measureMeanVarCov(exp1, exp2, region=amp.getBBox(),
                                                                     covAstierRealSpace=doRealSpace)
-                if np.isnan(muDiff) and np.isnan(varDiff) and np.isnan(covAstier):
-                    msg = f"NaN mean in amp {ampNumber} in visit pair {v1}, {v2} of detector {detNum}."
+                if np.isnan(muDiff) or np.isnan(varDiff) or np.isnan(covAstier):
+                    msg = f"NaN mean or cov in amp {ampNumber} in visit pair {v1}, {v2} of detector {detNum}."
                     self.log.warn(msg)
                     nAmpsNan += 1
                     continue
@@ -581,15 +581,15 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         Returns
         -------
-        mu : `float`
+        mu : `float` or `NaN`
             0.5*(mu1 + mu2), where mu1, and mu2 are the clipped means of the regions in
-            both exposures.
+            both exposures. If either mu1 or m2 are NaN's, the returned value is NaN.
 
-        varDiff : `float`
+        varDiff : `float` or `NaN`
             Half of the clipped variance of the difference of the regions inthe two input
-            exposures.
+            exposures. If either mu1 or m2 are NaN's, the returned value is NaN.
 
-        covDiffAstier : `list`
+        covDiffAstier : `list` or `NaN`
             List with tuples of the form (dx, dy, var, cov, npix), where:
                 dx : `int`
                     Lag in x
@@ -601,6 +601,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                     Covariance at (dx, dy).
                 nPix : `int`
                     Number of pixel pairs used to evaluate var and cov.
+            If either mu1 or m2 are NaN's, the returned value is NaN.
         """
 
         if region is not None:
