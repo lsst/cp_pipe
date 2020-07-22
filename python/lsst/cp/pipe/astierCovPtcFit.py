@@ -542,7 +542,7 @@ class CovFit:
             covariances calculation, and the extra "1" is the gain.
             If "b" is 0, then "c" is 0, and len(pInit) will have r^2 fewer entries.
 
-        nSigma : `int`, optional
+        nSigma : `float`, optional
             Sigma cut to get rid of outliers.
 
         maxFitIter : `int`, optional
@@ -634,7 +634,10 @@ class CovFit:
             Covariance model (model).
 
         weights: `numpy.array`
-            Weights (self.sqrtW).
+            Weights (self.sqrtW)
+
+        mask : `numpy.array`, optional
+            Boolean mask of the covariance at (i,j).
 
         Notes
         -----
