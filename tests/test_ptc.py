@@ -281,6 +281,46 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         self.assertLess(self.flatWidth - np.sqrt(varDiff), 1)
         self.assertLess(self.flatMean - mu, 1)
 
+    def test_meanVarMeasurementWithNans(self):
+        task = self.defaultTask
+        self.flatExp1.image.array[20:30, :] = np.nan
+        self.flatExp2.image.array[20:30, :] = np.nan
+
+        mu, varDiff, _ = task.measureMeanVarCov(self.flatExp1, self.flatExp2)
+
+        expectedMu1 = np.nanmean(self.flatExp1.image.array)
+        expectedMu2 = np.nanmean(self.flatExp2.image.array)
+        expectedMu = 0.5*(expectedMu1 + expectedMu2)
+
+        # Now the variance of the difference. First, create the diff image.
+        im1 = self.flatExp1.maskedImage
+        im2 = self.flatExp2.maskedImage
+
+        temp = im2.clone()
+        temp *= expectedMu1
+        diffIm = im1.clone()
+        diffIm *= expectedMu2
+        diffIm -= temp
+        diffIm /= expectedMu
+
+        # Dive by two as it is what measureMeanVarCov returns (variance of difference)
+        expectedVar = 0.5*np.nanvar(diffIm.image.array)
+
+        # Check that the standard deviations and the emans agree to less than 1 ADU
+        self.assertLess(np.sqrt(expectedVar) - np.sqrt(varDiff), 1)
+        self.assertLess(expectedMu - mu, 1)
+
+    def test_meanVarMeasurementAllNan(self):
+        task = self.defaultTask
+        self.flatExp1.image.array[:, :] = np.nan
+        self.flatExp2.image.array[:, :] = np.nan
+
+        mu, varDiff, covDiff = task.measureMeanVarCov(self.flatExp1, self.flatExp2)
+
+        self.assertTrue(np.isnan(mu))
+        self.assertTrue(np.isnan(varDiff))
+        self.assertTrue(np.isnan(covDiff))
+
     def test_getInitialGoodPoints(self):
         xs = [1, 2, 3, 4, 5, 6]
         ys = [2*x for x in xs]
