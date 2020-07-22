@@ -801,7 +801,7 @@ class MeasureCrosstalkTask(pipeBase.CmdLineTask):
             result = self.extract.run(exposure)
             ratios.append(result.outputRatios)
 
-        finalResults = self.solver.run(ratios, camera)
+        finalResults = self.solver.run(ratios, camera=camera)
         dataRef.put(finalResults.outputCrosstalk, "crosstalk")
 
         return finalResults
