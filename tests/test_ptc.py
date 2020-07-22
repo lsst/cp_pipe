@@ -281,10 +281,10 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         self.assertLess(self.flatWidth - np.sqrt(varDiff), 1)
         self.assertLess(self.flatMean - mu, 1)
 
-    def test_meanVarMeasurementSomeNan(self):
+    def test_meanVarMeasurementWithNans(self):
         task = self.defaultTask
-        self.flatExp1.image.array[20:30] = np.nan
-        self.flatExp2.image.array[20:30] = np.nan
+        self.flatExp1.image.array[20:30, :] = np.nan
+        self.flatExp2.image.array[20:30, :] = np.nan
 
         mu, varDiff, _ = task.measureMeanVarCov(self.flatExp1, self.flatExp2)
 
@@ -303,8 +303,10 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         diffIm -= temp
         diffIm /= expectedMu
 
+        # Dive by two as it is what measureMeanVarCov returns (variance of difference)
         expectedVar = 0.5*np.nanvar(diffIm.image.array)
-
+        
+        #Check that the standard deviations and the emans agree to less than 1 ADU
         self.assertLess(np.sqrt(expectedVar) - np.sqrt(varDiff), 1)
         self.assertLess(expectedMu - mu, 1)
 
