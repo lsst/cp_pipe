@@ -575,7 +575,7 @@ class CovFit:
             wres = self.weightedRes(params)
             # Do not count the outliers as significant
             sig = mad(wres[wres != 0])
-            mask = (np.abs(wres) > (nSigma * sig))
+            mask = (np.abs(wres) > (nSigma*sig))
             self.sqrtW.flat[mask] = 0  # flatten makes a copy
             nOutliers = mask.sum()
             counter += 1

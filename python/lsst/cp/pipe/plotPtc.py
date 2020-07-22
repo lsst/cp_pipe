@@ -223,12 +223,13 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             amp = fitPair[0]
             fit = fitPair[1]
 
-            meanVecOriginal, varVecOriginal, varVecModelOriginal, wc, varMask = fit.getFitData(0, 0)
+            (meanVecOriginal, varVecOriginal, varVecModelOriginal,
+                weightsOriginal, varMask) = fit.getFitData(0, 0)
             meanVecFinal, varVecFinal = meanVecOriginal[varMask], varVecOriginal[varMask]
             varVecModelFinal = varVecModelOriginal[varMask]
             meanVecOutliers = meanVecOriginal[np.invert(varMask)]
             varVecOutliers = varVecOriginal[np.invert(varMask)]
-            wc = wc[varMask]
+            weightsFinal = weightsOriginal[varMask]
 
             (meanVecOrigCov01, varVecOrigCov01, varVecModelOrigCov01,
                 _, maskCov01) = fit.getFitData(0, 1)
@@ -245,7 +246,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             varVecOutliersCov10 = varVecOrigCov10[np.invert(maskCov10)]
 
             # cuadratic fit for residuals below
-            par2 = np.polyfit(meanVecFinal, varVecFinal, 2, w=wc)
+            par2 = np.polyfit(meanVecFinal, varVecFinal, 2, w=weightsFinal)
             varModelFinalQuadratic = np.polyval(par2, meanVecFinal)
 
             # fit with no 'b' coefficient (c = a*b in Eq. 20 of Astier+19)
@@ -253,7 +254,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             fitNoB.params['c'].fix(val=0)
             fitNoB.fitFullModel()
             (meanVecFinalNoB, varVecFinalNoB, varVecModelFinalNoB,
-                wcNoB, maskNoB) = fitNoB.getFitData(0, 0, returnMasked=True)
+                _, maskNoB) = fitNoB.getFitData(0, 0, returnMasked=True)
 
             if len(meanVecFinal):  # Empty if the whole amp is bad, for example.
                 stringLegend = (f"Gain: {fit.getGain():.4} e/DN \n Noise: {np.sqrt(fit.getRon()):.4} e \n" +
@@ -402,32 +403,33 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         mue, rese, wce = [], [], []
         mueNoB, reseNoB, wceNoB = [], [], []
         for counter, (amp, fit) in enumerate(covFits.items()):
-            mu, c, model, wc, _ = fit.getFitData(i, j, divideByMu=True, returnMasked=True)
-            wres = (c-model)*wc
+            mu, cov, model, weightCov, _ = fit.getFitData(i, j, divideByMu=True, returnMasked=True)
+            wres = (cov-model)*weightCov
             chi2 = ((wres*wres).sum())/(len(mu)-3)
             chi2bin = 0
             mue += list(mu)
-            rese += list(c - model)
-            wce += list(wc)
+            rese += list(cov - model)
+            wce += list(weightCov)
 
             fitNoB = covFitsNoB[amp]
-            muNoB, cNoB, modelNoB, wcNoB, _ = fitNoB.getFitData(i, j, divideByMu=True, returnMasked=True)
+            (muNoB, covNoB, modelNoB,
+                weightCovNoB, _) = fitNoB.getFitData(i, j, divideByMu=True, returnMasked=True)
             mueNoB += list(muNoB)
-            reseNoB += list(cNoB - modelNoB)
-            wceNoB += list(wcNoB)
+            reseNoB += list(covNoB - modelNoB)
+            wceNoB += list(weightCovNoB)
 
             # the corresponding fit
             fit_curve, = plt.plot(mu, model + counter*offset, '-', linewidth=4.0)
             # bin plot. len(mu) = no binning
             gind = self.indexForBins(mu, len(mu))
 
-            xb, yb, wyb, sigyb = self.binData(mu, c, gind, wc)
+            xb, yb, wyb, sigyb = self.binData(mu, cov, gind, weightCov)
             chi2bin = (sigyb*wyb).mean()  # chi2 of enforcing the same value in each bin
             plt.errorbar(xb, yb+counter*offset, yerr=sigyb, marker='o', linestyle='none', markersize=6.5,
                          color=fit_curve.get_color(), label=f"{amp}")
             # plot the data
             if plotData:
-                points, = plt.plot(mu, c + counter*offset, '.', color=fit_curve.get_color())
+                points, = plt.plot(mu, cov + counter*offset, '.', color=fit_curve.get_color())
             plt.legend(loc='upper right', fontsize=8)
             aij = fit.getA()[i, j]
             bij = fit.getB()[i, j]
