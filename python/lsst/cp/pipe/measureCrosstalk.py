@@ -31,7 +31,7 @@ from lsstDebug import getDebugFrame
 from lsst.afw.detection import FootprintSet, Threshold
 from lsst.afw.display import getDisplay
 from lsst.pex.config import Config, Field, ListField, ConfigurableField
-from lsst.ip.isr import (CrosstalkCalib, IsrProvenance)
+from lsst.ip.isr import CrosstalkCalib, IsrProvenance
 from lsst.pipe.tasks.getRepositoryData import DataRefListRunner
 
 __all__ = ["CrosstalkExtractConfig", "CrosstalkExtractTask",
@@ -43,7 +43,7 @@ class CrosstalkExtractConnections(pipeBase.PipelineTaskConnections,
                                   dimensions=("instrument", "exposure", "detector")):
     inputExp = cT.Input(
         name="crosstalkInputs",
-        doc="Input post-ISR processed exposure to measure.",
+        doc="Input post-ISR processed exposure to measure crosstalk from.",
         storageClass="Exposure",
         dimensions=("instrument", "exposure", "detector"),
         multiple=False,
@@ -51,7 +51,7 @@ class CrosstalkExtractConnections(pipeBase.PipelineTaskConnections,
     # TODO: Depends on DM-21904.
     sourceExp = cT.Input(
         name="crosstalkSource",
-        doc="Input post-ISR processed exposure to measure for impact on inputExp.",
+        doc="Post-ISR exposure to measure for inter-chip crosstalk onto inputExp.",
         storageClass="Exposure",
         dimensions=("instrument", "exposure", "detector"),
         multiple=True,
@@ -74,6 +74,8 @@ class CrosstalkExtractConnections(pipeBase.PipelineTaskConnections,
 
     def __init__(self, *, config=None):
         super().__init__(config=config)
+        # Discard sourceExp until DM-21904 allows full interchip
+        # measurements.
         self.inputs.discard("sourceExp")
 
 
@@ -161,7 +163,6 @@ class CrosstalkExtractTask(pipeBase.PipelineTask,
         outputRatios = defaultdict(lambda: defaultdict(dict))
         outputFluxes = defaultdict(lambda: defaultdict(dict))
 
-        calib = CrosstalkCalib()
         threshold = self.config.threshold
         badPixels = list(self.config.badMask)
 
@@ -172,12 +173,11 @@ class CrosstalkExtractTask(pipeBase.PipelineTask,
         sourceExtractExps = [inputExp]
         sourceExtractExps.extend(sourceExps)
 
-        self.log.info("Measuring full detector background for target: %s",
-                      targetChip)
+        self.log.info("Measuring full detector background for target: %s", targetChip)
         targetIm = inputExp.getMaskedImage()
         FootprintSet(targetIm, Threshold(threshold), "DETECTED")
         detected = targetIm.getMask().getPlaneBitMask("DETECTED")
-        bg = calib.calculateBackground(targetIm, badPixels + ["DETECTED"])
+        bg = CrosstalkCalib.calculateBackground(targetIm, badPixels + ["DETECTED"])
 
         self.debugView('extract', inputExp)
 
@@ -198,15 +198,15 @@ class CrosstalkExtractTask(pipeBase.PipelineTask,
 
             for sourceAmp in sourceDetector:
                 sourceAmpName = sourceAmp.getName()
-                sourceImage = sourceIm[sourceAmp.getBBox()]
-                sourceMask = sourceImage.mask.array
+                sourceAmpImage = sourceIm[sourceAmp.getBBox()]
+                sourceMask = sourceAmpImage.mask.array
                 select = ((sourceMask & detected > 0) &
                           (sourceMask & bad == 0) &
-                          np.isfinite(sourceImage.image.array))
+                          np.isfinite(sourceAmpImage.image.array))
                 count = np.sum(select)
                 self.log.debug("  Source amplifier: %s", sourceAmpName)
 
-                outputFluxes[sourceChip][sourceAmpName] = sourceImage.image.array[select]
+                outputFluxes[sourceChip][sourceAmpName] = sourceAmpImage.image.array[select]
 
                 for targetAmp in targetDetector:
                     # iterate over targetExposure
@@ -216,20 +216,20 @@ class CrosstalkExtractTask(pipeBase.PipelineTask,
                         continue
                     self.log.debug("    Target amplifier: %s", targetAmpName)
 
-                    targetImage = calib.extractAmp(targetIm.image,
-                                                   targetAmp, sourceAmp,
-                                                   isTrimmed=self.config.isTrimmed)
-                    ratios = (targetImage.array[select] - bg)/sourceImage.image.array[select]
+                    targetAmpImage = CrosstalkCalib.extractAmp(targetIm.image,
+                                                               targetAmp, sourceAmp,
+                                                               isTrimmed=self.config.isTrimmed)
+                    ratios = (targetAmpImage.array[select] - bg)/sourceAmpImage.image.array[select]
                     ratioDict[targetAmpName][sourceAmpName] = ratios.tolist()
                     extractedCount += count
 
                     self.debugPixels('pixels',
-                                     sourceImage.image.array[select],
-                                     targetImage.array[select] - bg,
+                                     sourceAmpImage.image.array[select],
+                                     targetAmpImage.array[select] - bg,
                                      sourceAmpName, targetAmpName)
 
-            self.log.info("Extracted %d pixels from %s -> %s",
-                          extractedCount, sourceChip, targetChip)
+            self.log.info("Extracted %d pixels from %s -> %s (targetBG: %f)",
+                          extractedCount, sourceChip, targetChip, bg)
             outputRatios[targetChip][sourceChip] = ratioDict
 
         return pipeBase.Struct(
@@ -277,16 +277,16 @@ class CrosstalkExtractTask(pipeBase.PipelineTask,
         """
         frame = getDebugFrame(self._display, stepname)
         if frame:
-            import matplotlib.pyplot as plot
-            figure = plot.figure(1)
+            import matplotlib.pyplot as plt
+            figure = plt.figure(1)
             figure.clear()
 
             axes = figure.add_axes((0.1, 0.1, 0.8, 0.8))
-            axes.plot(pixelsIn, pixelsOut / pixelsIn, 'k+')
-            plot.xlabel("Source amplifier pixel value")
-            plot.ylabel("Measured pixel ratio")
-            plot.title(f"(Source {sourceName} -> Target {targetName}) median ratio: %f" %
-                       (np.median(pixelsOut / pixelsIn)))
+            axes.plt(pixelsIn, pixelsOut / pixelsIn, 'k+')
+            plt.xlabel("Source amplifier pixel value")
+            plt.ylabel("Measured pixel ratio")
+            plt.title(f"(Source {sourceName} -> Target {targetName}) median ratio: "
+                      f"{(np.median(pixelsOut / pixelsIn))}")
             figure.show()
 
             prompt = "Press Enter to continue: "
@@ -294,7 +294,7 @@ class CrosstalkExtractTask(pipeBase.PipelineTask,
                 ans = input(prompt).lower()
                 if ans in ("", "c",):
                     break
-            plot.close()
+            plt.close()
 
 
 class CrosstalkSolveConnections(pipeBase.PipelineTaskConnections,
@@ -339,7 +339,6 @@ class CrosstalkSolveConfig(pipeBase.PipelineTaskConfig,
                            pipelineConnections=CrosstalkSolveConnections):
     """Configuration for the solving of crosstalk from pixel ratios.
     """
-    # Can these be replaced with cpCombine.CalibStatsTask?
     rejIter = Field(
         dtype=int,
         default=3,
@@ -390,8 +389,7 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
         outputs = self.run(**inputs)
         butlerQC.put(outputs, outputRefs)
 
-    def run(self, inputRatios, inputFluxes=None, camera=None,
-            inputDims=None, outputDims=None):
+    def run(self, inputRatios, inputFluxes=None, camera=None, inputDims=None, outputDims=None):
         """Combine ratios to produce crosstalk coefficients.
 
         Parameters
@@ -422,8 +420,7 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
         Raises
         ------
         RuntimeError
-            Raised if the input data contains too many target
-            detectors.
+            Raised if the input data contains multiple target detectors.
 
         Notes
         -----
@@ -453,7 +450,7 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
         for ratioDict, fluxDict in zip(inputRatios, inputFluxes):
             for targetChip in ratioDict:
                 if calibChip and targetChip != calibChip:
-                    raise RuntimeError("Received too many target chips!")
+                    raise RuntimeError("Received multiple target chips!")
 
                 sourceChip = targetChip
                 if sourceChip in ratioDict[targetChip]:
@@ -464,16 +461,17 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
                             combinedRatios[targetAmp][sourceAmp].extend(ratios[targetAmp][sourceAmp])
                             if fluxDict:
                                 combinedFluxes[targetAmp][sourceAmp].extend(fluxDict[sourceChip][sourceAmp])
+                # TODO: DM-21904
                 # Iterating over all other entries in ratioDict[targetChip] will yield
-                # inter-chip terms.  Skipping to reduce complexity.
+                # inter-chip terms.
 
         for targetAmp in combinedRatios:
             for sourceAmp in combinedRatios[targetAmp]:
                 self.log.info("Read %d pixels for %s -> %s",
                               len(combinedRatios[targetAmp][sourceAmp]),
                               targetAmp, sourceAmp)
-                if len(combinedRatios[targetAmp][sourceAmp]) > 100:
-                    self.debugRatios('reduce', combinedRatios, targetAmp, sourceAmp, 0.0)
+                if len(combinedRatios[targetAmp][sourceAmp]) > 1:
+                    self.debugRatios('reduce', combinedRatios, targetAmp, sourceAmp)
 
         if self.config.fluxOrder == 0:
             self.log.info("Fitting crosstalk coefficients.")
@@ -482,7 +480,7 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
         else:
             raise NotImplementedError("Non-linear crosstalk terms are not yet supported.")
 
-        self.log.info("Number of valid solutions: %d", np.sum(calib.coeffValid))
+        self.log.info("Number of valid coefficients: %d", np.sum(calib.coeffValid))
 
         if self.config.doFiltering:
             # This step will apply the calculated validity values to
@@ -513,7 +511,7 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
             outputProvenance=provenance,
         )
 
-    def measureCrosstalkCoefficients(self, ratios, rejIter=3, rejSigma=2.0):
+    def measureCrosstalkCoefficients(self, ratios, rejIter, rejSigma):
         """Measure crosstalk coefficients from the ratios.
 
         Given a list of ratios for each target/source amp combination,
@@ -524,8 +522,8 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
 
         Parameters
         ----------
-        ratios : `list` of `list` of `numpy.ndarray`
-           Matrix of arrays of ratios.
+        ratios : `dict` of `dict` of `numpy.ndarray`
+           Catalog of arrays of ratios.
         rejIter : `int`
            Number of rejection iterations.
         rejSigma : `float`
@@ -546,11 +544,6 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
             a pair of source/target amplifiers from the final set of
             clipped input ratios.
         """
-        if rejIter is None:
-            rejIter = self.config.rejIter
-        if rejSigma is None:
-            rejSigma = self.config.rejSigma
-
         calib = CrosstalkCalib(nAmp=len(ratios))
 
         # Calibration stores coefficients as a numpy ndarray.
@@ -588,23 +581,24 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
                 calib.coeffValid[ii][jj] = (np.abs(calib.coeffs[ii][jj]) >
                                             calib.coeffErr[ii][jj] / np.sqrt(calib.coeffNum[ii][jj]))
 
-            if calib.coeffNum[ii][jj] > 100:
+            if calib.coeffNum[ii][jj] > 1:
                 self.debugRatios('measure', ratios, ordering[ii], ordering[jj],
                                  calib.coeffs[ii][jj], calib.coeffValid[ii][jj])
 
         return calib
 
-    def sigmaClipCorrection(self, nSigClip):
+    @staticmethod
+    def sigmaClipCorrection(nSigClip):
         """Correct measured sigma to account for clipping.
 
         If we clip our input data and then measure sigma, then the
         measured sigma is smaller than the true value because real
         points beyond the clip threshold have been removed.  This is a
-        small effect when nSigClip >~ 3, but the default parameters
-        for measure crosstalk use nSigClip=2.0.  This causes the
-        measured sigma to be about 15% smaller than real.  This
-        formula corrects the issue, for the symmetric case (upper clip
-        threshold equal to lower clip threshold).
+        small (1.5% at nSigClip=3) effect when nSigClip >~ 3, but the
+        default parameters for measure crosstalk use nSigClip=2.0.
+        This causes the measured sigma to be about 15% smaller than
+        real.  This formula corrects the issue, for the symmetric case
+        (upper clip threshold equal to lower clip threshold).
 
         Parameters
         ----------
@@ -615,11 +609,13 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
         -------
         scaleFactor : `float`
             Scale factor to increase the measured sigma by.
+
         """
         varFactor = 1.0 + (2 * nSigClip * norm.pdf(nSigClip)) / (norm.cdf(nSigClip) - norm.cdf(-nSigClip))
         return 1.0 / np.sqrt(varFactor)
 
-    def filterCrosstalkCalib(self, inCalib):
+    @staticmethod
+    def filterCrosstalkCalib(inCalib):
         """Apply valid constraints to the measured values.
 
         Any measured coefficient that is determined to be invalid is
@@ -658,7 +654,7 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
         ----------
         stepname : `str`
             State of processing to view.
-        ratios : `List` of `List` of `np.ndarray`
+        ratios : `dict` of `dict` of `np.ndarray`
             Array of measured CT ratios, indexed by source/victim
             amplifier.
         i : `str`
@@ -675,24 +671,25 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
             if i == j or ratios is None or len(ratios) < 1:
                 pass
 
-            RR = ratios[i][j]
-            if RR is None or len(RR) < 1:
+            ratioList = ratios[i][j]
+            if ratioList is None or len(ratioList) < 1:
                 pass
 
-            value = np.mean(RR)
-            std = np.std(RR)
-            import matplotlib.pyplot as plot
-            figure = plot.figure(1)
+            mean = np.mean(ratioList)
+            std = np.std(ratioList)
+            import matplotlib.pyplot as plt
+            figure = plt.figure(1)
             figure.clear()
-            plot.hist(x=RR, bins=len(RR), cumulative=True, color='b', density=True, histtype='step')
-            plot.xlabel("Measured pixel ratio")
-            plot.ylabel(f"CDF: n=len(RR)")
-            plot.xlim(np.percentile(RR, [1.0, 99]))
-            plot.axvline(x=value, color="k")
-            plot.axvline(x=coeff, color='g')
-            plot.axvline(x=(std / np.sqrt(len(RR))), color='r')
-            plot.axvline(x=-(std / np.sqrt(len(RR))), color='r')
-            plot.title(f"(Source {i} -> Target {j}) mean: {value:.2g} coeff: {coeff:.2g} valid: {valid}")
+            plt.hist(x=ratioList, bins=len(ratioList),
+                     cumulative=True, color='b', density=True, histtype='step')
+            plt.xlabel("Measured pixel ratio")
+            plt.ylabel(f"CDF: n={len(ratioList)}")
+            plt.xlim(np.percentile(ratioList, [1.0, 99]))
+            plt.axvline(x=mean, color="k")
+            plt.axvline(x=coeff, color='g')
+            plt.axvline(x=(std / np.sqrt(len(ratioList))), color='r')
+            plt.axvline(x=-(std / np.sqrt(len(ratioList))), color='r')
+            plt.title(f"(Source {i} -> Target {j}) mean: {mean:.2g} coeff: {coeff:.2g} valid: {valid}")
             figure.show()
 
             prompt = "Press Enter to continue: "
@@ -703,7 +700,7 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
                 elif ans in ("pdb", "p",):
                     import pdb
                     pdb.set_trace()
-            plot.close()
+            plt.close()
 
 
 class MeasureCrosstalkConfig(Config):
@@ -730,7 +727,7 @@ class MeasureCrosstalkTask(pipeBase.CmdLineTask):
     -----
     The crosstalk this method measures assumes that when a bright
     pixel is found in one detector amplifier, all other detector
-    amplifiers may see an increase in the same pixel location
+    amplifiers may see a signal change in the same pixel location
     (relative to the readout amplifier) as these other pixels are read
     out at the same time.
 
@@ -770,7 +767,7 @@ class MeasureCrosstalkTask(pipeBase.CmdLineTask):
         Parameters
         ----------
         dataRefList : `list` [`lsst.daf.peristence.ButlerDataRef`]
-            Data references for detectors to process.
+            Data references for exposures for detectors to process.
 
         Returns
         -------
@@ -781,14 +778,25 @@ class MeasureCrosstalkTask(pipeBase.CmdLineTask):
                 Final crosstalk calibration.
             ``outputProvenance`` : `lsst.ip.isr.IsrProvenance`
                 Provenance data for the new calibration.
+
+        Raises
+        ------
+        RuntimeError
+            Raised if multiple target detectors are supplied.
         """
         dataRef = dataRefList[0]
         camera = dataRef.get("camera")
 
         ratios = []
-        print(dataRefList)
+        activeChip = None
         for dataRef in dataRefList:
             exposure = dataRef.get("postISRCCD")
+            if activeChip:
+                if exposure.getDetector().getName() != activeChip:
+                    raise RuntimeError("Too many input detectors supplied!")
+            else:
+                activeChip = exposure.getDetector().getName()
+
             self.extract.debugView("extract", exposure)
             result = self.extract.run(exposure)
             ratios.append(result.outputRatios)

@@ -24,7 +24,7 @@ import unittest
 import numpy as np
 
 import lsst.utils.tests
-from lsst.cp.pipe.measureCrosstalk import (MeasureCrosstalkTask, MeasureCrosstalkConfig)
+from lsst.cp.pipe.measureCrosstalk import MeasureCrosstalkTask, MeasureCrosstalkConfig
 import lsst.ip.isr.isrMock as isrMock
 
 
@@ -45,7 +45,7 @@ class MeasureCrosstalkTaskCases(lsst.utils.tests.TestCase):
 
         Returns
         -------
-        coeffErr : `np.ndarray`
+        goodFitMask : `np.ndarray`
             Array of booleans indicating if the measured and expected
             crosstalk ratios are smaller than the measured uncertainty
             in the crosstalk ratio.
@@ -59,9 +59,9 @@ class MeasureCrosstalkTaskCases(lsst.utils.tests.TestCase):
         mockTask.config.doAddBias = True
         mockTask.config.doAddFringe = False
 
-        mockTask.config.skyLevel = 0.0
-        mockTask.config.biasLevel = 0.0
-        mockTask.config.readNoise = 100.0
+        mockTask.config.skyLevel = 35.0
+        mockTask.config.biasLevel = 5.0
+        mockTask.config.readNoise = 10.0
 
         mcConfig = MeasureCrosstalkConfig()
         mcConfig.extract.threshold = 4000
@@ -71,7 +71,7 @@ class MeasureCrosstalkTaskCases(lsst.utils.tests.TestCase):
 
         mockTask.config.isTrimmed = isTrimmed
         # Generate simulated set of exposures.
-        for idx in range(0, 10):
+        for idx in range(0, 12):
             mockTask.config.rngSeed = 12345 + idx * 1000
 
             # Allow each simulated exposure to have nSources random
@@ -83,6 +83,7 @@ class MeasureCrosstalkTaskCases(lsst.utils.tests.TestCase):
 
             exposure = mockTask.run()
             result = mct.extract.run(exposure)
+            exposure.writeFits(f"/project/czw/tmp/mock{idx}.fits")
             fullResult.append(result.outputRatios)
 
         # Generate the final measured CT ratios, uncertainties, pixel counts.
@@ -95,24 +96,29 @@ class MeasureCrosstalkTaskCases(lsst.utils.tests.TestCase):
 
         # Compare result against expectation used to create the simulation.
         expectation = isrMock.CrosstalkCoeffMock().run()
-        coeffErr = abs(coeff - expectation) <= coeffSig
-        return coeffErr
+        goodFitMask = abs(coeff - expectation) <= coeffSig
+
+        if not np.all(goodFitMask):
+            print("Coeff: ", coeff)
+            print("Expectation: ", expectation)
+            print("Good Fits: ", goodFitMask)
+        return goodFitMask
 
     def testMeasureCrosstalkTaskTrimmed(self):
         """Measure crosstalk from a sequence of trimmed mocked images.
         """
-        coeffErr = self.setup_measureCrosstalk(isTrimmed=True, nSources=8)
+        goodFitMask = self.setup_measureCrosstalk(isTrimmed=True, nSources=8)
 
-        self.assertTrue(np.all(coeffErr))
+        self.assertTrue(np.all(goodFitMask))
 
     def testMeasureCrosstalkTaskUntrimmed(self):
         """Measure crosstalk from a sequence of untrimmed mocked images.
         """
-        coeffErr = self.setup_measureCrosstalk(isTrimmed=False, nSources=8)
+        goodFitMask = self.setup_measureCrosstalk(isTrimmed=False, nSources=8)
 
-        # DM-18528 This doesn't always fully converge, so be permissive
+        # DM-26031 This doesn't always fully converge, so be permissive
         # for now.
-        self.assertTrue(np.any(coeffErr))
+        self.assertTrue(np.any(goodFitMask))
 
 
 class MemoryTester(lsst.utils.tests.MemoryTestCase):
