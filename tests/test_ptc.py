@@ -315,9 +315,9 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
         mu, varDiff, covDiff = task.measureMeanVarCov(self.flatExp1, self.flatExp2)
 
-        self.assertTrue(mu is np.nan)
-        self.assertTrue(varDiff is np.nan)
-        self.assertTrue(covDiff is np.nan)
+        self.assertTrue(np.isnan(mu))
+        self.assertTrue(np.isnan(varDiff))
+        self.assertTrue(np.isnan(covDiff))
 
     def test_getInitialGoodPoints(self):
         xs = [1, 2, 3, 4, 5, 6]
