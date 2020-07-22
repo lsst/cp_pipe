@@ -305,8 +305,8 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
         # Dive by two as it is what measureMeanVarCov returns (variance of difference)
         expectedVar = 0.5*np.nanvar(diffIm.image.array)
-        
-        #Check that the standard deviations and the emans agree to less than 1 ADU
+
+        # Check that the standard deviations and the emans agree to less than 1 ADU
         self.assertLess(np.sqrt(expectedVar) - np.sqrt(varDiff), 1)
         self.assertLess(expectedMu - mu, 1)
 
