@@ -59,9 +59,9 @@ class MeasureCrosstalkTaskCases(lsst.utils.tests.TestCase):
         mockTask.config.doAddBias = True
         mockTask.config.doAddFringe = False
 
-        mockTask.config.skyLevel = 35.0
-        mockTask.config.biasLevel = 5.0
-        mockTask.config.readNoise = 10.0
+        mockTask.config.skyLevel = 0.0
+        mockTask.config.biasLevel = 0.0
+        mockTask.config.readNoise = 100.0
 
         mcConfig = MeasureCrosstalkConfig()
         mcConfig.extract.threshold = 4000
