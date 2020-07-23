@@ -411,8 +411,9 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 doRealSpace = self.config.covAstierRealSpace
                 muDiff, varDiff, covAstier = self.measureMeanVarCov(exp1, exp2, region=amp.getBBox(),
                                                                     covAstierRealSpace=doRealSpace)
-                if np.isnan(muDiff) or np.isnan(varDiff) or np.isnan(covAstier):
-                    msg = f"NaN mean or cov in amp {ampNumber} in visit pair {v1}, {v2} of detector {detNum}."
+                if np.isnan(muDiff) or np.isnan(varDiff) or (covAstier is None):
+                    msg = (f"NaN mean or var, or None cov in amp {ampNumber} in visit pair {v1}, {v2} "
+                           "of detector {detNum}.")
                     self.log.warn(msg)
                     nAmpsNan += 1
                     continue
@@ -632,7 +633,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         mu1 = afwMath.makeStatistics(im1Area, afwMath.MEANCLIP, im1StatsCtrl).getValue()
         mu2 = afwMath.makeStatistics(im2Area, afwMath.MEANCLIP, im2StatsCtrl).getValue()
         if np.isnan(mu1) or np.isnan(mu2):
-            return np.nan, np.nan, np.nan
+            return np.nan, np.nan, None
         mu = 0.5*(mu1 + mu2)
 
         # Take difference of pairs
