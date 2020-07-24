@@ -83,7 +83,6 @@ class MeasureCrosstalkTaskCases(lsst.utils.tests.TestCase):
 
             exposure = mockTask.run()
             result = mct.extract.run(exposure)
-            exposure.writeFits(f"/project/czw/tmp/mock{idx}.fits")
             fullResult.append(result.outputRatios)
 
         # Generate the final measured CT ratios, uncertainties, pixel counts.

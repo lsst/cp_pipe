@@ -93,9 +93,14 @@ class CrosstalkExtractConfig(pipeBase.PipelineTaskConfig,
         default=30000,
         doc="Minimum level of source pixels for which to measure crosstalk."
     )
+    ignoreSaturatedPixels = Field(
+        dtype=bool,
+        default=True,
+        doc="Should saturated pixels be ignored?"
+    )
     badMask = ListField(
         dtype=str,
-        default=["SAT", "BAD", "INTRP"],
+        default=["BAD", "INTRP"],
         doc="Mask planes to ignore when identifying source pixels."
     )
     isTrimmed = Field(
@@ -103,6 +108,18 @@ class CrosstalkExtractConfig(pipeBase.PipelineTaskConfig,
         default=True,
         doc="Is the input exposure trimmed?"
     )
+
+    def validate(self):
+        super().validate()
+
+        # Ensure the handling of the SAT mask plane is consistent
+        # with the ignoreSaturatedPixels value.
+        if self.ignoreSaturatedPixels:
+            if 'SAT' not in self.badMask:
+                self.badMask.append('SAT')
+        else:
+            if 'SAT' in self.badMask:
+                self.badMask = [mask for mask in self.badMask if mask != 'SAT']
 
 
 class CrosstalkExtractTask(pipeBase.PipelineTask,
