@@ -731,28 +731,27 @@ class FindDefectsTask(pipeBase.CmdLineTask):
             The defects list returned that will include boxes that mask blocks
             of on-and-of pixels.
         """
-        goodPixelColumnGapThreshold = self.config.goodPixelColumnGapThreshold
-        for x0 in multipleX:
-            index = np.where(x == x0)
-            multipleY = y[index]  # multipleY and multipleX are in 1-1 correspondence.
-            minY, maxY = np.min(multipleY), np.max(multipleY)
-            # Next few lines: don't mask pixels in column if gap of good pixels between
-            # two consecutive bad pixels is larger or equal than 'goodPixelColumnGapThreshold'.
-            diffIndex = np.where(np.diff(multipleY) >= goodPixelColumnGapThreshold)[0]
-            if len(diffIndex) != 0:
-                limits = [minY]  # put the minimum first
-                for gapIndex in diffIndex:
-                    limits.append(multipleY[gapIndex])
-                    limits.append(multipleY[gapIndex+1])
-                limits.append(maxY)  # maximum last
-                assert len(limits)%2 == 0, 'limits is even by design, but check anyways'
-                for i in np.arange(0, len(limits)-1, 2):
-                    s = Box2I(minimum=Point2I(x0, limits[i]), maximum=Point2I(x0, limits[i+1]))
-                    if s not in defects:
+        with defects.bulk_update():
+            goodPixelColumnGapThreshold = self.config.goodPixelColumnGapThreshold
+            for x0 in multipleX:
+                index = np.where(x == x0)
+                multipleY = y[index]  # multipleY and multipleX are in 1-1 correspondence.
+                minY, maxY = np.min(multipleY), np.max(multipleY)
+                # Next few lines: don't mask pixels in column if gap of good pixels between
+                # two consecutive bad pixels is larger or equal than 'goodPixelColumnGapThreshold'.
+                diffIndex = np.where(np.diff(multipleY) >= goodPixelColumnGapThreshold)[0]
+                if len(diffIndex) != 0:
+                    limits = [minY]  # put the minimum first
+                    for gapIndex in diffIndex:
+                        limits.append(multipleY[gapIndex])
+                        limits.append(multipleY[gapIndex+1])
+                    limits.append(maxY)  # maximum last
+                    assert len(limits)%2 == 0, 'limits is even by design, but check anyways'
+                    for i in np.arange(0, len(limits)-1, 2):
+                        s = Box2I(minimum=Point2I(x0, limits[i]), maximum=Point2I(x0, limits[i+1]))
                         defects.append(s)
-            else:  # No gap is large enough
-                s = Box2I(minimum=Point2I(x0, minY), maximum=Point2I(x0, maxY))
-                if s not in defects:
+                else:  # No gap is large enough
+                    s = Box2I(minimum=Point2I(x0, minY), maximum=Point2I(x0, maxY))
                     defects.append(s)
         return defects
 
