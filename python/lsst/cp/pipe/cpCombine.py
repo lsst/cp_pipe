@@ -97,7 +97,7 @@ class CalibCombineConnections(pipeBase.PipelineTaskConnections,
     inputExps = cT.Input(
         name="cpInputs",
         doc="Input pre-processed exposures to combine.",
-        storageClass="ExposureF",
+        storageClass="Exposure",
         dimensions=("instrument", "detector", "exposure"),
         multiple=True,
     )

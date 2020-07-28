@@ -159,7 +159,7 @@ class BlessCalibration(pipeBase.Task):
                            'dark': 'ImageF',
                            'flat': 'ExposureF',
                            }
-        storageClass = storageClassMap.get(datasetTypeName, 'ExposureF')
+        storageClass = storageClassMap.get(datasetTypeName, 'Exposure')
 
         dimensionArray = set(list(dataId.keys()) + ["calibration_label"])
         datasetType = DatasetType(datasetTypeName,

@@ -34,14 +34,14 @@ class CpFringeConnections(pipeBase.PipelineTaskConnections,
     inputExp = cT.Input(
         name="cpFringeISR",
         doc="Input pre-processed exposures to combine.",
-        storageClass="ExposureF",
+        storageClass="Exposure",
         dimensions=("instrument", "exposure", "detector"),
     )
 
     outputExp = cT.Output(
         name="cpFringeProc",
         doc="Output combined proposed calibration.",
-        storageClass="ExposureF",
+        storageClass="Exposure",
         dimensions=("instrument", "exposure", "detector"),
     )
 
