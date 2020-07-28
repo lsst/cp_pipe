@@ -119,6 +119,9 @@ class CalibCombineConnections(pipeBase.PipelineTaskConnections,
     def __init__(self, *, config=None):
         super().__init__(config=config)
 
+        if config and config.exposureScaling != 'InputList':
+            self.inputs.discard("inputScales")
+
         if config and len(config.calibrationDimensions) != 0:
             newDimensions = tuple(config.calibrationDimensions)
             newOutputData = cT.Output(
