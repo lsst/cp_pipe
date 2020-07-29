@@ -137,8 +137,8 @@ class BlessCalibration(pipeBase.Task):
         data : `lsst.afw.image.Image` or `lsst.afw.image.MaskedImage`
             Converted image data to register.
         """
-        if datasetTypeName in ('bias', 'dark'):
-            data = data.getImage()
+        #if datasetTypeName in ('bias', 'dark'):
+        #    data = data.getImage()
         # elif datasetTypeName in ('flat', ):
         #     data = data.getMaskedImage()
 
@@ -159,7 +159,8 @@ class BlessCalibration(pipeBase.Task):
                            'dark': 'ImageF',
                            'flat': 'ExposureF',
                            }
-        storageClass = storageClassMap.get(datasetTypeName, 'Exposure')
+        storageClassMap = {}
+        storageClass = storageClassMap.get(datasetTypeName, 'ExposureF')
 
         dimensionArray = set(list(dataId.keys()) + ["calibration_label"])
         datasetType = DatasetType(datasetTypeName,
