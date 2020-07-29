@@ -349,7 +349,7 @@ class CrosstalkSolveConnections(pipeBase.PipelineTaskConnections,
         super().__init__(config=config)
 
         if config.fluxOrder == 0:
-            self.Inputs.discard("inputFluxes")
+            self.inputs.discard("inputFluxes")
 
 
 class CrosstalkSolveConfig(pipeBase.PipelineTaskConfig,
