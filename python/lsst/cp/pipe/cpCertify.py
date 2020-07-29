@@ -137,11 +137,6 @@ class BlessCalibration(pipeBase.Task):
         data : `lsst.afw.image.Image` or `lsst.afw.image.MaskedImage`
             Converted image data to register.
         """
-        #if datasetTypeName in ('bias', 'dark'):
-        #    data = data.getImage()
-        # elif datasetTypeName in ('flat', ):
-        #     data = data.getMaskedImage()
-
         return data
 
     def registerDatasetType(self, datasetTypeName, dataId):
