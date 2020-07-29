@@ -155,11 +155,7 @@ class BlessCalibration(pipeBase.Task):
             Data ID providing the list of dimensions for the new
             datasetType.
         """
-        storageClassMap = {'bias': 'ImageF',
-                           'dark': 'ImageF',
-                           'flat': 'ExposureF',
-                           }
-        storageClassMap = {}
+        storageClassMap = {'crosstalk': 'CrosstalkCalib'}
         storageClass = storageClassMap.get(datasetTypeName, 'ExposureF')
 
         dimensionArray = set(list(dataId.keys()) + ["calibration_label"])
