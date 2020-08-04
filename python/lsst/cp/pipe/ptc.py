@@ -60,6 +60,16 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
             "FULLCOVARIANCE": "Full covariances model in Astier+19 (Eq. 20)"
         }
     )
+    sigmaClipFullFitCovariancesAstier = pexConfig.Field(
+        dtype=float,
+        doc="sigma clip for full model fit for FULLCOVARIANCE ptcFitType ",
+        default=5.0,
+    )
+    maxIterFullFitCovariancesAstier = pexConfig.Field(
+        dtype=int,
+        doc="Maximum number of iterations in full model fit for FULLCOVARIANCE ptcFitType",
+        default=3,
+    )
     maximumRangeCovariancesAstier = pexConfig.Field(
         dtype=int,
         doc="Maximum range of covariances as in Astier+19",
@@ -511,7 +521,9 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         """
 
         covFits, covFitsNoB = fitData(covariancesWithTagsArray, maxMu=self.config.maxMeanSignal,
-                                      r=self.config.maximumRangeCovariancesAstier)
+                                      r=self.config.maximumRangeCovariancesAstier,
+                                      nSigmaFullFit=self.config.sigmaClipFullFitCovariancesAstier,
+                                      maxIterFullFit=self.config.maxIterFullFitCovariancesAstier)
 
         dataset.covariancesTuple = covariancesWithTagsArray
         dataset.covariancesFits = covFits

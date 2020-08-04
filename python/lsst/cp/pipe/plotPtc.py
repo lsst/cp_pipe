@@ -257,7 +257,8 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                 _, maskNoB) = fitNoB.getFitData(0, 0, returnMasked=True)
 
             if len(meanVecFinal):  # Empty if the whole amp is bad, for example.
-                stringLegend = (f"Gain: {fit.getGain():.4} e/DN \n Noise: {np.sqrt(np.fabs(fit.getRon())):.4} e \n" +
+                stringLegend = (f"Gain: {fit.getGain():.4} e/DN" +
+                                "\n Noise: {np.sqrt(np.fabs(fit.getRon())):.4} e \n" +
                                 r"$a_{00}$: %.3e 1/e"%fit.getA()[0, 0] +
                                 "\n" + r"$b_{00}$: %.3e 1/e"%fit.getB()[0, 0])
                 minMeanVecFinal = np.min(meanVecFinal)
