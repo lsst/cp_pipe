@@ -158,11 +158,12 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         localDataset = task.getOutputPtcDataCovAstier(localDataset, covFits)
 
         # Chek the gain and that the ratio of the variance caclulated via cov Astier (FFT) and
-        # that calculated with the standard PTC is close to 1.
+        # that calculated with the standard PTC calculation (afw) is close to 1.
         for amp in self.ampNames:
             self.assertAlmostEqual(localDataset.gain[amp], 0.75, places=2)
             for v1, v2 in zip(varStandard[amp], localDataset.finalVars[amp][0]):
-                self.assertAlmostEqual(v1/v2, 1.0, places=4)
+                v2 *= (0.75**2)  # convert to electrons
+                self.assertAlmostEqual(v1/v2, 1.0, places=1)
 
     def ptcFitAndCheckPtc(self, order=None, fitType='', doTableArray=False):
         localDataset = copy.copy(self.dataset)
