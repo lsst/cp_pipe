@@ -323,7 +323,7 @@ class CovFit:
             # loop on lags
             for i in range(self.r):
                 for j in range(self.r):
-                    # fit a given lag with a parabola
+                    # fit a parabola for a given lag
                     parsFit = np.polyfit(self.mu, self.cov[:, i, j] - model[:, i, j],
                                          2, w=self.sqrtW[:, i, j])
                     # model equation(Eq. 20) in Astier+19:

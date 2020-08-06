@@ -258,7 +258,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
 
             if len(meanVecFinal):  # Empty if the whole amp is bad, for example.
                 stringLegend = (f"Gain: {fit.getGain():.4} e/DN \n" +
-                                f"Noise: {np.sqrt(np.fabs(fit.getRon())):.4} e \n" +
+                                f"Noise: {np.sqrt((fit.getRon())):.4} e \n" +
                                 r"$a_{00}$: %.3e 1/e"%fit.getA()[0, 0] +
                                 "\n" + r"$b_{00}$: %.3e 1/e"%fit.getB()[0, 0])
                 minMeanVecFinal = np.min(meanVecFinal)
@@ -455,7 +455,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         wceNoB = np.array(wceNoB)
 
         plt.xlabel(r"$\mu (el)$", fontsize='x-large')
-        plt.ylabel(r"$C_{%d%d}/\mu + Cst (el)$"%(i, j), fontsize='x-large')
+        plt.ylabel(r"$Cov{%d%d}/\mu + Cst (el)$"%(i, j), fontsize='x-large')
         if (not topPlot):
             gind = self.indexForBins(mue, len(mue))
             xb, yb, wyb, sigyb = self.binData(mue, rese, gind, wce)
@@ -473,7 +473,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             plt.ticklabel_format(style='sci', axis='x', scilimits=(0, 0))
             plt.ticklabel_format(style='sci', axis='y', scilimits=(0, 0))
             plt.xlabel(r'$\mu (el)$', fontsize='x-large')
-            plt.ylabel(r'$C_{%d%d}/\mu$ -model (el)'%(i, j), fontsize='x-large')
+            plt.ylabel(r'$Cov{%d%d}/\mu$ -model (el)'%(i, j), fontsize='x-large')
         plt.tight_layout()
 
         # overlapping y labels:
@@ -764,7 +764,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                 if len(meanVecFinal):
                     ptcA00, ptcA00error = pars[0], parsErr[0]
                     ptcGain, ptcGainError = pars[1], parsErr[1]
-                    ptcNoise = np.sqrt(np.fabs(pars[2]))
+                    ptcNoise = np.sqrt((pars[2]))
                     ptcNoiseError = 0.5*(parsErr[2]/np.fabs(pars[2]))*np.sqrt(np.fabs(pars[2]))
                     stringLegend = (f"a00: {ptcA00:.2e}+/-{ptcA00error:.2e} 1/e"
                                     f"\n Gain: {ptcGain:.4}+/-{ptcGainError:.2e} e/DN"
@@ -773,7 +773,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             if ptcFitType == 'POLYNOMIAL':
                 if len(meanVecFinal):
                     ptcGain, ptcGainError = 1./pars[1], np.fabs(1./pars[1])*(parsErr[1]/pars[1])
-                    ptcNoise = np.sqrt(np.fabs(pars[0]))*ptcGain
+                    ptcNoise = np.sqrt((pars[0]))*ptcGain
                     ptcNoiseError = (0.5*(parsErr[0]/np.fabs(pars[0]))*(np.sqrt(np.fabs(pars[0]))))*ptcGain
                     stringLegend = (f"Gain: {ptcGain:.4}+/-{ptcGainError:.2e} e/DN \n"
                                     f"Noise: {ptcNoise:.4}+/-{ptcNoiseError:.2e} e \n")
