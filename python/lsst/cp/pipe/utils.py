@@ -31,7 +31,96 @@ import numpy.polynomial.polynomial as poly
 
 import lsst.pipe.base as pipeBase
 import lsst.ip.isr as ipIsr
+from lsst.ip.isr import isrMock
 import lsst.log
+
+import galsim
+
+
+def makeMockFlats(expTime, gain=1.0, readNoiseElectrons=5, fluxElectrons=1000,
+                  randomSeedFlat1=1984, randomSeedFlat2=666, powerLawBfParams=[]):
+    """Create a pair or mock flats with isrMock.
+
+    Parameters
+    ----------
+    expTime : `float`
+        Exposure time of the flats.
+
+    gain : `float`, optional
+        Gain, in e/ADU.
+
+    readNoiseElectrons : `float`, optional
+        Read noise rms, in electrons.
+
+    fluxElectrons : `float`, optional
+        Flux of flats, in electrons per second.
+
+    randomSeedFlat1 : `int`, optional
+        Random seed for the normal distrubutions for the mean signal and noise (flat1).
+
+    randomSeedFlat2 : `int`, optional
+        Random seed for the normal distrubutions for the mean signal and noise (flat2).
+
+    powerLawBfParams : `list`, optional
+        Parameters for `galsim.cdmodel.PowerLawCD` to simulate the brightter-fatter effect.
+
+    Returns
+    -------
+
+    flatExp1 : `lsst.afw.image.exposure.exposure.ExposureF`
+        First exposure of flat field pair.
+
+    flatExp2 : `lsst.afw.image.exposure.exposure.ExposureF`
+        Second exposure of flat field pair.
+
+    Notes
+    -----
+    The parameters of `galsim.cdmodel.PowerLawCD` are `n, r0, t0, rx, tx, r, t, alpha`. For more
+    information about their meaning, see the Galsim documentation
+    https://galsim-developers.github.io/GalSim/_build/html/_modules/galsim/cdmodel.html
+    and Gruen+15 (1501.02802).
+
+    Example: galsim.cdmodel.PowerLawCD(8, 1.1e-7, 1.1e-7, 1.0e-8, 1.0e-8, 1.0e-9, 1.0e-9, 2.0)
+    """
+    flatFlux = fluxElectrons  # e/s
+    flatMean = flatFlux*expTime  # e
+    readNoise = readNoiseElectrons  # e
+
+    mockImageConfig = isrMock.IsrMock.ConfigClass()
+
+    mockImageConfig.flatDrop = 0.99999
+    mockImageConfig.isTrimmed = True
+
+    flatExp1 = isrMock.FlatMock(config=mockImageConfig).run()
+    flatExp2 = flatExp1.clone()
+    (shapeY, shapeX) = flatExp1.getDimensions()
+    flatWidth = np.sqrt(flatMean)
+
+    rng1 = np.random.RandomState(randomSeedFlat1)
+    flatData1 = rng1.normal(flatMean, flatWidth, (shapeX, shapeY)) + rng1.normal(0.0, readNoise,
+                                                                                 (shapeX, shapeY))
+    rng2 = np.random.RandomState(randomSeedFlat2)
+    flatData2 = rng2.normal(flatMean, flatWidth, (shapeX, shapeY)) + rng2.normal(0.0, readNoise,
+                                                                                 (shapeX, shapeY))
+    # Simulate BF with power law model in galsim
+    if len(powerLawBfParams):
+        if not len(powerLawBfParams) == 8:
+            raise RuntimeError("Wrong number of parameters for `galsim.cdmodel.PowerLawCD`. " +
+                               f"Expected 8; passed {len(powerLawBfParams)}.")
+        cd = galsim.cdmodel.PowerLawCD(*powerLawBfParams)
+        tempFlatData1 = galsim.Image(flatData1)
+        temp2FlatData1 = cd.applyForward(tempFlatData1)
+
+        tempFlatData2 = galsim.Image(flatData2)
+        temp2FlatData2 = cd.applyForward(tempFlatData2)
+
+        flatExp1.image.array[:] = temp2FlatData1.array/gain   # ADU
+        flatExp2.image.array[:] = temp2FlatData2.array/gain  # ADU
+    else:
+        flatExp1.image.array[:] = flatData1/gain   # ADU
+        flatExp2.image.array[:] = flatData2/gain   # ADU
+
+    return flatExp1, flatExp2
 
 
 def countMaskedPixels(maskedIm, maskPlane):
