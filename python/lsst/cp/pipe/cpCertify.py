@@ -189,9 +189,9 @@ class BlessCalibration(pipeBase.Task):
             raise RuntimeError("Instrument and calibration_label name not set.")
 
         try:
-            existingValues = self.registry.queryDimensions(['calibration_label'],
-                                                           instrument=self.instrument,
-                                                           calibration_label=name)
+            existingValues = self.registry.queryDataIds(['calibration_label'],
+                                                        instrument=self.instrument,
+                                                        calibration_label=name)
             existingValues = [a for a in existingValues]
             print(f"Found {len(existingValues)} Entries for {self.calibrationLabel}")
         except LookupError:
