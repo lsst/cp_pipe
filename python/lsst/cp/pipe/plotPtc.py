@@ -57,6 +57,12 @@ class PlotPhotonTransferCurveTaskConfig(pexConfig.Config):
         doc="The key by which to pull a detector from a dataId, e.g. 'ccd' or 'detector'.",
         default='detector',
     )
+    signalElectronsRelativeA = pexConfig.Field(
+        dtype=float,
+        doc="Signal value for relative systematic bias between different methods of estimating a_ij "
+            "(Fig. 15 of Astier+19).",
+        default=75000,
+    )
 
 
 class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
@@ -141,7 +147,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         return
 
     def covAstierMakeAllPlots(self, covFits, covFitsNoB, pdfPages,
-                              log=None, maxMu=1e9):
+                              log=None):
         """Make plots for MeasurePhotonTransferCurve task when doCovariancesAstier=True.
 
         This function call other functions that mostly reproduce the plots in Astier+19.
@@ -160,9 +166,6 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         log : `lsst.log.Log`, optional
             Logger to handle messages
-
-        maxMu: `float`, optional
-            Maximum signal, in ADU.
         """
         self.plotCovariances(covFits, pdfPages)
         self.plotNormalizedCovariances(covFits, covFitsNoB, 0, 0, pdfPages, offset=0.01, topPlot=True,
@@ -172,7 +175,8 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         self.plot_a_b(covFits, pdfPages)
         self.ab_vs_dist(covFits, pdfPages, bRange=4)
         self.plotAcoeffsSum(covFits, pdfPages)
-        self.plotRelativeBiasACoeffs(covFits, covFitsNoB, maxMu, pdfPages)
+        self.plotRelativeBiasACoeffs(covFits, covFitsNoB, self.config.signalElectronsRelativeA, pdfPages,
+                                     maxr=4)
 
         return
 
@@ -258,7 +262,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
 
             if len(meanVecFinal):  # Empty if the whole amp is bad, for example.
                 stringLegend = (f"Gain: {fit.getGain():.4} e/DN \n" +
-                                f"Noise: {np.sqrt((fit.getRon())):.4} e \n" +
+                                f"Noise: {fit.getRon():.4} e \n" +
                                 r"$a_{00}$: %.3e 1/e"%fit.getA()[0, 0] +
                                 "\n" + r"$b_{00}$: %.3e 1/e"%fit.getB()[0, 0])
                 minMeanVecFinal = np.min(meanVecFinal)
@@ -641,7 +645,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         return
 
     @staticmethod
-    def plotRelativeBiasACoeffs(covFits, covFitsNoB, maxMu, pdfPages, maxr=None):
+    def plotRelativeBiasACoeffs(covFits, covFitsNoB, signalElectrons, pdfPages, maxr=None):
         """Fig. 15 in Astier+19.
 
         Illustrates systematic bias from estimating 'a'
@@ -650,24 +654,24 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         Parameters
         ----------
-        covFits: `dict`
+        covFits : `dict`
             Dictionary of CovFit objects, with amp names as keys.
 
-        covFitsNoB: `dict`
+        covFitsNoB : `dict`
            Dictionary of CovFit objects, with amp names as keys (b=0 in Eq. 20 of Astier+19).
 
-        maxMu: `float`, optional
-            Maximum signal, in ADU.
+        signalElectrons : `float`
+            Signal at which to evaluate the a_ij coefficients.
 
         pdfPages: `matplotlib.backends.backend_pdf.PdfPages`
             PDF file where the plots will be saved.
 
-        maxr: `int`, optional
+        maxr : `int`, optional
             Maximum lag.
         """
 
         fig = plt.figure(figsize=(7, 11))
-        title = ["'a' relative bias", "'a' relative bias (b=0)"]
+        title = [f"'a' relative bias at {signalElectrons} e", "'a' relative bias (b=0)"]
         data = [covFits, covFitsNoB]
 
         for k in range(2):
@@ -676,14 +680,14 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             for fit in data[k].values():
                 if fit is None:
                     continue
-                maxMuEl = maxMu*fit.getGain()
-                aOld = computeApproximateAcoeffs(fit, maxMuEl)
+                aOld = computeApproximateAcoeffs(fit, signalElectrons)
                 a = fit.getA()
                 amean.append(a)
                 diffs.append((aOld-a))
             amean = np.array(amean).mean(axis=0)
             diff = np.array(diffs).mean(axis=0)
             diff = diff/amean
+            # The difference should be close to zero
             diff[0, 0] = 0
             if maxr is None:
                 maxr = diff.shape[0]
