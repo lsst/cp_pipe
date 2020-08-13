@@ -63,6 +63,12 @@ class PlotPhotonTransferCurveTaskConfig(pexConfig.Config):
             "(Fig. 15 of Astier+19).",
         default=75000,
     )
+    plotNormalizedCovariancesNumberOfBins = pexConfig.Field(
+        dtype=int,
+        doc="Number of bins in `plotNormalizedCovariancesNumber` function "
+            "(Fig. 8, 10., of Astier+19).",
+        default=10,
+    )
 
 
 class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
@@ -169,9 +175,14 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         """
         self.plotCovariances(covFits, pdfPages)
         self.plotNormalizedCovariances(covFits, covFitsNoB, 0, 0, pdfPages, offset=0.01, topPlot=True,
+                                       numberOfBins=self.config.plotNormalizedCovariancesNumberOfBins,
                                        log=log)
-        self.plotNormalizedCovariances(covFits, covFitsNoB, 0, 1, pdfPages, log=log)
-        self.plotNormalizedCovariances(covFits, covFitsNoB, 1, 0, pdfPages, log=log)
+        self.plotNormalizedCovariances(covFits, covFitsNoB, 0, 1, pdfPages,
+                                       numberOfBins=self.config.plotNormalizedCovariancesNumberOfBins,
+                                       log=log)
+        self.plotNormalizedCovariances(covFits, covFitsNoB, 1, 0, pdfPages,
+                                       numberOfBins=self.config.plotNormalizedCovariancesNumberOfBins,
+                                       log=log)
         self.plot_a_b(covFits, pdfPages)
         self.ab_vs_dist(covFits, pdfPages, bRange=4)
         self.plotAcoeffsSum(covFits, pdfPages)
@@ -357,7 +368,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         return
 
     def plotNormalizedCovariances(self, covFits, covFitsNoB, i, j, pdfPages, offset=0.004,
-                                  plotData=True, topPlot=False, log=None):
+                                  numberOfBins=10, plotData=True, topPlot=False, log=None):
         """Plot C_ij/mu vs mu.
 
         Figs. 8, 10, and 11 of Astier+19
@@ -381,6 +392,9 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         offset : `float`, optional
             Constant offset factor to plot covariances in same panel (so they don't overlap).
+
+        numberOfBins : `int`, optional
+            Number of bins for top and bottom plot.
 
         plotData : `bool`, optional
             Plot the data points?
@@ -426,12 +440,12 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             # the corresponding fit
             fit_curve, = plt.plot(mu, model + counter*offset, '-', linewidth=4.0)
             # bin plot. len(mu) = no binning
-            gind = self.indexForBins(mu, len(mu))
+            gind = self.indexForBins(mu, numberOfBins)
 
             xb, yb, wyb, sigyb = self.binData(mu, cov, gind, weightCov)
             chi2bin = (sigyb*wyb).mean()  # chi2 of enforcing the same value in each bin
             plt.errorbar(xb, yb+counter*offset, yerr=sigyb, marker='o', linestyle='none', markersize=6.5,
-                         color=fit_curve.get_color(), label=f"{amp}")
+                         color=fit_curve.get_color(), label=f"{amp} (N: {len(mu)})")
             # plot the data
             if plotData:
                 points, = plt.plot(mu, cov + counter*offset, '.', color=fit_curve.get_color())
@@ -461,12 +475,12 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         plt.xlabel(r"$\mu (el)$", fontsize='x-large')
         plt.ylabel(r"$Cov{%d%d}/\mu + Cst (el)$"%(i, j), fontsize='x-large')
         if (not topPlot):
-            gind = self.indexForBins(mue, len(mue))
+            gind = self.indexForBins(mue, numberOfBins)
             xb, yb, wyb, sigyb = self.binData(mue, rese, gind, wce)
 
             ax1 = plt.subplot(gs[1], sharex=ax0)
             ax1.errorbar(xb, yb, yerr=sigyb, marker='o', linestyle='none', label='Full fit')
-            gindNoB = self.indexForBins(mueNoB, len(mueNoB))
+            gindNoB = self.indexForBins(mueNoB, numberOfBins)
             xb2, yb2, wyb2, sigyb2 = self.binData(mueNoB, reseNoB, gindNoB, wceNoB)
 
             ax1.errorbar(xb2, yb2, yerr=sigyb2, marker='o', linestyle='none', label='b = 0')
@@ -479,7 +493,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             plt.xlabel(r'$\mu (el)$', fontsize='x-large')
             plt.ylabel(r'$Cov{%d%d}/\mu$ -model (el)'%(i, j), fontsize='x-large')
         plt.tight_layout()
-
+        plt.suptitle(f"Nbins: {numberOfBins}")
         # overlapping y labels:
         fig.canvas.draw()
         labels0 = [item.get_text() for item in ax0.get_yticklabels()]
@@ -963,7 +977,6 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         """
 
         bins = np.linspace(x.min(), x.max() + abs(x.max() * 1e-7), nBins + 1)
-
         return np.digitize(x, bins)
 
     @staticmethod
