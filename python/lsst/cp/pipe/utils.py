@@ -37,6 +37,38 @@ import lsst.log
 import galsim
 
 
+def calculateWeightedReducedChi2(measured, model, weightsMeasured, nData, nParsModel):
+    """Calculate weighted reduced chi2.
+
+    Parameters
+    ----------
+
+    measured : `list`
+        List with measured data.
+
+    model : `list`
+        List with modeled data.
+
+    weightsMeasured : `list`
+        List with weights for the measured data.
+
+    nData : `int`
+        Number of data points.
+
+    nParsModel : `int`
+        Number of parameters in the model.
+
+    Returns
+    -------
+
+    redWeightedChi2 : `float`
+        Reduced weighted chi2.
+    """
+
+    wRes = (measured - model)*weightsMeasured
+    return ((wRes*wRes).sum())/(nData-nParsModel)
+
+
 def makeMockFlats(expTime, gain=1.0, readNoiseElectrons=5, fluxElectrons=1000,
                   randomSeedFlat1=1984, randomSeedFlat2=666, powerLawBfParams=[]):
     """Create a pair or mock flats with isrMock.

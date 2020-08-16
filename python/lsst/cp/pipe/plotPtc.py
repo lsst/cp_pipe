@@ -34,7 +34,8 @@ import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 import pickle
 
-from .utils import (funcAstier, funcPolynomial, NonexistentDatasetTaskDataIdContainer)
+from .utils import (funcAstier, funcPolynomial, NonexistentDatasetTaskDataIdContainer,
+                    calculateWeightedReducedChi2)
 from matplotlib.ticker import MaxNLocator
 
 from .astierCovPtcFit import computeApproximateAcoeffs
@@ -244,7 +245,10 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             varVecModelFinal = varVecModelOriginal[varMask]
             meanVecOutliers = meanVecOriginal[np.invert(varMask)]
             varVecOutliers = varVecOriginal[np.invert(varMask)]
-            weightsFinal = weightsOriginal[varMask]
+            varWeightsFinal = weightsOriginal[varMask]
+            # Get weighted reduced chi2
+            chi2FullModelVar = calculateWeightedReducedChi2(varVecFinal, varVecModelFinal,
+                                                            varWeightsFinal, len(meanVecFinal), 4)
 
             (meanVecOrigCov01, varVecOrigCov01, varVecModelOrigCov01,
                 _, maskCov01) = fit.getFitData(0, 1)
@@ -261,15 +265,19 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             varVecOutliersCov10 = varVecOrigCov10[np.invert(maskCov10)]
 
             # cuadratic fit for residuals below
-            par2 = np.polyfit(meanVecFinal, varVecFinal, 2, w=weightsFinal)
+            par2 = np.polyfit(meanVecFinal, varVecFinal, 2, w=varWeightsFinal)
             varModelFinalQuadratic = np.polyval(par2, meanVecFinal)
+            chi2QuadModelVar = calculateWeightedReducedChi2(varVecFinal, varModelFinalQuadratic,
+                                                            varWeightsFinal, len(meanVecFinal), 3)
 
             # fit with no 'b' coefficient (c = a*b in Eq. 20 of Astier+19)
             fitNoB = fit.copy()
             fitNoB.params['c'].fix(val=0)
             fitNoB.fitFullModel()
             (meanVecFinalNoB, varVecFinalNoB, varVecModelFinalNoB,
-                _, maskNoB) = fitNoB.getFitData(0, 0, returnMasked=True)
+             varWeightsFinalNoB, maskNoB) = fitNoB.getFitData(0, 0, returnMasked=True)
+            chi2FullModelNoBVar = calculateWeightedReducedChi2(varVecFinalNoB, varVecModelFinalNoB,
+                                                               varWeightsFinalNoB, len(meanVecFinalNoB), 3)
 
             if len(meanVecFinal):  # Empty if the whole amp is bad, for example.
                 stringLegend = (f"Gain: {fit.getGain():.4} e/DN \n" +
@@ -312,11 +320,12 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                 aResVar.set_xscale('linear', fontsize=labelFontSize)
                 aResVar.set_yscale('linear', fontsize=labelFontSize)
                 aResVar.plot(meanVecFinal, varVecFinal - varVecModelFinal, color='blue', lineStyle='-',
-                             label='Full fit')
+                             label=r'Full fit ($\chi_{\rm{red}}^2$: %g)'%chi2FullModelVar)
                 aResVar.plot(meanVecFinal, varVecFinal - varModelFinalQuadratic, color='red', lineStyle='-',
-                             label='Quadratic fit')
+                             label=r'Quadratic fit ($\chi_{\rm{red}}^2$: %g)'%chi2QuadModelVar)
                 aResVar.plot(meanVecFinalNoB, varVecFinalNoB - varVecModelFinalNoB, color='green',
-                             lineStyle='-', label='Full fit with b=0')
+                             lineStyle='-',
+                             label=r'Full fit (b=0) ($\chi_{\rm{red}}^2$: %g)'%chi2FullModelNoBVar)
                 aResVar.axhline(color='black')
                 aResVar.set_title(amp, fontsize=titleFontSize)
                 aResVar.set_xlim([minMeanVecFinal - 0.2*deltaXlim, maxMeanVecFinal + 0.2*deltaXlim])
@@ -459,7 +468,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             else:
                 lcov.append(np.nan)
             lchi2.append(chi2)
-            log.info('%s: slope %g b %g  chi2 %f chi2bin %f'%(amp, aij, bij, chi2, chi2bin))
+            log.info('Cov%d%d %s: slope %g b %g  chi2 %f chi2bin %f'%(i, j, amp, aij, bij, chi2, chi2bin))
         # end loop on amps
         la = np.array(la)
         lb = np.array(lb)
