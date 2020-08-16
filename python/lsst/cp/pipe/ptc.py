@@ -426,14 +426,15 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                     self.log.warn(msg)
                     nAmpsNan += 1
                     continue
-
+                tags = ['mu', 'i', 'j', 'var', 'cov', 'npix', 'ext', 'expTime', 'ampName']
+                if (muDiff <= self.config.minMeanSignal) or (muDiff >= self.config.maxMeanSignal):
+                    continue
                 datasetPtc.rawExpTimes[ampName].append(expTime)
                 datasetPtc.rawMeans[ampName].append(muDiff)
                 datasetPtc.rawVars[ampName].append(varDiff)
                 datasetPtc.inputVisitPairs[ampName].append((v1, v2))
 
                 tupleRows += [(muDiff, ) + covRow + (ampNumber, expTime, ampName) for covRow in covAstier]
-                tags = ['mu', 'i', 'j', 'var', 'cov', 'npix', 'ext', 'expTime', 'ampName']
             if nAmpsNan == len(ampNames):
                 msg = f"NaN mean in all amps of visit pair {v1}, {v2} of detector {detNum}."
                 self.log.warn(msg)
