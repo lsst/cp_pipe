@@ -26,7 +26,7 @@ import lsst.pipe.base as pipeBase
 from lsst.daf.butler import DatasetType
 
 
-class BlessCalibration(pipeBase.Task):
+class CertifyCalibration(pipeBase.Task):
     """Create a way to bless existing calibration products.
 
     The inputs are assumed to have been constructed via cp_pipe, and
@@ -43,7 +43,7 @@ class BlessCalibration(pipeBase.Task):
     **kwargs :
         Additional arguments forwarded to `lsst.pipe.base.Task.__init__`.
     """
-    _DefaultName = 'BlessCalibration'
+    _DefaultName = 'CertifyCalibration'
     ConfigClass = pexConfig.Config
 
     def __init__(self, *, butler, inputCollection, outputCollection,

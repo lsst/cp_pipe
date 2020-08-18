@@ -24,7 +24,7 @@
 """Mark cp_pipe generated calibrations as valid, and register them with
 the butler with an appropriate use date range.
 """
-from lsst.cp.pipe.cpCertify import BlessCalibration
+from lsst.cp.pipe.cpCertify import CertifyCalibration
 
 import argparse
 import logging
@@ -67,11 +67,11 @@ if __name__ == "__main__":
     butler = Butler(args.root, run=args.inputCollection)
 
     # Do the thing.
-    crozier = BlessCalibration(butler=butler,
-                               inputCollection=args.inputCollection,
-                               outputCollection=args.outputCollection)
+    certify = CertifyCalibration(butler=butler,
+                                 inputCollection=args.inputCollection,
+                                 outputCollection=args.outputCollection)
 
-    crozier.findInputs(args.datasetTypeName)
+    certify.findInputs(args.datasetTypeName)
     if not args.skipCL:
-        crozier.addCalibrationLabel(beginDate=args.beginDate, endDate=args.endDate)
-    crozier.registerCalibrations(args.datasetTypeName)
+        certify.addCalibrationLabel(beginDate=args.beginDate, endDate=args.endDate)
+    certify.registerCalibrations(args.datasetTypeName)
