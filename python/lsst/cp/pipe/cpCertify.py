@@ -116,28 +116,9 @@ class BlessCalibration(pipeBase.Task):
 
         with self.butler.transaction():
             for newId, data in zip(self.newDataIds, self.objects):
-                data = self.convertStorageClass(data, datasetTypeName)
-
                 self.butler.put(data, datasetTypeName, dataId=newId,
                                 calibration_label=self.calibrationLabel,
                                 producer=None)
-
-    def convertStorageClass(self, data, datasetTypeName):
-        """Switch from an exposure to the image type expected.
-
-        Parameters
-        ----------
-        data : `lsst.afw.image.Exposure`
-            Input exposure data to convert.
-        datasetTypeName : `str`
-            Dataset type that will be registered
-
-        Returns
-        -------
-        data : `lsst.afw.image.Image` or `lsst.afw.image.MaskedImage`
-            Converted image data to register.
-        """
-        return data
 
     def registerDatasetType(self, datasetTypeName, dataId):
         """Ensure registry can handle this dataset type.
