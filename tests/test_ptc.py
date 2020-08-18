@@ -36,7 +36,7 @@ import lsst.cp.pipe as cpPipe
 import lsst.ip.isr.isrMock as isrMock
 from lsst.cp.pipe.ptc import PhotonTransferCurveDataset
 from lsst.cp.pipe.astierCovPtcUtils import fitData
-from lsst.cp.pipe.utils import funcPolynomial
+from lsst.cp.pipe.utils import (funcPolynomial, makeMockFlats)
 
 
 class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
@@ -88,33 +88,6 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             self.dataset.rawExpTimes[ampName] = timeVec
             self.dataset.rawMeans[ampName] = muVec
 
-    def makeMockFlats(self, expTime, gain=1.0, readNoiseElectrons=5, fluxElectrons=1000):
-        flatFlux = fluxElectrons  # e/s
-        flatMean = flatFlux*expTime  # e
-        readNoise = readNoiseElectrons  # e
-
-        mockImageConfig = isrMock.IsrMock.ConfigClass()
-
-        mockImageConfig.flatDrop = 0.99999
-        mockImageConfig.isTrimmed = True
-
-        flatExp1 = isrMock.FlatMock(config=mockImageConfig).run()
-        flatExp2 = flatExp1.clone()
-        (shapeY, shapeX) = flatExp1.getDimensions()
-        flatWidth = np.sqrt(flatMean)
-
-        rng1 = np.random.RandomState(1984)
-        flatData1 = (rng1.normal(flatMean, flatWidth, (shapeX, shapeY)) +
-                     rng1.normal(0.0, readNoise, (shapeX, shapeY)))
-        rng2 = np.random.RandomState(666)
-        flatData2 = (rng2.normal(flatMean, flatWidth, (shapeX, shapeY)) +
-                     rng2.normal(0.0, readNoise, (shapeX, shapeY)))
-
-        flatExp1.image.array[:] = flatData1/gain  # ADU
-        flatExp2.image.array[:] = flatData2/gain  # ADU
-
-        return flatExp1, flatExp2
-
     def test_covAstier(self):
         """Test to check getCovariancesAstier
 
@@ -133,7 +106,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         allTags = []
         muStandard, varStandard = {}, {}
         for expTime in expTimes:
-            mockExp1, mockExp2 = self.makeMockFlats(expTime, gain=0.75)
+            mockExp1, mockExp2 = makeMockFlats(expTime, gain=0.75)
             tupleRows = []
 
             for ampNumber, amp in enumerate(self.ampNames):
@@ -141,7 +114,6 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                 muDiff, varDiff, covAstier = task.measureMeanVarCov(mockExp1, mockExp2)
                 muStandard.setdefault(amp, []).append(muDiff)
                 varStandard.setdefault(amp, []).append(varDiff)
-
                 # Calculate covariances in an independent way: direct space
                 _, _, covsDirect = task.measureMeanVarCov(mockExp1, mockExp2, covAstierRealSpace=True)
 
@@ -156,13 +128,13 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         covariancesWithTags = np.core.records.fromrecords(tupleRecords, names=allTags)
         covFits, _ = fitData(covariancesWithTags)
         localDataset = task.getOutputPtcDataCovAstier(localDataset, covFits)
-
         # Chek the gain and that the ratio of the variance caclulated via cov Astier (FFT) and
-        # that calculated with the standard PTC is close to 1.
+        # that calculated with the standard PTC calculation (afw) is close to 1.
         for amp in self.ampNames:
             self.assertAlmostEqual(localDataset.gain[amp], 0.75, places=2)
             for v1, v2 in zip(varStandard[amp], localDataset.finalVars[amp][0]):
-                self.assertAlmostEqual(v1/v2, 1.0, places=4)
+                v2 *= (0.75**2)  # convert to electrons
+                self.assertAlmostEqual(v1/v2, 1.0, places=1)
 
     def ptcFitAndCheckPtc(self, order=None, fitType='', doTableArray=False):
         localDataset = copy.copy(self.dataset)

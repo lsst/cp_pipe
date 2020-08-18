@@ -34,7 +34,8 @@ import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 import pickle
 
-from .utils import (funcAstier, funcPolynomial, NonexistentDatasetTaskDataIdContainer)
+from .utils import (funcAstier, funcPolynomial, NonexistentDatasetTaskDataIdContainer,
+                    calculateWeightedReducedChi2)
 from matplotlib.ticker import MaxNLocator
 
 from .astierCovPtcFit import computeApproximateAcoeffs
@@ -56,6 +57,18 @@ class PlotPhotonTransferCurveTaskConfig(pexConfig.Config):
         dtype=str,
         doc="The key by which to pull a detector from a dataId, e.g. 'ccd' or 'detector'.",
         default='detector',
+    )
+    signalElectronsRelativeA = pexConfig.Field(
+        dtype=float,
+        doc="Signal value for relative systematic bias between different methods of estimating a_ij "
+            "(Fig. 15 of Astier+19).",
+        default=75000,
+    )
+    plotNormalizedCovariancesNumberOfBins = pexConfig.Field(
+        dtype=int,
+        doc="Number of bins in `plotNormalizedCovariancesNumber` function "
+            "(Fig. 8, 10., of Astier+19).",
+        default=10,
     )
 
 
@@ -141,7 +154,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         return
 
     def covAstierMakeAllPlots(self, covFits, covFitsNoB, pdfPages,
-                              log=None, maxMu=1e9):
+                              log=None):
         """Make plots for MeasurePhotonTransferCurve task when doCovariancesAstier=True.
 
         This function call other functions that mostly reproduce the plots in Astier+19.
@@ -160,19 +173,22 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         log : `lsst.log.Log`, optional
             Logger to handle messages
-
-        maxMu: `float`, optional
-            Maximum signal, in ADU.
         """
         self.plotCovariances(covFits, pdfPages)
         self.plotNormalizedCovariances(covFits, covFitsNoB, 0, 0, pdfPages, offset=0.01, topPlot=True,
+                                       numberOfBins=self.config.plotNormalizedCovariancesNumberOfBins,
                                        log=log)
-        self.plotNormalizedCovariances(covFits, covFitsNoB, 0, 1, pdfPages, log=log)
-        self.plotNormalizedCovariances(covFits, covFitsNoB, 1, 0, pdfPages, log=log)
+        self.plotNormalizedCovariances(covFits, covFitsNoB, 0, 1, pdfPages,
+                                       numberOfBins=self.config.plotNormalizedCovariancesNumberOfBins,
+                                       log=log)
+        self.plotNormalizedCovariances(covFits, covFitsNoB, 1, 0, pdfPages,
+                                       numberOfBins=self.config.plotNormalizedCovariancesNumberOfBins,
+                                       log=log)
         self.plot_a_b(covFits, pdfPages)
         self.ab_vs_dist(covFits, pdfPages, bRange=4)
         self.plotAcoeffsSum(covFits, pdfPages)
-        self.plotRelativeBiasACoeffs(covFits, covFitsNoB, maxMu, pdfPages)
+        self.plotRelativeBiasACoeffs(covFits, covFitsNoB, self.config.signalElectronsRelativeA, pdfPages,
+                                     maxr=4)
 
         return
 
@@ -223,22 +239,49 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             amp = fitPair[0]
             fit = fitPair[1]
 
-            meanVecFinal, varVecFinal, varVecModel, wc = fit.getNormalizedFitData(0, 0)
-            meanVecFinalCov01, varVecFinalCov01, varVecModelCov01, wcCov01 = fit.getNormalizedFitData(0, 1)
-            meanVecFinalCov10, varVecFinalCov10, varVecModelCov10, wcCov10 = fit.getNormalizedFitData(1, 0)
+            (meanVecOriginal, varVecOriginal, varVecModelOriginal,
+                weightsOriginal, varMask) = fit.getFitData(0, 0)
+            meanVecFinal, varVecFinal = meanVecOriginal[varMask], varVecOriginal[varMask]
+            varVecModelFinal = varVecModelOriginal[varMask]
+            meanVecOutliers = meanVecOriginal[np.invert(varMask)]
+            varVecOutliers = varVecOriginal[np.invert(varMask)]
+            varWeightsFinal = weightsOriginal[varMask]
+            # Get weighted reduced chi2
+            chi2FullModelVar = calculateWeightedReducedChi2(varVecFinal, varVecModelFinal,
+                                                            varWeightsFinal, len(meanVecFinal), 4)
+
+            (meanVecOrigCov01, varVecOrigCov01, varVecModelOrigCov01,
+                _, maskCov01) = fit.getFitData(0, 1)
+            meanVecFinalCov01, varVecFinalCov01 = meanVecOrigCov01[maskCov01], varVecOrigCov01[maskCov01]
+            varVecModelFinalCov01 = varVecModelOrigCov01[maskCov01]
+            meanVecOutliersCov01 = meanVecOrigCov01[np.invert(maskCov01)]
+            varVecOutliersCov01 = varVecOrigCov01[np.invert(maskCov01)]
+
+            (meanVecOrigCov10, varVecOrigCov10, varVecModelOrigCov10,
+                _, maskCov10) = fit.getFitData(1, 0)
+            meanVecFinalCov10, varVecFinalCov10 = meanVecOrigCov10[maskCov10], varVecOrigCov10[maskCov10]
+            varVecModelFinalCov10 = varVecModelOrigCov10[maskCov10]
+            meanVecOutliersCov10 = meanVecOrigCov10[np.invert(maskCov10)]
+            varVecOutliersCov10 = varVecOrigCov10[np.invert(maskCov10)]
 
             # cuadratic fit for residuals below
-            par2 = np.polyfit(meanVecFinal, varVecFinal, 2, w=wc)
-            varModelQuadratic = np.polyval(par2, meanVecFinal)
+            par2 = np.polyfit(meanVecFinal, varVecFinal, 2, w=varWeightsFinal)
+            varModelFinalQuadratic = np.polyval(par2, meanVecFinal)
+            chi2QuadModelVar = calculateWeightedReducedChi2(varVecFinal, varModelFinalQuadratic,
+                                                            varWeightsFinal, len(meanVecFinal), 3)
 
             # fit with no 'b' coefficient (c = a*b in Eq. 20 of Astier+19)
             fitNoB = fit.copy()
             fitNoB.params['c'].fix(val=0)
             fitNoB.fitFullModel()
-            meanVecFinalNoB, varVecFinalNoB, varVecModelNoB, wcNoB = fitNoB.getNormalizedFitData(0, 0)
+            (meanVecFinalNoB, varVecFinalNoB, varVecModelFinalNoB,
+             varWeightsFinalNoB, maskNoB) = fitNoB.getFitData(0, 0, returnMasked=True)
+            chi2FullModelNoBVar = calculateWeightedReducedChi2(varVecFinalNoB, varVecModelFinalNoB,
+                                                               varWeightsFinalNoB, len(meanVecFinalNoB), 3)
 
             if len(meanVecFinal):  # Empty if the whole amp is bad, for example.
-                stringLegend = (f"Gain: {fit.getGain():.4} e/DN \n Noise: {np.sqrt(fit.getRon()):.4} e \n" +
+                stringLegend = (f"Gain: {fit.getGain():.4} e/DN \n" +
+                                f"Noise: {fit.getRon():.4} e \n" +
                                 r"$a_{00}$: %.3e 1/e"%fit.getA()[0, 0] +
                                 "\n" + r"$b_{00}$: %.3e 1/e"%fit.getB()[0, 0])
                 minMeanVecFinal = np.min(meanVecFinal)
@@ -251,7 +294,8 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                 a.set_xscale('linear', fontsize=labelFontSize)
                 a.set_yscale('linear', fontsize=labelFontSize)
                 a.scatter(meanVecFinal, varVecFinal, c='blue', marker='o', s=markerSize)
-                a.plot(meanVecFinal, varVecModel, color='red', lineStyle='-')
+                a.scatter(meanVecOutliers, varVecOutliers, c='magenta', marker='s', s=markerSize)
+                a.plot(meanVecFinal, varVecModelFinal, color='red', lineStyle='-')
                 a.text(0.03, 0.7, stringLegend, transform=a.transAxes, fontsize=legendFontSize)
                 a.set_title(amp, fontsize=titleFontSize)
                 a.set_xlim([minMeanVecFinal - 0.2*deltaXlim, maxMeanVecFinal + 0.2*deltaXlim])
@@ -262,8 +306,9 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                 a2.tick_params(labelsize=11)
                 a2.set_xscale('log')
                 a2.set_yscale('log')
-                a2.plot(meanVecFinal, varVecModel, color='red', lineStyle='-')
+                a2.plot(meanVecFinal, varVecModelFinal, color='red', lineStyle='-')
                 a2.scatter(meanVecFinal, varVecFinal, c='blue', marker='o', s=markerSize)
+                a2.scatter(meanVecOutliers, varVecOutliers, c='magenta', marker='s', s=markerSize)
                 a2.text(0.03, 0.7, stringLegend, transform=a2.transAxes, fontsize=legendFontSize)
                 a2.set_title(amp, fontsize=titleFontSize)
                 a2.set_xlim([minMeanVecFinal, maxMeanVecFinal])
@@ -274,12 +319,13 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                 aResVar.tick_params(labelsize=11)
                 aResVar.set_xscale('linear', fontsize=labelFontSize)
                 aResVar.set_yscale('linear', fontsize=labelFontSize)
-                aResVar.plot(meanVecFinal, varVecFinal - varVecModel, color='blue', lineStyle='-',
-                             label='Full fit')
-                aResVar.plot(meanVecFinal, varVecFinal - varModelQuadratic, color='red', lineStyle='-',
-                             label='Quadratic fit')
-                aResVar.plot(meanVecFinalNoB, varVecFinalNoB - varVecModelNoB, color='green', lineStyle='-',
-                             label='Full fit with b=0')
+                aResVar.plot(meanVecFinal, varVecFinal - varVecModelFinal, color='blue', lineStyle='-',
+                             label=r'Full fit ($\chi_{\rm{red}}^2$: %g)'%chi2FullModelVar)
+                aResVar.plot(meanVecFinal, varVecFinal - varModelFinalQuadratic, color='red', lineStyle='-',
+                             label=r'Quadratic fit ($\chi_{\rm{red}}^2$: %g)'%chi2QuadModelVar)
+                aResVar.plot(meanVecFinalNoB, varVecFinalNoB - varVecModelFinalNoB, color='green',
+                             lineStyle='-',
+                             label=r'Full fit (b=0) ($\chi_{\rm{red}}^2$: %g)'%chi2FullModelNoBVar)
                 aResVar.axhline(color='black')
                 aResVar.set_title(amp, fontsize=titleFontSize)
                 aResVar.set_xlim([minMeanVecFinal - 0.2*deltaXlim, maxMeanVecFinal + 0.2*deltaXlim])
@@ -291,7 +337,8 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                 a3.set_xscale('linear', fontsize=labelFontSize)
                 a3.set_yscale('linear', fontsize=labelFontSize)
                 a3.scatter(meanVecFinalCov01, varVecFinalCov01, c='blue', marker='o', s=markerSize)
-                a3.plot(meanVecFinalCov01, varVecModelCov01, color='red', lineStyle='-')
+                a3.scatter(meanVecOutliersCov01, varVecOutliersCov01, c='magenta', marker='s', s=markerSize)
+                a3.plot(meanVecFinalCov01, varVecModelFinalCov01, color='red', lineStyle='-')
                 a3.set_title(amp, fontsize=titleFontSize)
                 a3.set_xlim([minMeanVecFinal - 0.2*deltaXlim, maxMeanVecFinal + 0.2*deltaXlim])
 
@@ -301,7 +348,8 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                 a4.set_xscale('linear', fontsize=labelFontSize)
                 a4.set_yscale('linear', fontsize=labelFontSize)
                 a4.scatter(meanVecFinalCov10, varVecFinalCov10, c='blue', marker='o', s=markerSize)
-                a4.plot(meanVecFinalCov10, varVecModelCov10, color='red', lineStyle='-')
+                a4.scatter(meanVecOutliersCov10, varVecOutliersCov10, c='magenta', marker='s', s=markerSize)
+                a4.plot(meanVecFinalCov10, varVecModelFinalCov10, color='red', lineStyle='-')
                 a4.set_title(amp, fontsize=titleFontSize)
                 a4.set_xlim([minMeanVecFinal - 0.2*deltaXlim, maxMeanVecFinal + 0.2*deltaXlim])
 
@@ -329,7 +377,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         return
 
     def plotNormalizedCovariances(self, covFits, covFitsNoB, i, j, pdfPages, offset=0.004,
-                                  plotData=True, topPlot=False, log=None):
+                                  numberOfBins=10, plotData=True, topPlot=False, log=None):
         """Plot C_ij/mu vs mu.
 
         Figs. 8, 10, and 11 of Astier+19
@@ -353,6 +401,9 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         offset : `float`, optional
             Constant offset factor to plot covariances in same panel (so they don't overlap).
+
+        numberOfBins : `int`, optional
+            Number of bins for top and bottom plot.
 
         plotData : `bool`, optional
             Plot the data points?
@@ -380,40 +431,44 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         mue, rese, wce = [], [], []
         mueNoB, reseNoB, wceNoB = [], [], []
         for counter, (amp, fit) in enumerate(covFits.items()):
-            mu, c, model, wc = fit.getNormalizedFitData(i, j, divideByMu=True)
-            wres = (c-model)*wc
+            mu, cov, model, weightCov, _ = fit.getFitData(i, j, divideByMu=True, returnMasked=True)
+            wres = (cov-model)*weightCov
             chi2 = ((wres*wres).sum())/(len(mu)-3)
             chi2bin = 0
             mue += list(mu)
-            rese += list(c - model)
-            wce += list(wc)
+            rese += list(cov - model)
+            wce += list(weightCov)
 
             fitNoB = covFitsNoB[amp]
-            muNoB, cNoB, modelNoB, wcNoB = fitNoB.getNormalizedFitData(i, j, divideByMu=True)
+            (muNoB, covNoB, modelNoB,
+                weightCovNoB, _) = fitNoB.getFitData(i, j, divideByMu=True, returnMasked=True)
             mueNoB += list(muNoB)
-            reseNoB += list(cNoB - modelNoB)
-            wceNoB += list(wcNoB)
+            reseNoB += list(covNoB - modelNoB)
+            wceNoB += list(weightCovNoB)
 
             # the corresponding fit
             fit_curve, = plt.plot(mu, model + counter*offset, '-', linewidth=4.0)
             # bin plot. len(mu) = no binning
-            gind = self.indexForBins(mu, len(mu))
+            gind = self.indexForBins(mu, numberOfBins)
 
-            xb, yb, wyb, sigyb = self.binData(mu, c, gind, wc)
+            xb, yb, wyb, sigyb = self.binData(mu, cov, gind, weightCov)
             chi2bin = (sigyb*wyb).mean()  # chi2 of enforcing the same value in each bin
             plt.errorbar(xb, yb+counter*offset, yerr=sigyb, marker='o', linestyle='none', markersize=6.5,
-                         color=fit_curve.get_color(), label=f"{amp}")
+                         color=fit_curve.get_color(), label=f"{amp} (N: {len(mu)})")
             # plot the data
             if plotData:
-                points, = plt.plot(mu, c + counter*offset, '.', color=fit_curve.get_color())
+                points, = plt.plot(mu, cov + counter*offset, '.', color=fit_curve.get_color())
             plt.legend(loc='upper right', fontsize=8)
             aij = fit.getA()[i, j]
             bij = fit.getB()[i, j]
             la.append(aij)
             lb.append(bij)
-            lcov.append(fit.getACov()[i, j, i, j])
+            if fit.getACov() is not None:
+                lcov.append(fit.getACov()[i, j, i, j])
+            else:
+                lcov.append(np.nan)
             lchi2.append(chi2)
-            log.info('%s: slope %g b %g  chi2 %f chi2bin %f'%(amp, aij, bij, chi2, chi2bin))
+            log.info('Cov%d%d %s: slope %g b %g  chi2 %f chi2bin %f'%(i, j, amp, aij, bij, chi2, chi2bin))
         # end loop on amps
         la = np.array(la)
         lb = np.array(lb)
@@ -427,14 +482,14 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         wceNoB = np.array(wceNoB)
 
         plt.xlabel(r"$\mu (el)$", fontsize='x-large')
-        plt.ylabel(r"$C_{%d%d}/\mu + Cst (el)$"%(i, j), fontsize='x-large')
+        plt.ylabel(r"$Cov{%d%d}/\mu + Cst (el)$"%(i, j), fontsize='x-large')
         if (not topPlot):
-            gind = self.indexForBins(mue, len(mue))
+            gind = self.indexForBins(mue, numberOfBins)
             xb, yb, wyb, sigyb = self.binData(mue, rese, gind, wce)
 
             ax1 = plt.subplot(gs[1], sharex=ax0)
             ax1.errorbar(xb, yb, yerr=sigyb, marker='o', linestyle='none', label='Full fit')
-            gindNoB = self.indexForBins(mueNoB, len(mueNoB))
+            gindNoB = self.indexForBins(mueNoB, numberOfBins)
             xb2, yb2, wyb2, sigyb2 = self.binData(mueNoB, reseNoB, gindNoB, wceNoB)
 
             ax1.errorbar(xb2, yb2, yerr=sigyb2, marker='o', linestyle='none', label='b = 0')
@@ -445,9 +500,9 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             plt.ticklabel_format(style='sci', axis='x', scilimits=(0, 0))
             plt.ticklabel_format(style='sci', axis='y', scilimits=(0, 0))
             plt.xlabel(r'$\mu (el)$', fontsize='x-large')
-            plt.ylabel(r'$C_{%d%d}/\mu$ -model (el)'%(i, j), fontsize='x-large')
+            plt.ylabel(r'$Cov{%d%d}/\mu$ -model (el)'%(i, j), fontsize='x-large')
         plt.tight_layout()
-
+        plt.suptitle(f"Nbins: {numberOfBins}")
         # overlapping y labels:
         fig.canvas.draw()
         labels0 = [item.get_text() for item in ax0.get_yticklabels()]
@@ -613,7 +668,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         return
 
     @staticmethod
-    def plotRelativeBiasACoeffs(covFits, covFitsNoB, maxMu, pdfPages, maxr=None):
+    def plotRelativeBiasACoeffs(covFits, covFitsNoB, signalElectrons, pdfPages, maxr=None):
         """Fig. 15 in Astier+19.
 
         Illustrates systematic bias from estimating 'a'
@@ -622,24 +677,24 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         Parameters
         ----------
-        covFits: `dict`
+        covFits : `dict`
             Dictionary of CovFit objects, with amp names as keys.
 
-        covFitsNoB: `dict`
+        covFitsNoB : `dict`
            Dictionary of CovFit objects, with amp names as keys (b=0 in Eq. 20 of Astier+19).
 
-        maxMu: `float`, optional
-            Maximum signal, in ADU.
+        signalElectrons : `float`
+            Signal at which to evaluate the a_ij coefficients.
 
         pdfPages: `matplotlib.backends.backend_pdf.PdfPages`
             PDF file where the plots will be saved.
 
-        maxr: `int`, optional
+        maxr : `int`, optional
             Maximum lag.
         """
 
         fig = plt.figure(figsize=(7, 11))
-        title = ["'a' relative bias", "'a' relative bias (b=0)"]
+        title = [f"'a' relative bias at {signalElectrons} e", "'a' relative bias (b=0)"]
         data = [covFits, covFitsNoB]
 
         for k in range(2):
@@ -648,14 +703,14 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             for fit in data[k].values():
                 if fit is None:
                     continue
-                maxMuEl = maxMu*fit.getGain()
-                aOld = computeApproximateAcoeffs(fit, maxMuEl)
+                aOld = computeApproximateAcoeffs(fit, signalElectrons)
                 a = fit.getA()
                 amean.append(a)
                 diffs.append((aOld-a))
             amean = np.array(amean).mean(axis=0)
             diff = np.array(diffs).mean(axis=0)
             diff = diff/amean
+            # The difference should be close to zero
             diff[0, 0] = 0
             if maxr is None:
                 maxr = diff.shape[0]
@@ -736,7 +791,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                 if len(meanVecFinal):
                     ptcA00, ptcA00error = pars[0], parsErr[0]
                     ptcGain, ptcGainError = pars[1], parsErr[1]
-                    ptcNoise = np.sqrt(np.fabs(pars[2]))
+                    ptcNoise = np.sqrt((pars[2]))
                     ptcNoiseError = 0.5*(parsErr[2]/np.fabs(pars[2]))*np.sqrt(np.fabs(pars[2]))
                     stringLegend = (f"a00: {ptcA00:.2e}+/-{ptcA00error:.2e} 1/e"
                                     f"\n Gain: {ptcGain:.4}+/-{ptcGainError:.2e} e/DN"
@@ -745,10 +800,10 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             if ptcFitType == 'POLYNOMIAL':
                 if len(meanVecFinal):
                     ptcGain, ptcGainError = 1./pars[1], np.fabs(1./pars[1])*(parsErr[1]/pars[1])
-                    ptcNoise = np.sqrt(np.fabs(pars[0]))*ptcGain
+                    ptcNoise = np.sqrt((pars[0]))*ptcGain
                     ptcNoiseError = (0.5*(parsErr[0]/np.fabs(pars[0]))*(np.sqrt(np.fabs(pars[0]))))*ptcGain
-                    stringLegend = (f"Noise: {ptcNoise:.4}+/-{ptcNoiseError:.2e} e \n"
-                                    f"Gain: {ptcGain:.4}+/-{ptcGainError:.2e} e/DN \n")
+                    stringLegend = (f"Gain: {ptcGain:.4}+/-{ptcGainError:.2e} e/DN \n"
+                                    f"Noise: {ptcNoise:.4}+/-{ptcNoiseError:.2e} e \n")
 
                 a.set_xlabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
                 a.set_ylabel(r'Variance (DN$^2$)', fontsize=labelFontSize)
@@ -931,7 +986,6 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         """
 
         bins = np.linspace(x.min(), x.max() + abs(x.max() * 1e-7), nBins + 1)
-
         return np.digitize(x, bins)
 
     @staticmethod

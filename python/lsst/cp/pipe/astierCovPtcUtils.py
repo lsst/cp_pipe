@@ -320,7 +320,7 @@ def loadData(tupleName, params):
     return covFitList
 
 
-def fitData(tupleName, maxMu=1e9, r=8):
+def fitData(tupleName, maxMu=1e9, r=8, nSigmaFullFit=5.5, maxIterFullFit=3):
     """Fit data to models in Astier+19.
 
     Parameters
@@ -340,6 +340,12 @@ def fitData(tupleName, maxMu=1e9, r=8):
 
     maxMu: `float`, optional
         Maximum signal, in ADU (e.g., to eliminate data beyond saturation).
+
+    nSigmaFullFit : `float`, optional
+        Sigma cut to get rid of outliers in full model fit.
+
+    maxIterFullFit : `int`, optional
+        Number of iterations for full model fit.
 
     Returns
     -------
@@ -370,8 +376,8 @@ def fitData(tupleName, maxMu=1e9, r=8):
     covFitList = loadData(tupleName, lparams)
     covFitNoBList = {}  # [None]*(exts[-1]+1)
     for ext, c in covFitList.items():
-        c.fitFullModel()
+        c.fitFullModel(nSigma=nSigmaFullFit, maxFitIter=maxIterFullFit)
         covFitNoBList[ext] = c.copy()
         c.params['c'].release()
-        c.fitFullModel()
+        c.fitFullModel(nSigma=nSigmaFullFit, maxFitIter=maxIterFullFit)
     return covFitList, covFitNoBList

@@ -60,6 +60,16 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
             "FULLCOVARIANCE": "Full covariances model in Astier+19 (Eq. 20)"
         }
     )
+    sigmaClipFullFitCovariancesAstier = pexConfig.Field(
+        dtype=float,
+        doc="sigma clip for full model fit for FULLCOVARIANCE ptcFitType ",
+        default=5.0,
+    )
+    maxIterFullFitCovariancesAstier = pexConfig.Field(
+        dtype=int,
+        doc="Maximum number of iterations in full model fit for FULLCOVARIANCE ptcFitType",
+        default=3,
+    )
     maximumRangeCovariancesAstier = pexConfig.Field(
         dtype=int,
         doc="Maximum range of covariances as in Astier+19",
@@ -402,7 +412,6 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
             checkExpLengthEqual(exp1, exp2, v1, v2, raiseWithMessage=True)
             expTime = exp1.getInfo().getVisitInfo().getExposureTime()
-
             tupleRows = []
             nAmpsNan = 0
             for ampNumber, amp in enumerate(detector):
@@ -417,14 +426,15 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                     self.log.warn(msg)
                     nAmpsNan += 1
                     continue
-
+                tags = ['mu', 'i', 'j', 'var', 'cov', 'npix', 'ext', 'expTime', 'ampName']
+                if (muDiff <= self.config.minMeanSignal) or (muDiff >= self.config.maxMeanSignal):
+                    continue
                 datasetPtc.rawExpTimes[ampName].append(expTime)
                 datasetPtc.rawMeans[ampName].append(muDiff)
                 datasetPtc.rawVars[ampName].append(varDiff)
                 datasetPtc.inputVisitPairs[ampName].append((v1, v2))
 
                 tupleRows += [(muDiff, ) + covRow + (ampNumber, expTime, ampName) for covRow in covAstier]
-                tags = ['mu', 'i', 'j', 'var', 'cov', 'npix', 'ext', 'expTime', 'ampName']
             if nAmpsNan == len(ampNames):
                 msg = f"NaN mean in all amps of visit pair {v1}, {v2} of detector {detNum}."
                 self.log.warn(msg)
@@ -512,7 +522,9 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         """
 
         covFits, covFitsNoB = fitData(covariancesWithTagsArray, maxMu=self.config.maxMeanSignal,
-                                      r=self.config.maximumRangeCovariancesAstier)
+                                      r=self.config.maximumRangeCovariancesAstier,
+                                      nSigmaFullFit=self.config.sigmaClipFullFitCovariancesAstier,
+                                      maxIterFullFit=self.config.maxIterFullFitCovariancesAstier)
 
         dataset.covariancesTuple = covariancesWithTagsArray
         dataset.covariancesFits = covFits
@@ -543,9 +555,10 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         for i, amp in enumerate(covFits):
             fit = covFits[amp]
-            meanVecFinal, varVecFinal, varVecModel, wc = fit.getNormalizedFitData(0, 0, divideByMu=False)
+            (meanVecFinal, varVecFinal, varVecModel,
+                wc, varMask) = fit.getFitData(0, 0, divideByMu=False, returnMasked=True)
             gain = fit.getGain()
-            dataset.visitMask[amp] = fit.getMaskVar()
+            dataset.visitMask[amp] = varMask
             dataset.gain[amp] = gain
             dataset.gainErr[amp] = fit.getGainErr()
             dataset.noise[amp] = np.sqrt(np.fabs(fit.getRon()))
