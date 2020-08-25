@@ -941,15 +941,19 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         # Lookup table linearizer
         parsIniNonLinearity = self._initialParsForPolynomial(self.config.polynomialFitDegreeNonLinearity + 1)
         if self.config.doFitBootstrap:
-            parsFit, parsFitErr, reducedChiSquaredNonLinearityFit = fitBootstrap(parsIniNonLinearity,
-                                                                                 exposureTimeVector,
-                                                                                 meanSignalVector,
-                                                                                 funcPolynomial)
+            (parsFit, parsFitErr,
+             reducedChiSquaredNonLinearityFit) = fitBootstrap(parsIniNonLinearity,
+                                                              exposureTimeVector,
+                                                              meanSignalVector,
+                                                              funcPolynomial,
+                                                              weightsY=1./np.sqrt(meanSignalVector))
         else:
-            parsFit, parsFitErr, reducedChiSquaredNonLinearityFit = fitLeastSq(parsIniNonLinearity,
-                                                                               exposureTimeVector,
-                                                                               meanSignalVector,
-                                                                               funcPolynomial)
+            (parsFit, parsFitErr,
+             reducedChiSquaredNonLinearityFit) = fitLeastSq(parsIniNonLinearity,
+                                                            exposureTimeVector,
+                                                            meanSignalVector,
+                                                            funcPolynomial,
+                                                            weightsY=1./np.sqrt(meanSignalVector))
 
         # LinearizeLookupTable:
         # Use linear part to get time at wich signal is maxAduForLookupTableLinearizer DN
