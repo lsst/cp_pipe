@@ -1244,10 +1244,12 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             # Fit the PTC
             if self.config.doFitBootstrap:
                 parsFit, parsFitErr, reducedChiSqPtc = fitBootstrap(parsIniPtc, meanVecFinal,
-                                                                    varVecFinal, ptcFunc)
+                                                                    varVecFinal, ptcFunc,
+                                                                    weightsY=1./np.sqrt(varVecFinal))
             else:
                 parsFit, parsFitErr, reducedChiSqPtc = fitLeastSq(parsIniPtc, meanVecFinal,
-                                                                  varVecFinal, ptcFunc)
+                                                                  varVecFinal, ptcFunc,
+                                                                  weightsY=1./np.sqrt(varVecFinal))
             dataset.ptcFitPars[ampName] = parsFit
             dataset.ptcFitParsError[ampName] = parsFitErr
             dataset.ptcFitReducedChiSquared[ampName] = reducedChiSqPtc
