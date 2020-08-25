@@ -625,8 +625,9 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             im1Area = exposure1.maskedImage
             im2Area = exposure2.maskedImage
 
-        im1Area = afwMath.binImage(im1Area, self.config.binSize)
-        im2Area = afwMath.binImage(im2Area, self.config.binSize)
+        if self.config.binSize > 1:
+            im1Area = afwMath.binImage(im1Area, self.config.binSize)
+            im2Area = afwMath.binImage(im2Area, self.config.binSize)
 
         im1MaskVal = exposure1.getMask().getPlaneBitMask(self.config.maskNameList)
         im1StatsCtrl = afwMath.StatisticsControl(self.config.nSigmaClipPtc,
