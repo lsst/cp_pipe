@@ -316,7 +316,7 @@ def fitLeastSq(initialParams, dataX, dataY, function, weightsY=None):
         List with errors for fitted parameters.
 
     reducedChiSqSingleLeastSquares : `float`
-        Reduced chi squared
+        Reduced chi squared, unweighted if weightsY is not provided.
     """
     if weightsY is None:
         weightsY = np.ones(len(dataX))
@@ -384,7 +384,7 @@ def fitBootstrap(initialParams, dataX, dataY, function, weightsY=None, confidenc
         List with errors for fitted parameters.
 
     reducedChiSqBootstrap : `float`
-        Reduced chi squared.
+        Reduced chi squared, unweighted if weightsY is not provided.
     """
     if weightsY is None:
         weightsY = np.ones(len(dataX))
