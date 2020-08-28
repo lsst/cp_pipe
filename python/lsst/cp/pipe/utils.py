@@ -399,14 +399,13 @@ def fitBootstrap(initialParams, dataX, dataY, function, weightsY=None, confidenc
 
     # Get the stdev of the residuals
     residuals = errFunc(pFit, dataX, dataY, weightsY)
-
     # 100 random data sets are generated and fitted
     pars = []
     for i in range(100):
-        randomDelta = np.random.normal(0., residuals, len(dataY))
+        randomDelta = np.random.normal(0., np.fabs(residuals), len(dataY))
         randomDataY = dataY + randomDelta
         randomFit, _ = leastsq(errFunc, initialParams,
-                               args=(dataX, randomDataY, residuals), full_output=0)
+                               args=(dataX, randomDataY, weightsY), full_output=0)
         pars.append(randomFit)
     pars = np.array(pars)
     meanPfit = np.mean(pars, 0)
