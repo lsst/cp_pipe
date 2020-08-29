@@ -625,8 +625,9 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             im1Area = exposure1.maskedImage
             im2Area = exposure2.maskedImage
 
-        im1Area = afwMath.binImage(im1Area, self.config.binSize)
-        im2Area = afwMath.binImage(im2Area, self.config.binSize)
+        if self.config.binSize > 1:
+            im1Area = afwMath.binImage(im1Area, self.config.binSize)
+            im2Area = afwMath.binImage(im2Area, self.config.binSize)
 
         im1MaskVal = exposure1.getMask().getPlaneBitMask(self.config.maskNameList)
         im1StatsCtrl = afwMath.StatisticsControl(self.config.nSigmaClipPtc,
@@ -940,15 +941,19 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         # Lookup table linearizer
         parsIniNonLinearity = self._initialParsForPolynomial(self.config.polynomialFitDegreeNonLinearity + 1)
         if self.config.doFitBootstrap:
-            parsFit, parsFitErr, reducedChiSquaredNonLinearityFit = fitBootstrap(parsIniNonLinearity,
-                                                                                 exposureTimeVector,
-                                                                                 meanSignalVector,
-                                                                                 funcPolynomial)
+            (parsFit, parsFitErr,
+             reducedChiSquaredNonLinearityFit) = fitBootstrap(parsIniNonLinearity,
+                                                              exposureTimeVector,
+                                                              meanSignalVector,
+                                                              funcPolynomial,
+                                                              weightsY=1./np.sqrt(meanSignalVector))
         else:
-            parsFit, parsFitErr, reducedChiSquaredNonLinearityFit = fitLeastSq(parsIniNonLinearity,
-                                                                               exposureTimeVector,
-                                                                               meanSignalVector,
-                                                                               funcPolynomial)
+            (parsFit, parsFitErr,
+             reducedChiSquaredNonLinearityFit) = fitLeastSq(parsIniNonLinearity,
+                                                            exposureTimeVector,
+                                                            meanSignalVector,
+                                                            funcPolynomial,
+                                                            weightsY=1./np.sqrt(meanSignalVector))
 
         # LinearizeLookupTable:
         # Use linear part to get time at wich signal is maxAduForLookupTableLinearizer DN
@@ -1243,10 +1248,12 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             # Fit the PTC
             if self.config.doFitBootstrap:
                 parsFit, parsFitErr, reducedChiSqPtc = fitBootstrap(parsIniPtc, meanVecFinal,
-                                                                    varVecFinal, ptcFunc)
+                                                                    varVecFinal, ptcFunc,
+                                                                    weightsY=1./np.sqrt(varVecFinal))
             else:
                 parsFit, parsFitErr, reducedChiSqPtc = fitLeastSq(parsIniPtc, meanVecFinal,
-                                                                  varVecFinal, ptcFunc)
+                                                                  varVecFinal, ptcFunc,
+                                                                  weightsY=1./np.sqrt(varVecFinal))
             dataset.ptcFitPars[ampName] = parsFit
             dataset.ptcFitParsError[ampName] = parsFitErr
             dataset.ptcFitReducedChiSquared[ampName] = reducedChiSqPtc

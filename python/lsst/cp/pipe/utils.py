@@ -282,7 +282,7 @@ class NonexistentDatasetTaskDataIdContainer(pipeBase.DataIdContainer):
             self.refList += refList
 
 
-def fitLeastSq(initialParams, dataX, dataY, function):
+def fitLeastSq(initialParams, dataX, dataY, function, weightsY=None):
     """Do a fit and estimate the parameter errors using using scipy.optimize.leastq.
 
     optimize.leastsq returns the fractional covariance matrix. To estimate the
@@ -304,6 +304,9 @@ def fitLeastSq(initialParams, dataX, dataY, function):
     function : callable object (function)
         Function to fit the data with.
 
+    weightsY : `numpy.array` of `float`
+        Weights of the data in the ordinate axis.
+
     Return
     ------
     pFitSingleLeastSquares : `list` of `float`
@@ -313,17 +316,23 @@ def fitLeastSq(initialParams, dataX, dataY, function):
         List with errors for fitted parameters.
 
     reducedChiSqSingleLeastSquares : `float`
-        Unweighted reduced chi squared
+        Reduced chi squared, unweighted if weightsY is not provided.
     """
+    if weightsY is None:
+        weightsY = np.ones(len(dataX))
 
-    def errFunc(p, x, y):
-        return function(p, x) - y
+    def errFunc(p, x, y, weightsY=None):
+        if weightsY is None:
+            weightsY = np.ones(len(x))
+        return (function(p, x) - y)*weightsY
 
     pFit, pCov, infoDict, errMessage, success = leastsq(errFunc, initialParams,
-                                                        args=(dataX, dataY), full_output=1, epsfcn=0.0001)
+                                                        args=(dataX, dataY, weightsY), full_output=1,
+                                                        epsfcn=0.0001)
 
     if (len(dataY) > len(initialParams)) and pCov is not None:
-        reducedChiSq = (errFunc(pFit, dataX, dataY)**2).sum()/(len(dataY)-len(initialParams))
+        reducedChiSq = calculateWeightedReducedChi2(dataY, function(pFit, dataX), weightsY, len(dataY),
+                                                    len(initialParams))
         pCov *= reducedChiSq
     else:
         pCov = np.zeros((len(initialParams), len(initialParams)))
@@ -340,7 +349,7 @@ def fitLeastSq(initialParams, dataX, dataY, function):
     return pFitSingleLeastSquares, pErrSingleLeastSquares, reducedChiSq
 
 
-def fitBootstrap(initialParams, dataX, dataY, function, confidenceSigma=1.):
+def fitBootstrap(initialParams, dataX, dataY, function, weightsY=None, confidenceSigma=1.):
     """Do a fit using least squares and bootstrap to estimate parameter errors.
 
     The bootstrap error bars are calculated by fitting 100 random data sets.
@@ -360,7 +369,10 @@ def fitBootstrap(initialParams, dataX, dataY, function, confidenceSigma=1.):
     function : callable object (function)
         Function to fit the data with.
 
-    confidenceSigma : `float`
+    weightsY : `numpy.array` of `float`, optional.
+        Weights of the data in the ordinate axis.
+
+    confidenceSigma : `float`, optional.
         Number of sigmas that determine confidence interval for the bootstrap errors.
 
     Return
@@ -372,37 +384,39 @@ def fitBootstrap(initialParams, dataX, dataY, function, confidenceSigma=1.):
         List with errors for fitted parameters.
 
     reducedChiSqBootstrap : `float`
-        Reduced chi squared.
+        Reduced chi squared, unweighted if weightsY is not provided.
     """
+    if weightsY is None:
+        weightsY = np.ones(len(dataX))
 
-    def errFunc(p, x, y):
-        return function(p, x) - y
+    def errFunc(p, x, y, weightsY):
+        if weightsY is None:
+            weightsY = np.ones(len(x))
+        return (function(p, x) - y)*weightsY
 
     # Fit first time
-    pFit, _ = leastsq(errFunc, initialParams, args=(dataX, dataY), full_output=0)
+    pFit, _ = leastsq(errFunc, initialParams, args=(dataX, dataY, weightsY), full_output=0)
 
     # Get the stdev of the residuals
-    residuals = errFunc(pFit, dataX, dataY)
-    sigmaErrTotal = np.std(residuals)
-
+    residuals = errFunc(pFit, dataX, dataY, weightsY)
     # 100 random data sets are generated and fitted
     pars = []
     for i in range(100):
-        randomDelta = np.random.normal(0., sigmaErrTotal, len(dataY))
+        randomDelta = np.random.normal(0., np.fabs(residuals), len(dataY))
         randomDataY = dataY + randomDelta
         randomFit, _ = leastsq(errFunc, initialParams,
-                               args=(dataX, randomDataY), full_output=0)
+                               args=(dataX, randomDataY, weightsY), full_output=0)
         pars.append(randomFit)
     pars = np.array(pars)
     meanPfit = np.mean(pars, 0)
 
     # confidence interval for parameter estimates
-    nSigma = confidenceSigma
-    errPfit = nSigma*np.std(pars, 0)
+    errPfit = confidenceSigma*np.std(pars, 0)
     pFitBootstrap = meanPfit
     pErrBootstrap = errPfit
 
-    reducedChiSq = (errFunc(pFitBootstrap, dataX, dataY)**2).sum()/(len(dataY)-len(initialParams))
+    reducedChiSq = calculateWeightedReducedChi2(dataY, function(pFitBootstrap, dataX), weightsY, len(dataY),
+                                                len(initialParams))
     return pFitBootstrap, pErrBootstrap, reducedChiSq
 
 
