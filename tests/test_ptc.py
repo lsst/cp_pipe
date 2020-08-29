@@ -142,7 +142,8 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         placesTests = 6
         if doFitBootstrap:
             config.doFitBootstrap = True
-            # Bootstrap method in cp_pipe/utils.py perturbs the data; allow for more margin of error.
+            # Bootstrap method in cp_pipe/utils.py does multiple fits in the precense of noise.
+            # Allow for more margin of error.
             placesTests = 3
 
         if fitType == 'POLYNOMIAL':
