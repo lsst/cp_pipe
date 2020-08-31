@@ -133,6 +133,20 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
                 Final linearizer calibration.
             ``outputProvenance`` : `lsst.ip.isr.IsrProvenance`
                 Provenance data for the new calibration.
+
+        Notes
+        -----
+        This task currently fits only polynomial-defined corrections,
+        where the correction coefficients are defined such that:
+            corrImage = uncorrImage + sum_i c_i uncorrImage^(2 + i)
+        These `c_i` are defined in terms of the direct polynomial fit:
+            meanVector ~ P(x=timeVector) = sum_j k_j x^j
+        such that c_(j-2) = -k_j/(k_1^j) in units of DN^(1-j) (c.f.,
+        Eq. 37 of 2003.05978). The `config.polynomialOrder` defines
+        the maximum order of x^j to fit.  As k_0 and k_1 are
+        degenerate with bias level and gain, they are not included in
+        the non-linearity correction.
+
         """
         if camera:
             detector = camera[inputDims['detector']]
@@ -206,7 +220,23 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         )
 
     def debugFit(self, stepname, timeVector, meanVector, linearizer, ampName):
-        """
+        """Debug method for linearity fitting.
+
+        Parameters
+        ----------
+        stepname : `str`
+            A label to use to check if we care to debug at a given
+            line of code.
+        timeVector : `numpy.array`
+            The values to use as the independent variable in the
+            linearity fit.
+        meanVector : `numpy.array`
+            The values to use as the dependent variable in the
+            linearity fit.
+        linearizer : `lsst.ip.isr.Linearizer`
+            The linearity correction to compare.
+        ampName : `str`
+            Amplifier name to lookup linearity correction values.
         """
         frame = getDebugFrame(self._display, stepname)
         if frame:

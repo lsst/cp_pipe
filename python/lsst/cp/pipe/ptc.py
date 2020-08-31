@@ -167,22 +167,6 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
     )
 
 
-# @dataclass
-# class LinearityResidualsAndLinearizersDataset:
-#     """A simple class to hold the output from the
-#        `calculateLinearityResidualAndLinearizers` function.
-#     """
-#     # Normalized coefficients for polynomial NL correction
-#     polynomialLinearizerCoefficients: list
-#     # Normalized coefficient for quadratic polynomial NL correction (c0)
-#     quadraticPolynomialLinearizerCoefficient: float
-#     # LUT array row for the amplifier at hand
-#     linearizerTableRow: list
-#     meanSignalVsTimePolyFitPars: list
-#     meanSignalVsTimePolyFitParsErr: list
-#     meanSignalVsTimePolyFitReducedChiSq: float
-
-
 class PhotonTransferCurveDataset:
     """A simple class to hold the output data from the PTC task.
 
