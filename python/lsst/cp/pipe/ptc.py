@@ -410,7 +410,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 dataRef.dataId['expId'] = v2
                 exp2 = dataRef.get("postISRCCD", immediate=True)
             except RuntimeError:
-                self.log.warn(f"postISR exposure for either visit {v1} or visit {v2} could not be retreived. "
+                self.log.warn(f"postISR exposure for either expId {v1} or expId {v2} could not be retreived. "
                               "Ignoring flat pair.")
                 continue
             del dataRef.dataId['expId']
