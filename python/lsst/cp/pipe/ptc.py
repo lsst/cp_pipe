@@ -404,10 +404,15 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         allTags = []
         for (v1, v2) in visitPairs:
             # Get postISR exposures.
-            dataRef.dataId['expId'] = v1
-            exp1 = dataRef.get("postISRCCD", immediate=True)
-            dataRef.dataId['expId'] = v2
-            exp2 = dataRef.get("postISRCCD", immediate=True)
+            try:
+                dataRef.dataId['expId'] = v1
+                exp1 = dataRef.get("postISRCCD", immediate=True)
+                dataRef.dataId['expId'] = v2
+                exp2 = dataRef.get("postISRCCD", immediate=True)
+            except RuntimeError:
+                self.log.warn(f"postISR exposure for either visit {v1} or visit {v2} could not be retreived. "
+                              "Ignoring flat pair.")
+                continue
             del dataRef.dataId['expId']
 
             checkExpLengthEqual(exp1, exp2, v1, v2, raiseWithMessage=True)
