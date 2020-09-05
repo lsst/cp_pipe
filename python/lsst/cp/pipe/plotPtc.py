@@ -792,7 +792,8 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                 if len(meanVecFinal):
                     ptcA00, ptcA00error = pars[0], parsErr[0]
                     ptcGain, ptcGainError = pars[1], parsErr[1]
-                    ptcNoise = np.sqrt((pars[2]))
+                    ptcNoise = np.sqrt((pars[2]))  # pars[2] is in (e-)^2
+                    ptcNoiseAdu = ptcNoise*(1./ptcGain)
                     ptcNoiseError = 0.5*(parsErr[2]/np.fabs(pars[2]))*np.sqrt(np.fabs(pars[2]))
                     stringLegend = (f"a00: {ptcA00:.2e}+/-{ptcA00error:.2e} 1/e"
                                     f"\n Gain: {ptcGain:.4}+/-{ptcGainError:.2e} e/DN"
@@ -802,7 +803,8 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             if ptcFitType == 'POLYNOMIAL':
                 if len(meanVecFinal):
                     ptcGain, ptcGainError = 1./pars[1], np.fabs(1./pars[1])*(parsErr[1]/pars[1])
-                    ptcNoise = np.sqrt((pars[0]))*ptcGain
+                    ptcNoiseAdu = np.sqrt((pars[0]))  # pars[0] is in ADU^2
+                    ptcNoise = ptcNoiseAdu*ptcGain
                     ptcNoiseError = (0.5*(parsErr[0]/np.fabs(pars[0]))*(np.sqrt(np.fabs(pars[0]))))*ptcGain
                     stringLegend = (f"Gain: {ptcGain:.4}+/-{ptcGainError:.2e} e/DN \n"
                                     f"Noise: {ptcNoise:.4}+/-{ptcNoiseError:.2e} e \n"
@@ -829,7 +831,8 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                 deltaXlim = maxMeanVecOriginal - minMeanVecOriginal
 
                 a.plot(meanVecFit, ptcFunc(pars, meanVecFit), color='red')
-                a.plot(meanVecFinal, pars[0] + pars[1]*meanVecFinal, color='green', linestyle='--')
+                a.plot(meanVecFinal, ptcNoiseAdu**2 + (1./ptcGain)*meanVecFinal, color='green',
+                       linestyle='--')
                 a.scatter(meanVecFinal, varVecFinal, c='blue', marker='o', s=markerSize)
                 a.scatter(meanVecOutliers, varVecOutliers, c='magenta', marker='s', s=markerSize)
                 a.text(0.03, 0.7, stringLegend, transform=a.transAxes, fontsize=legendFontSize)
