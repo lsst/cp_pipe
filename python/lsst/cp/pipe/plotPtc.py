@@ -365,7 +365,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         f2.suptitle("PTC from covariances as in Astier+19 (log-log) \n Fit: Eq. 20, Astier+19",
                     fontsize=supTitleFontSize)
         pdfPages.savefig(f2)
-        fResCov00.suptitle("Residuals (data- model) for Cov00 (Var)", fontsize=supTitleFontSize)
+        fResCov00.suptitle("Residuals (data-model) for Cov00 (Var)", fontsize=supTitleFontSize)
         pdfPages.savefig(fResCov00)
         fCov01.suptitle("Cov01 as in Astier+19 (nearest parallel neighbor covariance) \n" +
                         " Fit: Eq. 20, Astier+19", fontsize=supTitleFontSize)
@@ -756,8 +756,8 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             raise RuntimeError(f"The input dataset had an invalid dataset.ptcFitType: {ptcFitType}. \n" +
                                "Options: 'FULLCOVARIANCE', EXPAPPROXIMATION, or 'POLYNOMIAL'.")
 
-        legendFontSize = 7
-        labelFontSize = 7
+        legendFontSize = 8
+        labelFontSize = 8
         titleFontSize = 9
         supTitleFontSize = 18
         markerSize = 25
@@ -777,8 +777,10 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         f, ax = plt.subplots(nrows=nRows, ncols=nCols, sharex='col', sharey='row', figsize=(13, 10))
         f2, ax2 = plt.subplots(nrows=nRows, ncols=nCols, sharex='col', sharey='row', figsize=(13, 10))
+        f3, ax3 = plt.subplots(nrows=nRows, ncols=nCols, sharex='col', sharey='row', figsize=(13, 10))
 
-        for i, (amp, a, a2) in enumerate(zip(dataset.ampNames, ax.flatten(), ax2.flatten())):
+        for i, (amp, a, a2, a3) in enumerate(zip(dataset.ampNames, ax.flatten(), ax2.flatten(),
+                                             ax3.flatten())):
             meanVecOriginal = np.array(dataset.rawMeans[amp])
             varVecOriginal = np.array(dataset.rawVars[amp])
             mask = dataset.visitMask[amp]
@@ -822,6 +824,12 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             a2.set_xscale('log')
             a2.set_yscale('log')
 
+            a3.set_xlabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
+            a3.set_ylabel(r'Variance/$\mu$ (DN)', fontsize=labelFontSize)
+            a3.tick_params(labelsize=11)
+            a3.set_xscale('linear', fontsize=labelFontSize)
+            a3.set_yscale('linear', fontsize=labelFontSize)
+
             if len(meanVecFinal):  # Empty if the whole amp is bad, for example.
                 minMeanVecFinal = np.min(meanVecFinal)
                 maxMeanVecFinal = np.max(meanVecFinal)
@@ -846,14 +854,26 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                 a2.text(0.03, 0.7, stringLegend, transform=a2.transAxes, fontsize=legendFontSize)
                 a2.set_title(amp, fontsize=titleFontSize)
                 a2.set_xlim([minMeanVecOriginal, maxMeanVecOriginal])
+
+                # Var/mu vs mu
+                a3.plot(meanVecFit, ptcFunc(pars, meanVecFit)/meanVecFit, color='red')
+                a3.scatter(meanVecFinal, varVecFinal/meanVecFinal, c='blue', marker='o', s=markerSize)
+                a3.scatter(meanVecOutliers, varVecOutliers/meanVecOutliers, c='magenta', marker='s',
+                           s=markerSize)
+                a3.text(0.2, 0.65, stringLegend, transform=a3.transAxes, fontsize=legendFontSize)
+                a3.set_title(amp, fontsize=titleFontSize)
+                a3.set_xlim([minMeanVecOriginal - 0.2*deltaXlim, maxMeanVecOriginal + 0.2*deltaXlim])
             else:
                 a.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
                 a2.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
+                a3.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
 
         f.suptitle("PTC \n Fit: " + stringTitle, fontsize=supTitleFontSize)
         pdfPages.savefig(f)
         f2.suptitle("PTC (log-log)", fontsize=supTitleFontSize)
         pdfPages.savefig(f2)
+        f3.suptitle("Var/$mu$", fontsize=supTitleFontSize)
+        pdfPages.savefig(f3)
 
         return
 
