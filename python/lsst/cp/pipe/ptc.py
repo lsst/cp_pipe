@@ -863,6 +863,22 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             goodPoints = self._getInitialGoodPoints(meanVecOriginal, varVecOriginal,
                                                     self.config.initialNonLinearityExclusionThresholdPositive,
                                                     self.config.initialNonLinearityExclusionThresholdNegative)
+            if not (mask.any() and goodPoints.any()):
+                msg = (f"\nSERIOUS:All points in either mask: {mask} or goodPoints: {goodPoints} are False."
+                       f"Setting {ampName} to BAD.")
+                self.log.warn(msg)
+                # The first and second parameters of initial fit are discarded (bias and gain)
+                # for the final NL coefficients
+                dataset.badAmps.append(ampName)
+                dataset.gain[ampName] = np.nan
+                dataset.gainErr[ampName] = np.nan
+                dataset.noise[ampName] = np.nan
+                dataset.noiseErr[ampName] = np.nan
+                dataset.ptcFitPars[ampName] = np.nan
+                dataset.ptcFitParsError[ampName] = np.nan
+                dataset.ptcFitReducedChiSquared[ampName] = np.nan
+                continue
+
             mask = mask & goodPoints
 
             if ptcFitType == 'EXPAPPROXIMATION':
@@ -891,13 +907,29 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 sigResids = (varVecOriginal - ptcFunc(pars, meanVecOriginal))/np.sqrt(varVecOriginal)
                 newMask = np.array([True if np.abs(r) < sigmaCutPtcOutliers else False for r in sigResids])
                 mask = mask & newMask
-
+                if not (mask.any() and newMask.any()):
+                    msg = (f"\nSERIOUS: All points in either mask: {mask} or newMask: {newMask} are False. "
+                           f"Setting {ampName} to BAD.")
+                    self.log.warn(msg)
+                    # The first and second parameters of initial fit are discarded (bias and gain)
+                    # for the final NL coefficients
+                    dataset.badAmps.append(ampName)
+                    dataset.gain[ampName] = np.nan
+                    dataset.gainErr[ampName] = np.nan
+                    dataset.noise[ampName] = np.nan
+                    dataset.noiseErr[ampName] = np.nan
+                    dataset.ptcFitPars[ampName] = np.nan
+                    dataset.ptcFitParsError[ampName] = np.nan
+                    dataset.ptcFitReducedChiSquared[ampName] = np.nan
+                    break
                 nDroppedTotal = Counter(mask)[False]
                 self.log.debug(f"Iteration {count}: discarded {nDroppedTotal} points in total for {ampName}")
                 count += 1
                 # objects should never shrink
                 assert (len(mask) == len(timeVecOriginal) == len(meanVecOriginal) == len(varVecOriginal))
 
+            if not (mask.any() and newMask.any()):
+                continue
             dataset.visitMask[ampName] = mask  # store the final mask
             parsIniPtc = pars
             meanVecFinal = meanVecOriginal[mask]
