@@ -810,17 +810,17 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                                     f"Noise: {ptcNoise:.4}+/-{ptcNoiseError:.2e} e \n"
                                     r"$\chi^2_{\rm{red}}$: " + f"{ptcRedChi2:.4}")
 
-                a.set_xlabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
-                a.set_ylabel(r'Variance (DN$^2$)', fontsize=labelFontSize)
-                a.tick_params(labelsize=11)
-                a.set_xscale('linear', fontsize=labelFontSize)
-                a.set_yscale('linear', fontsize=labelFontSize)
+            a.set_xlabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
+            a.set_ylabel(r'Variance (DN$^2$)', fontsize=labelFontSize)
+            a.tick_params(labelsize=11)
+            a.set_xscale('linear', fontsize=labelFontSize)
+            a.set_yscale('linear', fontsize=labelFontSize)
 
-                a2.set_xlabel(r'Mean Signal ($\mu$, DN)', fontsize=labelFontSize)
-                a2.set_ylabel(r'Variance (DN$^2$)', fontsize=labelFontSize)
-                a2.tick_params(labelsize=11)
-                a2.set_xscale('log')
-                a2.set_yscale('log')
+            a2.set_xlabel(r'Mean Signal ($\mu$, DN)', fontsize=labelFontSize)
+            a2.set_ylabel(r'Variance (DN$^2$)', fontsize=labelFontSize)
+            a2.tick_params(labelsize=11)
+            a2.set_xscale('log')
+            a2.set_yscale('log')
 
             if len(meanVecFinal):  # Empty if the whole amp is bad, for example.
                 minMeanVecFinal = np.min(meanVecFinal)
