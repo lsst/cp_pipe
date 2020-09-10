@@ -729,7 +729,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         return
 
     def _plotStandardPtc(self, dataset, ptcFitType, pdfPages):
-        """Plot PTC, linearity, and linearity residual per amplifier
+        """Plot PTC, var/signal vs signal, linearity, and linearity residual per amplifier.
 
         Parameters
         ----------
@@ -803,8 +803,8 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                     ptcNoiseAdu = ptcNoise*(1./ptcGain)
                     ptcNoiseError = 0.5*(parsErr[2]/np.fabs(pars[2]))*np.sqrt(np.fabs(pars[2]))
                     stringLegend = (f"a00: {ptcA00:.2e}+/-{ptcA00error:.2e} 1/e"
-                                    f"\n Gain: {ptcGain:.4}+/-{ptcGainError:.2e} e/DN"
-                                    f"\n Noise: {ptcNoise:.4}+/-{ptcNoiseError:.2e} e \n"
+                                    f"\nGain: {ptcGain:.4}+/-{ptcGainError:.2e} e/DN"
+                                    f"\nNoise: {ptcNoise:.4}+/-{ptcNoiseError:.2e} e\n"
                                     r"$\chi^2_{\rm{red}}$: " + f"{ptcRedChi2:.4}")
 
             if ptcFitType == 'POLYNOMIAL':
@@ -813,8 +813,8 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                     ptcNoiseAdu = np.sqrt((pars[0]))  # pars[0] is in ADU^2
                     ptcNoise = ptcNoiseAdu*ptcGain
                     ptcNoiseError = (0.5*(parsErr[0]/np.fabs(pars[0]))*(np.sqrt(np.fabs(pars[0]))))*ptcGain
-                    stringLegend = (f"Gain: {ptcGain:.4}+/-{ptcGainError:.2e} e/DN \n"
-                                    f"Noise: {ptcNoise:.4}+/-{ptcNoiseError:.2e} e \n"
+                    stringLegend = (f"Gain: {ptcGain:.4}+/-{ptcGainError:.2e} e/DN\n"
+                                    f"Noise: {ptcNoise:.4}+/-{ptcNoiseError:.2e} e\n"
                                     r"$\chi^2_{\rm{red}}$: " + f"{ptcRedChi2:.4}")
 
             a.set_xlabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
@@ -872,7 +872,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         pdfPages.savefig(f)
         f2.suptitle("PTC (log-log)", fontsize=supTitleFontSize)
         pdfPages.savefig(f2)
-        f3.suptitle("Var/$mu$", fontsize=supTitleFontSize)
+        f3.suptitle(r"Var/$\mu$", fontsize=supTitleFontSize)
         pdfPages.savefig(f3)
 
         return
@@ -936,9 +936,9 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             k0, k0Error = pars[0], parsErr[0]
             k1, k1Error = pars[1], parsErr[1]
             k2, k2Error = pars[2], parsErr[2]
-            linRedChi2 = linearizer.linearityFitReducedChiSquared[amp]
-            stringLegend = (f"k0: {k0:.4}+/-{k0Error:.2e} DN\n k1: {k1:.4}+/-{k1Error:.2e} DN/t"
-                            f"\n k2: {k2:.2e}+/-{k2Error:.2e} DN/t^2 \n"
+            linRedChi2 = linearizer.fitChiSq[amp]
+            stringLegend = (f"k0: {k0:.4}+/-{k0Error:.2e} DN\nk1: {k1:.4}+/-{k1Error:.2e} DN/t"
+                            f"\nk2: {k2:.2e}+/-{k2Error:.2e} DN/t^2\n"
                             r"$\chi^2_{\rm{red}}$: " + f"{linRedChi2:.4}")
             a.scatter(timeVecFinal, meanVecFinal)
             a.plot(timeVecFinal, funcPolynomial(pars, timeVecFinal), color='red')
