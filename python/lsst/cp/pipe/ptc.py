@@ -397,7 +397,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                                                                     covAstierRealSpace=doRealSpace)
                 if np.isnan(muDiff) or np.isnan(varDiff) or (covAstier is None):
                     msg = (f"NaN mean or var, or None cov in amp {ampNumber} in visit pair {v1}, {v2} "
-                           "of detector {detNum}.")
+                           f"of detector {detNum}.")
                     self.log.warn(msg)
                     nAmpsNan += 1
                     continue
@@ -864,7 +864,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                                                     self.config.initialNonLinearityExclusionThresholdPositive,
                                                     self.config.initialNonLinearityExclusionThresholdNegative)
             if not (mask.any() and goodPoints.any()):
-                msg = (f"\nSERIOUS:All points in either mask: {mask} or goodPoints: {goodPoints} are False."
+                msg = (f"\nSERIOUS: All points in either mask: {mask} or goodPoints: {goodPoints} are bad."
                        f"Setting {ampName} to BAD.")
                 self.log.warn(msg)
                 # The first and second parameters of initial fit are discarded (bias and gain)
@@ -908,7 +908,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 newMask = np.array([True if np.abs(r) < sigmaCutPtcOutliers else False for r in sigResids])
                 mask = mask & newMask
                 if not (mask.any() and newMask.any()):
-                    msg = (f"\nSERIOUS: All points in either mask: {mask} or newMask: {newMask} are False. "
+                    msg = (f"\nSERIOUS: All points in either mask: {mask} or newMask: {newMask} are bad. "
                            f"Setting {ampName} to BAD.")
                     self.log.warn(msg)
                     # The first and second parameters of initial fit are discarded (bias and gain)
