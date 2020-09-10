@@ -365,7 +365,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         f2.suptitle("PTC from covariances as in Astier+19 (log-log) \n Fit: Eq. 20, Astier+19",
                     fontsize=supTitleFontSize)
         pdfPages.savefig(f2)
-        fResCov00.suptitle("Residuals (data- model) for Cov00 (Var)", fontsize=supTitleFontSize)
+        fResCov00.suptitle("Residuals (data-model) for Cov00 (Var)", fontsize=supTitleFontSize)
         pdfPages.savefig(fResCov00)
         fCov01.suptitle("Cov01 as in Astier+19 (nearest parallel neighbor covariance) \n" +
                         " Fit: Eq. 20, Astier+19", fontsize=supTitleFontSize)
@@ -729,7 +729,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         return
 
     def _plotStandardPtc(self, dataset, ptcFitType, pdfPages):
-        """Plot PTC, linearity, and linearity residual per amplifier
+        """Plot PTC, var/signal vs signal, linearity, and linearity residual per amplifier.
 
         Parameters
         ----------
@@ -756,8 +756,8 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             raise RuntimeError(f"The input dataset had an invalid dataset.ptcFitType: {ptcFitType}. \n" +
                                "Options: 'FULLCOVARIANCE', EXPAPPROXIMATION, or 'POLYNOMIAL'.")
 
-        legendFontSize = 7
-        labelFontSize = 7
+        legendFontSize = 8
+        labelFontSize = 8
         titleFontSize = 9
         supTitleFontSize = 18
         markerSize = 25
@@ -777,11 +777,18 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         f, ax = plt.subplots(nrows=nRows, ncols=nCols, sharex='col', sharey='row', figsize=(13, 10))
         f2, ax2 = plt.subplots(nrows=nRows, ncols=nCols, sharex='col', sharey='row', figsize=(13, 10))
+        f3, ax3 = plt.subplots(nrows=nRows, ncols=nCols, sharex='col', sharey='row', figsize=(13, 10))
 
-        for i, (amp, a, a2) in enumerate(zip(dataset.ampNames, ax.flatten(), ax2.flatten())):
+        for i, (amp, a, a2, a3) in enumerate(zip(dataset.ampNames, ax.flatten(), ax2.flatten(),
+                                             ax3.flatten())):
             meanVecOriginal = np.array(dataset.rawMeans[amp])
             varVecOriginal = np.array(dataset.rawVars[amp])
             mask = dataset.visitMask[amp]
+            if not len(mask):  # Empty if the whole amp is bad
+                a.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
+                a2.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
+                a3.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
+                continue
             meanVecFinal = meanVecOriginal[mask]
             varVecFinal = varVecOriginal[mask]
             meanVecOutliers = meanVecOriginal[np.invert(mask)]
@@ -796,8 +803,8 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                     ptcNoiseAdu = ptcNoise*(1./ptcGain)
                     ptcNoiseError = 0.5*(parsErr[2]/np.fabs(pars[2]))*np.sqrt(np.fabs(pars[2]))
                     stringLegend = (f"a00: {ptcA00:.2e}+/-{ptcA00error:.2e} 1/e"
-                                    f"\n Gain: {ptcGain:.4}+/-{ptcGainError:.2e} e/DN"
-                                    f"\n Noise: {ptcNoise:.4}+/-{ptcNoiseError:.2e} e \n"
+                                    f"\nGain: {ptcGain:.4}+/-{ptcGainError:.2e} e/DN"
+                                    f"\nNoise: {ptcNoise:.4}+/-{ptcNoiseError:.2e} e\n"
                                     r"$\chi^2_{\rm{red}}$: " + f"{ptcRedChi2:.4}")
 
             if ptcFitType == 'POLYNOMIAL':
@@ -806,54 +813,67 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                     ptcNoiseAdu = np.sqrt((pars[0]))  # pars[0] is in ADU^2
                     ptcNoise = ptcNoiseAdu*ptcGain
                     ptcNoiseError = (0.5*(parsErr[0]/np.fabs(pars[0]))*(np.sqrt(np.fabs(pars[0]))))*ptcGain
-                    stringLegend = (f"Gain: {ptcGain:.4}+/-{ptcGainError:.2e} e/DN \n"
-                                    f"Noise: {ptcNoise:.4}+/-{ptcNoiseError:.2e} e \n"
+                    stringLegend = (f"Gain: {ptcGain:.4}+/-{ptcGainError:.2e} e/DN\n"
+                                    f"Noise: {ptcNoise:.4}+/-{ptcNoiseError:.2e} e\n"
                                     r"$\chi^2_{\rm{red}}$: " + f"{ptcRedChi2:.4}")
 
-                a.set_xlabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
-                a.set_ylabel(r'Variance (DN$^2$)', fontsize=labelFontSize)
-                a.tick_params(labelsize=11)
-                a.set_xscale('linear', fontsize=labelFontSize)
-                a.set_yscale('linear', fontsize=labelFontSize)
+            a.set_xlabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
+            a.set_ylabel(r'Variance (DN$^2$)', fontsize=labelFontSize)
+            a.tick_params(labelsize=11)
+            a.set_xscale('linear', fontsize=labelFontSize)
+            a.set_yscale('linear', fontsize=labelFontSize)
 
-                a2.set_xlabel(r'Mean Signal ($\mu$, DN)', fontsize=labelFontSize)
-                a2.set_ylabel(r'Variance (DN$^2$)', fontsize=labelFontSize)
-                a2.tick_params(labelsize=11)
-                a2.set_xscale('log')
-                a2.set_yscale('log')
+            a2.set_xlabel(r'Mean Signal ($\mu$, DN)', fontsize=labelFontSize)
+            a2.set_ylabel(r'Variance (DN$^2$)', fontsize=labelFontSize)
+            a2.tick_params(labelsize=11)
+            a2.set_xscale('log')
+            a2.set_yscale('log')
 
-            if len(meanVecFinal):  # Empty if the whole amp is bad, for example.
-                minMeanVecFinal = np.min(meanVecFinal)
-                maxMeanVecFinal = np.max(meanVecFinal)
-                meanVecFit = np.linspace(minMeanVecFinal, maxMeanVecFinal, 100*len(meanVecFinal))
-                minMeanVecOriginal = np.min(meanVecOriginal)
-                maxMeanVecOriginal = np.max(meanVecOriginal)
-                deltaXlim = maxMeanVecOriginal - minMeanVecOriginal
+            a3.set_xlabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
+            a3.set_ylabel(r'Variance/$\mu$ (DN)', fontsize=labelFontSize)
+            a3.tick_params(labelsize=11)
+            a3.set_xscale('linear', fontsize=labelFontSize)
+            a3.set_yscale('linear', fontsize=labelFontSize)
 
-                a.plot(meanVecFit, ptcFunc(pars, meanVecFit), color='red')
-                a.plot(meanVecFinal, ptcNoiseAdu**2 + (1./ptcGain)*meanVecFinal, color='green',
-                       linestyle='--')
-                a.scatter(meanVecFinal, varVecFinal, c='blue', marker='o', s=markerSize)
-                a.scatter(meanVecOutliers, varVecOutliers, c='magenta', marker='s', s=markerSize)
-                a.text(0.03, 0.7, stringLegend, transform=a.transAxes, fontsize=legendFontSize)
-                a.set_title(amp, fontsize=titleFontSize)
-                a.set_xlim([minMeanVecOriginal - 0.2*deltaXlim, maxMeanVecOriginal + 0.2*deltaXlim])
+            minMeanVecFinal = np.min(meanVecFinal)
+            maxMeanVecFinal = np.max(meanVecFinal)
+            meanVecFit = np.linspace(minMeanVecFinal, maxMeanVecFinal, 100*len(meanVecFinal))
+            minMeanVecOriginal = np.min(meanVecOriginal)
+            maxMeanVecOriginal = np.max(meanVecOriginal)
+            deltaXlim = maxMeanVecOriginal - minMeanVecOriginal
 
-                # Same, but in log-scale
-                a2.plot(meanVecFit, ptcFunc(pars, meanVecFit), color='red')
-                a2.scatter(meanVecFinal, varVecFinal, c='blue', marker='o', s=markerSize)
-                a2.scatter(meanVecOutliers, varVecOutliers, c='magenta', marker='s', s=markerSize)
-                a2.text(0.03, 0.7, stringLegend, transform=a2.transAxes, fontsize=legendFontSize)
-                a2.set_title(amp, fontsize=titleFontSize)
-                a2.set_xlim([minMeanVecOriginal, maxMeanVecOriginal])
-            else:
-                a.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
-                a2.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
+            a.plot(meanVecFit, ptcFunc(pars, meanVecFit), color='red')
+            a.plot(meanVecFinal, ptcNoiseAdu**2 + (1./ptcGain)*meanVecFinal, color='green',
+                   linestyle='--')
+            a.scatter(meanVecFinal, varVecFinal, c='blue', marker='o', s=markerSize)
+            a.scatter(meanVecOutliers, varVecOutliers, c='magenta', marker='s', s=markerSize)
+            a.text(0.03, 0.7, stringLegend, transform=a.transAxes, fontsize=legendFontSize)
+            a.set_title(amp, fontsize=titleFontSize)
+            a.set_xlim([minMeanVecOriginal - 0.2*deltaXlim, maxMeanVecOriginal + 0.2*deltaXlim])
+
+            # Same, but in log-scale
+            a2.plot(meanVecFit, ptcFunc(pars, meanVecFit), color='red')
+            a2.scatter(meanVecFinal, varVecFinal, c='blue', marker='o', s=markerSize)
+            a2.scatter(meanVecOutliers, varVecOutliers, c='magenta', marker='s', s=markerSize)
+            a2.text(0.03, 0.7, stringLegend, transform=a2.transAxes, fontsize=legendFontSize)
+            a2.set_title(amp, fontsize=titleFontSize)
+            a2.set_xlim([minMeanVecOriginal, maxMeanVecOriginal])
+
+            # Var/mu vs mu
+            a3.plot(meanVecFit, ptcFunc(pars, meanVecFit)/meanVecFit, color='red')
+            a3.scatter(meanVecFinal, varVecFinal/meanVecFinal, c='blue', marker='o', s=markerSize)
+            a3.scatter(meanVecOutliers, varVecOutliers/meanVecOutliers, c='magenta', marker='s',
+                       s=markerSize)
+            a3.text(0.2, 0.65, stringLegend, transform=a3.transAxes, fontsize=legendFontSize)
+            a3.set_title(amp, fontsize=titleFontSize)
+            a3.set_xlim([minMeanVecOriginal - 0.2*deltaXlim, maxMeanVecOriginal + 0.2*deltaXlim])
 
         f.suptitle("PTC \n Fit: " + stringTitle, fontsize=supTitleFontSize)
         pdfPages.savefig(f)
         f2.suptitle("PTC (log-log)", fontsize=supTitleFontSize)
         pdfPages.savefig(f2)
+        f3.suptitle(r"Var/$\mu$", fontsize=supTitleFontSize)
+        pdfPages.savefig(f3)
 
         return
 
@@ -890,8 +910,13 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         f, ax = plt.subplots(nrows=nRows, ncols=nCols, sharex='col', sharey='row', figsize=(13, 10))
         f2, ax2 = plt.subplots(nrows=nRows, ncols=nCols, sharex='col', sharey='row', figsize=(13, 10))
         for i, (amp, a, a2) in enumerate(zip(dataset.ampNames, ax.flatten(), ax2.flatten())):
-            meanVecFinal = np.array(dataset.rawMeans[amp])[dataset.visitMask[amp]]
-            timeVecFinal = np.array(dataset.rawExpTimes[amp])[dataset.visitMask[amp]]
+            mask = dataset.visitMask[amp]
+            if not len(mask):
+                a.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
+                a2.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
+                continue
+            meanVecFinal = np.array(dataset.rawMeans[amp])[mask]
+            timeVecFinal = np.array(dataset.rawExpTimes[amp])[mask]
 
             a.set_xlabel('Time (sec)', fontsize=labelFontSize)
             a.set_ylabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
@@ -907,27 +932,23 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             a2.set_xscale('linear', fontsize=labelFontSize)
             a2.set_yscale('linear', fontsize=labelFontSize)
 
-            if len(meanVecFinal):
-                pars, parsErr = linearizer.fitParams[amp], linearizer.fitParamsErr[amp]
-                k0, k0Error = pars[0], parsErr[0]
-                k1, k1Error = pars[1], parsErr[1]
-                k2, k2Error = pars[2], parsErr[2]
-                linRedChi2 = linearizer.linearityFitReducedChiSquared[amp]
-                stringLegend = (f"k0: {k0:.4}+/-{k0Error:.2e} DN\n k1: {k1:.4}+/-{k1Error:.2e} DN/t"
-                                f"\n k2: {k2:.2e}+/-{k2Error:.2e} DN/t^2 \n"
-                                r"$\chi^2_{\rm{red}}$: " + f"{linRedChi2:.4}")
-                a.scatter(timeVecFinal, meanVecFinal)
-                a.plot(timeVecFinal, funcPolynomial(pars, timeVecFinal), color='red')
-                a.text(0.03, 0.75, stringLegend, transform=a.transAxes, fontsize=legendFontSize)
-                a.set_title(f"{amp}", fontsize=titleFontSize)
+            pars, parsErr = linearizer.fitParams[amp], linearizer.fitParamsErr[amp]
+            k0, k0Error = pars[0], parsErr[0]
+            k1, k1Error = pars[1], parsErr[1]
+            k2, k2Error = pars[2], parsErr[2]
+            linRedChi2 = linearizer.fitChiSq[amp]
+            stringLegend = (f"k0: {k0:.4}+/-{k0Error:.2e} DN\nk1: {k1:.4}+/-{k1Error:.2e} DN/t"
+                            f"\nk2: {k2:.2e}+/-{k2Error:.2e} DN/t^2\n"
+                            r"$\chi^2_{\rm{red}}$: " + f"{linRedChi2:.4}")
+            a.scatter(timeVecFinal, meanVecFinal)
+            a.plot(timeVecFinal, funcPolynomial(pars, timeVecFinal), color='red')
+            a.text(0.03, 0.75, stringLegend, transform=a.transAxes, fontsize=legendFontSize)
+            a.set_title(f"{amp}", fontsize=titleFontSize)
 
-                linearPart = k0 + k1*timeVecFinal
-                fracLinRes = 100*(linearPart - meanVecFinal)/linearPart
-                a2.plot(meanVecFinal, fracLinRes, c='g')
-                a2.set_title(f"{amp}", fontsize=titleFontSize)
-            else:
-                a.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
-                a2.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
+            linearPart = k0 + k1*timeVecFinal
+            fracLinRes = 100*(linearPart - meanVecFinal)/linearPart
+            a2.plot(meanVecFinal, fracLinRes, c='g')
+            a2.set_title(f"{amp}", fontsize=titleFontSize)
 
         f.suptitle("Linearity \n Fit: Polynomial (degree: %g)"
                    % (len(pars)-1),
