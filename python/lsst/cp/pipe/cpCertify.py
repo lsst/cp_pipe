@@ -26,7 +26,7 @@ import lsst.pipe.base as pipeBase
 from lsst.daf.butler import DatasetType
 
 
-class BlessCalibration(pipeBase.Task):
+class CertifyCalibration(pipeBase.Task):
     """Create a way to bless existing calibration products.
 
     The inputs are assumed to have been constructed via cp_pipe, and
@@ -43,7 +43,7 @@ class BlessCalibration(pipeBase.Task):
     **kwargs :
         Additional arguments forwarded to `lsst.pipe.base.Task.__init__`.
     """
-    _DefaultName = 'BlessCalibration'
+    _DefaultName = 'CertifyCalibration'
     ConfigClass = pexConfig.Config
 
     def __init__(self, *, butler, inputCollection, outputCollection,
@@ -116,33 +116,9 @@ class BlessCalibration(pipeBase.Task):
 
         with self.butler.transaction():
             for newId, data in zip(self.newDataIds, self.objects):
-                data = self.convertStorageClass(data, datasetTypeName)
-
                 self.butler.put(data, datasetTypeName, dataId=newId,
                                 calibration_label=self.calibrationLabel,
                                 producer=None)
-
-    def convertStorageClass(self, data, datasetTypeName):
-        """Switch from an exposure to the image type expected.
-
-        Parameters
-        ----------
-        data : `lsst.afw.image.Exposure`
-            Input exposure data to convert.
-        datasetTypeName : `str`
-            Dataset type that will be registered
-
-        Returns
-        -------
-        data : `lsst.afw.image.Image` or `lsst.afw.image.MaskedImage`
-            Converted image data to register.
-        """
-        if datasetTypeName in ('bias', 'dark'):
-            data = data.getImage()
-        # elif datasetTypeName in ('flat', ):
-        #     data = data.getMaskedImage()
-
-        return data
 
     def registerDatasetType(self, datasetTypeName, dataId):
         """Ensure registry can handle this dataset type.
@@ -155,10 +131,7 @@ class BlessCalibration(pipeBase.Task):
             Data ID providing the list of dimensions for the new
             datasetType.
         """
-        storageClassMap = {'bias': 'ImageF',
-                           'dark': 'ImageF',
-                           'flat': 'ExposureF',
-                           }
+        storageClassMap = {'crosstalk': 'CrosstalkCalib'}
         storageClass = storageClassMap.get(datasetTypeName, 'ExposureF')
 
         dimensionArray = set(list(dataId.keys()) + ["calibration_label"])
@@ -197,9 +170,9 @@ class BlessCalibration(pipeBase.Task):
             raise RuntimeError("Instrument and calibration_label name not set.")
 
         try:
-            existingValues = self.registry.queryDimensions(['calibration_label'],
-                                                           instrument=self.instrument,
-                                                           calibration_label=name)
+            existingValues = self.registry.queryDataIds(['calibration_label'],
+                                                        instrument=self.instrument,
+                                                        calibration_label=name)
             existingValues = [a for a in existingValues]
             print(f"Found {len(existingValues)} Entries for {self.calibrationLabel}")
         except LookupError:

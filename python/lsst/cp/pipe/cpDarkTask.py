@@ -37,14 +37,14 @@ class CpDarkConnections(pipeBase.PipelineTaskConnections,
     inputExp = cT.Input(
         name="cpDarkISR",
         doc="Input pre-processed exposures to combine.",
-        storageClass="ExposureF",
+        storageClass="Exposure",
         dimensions=("instrument", "exposure", "detector"),
     )
 
     outputExp = cT.Output(
         name="cpDarkProc",
         doc="Output combined proposed calibration.",
-        storageClass="ExposureF",
+        storageClass="Exposure",
         dimensions=("instrument", "exposure", "detector"),
     )
 

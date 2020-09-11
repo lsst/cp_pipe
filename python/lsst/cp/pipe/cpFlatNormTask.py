@@ -37,7 +37,7 @@ class CpFlatMeasureConnections(pipeBase.PipelineTaskConnections,
     inputExp = cT.Input(
         name="postISRCCD",
         doc="Input exposure to measure statistics from.",
-        storageClass="ExposureF",
+        storageClass="Exposure",
         dimensions=("instrument", "exposure", "detector"),
     )
     outputStats = cT.Output(

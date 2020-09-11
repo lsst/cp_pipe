@@ -349,7 +349,7 @@ class CrosstalkSolveConnections(pipeBase.PipelineTaskConnections,
         super().__init__(config=config)
 
         if config.fluxOrder == 0:
-            self.Inputs.discard("inputFluxes")
+            self.inputs.discard("inputFluxes")
 
 
 class CrosstalkSolveConfig(pipeBase.PipelineTaskConfig,
@@ -401,7 +401,7 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
 
         # Use the dimensions to set calib/provenance information.
         inputs['inputDims'] = [exp.dataId.byName() for exp in inputRefs.inputRatios]
-        inputs['outputDims'] = [exp.dataId.byName() for exp in outputRefs.outputCrosstalk]
+        inputs['outputDims'] = outputRefs.outputCrosstalk.dataId.byName()
 
         outputs = self.run(**inputs)
         butlerQC.put(outputs, outputRefs)
@@ -452,9 +452,11 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
         """
         if outputDims:
             calibChip = outputDims['detector']
+            instrument = outputDims['instrument']
         else:
             # calibChip needs to be set manually in Gen2.
             calibChip = None
+            instrument = None
 
         self.log.info("Combining measurements from %d ratios and %d fluxes",
                       len(inputRatios), len(inputFluxes) if inputFluxes else 0)
@@ -513,6 +515,7 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
             for chip in camera:
                 if chip.getName() == calibChip:
                     calib._detectorSerial = chip.getSerial()
+        calib._instrument = instrument
         calib.updateMetadata()
 
         # Make an IsrProvenance().
@@ -520,7 +523,7 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
         provenance._detectorName = calibChip
         if inputDims:
             provenance.fromDataIds(inputDims)
-            provenance._instrument = outputDims['instrument']
+            provenance._instrument = instrument
         provenance.updateMetadata()
 
         return pipeBase.Struct(
