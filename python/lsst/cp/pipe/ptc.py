@@ -19,27 +19,26 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-
-__all__ = ['MeasurePhotonTransferCurveTask',
-           'MeasurePhotonTransferCurveTaskConfig',
-           'PhotonTransferCurveDataset']
-
 import numpy as np
 import matplotlib.pyplot as plt
-from sqlite3 import OperationalError
 from collections import Counter
 
 import lsst.afw.math as afwMath
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
-from .utils import (NonexistentDatasetTaskDataIdContainer, PairedVisitListTaskRunner,
-                    checkExpLengthEqual, fitLeastSq, fitBootstrap, funcPolynomial, funcAstier)
+from .utils import (fitLeastSq, fitBootstrap, funcPolynomial, funcAstier)
 from scipy.optimize import least_squares
 
 import datetime
 
 from .astierCovPtcUtils import (fftSize, CovFft, computeCovDirect, fitData)
 from .linearity import LinearitySolveTask
+
+from lsst.pipe.tasks.getRepositoryData import DataRefListRunner
+
+__all__ = ['MeasurePhotonTransferCurveTask',
+           'MeasurePhotonTransferCurveTaskConfig',
+           'PhotonTransferCurveDataset']
 
 
 class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
@@ -309,7 +308,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
     """
 
-    RunnerClass = PairedVisitListTaskRunner
+    RunnerClass = DataRefListRunner
     ConfigClass = MeasurePhotonTransferCurveTaskConfig
     _DefaultName = "measurePhotonTransferCurve"
 
@@ -320,19 +319,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         self.config.validate()
         self.config.freeze()
 
-    @classmethod
-    def _makeArgumentParser(cls):
-        """Augment argument parser for the MeasurePhotonTransferCurveTask."""
-        parser = pipeBase.ArgumentParser(name=cls._DefaultName)
-        parser.add_argument("--visit-pairs", dest="visitPairs", nargs="*",
-                            help="Visit pairs to use. Each pair must be of the form INT,INT e.g. 123,456")
-        parser.add_id_argument("--id", datasetType="photonTransferCurveDataset",
-                               ContainerClass=NonexistentDatasetTaskDataIdContainer,
-                               help="The ccds to use, e.g. --id ccd=0..100")
-        return parser
-
     @pipeBase.timeMethod
-    def runDataRef(self, dataRef, visitPairs):
+    def runDataRef(self, dataRefList):
         """Run the Photon Transfer Curve (PTC) measurement task.
 
         For a dataRef (which is each detector here),
@@ -341,52 +329,31 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         Parameters
         ----------
-        dataRef : list of lsst.daf.persistence.ButlerDataRef
-            dataRef for the detector for the visits to be fit.
-
-        visitPairs : `iterable` of `tuple` of `int`
-            Pairs of visit numbers to be processed together
+        dataRef : `list` [`lsst.daf.peristence.ButlerDataRef`]
+            Data references for exposures for detectors to process.
         """
+        if len(dataRefList) < 2:
+            raise RuntimeError("Insufficient inputs to combine.")
 
         # setup necessary objects
+        dataRef = dataRefList[0]
+
         detNum = dataRef.dataId[self.config.ccdKey]
         camera = dataRef.get('camera')
         detector = camera[dataRef.dataId[self.config.ccdKey]]
-        # expand some missing fields that we need for lsstCam.  This is a work-around
-        # for Gen2 problems that I (RHL) don't feel like solving.  The calibs pipelines
-        # (which inherit from CalibTask) use addMissingKeys() to do basically the same thing
-        #
-        # Basically, the butler's trying to look up the fields in `raw_visit` which won't work
-        for name in dataRef.getButler().getKeys('bias'):
-            if name not in dataRef.dataId:
-                try:
-                    dataRef.dataId[name] = \
-                        dataRef.getButler().queryMetadata('raw', [name], detector=detNum)[0]
-                except OperationalError:
-                    pass
 
         amps = detector.getAmplifiers()
         ampNames = [amp.getName() for amp in amps]
         datasetPtc = PhotonTransferCurveDataset(ampNames, self.config.ptcFitType)
-        self.log.info('Measuring PTC using %s visits for detector %s' % (visitPairs, detector.getId()))
+        # self.log.info('Measuring PTC using %s visits for detector %s' % (visitPairs, detector.getId()))
 
+        # Get the pairs of flat indexed by expTime
+        expPairs = self.makePairs(dataRefList)
         tupleRecords = []
         allTags = []
-        for (v1, v2) in visitPairs:
-            # Get postISR exposures.
-            try:
-                dataRef.dataId['expId'] = v1
-                exp1 = dataRef.get("postISRCCD", immediate=True)
-                dataRef.dataId['expId'] = v2
-                exp2 = dataRef.get("postISRCCD", immediate=True)
-            except RuntimeError:
-                self.log.warn(f"postISR exposure for either expId {v1} or expId {v2} could not be retreived. "
-                              "Ignoring flat pair.")
-                continue
-            del dataRef.dataId['expId']
-
-            checkExpLengthEqual(exp1, exp2, v1, v2, raiseWithMessage=True)
-            expTime = exp1.getInfo().getVisitInfo().getExposureTime()
+        for expTime, (exp1, exp2) in expPairs.items():
+            v1 = exp1.getInfo().getVisitInfo().getExposureId()
+            v2 = exp2.getInfo().getVisitInfo().getExposureId()
             tupleRows = []
             nAmpsNan = 0
             for ampNumber, amp in enumerate(detector):
@@ -446,11 +413,31 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
             butler.put(linearizer, datasetType='Linearizer', dataId={'detector': detNum,
                        'detectorName': detName, 'calibDate': calibDate})
-
-        self.log.info(f"Writing PTC data to {dataRef.getUri(write=True)}")
+        # self.log.info(f"Writing PTC data to {dataRef.getUri(write=True)}")
         dataRef.put(datasetPtc, datasetType="photonTransferCurveDataset")
 
         return pipeBase.Struct(exitStatus=0)
+
+    def makePairs(self, dataRefList):
+        """
+        """
+        sortedPairs = {}
+        for dataRef in dataRefList:
+            try:
+                tempFlat = dataRef.get("postISRCCD")
+            except RuntimeError:
+                self.log.warn(f"postISR exposure could not be retrieved. Ignoring flat.")
+                continue
+            expTime = tempFlat.getInfo().getVisitInfo().getExposureTime()
+            listAtExpTime = sortedPairs.setdefault(expTime, [])
+            if len(listAtExpTime) < 2:
+                listAtExpTime.append(tempFlat)
+
+        for (key, value) in sortedPairs.items():
+            if len(value) < 2:
+                sortedPairs.pop(key)
+
+        return sortedPairs
 
     def fitCovariancesAstier(self, dataset, covariancesWithTagsArray):
         """Fit measured flat covariances to full model in Astier+19.
