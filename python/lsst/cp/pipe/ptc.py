@@ -175,7 +175,7 @@ class PhotonTransferCurveDataset:
     New items cannot be added to the class to save accidentally saving to the
     wrong property, and the class can be frozen if desired.
 
-    inputVisitPairs records the visits used to produce the data.
+    inputVisitPairs records the exposures used to produce the data.
     When fitPtc() or fitCovariancesAstier() is run, a mask is built up, which is by definition
     always the same length as inputVisitPairs, rawExpTimes, rawMeans
     and rawVars, and is a list of bools, which are incrementally set to False
@@ -254,9 +254,9 @@ class PhotonTransferCurveDataset:
             self.__dict__[attribute] = value
 
     def getVisitsUsed(self, ampName):
-        """Get the visits used, i.e. not discarded, for a given amp.
+        """Get the exposures used, i.e. not discarded, for a given amp.
 
-        If no mask has been created yet, all visits are returned.
+        If no mask has been created yet, all exposures are returned.
         """
         if len(self.visitMask[ampName]) == 0:
             return self.inputVisitPairs[ampName]
@@ -324,12 +324,12 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         """Run the Photon Transfer Curve (PTC) measurement task.
 
         For a dataRef (which is each detector here),
-        and given a list of visit pairs (postISR) at different exposure times,
+        and given a list of exposure pairs (postISR) at different exposure times,
         measure the PTC.
 
         Parameters
         ----------
-        dataRef : `list` [`lsst.daf.peristence.ButlerDataRef`]
+        dataRefList : `list` [`lsst.daf.peristence.ButlerDataRef`]
             Data references for exposures for detectors to process.
         """
         if len(dataRefList) < 2:
@@ -345,10 +345,10 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         amps = detector.getAmplifiers()
         ampNames = [amp.getName() for amp in amps]
         datasetPtc = PhotonTransferCurveDataset(ampNames, self.config.ptcFitType)
-        # self.log.info('Measuring PTC using %s visits for detector %s' % (visitPairs, detector.getId()))
 
         # Get the pairs of flat indexed by expTime
         expPairs = self.makePairs(dataRefList)
+        self.log.info(f"Measuring PTC using {expPairs.values()} exposures for detector {detector.getId()}")
         tupleRecords = []
         allTags = []
         for expTime, (exp1, exp2) in expPairs.items():
@@ -363,7 +363,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 muDiff, varDiff, covAstier = self.measureMeanVarCov(exp1, exp2, region=amp.getBBox(),
                                                                     covAstierRealSpace=doRealSpace)
                 if np.isnan(muDiff) or np.isnan(varDiff) or (covAstier is None):
-                    msg = (f"NaN mean or var, or None cov in amp {ampNumber} in visit pair {v1}, {v2} "
+                    msg = (f"NaN mean or var, or None cov in amp {ampNumber} in exposure pair {v1}, {v2} "
                            f"of detector {detNum}.")
                     self.log.warn(msg)
                     nAmpsNan += 1
@@ -378,7 +378,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
                 tupleRows += [(muDiff, ) + covRow + (ampNumber, expTime, ampName) for covRow in covAstier]
             if nAmpsNan == len(ampNames):
-                msg = f"NaN mean in all amps of visit pair {v1}, {v2} of detector {detNum}."
+                msg = f"NaN mean in all amps of exposure pair {v1}, {v2} of detector {detNum}."
                 self.log.warn(msg)
                 continue
             allTags += tags
@@ -413,13 +413,23 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
             butler.put(linearizer, datasetType='Linearizer', dataId={'detector': detNum,
                        'detectorName': detName, 'calibDate': calibDate})
-        # self.log.info(f"Writing PTC data to {dataRef.getUri(write=True)}")
+        rerunDir = list(dataRef.getButler().storage.repositoryCfgs.keys())[0]
+        self.log.info(f"Writing PTC data to {rerunDir} directory.")
         dataRef.put(datasetPtc, datasetType="photonTransferCurveDataset")
 
         return pipeBase.Struct(exitStatus=0)
 
     def makePairs(self, dataRefList):
-        """
+        """Produce a list of flat pairs indexed by exposure time.
+
+        Parameters
+        ----------
+        dataRefList : `list` [`lsst.daf.peristence.ButlerDataRef`]
+            Data references for exposures for detectors to process.
+
+        Return
+        ------
+        sortedPairs : `dict`
         """
         sortedPairs = {}
         for dataRef in dataRefList:
