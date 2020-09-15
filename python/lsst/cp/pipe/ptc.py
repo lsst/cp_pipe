@@ -348,7 +348,12 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         # Get the pairs of flat indexed by expTime
         expPairs = self.makePairs(dataRefList)
-        self.log.info(f"Measuring PTC using {expPairs.values()} exposures for detector {detector.getId()}")
+        expIds = []
+        for (exp1, exp2) in expPairs.values():
+            id1 = exp1.getInfo().getVisitInfo().getExposureId()
+            id2 = exp2.getInfo().getVisitInfo().getExposureId()
+            expIds.append((id1, id2))
+        self.log.info(f"Measuring PTC using {expIds} exposures for detector {detector.getId()}")
         tupleRecords = []
         allTags = []
         for expTime, (exp1, exp2) in expPairs.items():
