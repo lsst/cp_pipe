@@ -253,7 +253,7 @@ class PhotonTransferCurveDataset:
         else:
             self.__dict__[attribute] = value
 
-    def getExposuresUsed(self, ampName):
+    def getExpIdsUsed(self, ampName):
         """Get the exposures used, i.e. not discarded, for a given amp.
 
         If no mask has been created yet, all exposures are returned.

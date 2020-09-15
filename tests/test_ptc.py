@@ -320,17 +320,17 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             assert (np.all(points[0:-1]) == True)  # noqa: E712 - flake8 is wrong here because of numpy.bool
             assert points[-1] == results[i]
 
-    def test_getVisitsUsed(self):
+    def test_getExpIdsUsed(self):
         localDataset = copy.copy(self.dataset)
 
         for pair in [(12, 34), (56, 78), (90, 10)]:
             localDataset.inputExpIdPairs["C:0,0"].append(pair)
         localDataset.expIdMask["C:0,0"] = np.array([True, False, True])
-        self.assertTrue(np.all(localDataset.getVisitsUsed("C:0,0") == [(12, 34), (90, 10)]))
+        self.assertTrue(np.all(localDataset.getExpIdsUsed("C:0,0") == [(12, 34), (90, 10)]))
 
         localDataset.expIdMask["C:0,0"] = np.array([True, False, True, True])  # wrong length now
         with self.assertRaises(AssertionError):
-            localDataset.getVisitsUsed("C:0,0")
+            localDataset.getExpIdsUsed("C:0,0")
 
     def test_getGoodAmps(self):
         dataset = self.dataset
