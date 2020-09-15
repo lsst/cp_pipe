@@ -428,9 +428,16 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         Return
         ------
-        sortedPairs : `dict`
+        flatPairs : `dict` [`float`, `lsst.afw.image.exposure.exposure.ExposureF`]
+          Dictionary that groups flat-field exposures that have the same exposure time (seconds).
+
+        Notes
+        -----
+        We use the difference of one pair of flat-field images taken at the same exposure time when
+        calculating the PTC to reduce Fixed Pattern Noise. If there are > 2 flat-field images with the
+        same exposure time, the first two are kept and the rest discarded.
         """
-        sortedPairs = {}
+        flatPairs = {}
         for dataRef in dataRefList:
             try:
                 tempFlat = dataRef.get("postISRCCD")
@@ -438,15 +445,19 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 self.log.warn(f"postISR exposure could not be retrieved. Ignoring flat.")
                 continue
             expTime = tempFlat.getInfo().getVisitInfo().getExposureTime()
-            listAtExpTime = sortedPairs.setdefault(expTime, [])
+            listAtExpTime = flatPairs.setdefault(expTime, [])
             if len(listAtExpTime) < 2:
                 listAtExpTime.append(tempFlat)
+            if len(listAtExpTime) > 2:
+                self.log.warn("More than 2 exposures found at expTime {expTime}. Dropping exposures "
+                              f"{listAtExpTime[2:]}.")
 
-        for (key, value) in sortedPairs.items():
+        for (key, value) in flatPairs.items():
             if len(value) < 2:
-                sortedPairs.pop(key)
+                flatPairs.pop(key)
+                self.log.warn("Only one exposure found at expTime {key}. Dropping exposure {value}.")
 
-        return sortedPairs
+        return flatPairs
 
     def fitCovariancesAstier(self, dataset, covariancesWithTagsArray):
         """Fit measured flat covariances to full model in Astier+19.
