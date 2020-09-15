@@ -37,6 +37,8 @@ from .photodiode import getBOTphotodiodeData
 
 from lsst.pipe.tasks.getRepositoryData import DataRefListRunner
 
+from lsst.ip.isr import IsrCalib
+
 __all__ = ['MeasurePhotonTransferCurveTask',
            'MeasurePhotonTransferCurveTaskConfig',
            'PhotonTransferCurveDataset']
@@ -177,7 +179,7 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
     )
 
 
-class PhotonTransferCurveDataset:
+class PhotonTransferCurveDataset(IsrCalib):
     """A simple class to hold the output data from the PTC task.
 
     The dataset is made up of a dictionary for each item, keyed by the
@@ -204,6 +206,66 @@ class PhotonTransferCurveDataset:
 
     ptcFitType : `str`
         Type of model fitted to the PTC: "POLYNOMIAL", "EXPAPPROXIMATION", or "FULLCOVARIANCE".
+
+    Notes
+    -----
+    The stored attributes are:
+
+    badAmps : `list`
+        List with bad amplifiers names.
+    inputExpIdPairs : `dict`, [`str`, `list`]
+        Dictonary keyed by amp names containing the input exposures IDs.
+    expIdMask : `dict`, [`str`, `list`]
+        Dictonary keyed by amp names containing the mask produced after outlier rejection. The mask produced
+        by the "FULLCOVARIANCE" option may differ from the one produced in the other two PTC fit types.
+    rawExpTimes : `dict`, [`str`, `list`]
+        Dictonary keyed by amp names containing the unmasked exposure times.
+    rawMeans : `dict`, [`str`, `list`]
+        Dictonary keyed by amp names containing the unmasked average of the means of the exposures in each
+        flat pair.
+    rawVars : `dict`, [`str`, `list`]
+        Dictonary keyed by amp names containing the variance of the difference image of the exposure sin each
+        flat pair.
+    gain : `dict`, [`str`, `list`]
+        Dictonary keyed by amp names containing the fitted gains.
+    gainErr : `dict`, [`str`, `list`]
+        Dictonary keyed by amp names containing the errors on the fitted gains.
+    noise : `dict`, [`str`, `list`]
+        Dictonary keyed by amp names containing the fitted noise.
+    noiseErr : `dict`, [`str`, `list`]
+        Dictonary keyed by amp names containing the errors on the fitted noise.
+    ptcFitPars : `dict`, [`str`, `list`]
+        Dictonary keyed by amp names containing the fitted parameters of the PTC model for ptcFitTye in
+        ["POLYNOMIAL", "EXPAPPROXIMATION"].
+    ptcFitParsError : `dict`, [`str`, `list`]
+        Dictonary keyed by amp names containing the errors on the fitted parameters of the PTC model for
+        ptcFitTye in ["POLYNOMIAL", "EXPAPPROXIMATION"].
+    ptcFitReducedChiSquared : `dict`, [`str`, `list`]
+        Dictonary keyed by amp names containing the reduced chi squared of the fit for ptcFitTye in
+        ["POLYNOMIAL", "EXPAPPROXIMATION"].
+    covariancesTuple : `dict`, [`str`, `list`]
+        Dictonary keyed by amp names containing a `numpy.recarray` with entries of the form
+        ['mu', 'i', 'j', 'var', 'cov', 'npix', 'ext', 'expTime', 'ampName'] if ptcFitTye in
+        ["FULLCOVARIANCE"].
+    covariancesFitsWithNoB : `dict`, [`str`, `list`]
+        Dictonary keyed by amp names containing CovFit objects that fit the measured
+        covariances to Eq. 20 of Astier+19, with "b" set to zero.
+    covariancesFits : `dict`, [`str`, `list`]
+        Dictonary keyed by amp names containinging CovFit objects that fit the measured
+        covariances to Eq. 20 of Astier+19.
+    aMatrix : `dict`, [`str`, `list`]
+        Dictonary keyed by amp names containing the "a" parameters from the model in Eq. 20 of Astier+19.
+    bMatrix : `dict`, [`str`, `list`]
+        Dictonary keyed by amp names containing the "b" parameters from the model in Eq. 20 of Astier+19.
+    finalVars : `dict`, [`str`, `list`]
+        Dictonary keyed by amp names containing the masked variance of the difference image of each flat
+        pair.
+    finalModelVars : `dict`, [`str`, `list`]
+        Dictonary keyed by amp names containing the masked modeled variance of the difference image of each
+        flat pair.
+    finalMeans : `dict`, [`str`, `list`]
+        Dictonary keyed by amp names containing the masked average of the means of the exposures in each
+        flat pair.
 
     Returns
     -------
