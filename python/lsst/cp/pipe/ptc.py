@@ -175,9 +175,9 @@ class PhotonTransferCurveDataset:
     New items cannot be added to the class to save accidentally saving to the
     wrong property, and the class can be frozen if desired.
 
-    inputVisitPairs records the exposures used to produce the data.
+    inputExpIdPairs records the exposures used to produce the data.
     When fitPtc() or fitCovariancesAstier() is run, a mask is built up, which is by definition
-    always the same length as inputVisitPairs, rawExpTimes, rawMeans
+    always the same length as inputExpIdPairs, rawExpTimes, rawMeans
     and rawVars, and is a list of bools, which are incrementally set to False
     as points are discarded from the fits.
 
@@ -209,10 +209,10 @@ class PhotonTransferCurveDataset:
         self.__dict__["badAmps"] = []
 
         # raw data variables
-        # visitMask is the mask produced after outlier rejection. The mask produced by "FULLCOVARIANCE"
+        # expIdMask is the mask produced after outlier rejection. The mask produced by "FULLCOVARIANCE"
         # may differ from the one produced in the other two PTC fit types.
-        self.__dict__["inputVisitPairs"] = {ampName: [] for ampName in ampNames}
-        self.__dict__["visitMask"] = {ampName: [] for ampName in ampNames}
+        self.__dict__["inputExpIdPairs"] = {ampName: [] for ampName in ampNames}
+        self.__dict__["expIdMask"] = {ampName: [] for ampName in ampNames}
         self.__dict__["rawExpTimes"] = {ampName: [] for ampName in ampNames}
         self.__dict__["rawMeans"] = {ampName: [] for ampName in ampNames}
         self.__dict__["rawVars"] = {ampName: [] for ampName in ampNames}
@@ -240,7 +240,7 @@ class PhotonTransferCurveDataset:
         self.__dict__["aMatrix"] = {ampName: [] for ampName in ampNames}
         self.__dict__["bMatrix"] = {ampName: [] for ampName in ampNames}
 
-        # "final" means that the "raw" vectors above had "visitMask" applied.
+        # "final" means that the "raw" vectors above had "expIdMask" applied.
         self.__dict__["finalVars"] = {ampName: [] for ampName in ampNames}
         self.__dict__["finalModelVars"] = {ampName: [] for ampName in ampNames}
         self.__dict__["finalMeans"] = {ampName: [] for ampName in ampNames}
@@ -253,21 +253,21 @@ class PhotonTransferCurveDataset:
         else:
             self.__dict__[attribute] = value
 
-    def getVisitsUsed(self, ampName):
+    def getExposuresUsed(self, ampName):
         """Get the exposures used, i.e. not discarded, for a given amp.
 
         If no mask has been created yet, all exposures are returned.
         """
-        if len(self.visitMask[ampName]) == 0:
-            return self.inputVisitPairs[ampName]
+        if len(self.expIdMask[ampName]) == 0:
+            return self.inputExpIdPairs[ampName]
 
-        # if the mask exists it had better be the same length as the visitPairs
-        assert len(self.visitMask[ampName]) == len(self.inputVisitPairs[ampName])
+        # if the mask exists it had better be the same length as the expIdPairs
+        assert len(self.expIdMask[ampName]) == len(self.inputExpIdPairs[ampName])
 
-        pairs = self.inputVisitPairs[ampName]
-        mask = self.visitMask[ampName]
+        pairs = self.inputExpIdPairs[ampName]
+        mask = self.expIdMask[ampName]
         # cast to bool required because numpy
-        return [(v1, v2) for ((v1, v2), m) in zip(pairs, mask) if bool(m) is True]
+        return [(exp1, exp2) for ((exp1, exp2), m) in zip(pairs, mask) if bool(m) is True]
 
     def getGoodAmps(self):
         return [amp for amp in self.ampNames if amp not in self.badAmps]
@@ -352,8 +352,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         tupleRecords = []
         allTags = []
         for expTime, (exp1, exp2) in expPairs.items():
-            v1 = exp1.getInfo().getVisitInfo().getExposureId()
-            v2 = exp2.getInfo().getVisitInfo().getExposureId()
+            expId1 = exp1.getInfo().getVisitInfo().getExposureId()
+            expId2 = exp2.getInfo().getVisitInfo().getExposureId()
             tupleRows = []
             nAmpsNan = 0
             for ampNumber, amp in enumerate(detector):
@@ -363,8 +363,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 muDiff, varDiff, covAstier = self.measureMeanVarCov(exp1, exp2, region=amp.getBBox(),
                                                                     covAstierRealSpace=doRealSpace)
                 if np.isnan(muDiff) or np.isnan(varDiff) or (covAstier is None):
-                    msg = (f"NaN mean or var, or None cov in amp {ampNumber} in exposure pair {v1}, {v2} "
-                           f"of detector {detNum}.")
+                    msg = (f"NaN mean or var, or None cov in amp {ampNumber} in exposure pair {expId1},"
+                           f" {expId2} of detector {detNum}.")
                     self.log.warn(msg)
                     nAmpsNan += 1
                     continue
@@ -374,11 +374,11 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 datasetPtc.rawExpTimes[ampName].append(expTime)
                 datasetPtc.rawMeans[ampName].append(muDiff)
                 datasetPtc.rawVars[ampName].append(varDiff)
-                datasetPtc.inputVisitPairs[ampName].append((v1, v2))
+                datasetPtc.inputExpIdPairs[ampName].append((expId1, expId2))
 
                 tupleRows += [(muDiff, ) + covRow + (ampNumber, expTime, ampName) for covRow in covAstier]
             if nAmpsNan == len(ampNames):
-                msg = f"NaN mean in all amps of exposure pair {v1}, {v2} of detector {detNum}."
+                msg = f"NaN mean in all amps of exposure pair {expId1}, {expId2} of detector {detNum}."
                 self.log.warn(msg)
                 continue
             allTags += tags
@@ -513,7 +513,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             (meanVecFinal, varVecFinal, varVecModel,
                 wc, varMask) = fit.getFitData(0, 0, divideByMu=False, returnMasked=True)
             gain = fit.getGain()
-            dataset.visitMask[amp] = varMask
+            dataset.expIdMask[amp] = varMask
             dataset.gain[amp] = gain
             dataset.gainErr[amp] = fit.getGainErr()
             dataset.noise[amp] = np.sqrt(np.fabs(fit.getRon()))
@@ -927,7 +927,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
             if not (mask.any() and newMask.any()):
                 continue
-            dataset.visitMask[ampName] = mask  # store the final mask
+            dataset.expIdMask[ampName] = mask  # store the final mask
             parsIniPtc = pars
             meanVecFinal = meanVecOriginal[mask]
             varVecFinal = varVecOriginal[mask]

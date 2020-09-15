@@ -112,7 +112,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         Parameters
         ----------
         dataRef : list of lsst.daf.persistence.ButlerDataRef
-            dataRef for the detector for the visits to be fit.
+            dataRef for the detector for the expIds to be fit.
         """
 
         datasetFile = self.config.datasetFileName
@@ -783,7 +783,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                                              ax3.flatten())):
             meanVecOriginal = np.array(dataset.rawMeans[amp])
             varVecOriginal = np.array(dataset.rawVars[amp])
-            mask = dataset.visitMask[amp]
+            mask = dataset.expIdMask[amp]
             if not len(mask):  # Empty if the whole amp is bad
                 a.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
                 a2.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
@@ -910,7 +910,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         f, ax = plt.subplots(nrows=nRows, ncols=nCols, sharex='col', sharey='row', figsize=(13, 10))
         f2, ax2 = plt.subplots(nrows=nRows, ncols=nCols, sharex='col', sharey='row', figsize=(13, 10))
         for i, (amp, a, a2) in enumerate(zip(dataset.ampNames, ax.flatten(), ax2.flatten())):
-            mask = dataset.visitMask[amp]
+            mask = dataset.expIdMask[amp]
             if not len(mask):
                 a.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
                 a2.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
