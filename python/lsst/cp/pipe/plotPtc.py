@@ -794,7 +794,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             meanVecOutliers = meanVecOriginal[np.invert(mask)]
             varVecOutliers = varVecOriginal[np.invert(mask)]
             pars, parsErr = dataset.ptcFitPars[amp], dataset.ptcFitParsError[amp]
-            ptcRedChi2 = dataset.ptcFitReducedChiSquared[amp]
+            ptcRedChi2 = dataset.ptcFitChiSq[amp]
             if ptcFitType == 'EXPAPPROXIMATION':
                 if len(meanVecFinal):
                     ptcA00, ptcA00error = pars[0], parsErr[0]

@@ -207,6 +207,9 @@ class PhotonTransferCurveDataset(IsrCalib):
     ptcFitType : `str`
         Type of model fitted to the PTC: "POLYNOMIAL", "EXPAPPROXIMATION", or "FULLCOVARIANCE".
 
+    kwargs : `dict`, optional
+        Other keyword arguments to pass to the parent init.
+
     Notes
     -----
     The stored attributes are:
@@ -240,7 +243,7 @@ class PhotonTransferCurveDataset(IsrCalib):
     ptcFitParsError : `dict`, [`str`, `list`]
         Dictonary keyed by amp names containing the errors on the fitted parameters of the PTC model for
         ptcFitTye in ["POLYNOMIAL", "EXPAPPROXIMATION"].
-    ptcFitReducedChiSquared : `dict`, [`str`, `list`]
+    ptcFitChiSq : `dict`, [`str`, `list`]
         Dictonary keyed by amp names containing the reduced chi squared of the fit for ptcFitTye in
         ["POLYNOMIAL", "EXPAPPROXIMATION"].
     covariancesTuple : `dict`, [`str`, `list`]
@@ -273,17 +276,13 @@ class PhotonTransferCurveDataset(IsrCalib):
         Output dataset from MeasurePhotonTransferCurveTask.
     """
 
-    def __init__(self, ampNames, ptcFitType):
+    def __init__(self, ampNames, ptcFitType, **kwargs):
         # add items to __dict__ directly because __setattr__ is overridden
 
-        # instance variables
         self.__dict__["ptcFitType"] = ptcFitType
         self.__dict__["ampNames"] = ampNames
         self.__dict__["badAmps"] = []
 
-        # raw data variables
-        # expIdMask is the mask produced after outlier rejection. The mask produced by "FULLCOVARIANCE"
-        # may differ from the one produced in the other two PTC fit types.
         self.__dict__["inputExpIdPairs"] = {ampName: [] for ampName in ampNames}
         self.__dict__["expIdMask"] = {ampName: [] for ampName in ampNames}
         self.__dict__["rawExpTimes"] = {ampName: [] for ampName in ampNames}
@@ -291,33 +290,31 @@ class PhotonTransferCurveDataset(IsrCalib):
         self.__dict__["rawVars"] = {ampName: [] for ampName in ampNames}
         self.__dict__["photoCharge"] = {ampName: [] for ampName in ampNames}
 
-        # Gain and noise
         self.__dict__["gain"] = {ampName: -1. for ampName in ampNames}
         self.__dict__["gainErr"] = {ampName: -1. for ampName in ampNames}
         self.__dict__["noise"] = {ampName: -1. for ampName in ampNames}
         self.__dict__["noiseErr"] = {ampName: -1. for ampName in ampNames}
 
-        # if ptcFitTye in ["POLYNOMIAL", "EXPAPPROXIMATION"]
-        # fit information
         self.__dict__["ptcFitPars"] = {ampName: [] for ampName in ampNames}
         self.__dict__["ptcFitParsError"] = {ampName: [] for ampName in ampNames}
-        self.__dict__["ptcFitReducedChiSquared"] = {ampName: [] for ampName in ampNames}
+        self.__dict__["ptcFitChiSq"] = {ampName: [] for ampName in ampNames}
 
-        # if ptcFitTye in ["FULLCOVARIANCE"]
-        # "covariancesTuple" is a numpy recarray with entries of the form
-        # ['mu', 'i', 'j', 'var', 'cov', 'npix', 'ext', 'expTime', 'ampName']
-        # "covariancesFits" has CovFit objects that fit the measured covariances to Eq. 20 of Astier+19.
-        # In "covariancesFitsWithNoB", "b"=0 in the model described by Eq. 20 of Astier+19.
         self.__dict__["covariancesTuple"] = {ampName: [] for ampName in ampNames}
         self.__dict__["covariancesFitsWithNoB"] = {ampName: [] for ampName in ampNames}
         self.__dict__["covariancesFits"] = {ampName: [] for ampName in ampNames}
         self.__dict__["aMatrix"] = {ampName: [] for ampName in ampNames}
         self.__dict__["bMatrix"] = {ampName: [] for ampName in ampNames}
 
-        # "final" means that the "raw" vectors above had "expIdMask" applied.
         self.__dict__["finalVars"] = {ampName: [] for ampName in ampNames}
         self.__dict__["finalModelVars"] = {ampName: [] for ampName in ampNames}
         self.__dict__["finalMeans"] = {ampName: [] for ampName in ampNames}
+
+        super().__init__(**kwargs)
+        self.requiredAttributes.update(["badAmps", "inputExpIdPairs", "expIdMask", "rawExpTimes",
+                                        "rawMeans", "rawVars", "gain", "gainErr", "noise", "noiseErr",
+                                        "ptcFitPars", "ptcFitParsError", "ptcFitChiSq",
+                                        "covariancesTuple", "covariancesFitsWithNoB", "covariancesFits",
+                                        "aMatrix", "bMatrix", "finalVars", "finalModelVars", "finalMeans"])
 
     def __setattr__(self, attribute, value):
         """Protect class attributes"""
@@ -997,7 +994,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 dataset.noiseErr[ampName] = np.nan
                 dataset.ptcFitPars[ampName] = np.nan
                 dataset.ptcFitParsError[ampName] = np.nan
-                dataset.ptcFitReducedChiSquared[ampName] = np.nan
+                dataset.ptcFitChiSq[ampName] = np.nan
                 continue
 
             mask = mask & goodPoints
@@ -1041,7 +1038,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                     dataset.noiseErr[ampName] = np.nan
                     dataset.ptcFitPars[ampName] = np.nan
                     dataset.ptcFitParsError[ampName] = np.nan
-                    dataset.ptcFitReducedChiSquared[ampName] = np.nan
+                    dataset.ptcFitChiSq[ampName] = np.nan
                     break
                 nDroppedTotal = Counter(mask)[False]
                 self.log.debug(f"Iteration {count}: discarded {nDroppedTotal} points in total for {ampName}")
@@ -1073,7 +1070,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 dataset.noiseErr[ampName] = np.nan
                 dataset.ptcFitPars[ampName] = np.nan
                 dataset.ptcFitParsError[ampName] = np.nan
-                dataset.ptcFitReducedChiSquared[ampName] = np.nan
+                dataset.ptcFitChiSq[ampName] = np.nan
                 continue
 
             # Fit the PTC
@@ -1087,7 +1084,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                                                                   weightsY=1./np.sqrt(varVecFinal))
             dataset.ptcFitPars[ampName] = parsFit
             dataset.ptcFitParsError[ampName] = parsFitErr
-            dataset.ptcFitReducedChiSquared[ampName] = reducedChiSqPtc
+            dataset.ptcFitChiSq[ampName] = reducedChiSqPtc
 
             if ptcFitType == 'EXPAPPROXIMATION':
                 ptcGain = parsFit[1]
