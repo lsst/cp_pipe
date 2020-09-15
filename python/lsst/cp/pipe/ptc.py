@@ -413,8 +413,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
             butler.put(linearizer, datasetType='Linearizer', dataId={'detector': detNum,
                        'detectorName': detName, 'calibDate': calibDate})
-        rerunDir = list(dataRef.getButler().storage.repositoryCfgs.keys())[0]
-        self.log.info(f"Writing PTC data to {rerunDir} directory.")
+        self.log.info(f"Writing PTC data.")
         dataRef.put(datasetPtc, datasetType="photonTransferCurveDataset")
 
         return pipeBase.Struct(exitStatus=0)
