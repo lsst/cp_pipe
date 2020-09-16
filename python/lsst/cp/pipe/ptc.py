@@ -53,7 +53,7 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
     )
     ptcFitType = pexConfig.ChoiceField(
         dtype=str,
-        doc="Fit PTC to approximation in Astier+19 (Equation 16) or to a polynomial.",
+        doc="Fit PTC to Eq. 16, Eq. 20 in Astier+19, or to a polynomial.",
         default="POLYNOMIAL",
         allowed={
             "POLYNOMIAL": "n-degree polynomial (use 'polynomialFitDegree' to set 'n').",
@@ -246,10 +246,6 @@ class PhotonTransferCurveDataset(IsrCalib):
     ptcFitChiSq : `dict`, [`str`, `list`]
         Dictonary keyed by amp names containing the reduced chi squared of the fit for ptcFitTye in
         ["POLYNOMIAL", "EXPAPPROXIMATION"].
-    covariancesTuple : `dict`, [`str`, `list`]
-        Dictonary keyed by amp names containing a `numpy.recarray` with entries of the form
-        ['mu', 'i', 'j', 'var', 'cov', 'npix', 'ext', 'expTime', 'ampName'] if ptcFitTye in
-        ["FULLCOVARIANCE"].
     covariancesFitsWithNoB : `dict`, [`str`, `list`]
         Dictonary keyed by amp names containing CovFit objects that fit the measured
         covariances to Eq. 20 of Astier+19, with "b" set to zero.
@@ -276,6 +272,10 @@ class PhotonTransferCurveDataset(IsrCalib):
         Output dataset from MeasurePhotonTransferCurveTask.
     """
 
+    _OBSTYPE = "PTC"
+    _SCHEMA = 'Gen3 Photon Transfer Curve'
+    _VERSION = 1.0
+
     def __init__(self, ampNames, ptcFitType, **kwargs):
         # add items to __dict__ directly because __setattr__ is overridden
 
@@ -299,7 +299,6 @@ class PhotonTransferCurveDataset(IsrCalib):
         self.__dict__["ptcFitParsError"] = {ampName: [] for ampName in ampNames}
         self.__dict__["ptcFitChiSq"] = {ampName: [] for ampName in ampNames}
 
-        self.__dict__["covariancesTuple"] = {ampName: [] for ampName in ampNames}
         self.__dict__["covariancesFitsWithNoB"] = {ampName: [] for ampName in ampNames}
         self.__dict__["covariancesFits"] = {ampName: [] for ampName in ampNames}
         self.__dict__["aMatrix"] = {ampName: [] for ampName in ampNames}
@@ -313,8 +312,26 @@ class PhotonTransferCurveDataset(IsrCalib):
         self.requiredAttributes.update(["badAmps", "inputExpIdPairs", "expIdMask", "rawExpTimes",
                                         "rawMeans", "rawVars", "gain", "gainErr", "noise", "noiseErr",
                                         "ptcFitPars", "ptcFitParsError", "ptcFitChiSq",
-                                        "covariancesTuple", "covariancesFitsWithNoB", "covariancesFits",
+                                        "covariancesFitsWithNoB", "covariancesFits",
                                         "aMatrix", "bMatrix", "finalVars", "finalModelVars", "finalMeans"])
+
+
+    def updateMetadata(self, ptcFitType, **kwargs):
+        """Update calibration metadata.
+        
+        This calls the base class's method after ensuring the required
+        calibration keywords will be saved.
+        
+        Parameters
+        ----------
+        ptcFitType : `str`
+            Type of model fitted to the PTC: "POLYNOMIAL", "EXPAPPROXIMATION", or "FULLCOVARIANCE".
+        kwargs :
+            Other keyword parameters to set in the metadata.
+        """
+        
+        super().updateMetadata(ptcFitType=ptcFitType, **kwargs)
+
 
     def __setattr__(self, attribute, value):
         """Protect class attributes"""
@@ -602,7 +619,6 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                                       nSigmaFullFit=self.config.sigmaClipFullFitCovariancesAstier,
                                       maxIterFullFit=self.config.maxIterFullFitCovariancesAstier)
 
-        dataset.covariancesTuple = covariancesWithTagsArray
         dataset.covariancesFits = covFits
         dataset.covariancesFitsWithNoB = covFitsNoB
         dataset = self.getOutputPtcDataCovAstier(dataset, covFits)
