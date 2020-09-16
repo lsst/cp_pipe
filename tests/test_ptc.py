@@ -168,6 +168,8 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             RuntimeError("Enter a fit function type: 'POLYNOMIAL' or 'EXPAPPROXIMATION'")
 
         config.linearity.maxLookupTableAdu = 200000  # Max ADU in input mock flats
+        config.linearity.maxLinearAdu = 100000
+        config.linearity.minLinearAdu = 50000
         if doTableArray:
             config.linearity.linearityType = "LookupTable"
         else:
@@ -231,23 +233,24 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                 inputFracNonLinearityResiduals = 100*(linearPart - finalMuVec)/linearPart
 
                 # Nonlinearity fit parameters
-                self.assertAlmostEqual(0.0, linDataset.fitParams[ampName][0])
-                self.assertAlmostEqual(self.flux, linDataset.fitParams[ampName][1],
-                                       places=placesTests)
-                self.assertAlmostEqual(self.k2NonLinearity, linDataset.fitParams[ampName][2],
-                                       places=placesTests)
+                # Polynomial fits are now normalized to unit flux scaling
+                self.assertAlmostEqual(0.0, linDataset.fitParams[ampName][0], places=1)
+                self.assertAlmostEqual(1.0, linDataset.fitParams[ampName][1],
+                                       places=5)
 
                 # Non-linearity coefficient for linearizer
-                self.assertAlmostEqual(-self.k2NonLinearity/(self.flux**2),
-                                       linDataset.linearityCoeffs[ampName][0],
+                squaredCoeff = self.k2NonLinearity/(self.flux**2)
+                self.assertAlmostEqual(squaredCoeff, linDataset.fitParams[ampName][2],
+                                       places=placesTests)
+                self.assertAlmostEqual(-squaredCoeff, linDataset.linearityCoeffs[ampName][2],
                                        places=placesTests)
 
-                linearPartModel = linDataset.fitParams[ampName][1]*finalTimeVec
+                linearPartModel = linDataset.fitParams[ampName][1]*finalTimeVec*self.flux
                 outputFracNonLinearityResiduals = 100*(linearPartModel - finalMuVec)/linearPartModel
                 # Fractional nonlinearity residuals
                 self.assertEqual(len(outputFracNonLinearityResiduals), len(inputFracNonLinearityResiduals))
                 for calc, truth in zip(outputFracNonLinearityResiduals, inputFracNonLinearityResiduals):
-                    self.assertAlmostEqual(calc, truth, places=placesTests)
+                    self.assertAlmostEqual(calc, truth, places=3)
 
     def test_ptcFit(self):
         for createArray in [True, False]:

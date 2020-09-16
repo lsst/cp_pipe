@@ -356,7 +356,12 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             linearizer = linearityResults.outputLinearizer
 
             self.log.info("Writing linearizer:")
-            butler.put(linearizer, datasetType='Linearizer', dataId={'detector': detNum,
+
+            detName = detector.getName()
+            now = datetime.datetime.utcnow()
+            calibDate = now.strftime("%Y-%m-%d")
+
+            butler.put(linearizer, datasetType='linearizer', dataId={'detector': detNum
                        'detectorName': detName, 'calibDate': calibDate})
 
         self.log.info(f"Writing PTC data.")
