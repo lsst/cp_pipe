@@ -670,7 +670,7 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         assert set(xcorrs.keys()) == set(ampNames) == set(ptcData.ampNames)
 
         for ampName in ampNames:
-            mask = ptcData.visitMask[ampName]
+            mask = ptcData.expIdMask[ampName]
             gain = ptcData.gain[ampName]
 
             fitType = ptcData.ptcFitType[ampName]

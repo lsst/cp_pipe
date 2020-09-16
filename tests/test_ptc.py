@@ -207,7 +207,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         else:
             # check entries in localDataset, which was modified by the function
             for ampName in self.ampNames:
-                maskAmp = localDataset.visitMask[ampName]
+                maskAmp = localDataset.expIdMask[ampName]
                 finalMuVec = localDataset.rawMeans[ampName][maskAmp]
                 finalTimeVec = localDataset.rawExpTimes[ampName][maskAmp]
                 linearPart = self.flux*finalTimeVec
@@ -224,7 +224,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
             # check entries in returned dataset (a dict of , for nonlinearity)
             for ampName in self.ampNames:
-                maskAmp = localDataset.visitMask[ampName]
+                maskAmp = localDataset.expIdMask[ampName]
                 finalMuVec = localDataset.rawMeans[ampName][maskAmp]
                 finalTimeVec = localDataset.rawExpTimes[ampName][maskAmp]
                 linearPart = self.flux*finalTimeVec
@@ -320,17 +320,17 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             assert (np.all(points[0:-1]) == True)  # noqa: E712 - flake8 is wrong here because of numpy.bool
             assert points[-1] == results[i]
 
-    def test_getVisitsUsed(self):
+    def test_getExpIdsUsed(self):
         localDataset = copy.copy(self.dataset)
 
         for pair in [(12, 34), (56, 78), (90, 10)]:
-            localDataset.inputVisitPairs["C:0,0"].append(pair)
-        localDataset.visitMask["C:0,0"] = np.array([True, False, True])
-        self.assertTrue(np.all(localDataset.getVisitsUsed("C:0,0") == [(12, 34), (90, 10)]))
+            localDataset.inputExpIdPairs["C:0,0"].append(pair)
+        localDataset.expIdMask["C:0,0"] = np.array([True, False, True])
+        self.assertTrue(np.all(localDataset.getExpIdsUsed("C:0,0") == [(12, 34), (90, 10)]))
 
-        localDataset.visitMask["C:0,0"] = np.array([True, False, True, True])  # wrong length now
+        localDataset.expIdMask["C:0,0"] = np.array([True, False, True, True])  # wrong length now
         with self.assertRaises(AssertionError):
-            localDataset.getVisitsUsed("C:0,0")
+            localDataset.getExpIdsUsed("C:0,0")
 
     def test_getGoodAmps(self):
         dataset = self.dataset
@@ -343,12 +343,12 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 class MeasurePhotonTransferCurveDatasetTestCase(lsst.utils.tests.TestCase):
     def setUp(self):
         self.ptcData = PhotonTransferCurveDataset(['C00', 'C01'], " ")
-        self.ptcData.inputVisitPairs = {'C00': [(123, 234), (345, 456), (567, 678)],
+        self.ptcData.inputExpIdPairs = {'C00': [(123, 234), (345, 456), (567, 678)],
                                         'C01': [(123, 234), (345, 456), (567, 678)]}
 
     def test_generalBehaviour(self):
         test = PhotonTransferCurveDataset(['C00', 'C01'], " ")
-        test.inputVisitPairs = {'C00': [(123, 234), (345, 456), (567, 678)],
+        test.inputExpIdPairs = {'C00': [(123, 234), (345, 456), (567, 678)],
                                 'C01': [(123, 234), (345, 456), (567, 678)]}
 
         with self.assertRaises(AttributeError):

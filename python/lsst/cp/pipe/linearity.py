@@ -163,11 +163,11 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
 
         for i, amp in enumerate(detector):
             ampName = amp.getName()
-            if (len(inputPtc.visitMask[ampName]) == 0):
+            if (len(inputPtc.expIdMask[ampName]) == 0):
                 self.log.warn(f"Mask not found for {ampName} in non-linearity fit. Using all points.")
                 mask = np.repeat(True, len(inputPtc.rawExpTimes[ampName]))
             else:
-                mask = inputPtc.visitMask[ampName]
+                mask = inputPtc.expIdMask[ampName]
 
             timeVector = np.array(inputPtc.rawExpTimes[ampName])[mask]
             meanVector = np.array(inputPtc.rawMeans[ampName])[mask]

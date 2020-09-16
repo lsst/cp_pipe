@@ -19,27 +19,26 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-
-__all__ = ['MeasurePhotonTransferCurveTask',
-           'MeasurePhotonTransferCurveTaskConfig',
-           'PhotonTransferCurveDataset']
-
 import numpy as np
 import matplotlib.pyplot as plt
-from sqlite3 import OperationalError
 from collections import Counter
 
 import lsst.afw.math as afwMath
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
-from .utils import (NonexistentDatasetTaskDataIdContainer, PairedVisitListTaskRunner,
-                    checkExpLengthEqual, fitLeastSq, fitBootstrap, funcPolynomial, funcAstier)
+from .utils import (fitLeastSq, fitBootstrap, funcPolynomial, funcAstier)
 from scipy.optimize import least_squares
 
 import datetime
 
 from .astierCovPtcUtils import (fftSize, CovFft, computeCovDirect, fitData)
 from .linearity import LinearitySolveTask
+
+from lsst.pipe.tasks.getRepositoryData import DataRefListRunner
+
+__all__ = ['MeasurePhotonTransferCurveTask',
+           'MeasurePhotonTransferCurveTaskConfig',
+           'PhotonTransferCurveDataset']
 
 
 class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
@@ -176,9 +175,9 @@ class PhotonTransferCurveDataset:
     New items cannot be added to the class to save accidentally saving to the
     wrong property, and the class can be frozen if desired.
 
-    inputVisitPairs records the visits used to produce the data.
+    inputExpIdPairs records the exposures used to produce the data.
     When fitPtc() or fitCovariancesAstier() is run, a mask is built up, which is by definition
-    always the same length as inputVisitPairs, rawExpTimes, rawMeans
+    always the same length as inputExpIdPairs, rawExpTimes, rawMeans
     and rawVars, and is a list of bools, which are incrementally set to False
     as points are discarded from the fits.
 
@@ -210,10 +209,10 @@ class PhotonTransferCurveDataset:
         self.__dict__["badAmps"] = []
 
         # raw data variables
-        # visitMask is the mask produced after outlier rejection. The mask produced by "FULLCOVARIANCE"
+        # expIdMask is the mask produced after outlier rejection. The mask produced by "FULLCOVARIANCE"
         # may differ from the one produced in the other two PTC fit types.
-        self.__dict__["inputVisitPairs"] = {ampName: [] for ampName in ampNames}
-        self.__dict__["visitMask"] = {ampName: [] for ampName in ampNames}
+        self.__dict__["inputExpIdPairs"] = {ampName: [] for ampName in ampNames}
+        self.__dict__["expIdMask"] = {ampName: [] for ampName in ampNames}
         self.__dict__["rawExpTimes"] = {ampName: [] for ampName in ampNames}
         self.__dict__["rawMeans"] = {ampName: [] for ampName in ampNames}
         self.__dict__["rawVars"] = {ampName: [] for ampName in ampNames}
@@ -241,7 +240,7 @@ class PhotonTransferCurveDataset:
         self.__dict__["aMatrix"] = {ampName: [] for ampName in ampNames}
         self.__dict__["bMatrix"] = {ampName: [] for ampName in ampNames}
 
-        # "final" means that the "raw" vectors above had "visitMask" applied.
+        # "final" means that the "raw" vectors above had "expIdMask" applied.
         self.__dict__["finalVars"] = {ampName: [] for ampName in ampNames}
         self.__dict__["finalModelVars"] = {ampName: [] for ampName in ampNames}
         self.__dict__["finalMeans"] = {ampName: [] for ampName in ampNames}
@@ -254,21 +253,21 @@ class PhotonTransferCurveDataset:
         else:
             self.__dict__[attribute] = value
 
-    def getVisitsUsed(self, ampName):
-        """Get the visits used, i.e. not discarded, for a given amp.
+    def getExpIdsUsed(self, ampName):
+        """Get the exposures used, i.e. not discarded, for a given amp.
 
-        If no mask has been created yet, all visits are returned.
+        If no mask has been created yet, all exposures are returned.
         """
-        if len(self.visitMask[ampName]) == 0:
-            return self.inputVisitPairs[ampName]
+        if len(self.expIdMask[ampName]) == 0:
+            return self.inputExpIdPairs[ampName]
 
-        # if the mask exists it had better be the same length as the visitPairs
-        assert len(self.visitMask[ampName]) == len(self.inputVisitPairs[ampName])
+        # if the mask exists it had better be the same length as the expIdPairs
+        assert len(self.expIdMask[ampName]) == len(self.inputExpIdPairs[ampName])
 
-        pairs = self.inputVisitPairs[ampName]
-        mask = self.visitMask[ampName]
+        pairs = self.inputExpIdPairs[ampName]
+        mask = self.expIdMask[ampName]
         # cast to bool required because numpy
-        return [(v1, v2) for ((v1, v2), m) in zip(pairs, mask) if bool(m) is True]
+        return [(exp1, exp2) for ((exp1, exp2), m) in zip(pairs, mask) if bool(m) is True]
 
     def getGoodAmps(self):
         return [amp for amp in self.ampNames if amp not in self.badAmps]
@@ -309,7 +308,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
     """
 
-    RunnerClass = PairedVisitListTaskRunner
+    RunnerClass = DataRefListRunner
     ConfigClass = MeasurePhotonTransferCurveTaskConfig
     _DefaultName = "measurePhotonTransferCurve"
 
@@ -320,73 +319,46 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         self.config.validate()
         self.config.freeze()
 
-    @classmethod
-    def _makeArgumentParser(cls):
-        """Augment argument parser for the MeasurePhotonTransferCurveTask."""
-        parser = pipeBase.ArgumentParser(name=cls._DefaultName)
-        parser.add_argument("--visit-pairs", dest="visitPairs", nargs="*",
-                            help="Visit pairs to use. Each pair must be of the form INT,INT e.g. 123,456")
-        parser.add_id_argument("--id", datasetType="photonTransferCurveDataset",
-                               ContainerClass=NonexistentDatasetTaskDataIdContainer,
-                               help="The ccds to use, e.g. --id ccd=0..100")
-        return parser
-
     @pipeBase.timeMethod
-    def runDataRef(self, dataRef, visitPairs):
+    def runDataRef(self, dataRefList):
         """Run the Photon Transfer Curve (PTC) measurement task.
 
         For a dataRef (which is each detector here),
-        and given a list of visit pairs (postISR) at different exposure times,
+        and given a list of exposure pairs (postISR) at different exposure times,
         measure the PTC.
 
         Parameters
         ----------
-        dataRef : list of lsst.daf.persistence.ButlerDataRef
-            dataRef for the detector for the visits to be fit.
-
-        visitPairs : `iterable` of `tuple` of `int`
-            Pairs of visit numbers to be processed together
+        dataRefList : `list` [`lsst.daf.peristence.ButlerDataRef`]
+            Data references for exposures for detectors to process.
         """
+        if len(dataRefList) < 2:
+            raise RuntimeError("Insufficient inputs to combine.")
 
         # setup necessary objects
+        dataRef = dataRefList[0]
+
         detNum = dataRef.dataId[self.config.ccdKey]
         camera = dataRef.get('camera')
         detector = camera[dataRef.dataId[self.config.ccdKey]]
-        # expand some missing fields that we need for lsstCam.  This is a work-around
-        # for Gen2 problems that I (RHL) don't feel like solving.  The calibs pipelines
-        # (which inherit from CalibTask) use addMissingKeys() to do basically the same thing
-        #
-        # Basically, the butler's trying to look up the fields in `raw_visit` which won't work
-        for name in dataRef.getButler().getKeys('bias'):
-            if name not in dataRef.dataId:
-                try:
-                    dataRef.dataId[name] = \
-                        dataRef.getButler().queryMetadata('raw', [name], detector=detNum)[0]
-                except OperationalError:
-                    pass
 
         amps = detector.getAmplifiers()
         ampNames = [amp.getName() for amp in amps]
         datasetPtc = PhotonTransferCurveDataset(ampNames, self.config.ptcFitType)
-        self.log.info('Measuring PTC using %s visits for detector %s' % (visitPairs, detector.getId()))
 
+        # Get the pairs of flat indexed by expTime
+        expPairs = self.makePairs(dataRefList)
+        expIds = []
+        for (exp1, exp2) in expPairs.values():
+            id1 = exp1.getInfo().getVisitInfo().getExposureId()
+            id2 = exp2.getInfo().getVisitInfo().getExposureId()
+            expIds.append((id1, id2))
+        self.log.info(f"Measuring PTC using {expIds} exposures for detector {detector.getId()}")
         tupleRecords = []
         allTags = []
-        for (v1, v2) in visitPairs:
-            # Get postISR exposures.
-            try:
-                dataRef.dataId['expId'] = v1
-                exp1 = dataRef.get("postISRCCD", immediate=True)
-                dataRef.dataId['expId'] = v2
-                exp2 = dataRef.get("postISRCCD", immediate=True)
-            except RuntimeError:
-                self.log.warn(f"postISR exposure for either expId {v1} or expId {v2} could not be retreived. "
-                              "Ignoring flat pair.")
-                continue
-            del dataRef.dataId['expId']
-
-            checkExpLengthEqual(exp1, exp2, v1, v2, raiseWithMessage=True)
-            expTime = exp1.getInfo().getVisitInfo().getExposureTime()
+        for expTime, (exp1, exp2) in expPairs.items():
+            expId1 = exp1.getInfo().getVisitInfo().getExposureId()
+            expId2 = exp2.getInfo().getVisitInfo().getExposureId()
             tupleRows = []
             nAmpsNan = 0
             for ampNumber, amp in enumerate(detector):
@@ -396,8 +368,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 muDiff, varDiff, covAstier = self.measureMeanVarCov(exp1, exp2, region=amp.getBBox(),
                                                                     covAstierRealSpace=doRealSpace)
                 if np.isnan(muDiff) or np.isnan(varDiff) or (covAstier is None):
-                    msg = (f"NaN mean or var, or None cov in amp {ampNumber} in visit pair {v1}, {v2} "
-                           f"of detector {detNum}.")
+                    msg = (f"NaN mean or var, or None cov in amp {ampNumber} in exposure pair {expId1},"
+                           f" {expId2} of detector {detNum}.")
                     self.log.warn(msg)
                     nAmpsNan += 1
                     continue
@@ -407,11 +379,11 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 datasetPtc.rawExpTimes[ampName].append(expTime)
                 datasetPtc.rawMeans[ampName].append(muDiff)
                 datasetPtc.rawVars[ampName].append(varDiff)
-                datasetPtc.inputVisitPairs[ampName].append((v1, v2))
+                datasetPtc.inputExpIdPairs[ampName].append((expId1, expId2))
 
                 tupleRows += [(muDiff, ) + covRow + (ampNumber, expTime, ampName) for covRow in covAstier]
             if nAmpsNan == len(ampNames):
-                msg = f"NaN mean in all amps of visit pair {v1}, {v2} of detector {detNum}."
+                msg = f"NaN mean in all amps of exposure pair {expId1}, {expId2} of detector {detNum}."
                 self.log.warn(msg)
                 continue
             allTags += tags
@@ -446,11 +418,59 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
             butler.put(linearizer, datasetType='Linearizer', dataId={'detector': detNum,
                        'detectorName': detName, 'calibDate': calibDate})
-
-        self.log.info(f"Writing PTC data to {dataRef.getUri(write=True)}")
+        self.log.info(f"Writing PTC data.")
         dataRef.put(datasetPtc, datasetType="photonTransferCurveDataset")
 
         return pipeBase.Struct(exitStatus=0)
+
+    def makePairs(self, dataRefList):
+        """Produce a list of flat pairs indexed by exposure time.
+
+        Parameters
+        ----------
+        dataRefList : `list` [`lsst.daf.peristence.ButlerDataRef`]
+            Data references for exposures for detectors to process.
+
+        Return
+        ------
+        flatPairs : `dict` [`float`, `lsst.afw.image.exposure.exposure.ExposureF`]
+          Dictionary that groups flat-field exposures that have the same exposure time (seconds).
+
+        Notes
+        -----
+        We use the difference of one pair of flat-field images taken at the same exposure time when
+        calculating the PTC to reduce Fixed Pattern Noise. If there are > 2 flat-field images with the
+        same exposure time, the first two are kept and the rest discarded.
+        """
+
+        # Organize exposures by observation date.
+        expDict = {}
+        for dataRef in dataRefList:
+            try:
+                tempFlat = dataRef.get("postISRCCD")
+            except RuntimeError:
+                self.log.warn(f"postISR exposure could not be retrieved. Ignoring flat.")
+                continue
+            expDate = tempFlat.getInfo().getVisitInfo().getDate().get()
+            expDict.setdefault(expDate, tempFlat)
+        sortedExps = {k: expDict[k] for k in sorted(expDict)}
+
+        flatPairs = {}
+        for exp in sortedExps:
+            tempFlat = sortedExps[exp]
+            expTime = tempFlat.getInfo().getVisitInfo().getExposureTime()
+            listAtExpTime = flatPairs.setdefault(expTime, [])
+            if len(listAtExpTime) < 2:
+                listAtExpTime.append(tempFlat)
+            if len(listAtExpTime) > 2:
+                self.log.warn("More than 2 exposures found at expTime {expTime}. Dropping exposures "
+                              f"{listAtExpTime[2:]}.")
+
+        for (key, value) in flatPairs.items():
+            if len(value) < 2:
+                flatPairs.pop(key)
+                self.log.warn("Only one exposure found at expTime {key}. Dropping exposure {value}.")
+        return flatPairs
 
     def fitCovariancesAstier(self, dataset, covariancesWithTagsArray):
         """Fit measured flat covariances to full model in Astier+19.
@@ -516,7 +536,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             (meanVecFinal, varVecFinal, varVecModel,
                 wc, varMask) = fit.getFitData(0, 0, divideByMu=False, returnMasked=True)
             gain = fit.getGain()
-            dataset.visitMask[amp] = varMask
+            dataset.expIdMask[amp] = varMask
             dataset.gain[amp] = gain
             dataset.gainErr[amp] = fit.getGainErr()
             dataset.noise[amp] = np.sqrt(np.fabs(fit.getRon()))
@@ -930,7 +950,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
             if not (mask.any() and newMask.any()):
                 continue
-            dataset.visitMask[ampName] = mask  # store the final mask
+            dataset.expIdMask[ampName] = mask  # store the final mask
             parsIniPtc = pars
             meanVecFinal = meanVecOriginal[mask]
             varVecFinal = varVecOriginal[mask]
