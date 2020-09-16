@@ -442,13 +442,22 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         calculating the PTC to reduce Fixed Pattern Noise. If there are > 2 flat-field images with the
         same exposure time, the first two are kept and the rest discarded.
         """
-        flatPairs = {}
+
+        # Organize exposures by observation date.
+        expDict = {}
         for dataRef in dataRefList:
             try:
                 tempFlat = dataRef.get("postISRCCD")
             except RuntimeError:
                 self.log.warn(f"postISR exposure could not be retrieved. Ignoring flat.")
                 continue
+            expDate = tempFlat.getInfo().getVisitInfo().getDate().get()
+            expDict.setdefault(expDate, tempFlat)
+        sortedExps = {k: expDict[k] for k in sorted(expDict)}
+
+        flatPairs = {}
+        for exp in sortedExps:
+            tempFlat = sortedExps[exp]
             expTime = tempFlat.getInfo().getVisitInfo().getExposureTime()
             listAtExpTime = flatPairs.setdefault(expTime, [])
             if len(listAtExpTime) < 2:
@@ -461,7 +470,6 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             if len(value) < 2:
                 flatPairs.pop(key)
                 self.log.warn("Only one exposure found at expTime {key}. Dropping exposure {value}.")
-
         return flatPairs
 
     def fitCovariancesAstier(self, dataset, covariancesWithTagsArray):
