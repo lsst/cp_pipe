@@ -272,16 +272,16 @@ class PhotonTransferCurveDataset(IsrCalib):
         Output dataset from MeasurePhotonTransferCurveTask.
     """
 
-    _OBSTYPE = "PTC"
+    _OBSTYPE = 'PTC'
     _SCHEMA = 'Gen3 Photon Transfer Curve'
     _VERSION = 1.0
 
     def __init__(self, ampNames, ptcFitType, **kwargs):
         # add items to __dict__ directly because __setattr__ is overridden
 
-        self.__dict__["ptcFitType"] = ptcFitType
-        self.__dict__["ampNames"] = ampNames
-        self.__dict__["badAmps"] = []
+        self.__dict__['ptcFitType'] = ptcFitType
+        self.__dict__['ampNames'] = ampNames
+        self.__dict__['badAmps'] = []
 
         self.__dict__["inputExpIdPairs"] = {ampName: [] for ampName in ampNames}
         self.__dict__["expIdMask"] = {ampName: [] for ampName in ampNames}
@@ -290,48 +290,143 @@ class PhotonTransferCurveDataset(IsrCalib):
         self.__dict__["rawVars"] = {ampName: [] for ampName in ampNames}
         self.__dict__["photoCharge"] = {ampName: [] for ampName in ampNames}
 
-        self.__dict__["gain"] = {ampName: -1. for ampName in ampNames}
-        self.__dict__["gainErr"] = {ampName: -1. for ampName in ampNames}
-        self.__dict__["noise"] = {ampName: -1. for ampName in ampNames}
-        self.__dict__["noiseErr"] = {ampName: -1. for ampName in ampNames}
+        self.__dict__['gain'] = {ampName: -1. for ampName in ampNames}
+        self.__dict__['gainErr'] = {ampName: -1. for ampName in ampNames}
+        self.__dict__['noise'] = {ampName: -1. for ampName in ampNames}
+        self.__dict__['noiseErr'] = {ampName: -1. for ampName in ampNames}
 
-        self.__dict__["ptcFitPars"] = {ampName: [] for ampName in ampNames}
-        self.__dict__["ptcFitParsError"] = {ampName: [] for ampName in ampNames}
-        self.__dict__["ptcFitChiSq"] = {ampName: [] for ampName in ampNames}
+        self.__dict__['ptcFitPars'] = {ampName: [] for ampName in ampNames}
+        self.__dict__['ptcFitParsError'] = {ampName: [] for ampName in ampNames}
+        self.__dict__['ptcFitChiSq'] = {ampName: [] for ampName in ampNames}
 
-        self.__dict__["covariancesFitsWithNoB"] = {ampName: [] for ampName in ampNames}
-        self.__dict__["covariancesFits"] = {ampName: [] for ampName in ampNames}
-        self.__dict__["aMatrix"] = {ampName: [] for ampName in ampNames}
-        self.__dict__["bMatrix"] = {ampName: [] for ampName in ampNames}
+        self.__dict__['covariancesFitsWithNoB'] = {ampName: [] for ampName in ampNames}
+        self.__dict__['covariancesFits'] = {ampName: [] for ampName in ampNames}
+        self.__dict__['aMatrix'] = {ampName: [] for ampName in ampNames}
+        self.__dict__['bMatrix'] = {ampName: [] for ampName in ampNames}
 
-        self.__dict__["finalVars"] = {ampName: [] for ampName in ampNames}
-        self.__dict__["finalModelVars"] = {ampName: [] for ampName in ampNames}
-        self.__dict__["finalMeans"] = {ampName: [] for ampName in ampNames}
+        self.__dict__['finalVars'] = {ampName: [] for ampName in ampNames}
+        self.__dict__['finalModelVars'] = {ampName: [] for ampName in ampNames}
+        self.__dict__['finalMeans'] = {ampName: [] for ampName in ampNames}
 
         super().__init__(**kwargs)
-        self.requiredAttributes.update(["badAmps", "inputExpIdPairs", "expIdMask", "rawExpTimes",
-                                        "rawMeans", "rawVars", "gain", "gainErr", "noise", "noiseErr",
-                                        "ptcFitPars", "ptcFitParsError", "ptcFitChiSq",
-                                        "covariancesFitsWithNoB", "covariancesFits",
-                                        "aMatrix", "bMatrix", "finalVars", "finalModelVars", "finalMeans"])
+        self.requiredAttributes.update(['badAmps', 'inputExpIdPairs', 'expIdMask', 'rawExpTimes',
+                                        'rawMeans', 'rawVars', 'gain', 'gainErr', 'noise', 'noiseErr',
+                                        'ptcFitPars', 'ptcFitParsError', 'ptcFitChiSq',
+                                        'covariancesFitsWithNoB', "covariancesFits",
+                                        'aMatrix', 'bMatrix', 'finalVars', 'finalModelVars', 'finalMeans'])
 
-
-    def updateMetadata(self, ptcFitType, **kwargs):
+    def updateMetadata(self, setDate=False, **kwargs):
         """Update calibration metadata.
-        
+
         This calls the base class's method after ensuring the required
         calibration keywords will be saved.
-        
+
         Parameters
         ----------
-        ptcFitType : `str`
-            Type of model fitted to the PTC: "POLYNOMIAL", "EXPAPPROXIMATION", or "FULLCOVARIANCE".
+        setDate : `bool`, optional
+            Update the CALIBDATE fields in the metadata to the current
+            time. Defaults to False.
         kwargs :
             Other keyword parameters to set in the metadata.
         """
-        
-        super().updateMetadata(ptcFitType=ptcFitType, **kwargs)
+        kwargs['PTC_FIT_TYPE'] = self.ptcFitType
 
+        super().updateMetadata(setDate=setDate, **kwargs)
+
+    @classmethod
+    def fromDict(cls, dictionary):
+        """Construct a calibration from a dictionary of properties.
+        Must be implemented by the specific calibration subclasses.
+        Parameters
+        ----------
+        dictionary : `dict`
+            Dictionary of properties.
+        Returns
+        -------
+        calib : `lsst.ip.isr.CalibType`
+            Constructed calibration.
+        Raises
+        ------
+        RuntimeError :
+            Raised if the supplied dictionary is for a different
+            calibration.
+        """
+        calib = cls()
+
+        if calib._OBSTYPE != dictionary['metadata']['OBSTYPE']:
+            raise RuntimeError(f"Incorrect Photon Transfer Curve dataset  supplied. "
+                               f"Expected {calib._OBSTYPE}, found {dictionary['metadata']['OBSTYPE']}")
+
+        calib.setMetadata(dictionary['metadata'])
+
+        calib.ptcFitType = dictionary['fitType']
+        calib.badAmps = dictionary['badAmps']
+
+        calib.ampNames = dictionary['ampNames']
+        calib.inputExpIdPairs = dictionary['inputExpIdPairs']
+        calib.expIdMask = dictionary['expIdMask']
+        calib.rawExpTimes = dictionary['rawExpTimes']
+        calib.rawMeans = dictionary['rawMeans']
+        calib.rawVars = dictionary['rawVars']
+        calib.gain = dictionary['gain']
+        calib.gainErr = dictionary['gainErr']
+        calib.noise = dictionary['noise']
+        calib.noiseErr = dictionary['noiseErr']
+        calib.ptcFitPars = dictionary['ptcFitPars']
+        calib.ptcFitParsError = dictionary['ptcFitParsError']
+        calib.ptcFitChiSq = dictionary['ptcFitChiSq']
+        calib.covariancesFitsWithNoB = dictionary['covariancesFitsWithNoB']
+        calib.covariancesFits = dictionary['covariancesFits']
+        calib.aMatrix = dictionary['aMatrix']
+        calib.bMatrix = dictionary['bMatrix']
+        calib.finalVars = dictionary['finalVars']
+        calib.finalModelVars = dictionary['finalModelVars']
+        calib.finalMeans = dictionary['finalMeans']
+
+        calib.updateMetadata()
+        return calib
+
+    def toDict(self):
+        """Return a dictionary containing the calibration properties.
+
+        The dictionary should be able to be round-tripped through
+        `fromDict`.
+
+        Returns
+        -------
+        dictionary : `dict`
+            Dictionary of properties.
+        """
+        self.updateMetadata()
+
+        outDict = {}
+        metadata = self.getMetadata()
+        outDict['metadata'] = metadata
+
+        outDict['fitType'] = self.fitType
+        outDict['ampNames'] = self.ampnames
+        outDict['badAmps'] = self.badAmps
+        outDict['inputExpIdPairs'] = self.inputExpIdPairs
+        outDict['expIdMask'] = self.expIdMask
+        outDict['rawExpTimes'] = self.rawExpTimes
+        outDict['rawMeans'] = self.rawMeans
+        outDict['rawVars'] = self.rawVars
+        outDict['gain'] = self.gain
+        outDict['gainErr'] = self.gainErr
+        outDict['noise'] = self.noise
+        outDict['noiseErr'] = self.noiseErr
+        outDict['ptcFitPars'] = self.ptcFitPars
+        outDict['ptcFitParsError'] = self.ptcFitParsError
+        outDict['ptcFitChiSq'] = self.ptcFitChiSq
+        outDict['covariancesFitsWithNoB'] = self.covariancesFitsWithNoB
+        outDict['covariancesFits'] = self.covariancesFits
+        outDict['aMatrix'] = self.aMatrix
+        outDict['bMatrix'] = self.bMatrix
+        outDict['finalVars'] = self.finalVars
+        outDict['finalModelVars'] = self.finalModelVars
+        outDict['finalMeans'] = self.finalMeans
+
+        return outDict
 
     def __setattr__(self, attribute, value):
         """Protect class attributes"""
