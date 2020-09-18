@@ -39,6 +39,7 @@ from .utils import (funcAstier, funcPolynomial, NonexistentDatasetTaskDataIdCont
 from matplotlib.ticker import MaxNLocator
 
 from .astierCovPtcFit import computeApproximateAcoeffs
+from .astierCovPtcUtils import getFitDataFromCovariances
 
 
 class PlotPhotonTransferCurveTaskConfig(pexConfig.Config):
@@ -141,8 +142,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         ptcFitType = datasetPtc.ptcFitType
         with PdfPages(filenameFull) as pdfPages:
             if ptcFitType in ["FULLCOVARIANCE", ]:
-                self.covAstierMakeAllPlots(datasetPtc.covariancesFits, datasetPtc.covariancesFitsWithNoB,
-                                           pdfPages, log=log)
+                self.covAstierMakeAllPlots(datasetPtc, pdfPages, log=log)
             elif ptcFitType in ["EXPAPPROXIMATION", "POLYNOMIAL"]:
                 self._plotStandardPtc(datasetPtc, ptcFitType, pdfPages)
             else:
@@ -153,7 +153,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         return
 
-    def covAstierMakeAllPlots(self, covFits, covFitsNoB, pdfPages,
+    def covAstierMakeAllPlots(self, dataset, pdfPages,
                               log=None):
         """Make plots for MeasurePhotonTransferCurve task when doCovariancesAstier=True.
 
@@ -162,11 +162,8 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         Parameters
         ----------
-        covFits: `dict`
-            Dictionary of CovFit objects, with amp names as keys.
-
-        covFitsNoB: `dict`
-           Dictionary of CovFit objects, with amp names as keys (b=0 in Eq. 20 of Astier+19).
+        dataset : `lsst.cp.pipe.ptc.PhotonTransferCurveDataset`
+            The dataset containing the necessary information to produce the plots.
 
         pdfPages: `matplotlib.backends.backend_pdf.PdfPages`
             PDF file where the plots will be saved.
@@ -174,34 +171,87 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         log : `lsst.log.Log`, optional
             Logger to handle messages
         """
-        self.plotCovariances(covFits, pdfPages)
-        self.plotNormalizedCovariances(covFits, covFitsNoB, 0, 0, pdfPages, offset=0.01, topPlot=True,
+        mu = dataset.rawMeans
+        # dictionaries with ampNames as keys
+        fullCovs = dataset.covariances
+        fullCovsModel = dataset.covariancesModel
+        fullCovWeights = dataset.covariancesSqrtWeights
+        aDict = dataset.aMatrix
+        bDict = dataset.bMatrix
+        fullCovsNoB = dataset.covariancesNoB
+        fullCovsModelNoB = dataset.covariancesModelNoB
+        fullCovWeightsNoB = dataset.covariancesSqrtWeightsNoB
+        aDictNoB = dataset.aMatrixNoB
+        gainDict = dataset.gain
+        noiseDict = dataset.noise
+
+        self.plotCovariances(mu, fullCovs, fullCovsModel, fullCovWeights, fullCovsNoB, fullCovsModelNoB,
+                             fullCovWeightsNoB, gainDict, noiseDict, aDict, bDict, pdfPages)
+        self.plotNormalizedCovariances(0, 0, mu, fullCovs, fullCovsModel, fullCovWeights, fullCovsNoB,
+                                       fullCovsModelNoB, fullCovWeightsNoB, pdfPages, offset=0.01,
+                                       topPlot=True,
                                        numberOfBins=self.config.plotNormalizedCovariancesNumberOfBins,
                                        log=log)
-        self.plotNormalizedCovariances(covFits, covFitsNoB, 0, 1, pdfPages,
+        self.plotNormalizedCovariances(0, 1, mu, fullCovs, fullCovsModel, fullCovWeights, fullCovsNoB,
+                                       fullCovsModelNoB, fullCovWeightsNoB, pdfPages,
                                        numberOfBins=self.config.plotNormalizedCovariancesNumberOfBins,
                                        log=log)
-        self.plotNormalizedCovariances(covFits, covFitsNoB, 1, 0, pdfPages,
+        self.plotNormalizedCovariances(1, 0, mu, fullCovs, fullCovsModel, fullCovWeights, fullCovsNoB,
+                                       fullCovsModelNoB, fullCovWeightsNoB, pdfPages,
                                        numberOfBins=self.config.plotNormalizedCovariancesNumberOfBins,
                                        log=log)
-        self.plot_a_b(covFits, pdfPages)
-        self.ab_vs_dist(covFits, pdfPages, bRange=4)
-        self.plotAcoeffsSum(covFits, pdfPages)
-        self.plotRelativeBiasACoeffs(covFits, covFitsNoB, self.config.signalElectronsRelativeA, pdfPages,
-                                     maxr=4)
+        self.plot_a_b(aDict, bDict, pdfPages)
+        self.ab_vs_dist(aDict, bDict, pdfPages, bRange=4)
+        self.plotAcoeffsSum(aDict, bDict, pdfPages)
+        self.plotRelativeBiasACoeffs(aDict, aDictNoB, fullCovsModel, fullCovsModelNoB,
+                                     self.config.signalElectronsRelativeA, gainDict, pdfPages, maxr=4)
 
         return
 
     @staticmethod
-    def plotCovariances(covFits, pdfPages):
+    def plotCovariances(mu, covs, covsModel, covsWeights, covsNoB, covsModelNoB, covsWeightsNoB,
+                        gainDict, noiseDict, aDict, bDict, pdfPages):
         """Plot covariances and models: Cov00, Cov10, Cov01.
 
         Figs. 6 and 7 of Astier+19
 
         Parameters
         ----------
-        covFits: `dict`
-            Dictionary of CovFit objects, with amp names as keys.
+        mu : `dict`, [`str`, `list`]
+            dict keyd by amp name with mean signal values.
+
+        covs : `dict`, [`str`, `list`]
+            Dictionary keyed by amp names containing a list of measued covariances per mean flux.
+
+        covsModel : `dict`, [`str`, `list`]
+            Dictionary keyed by amp names containinging covariances model (Eq. 20 of Astier+19) per mean flux.
+
+        covsWeights : `dict`, [`str`, `list`]
+            Dictionary keyed by amp names containinging sqrt. of covariances weights.
+
+        covsNoB : `dict`, [`str`, `list`]
+            Dictionary keyed by amp names containing a list of measued covariances per mean flux ('b'=0 in
+            Astier+19).
+
+        covsModelNoB : `dict`, [`str`, `list`]
+            Dictionary keyed by amp names containing covariances model (with 'b'=0 in Eq. 20 of Astier+19)
+            per mean flux.
+
+        covsWeightsNoB : `dict`, [`str`, `list`]
+            Dictionary keyed by amp names containing sqrt. of covariances weights ('b' = 0 in Eq. 20 of
+            Astier+19).
+
+        gainDict : `dict`, [`str`, `float`]
+            Dictionary keyed by amp names containing the gains in e-/ADU.
+
+        noiseDict : `dict`, [`str`, `float`]
+            Dictionary keyed by amp names containing the rms redout noise in e-.
+
+        aDict : `dict`, [`str`, `numpy.array`]
+            Dictionary keyed by amp names containing 'a' coefficients (Eq. 20 of Astier+19).
+
+        bDict : `dict`, [`str`, `numpy.array`]
+            Dictionary keyed by amp names containing 'b' coefficients (Eq. 20 of Astier+19).
 
         pdfPages: `matplotlib.backends.backend_pdf.PdfPages`
             PDF file where the plots will be saved.
@@ -213,7 +263,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         supTitleFontSize = 18
         markerSize = 25
 
-        nAmps = len(covFits)
+        nAmps = len(covs)
         if nAmps == 2:
             nRows, nCols = 2, 1
         nRows = np.sqrt(nAmps)
@@ -232,58 +282,65 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         fCov01, axCov01 = plt.subplots(nrows=nRows, ncols=nCols, sharex='col', sharey='row', figsize=(13, 10))
         fCov10, axCov10 = plt.subplots(nrows=nRows, ncols=nCols, sharex='col', sharey='row', figsize=(13, 10))
 
-        for i, (fitPair, a, a2, aResVar, a3, a4) in enumerate(zip(covFits.items(), ax.flatten(),
-                                                                  ax2.flatten(), axResCov00.flatten(),
-                                                                  axCov01.flatten(), axCov10.flatten())):
+        assert(len(covsModel) == nAmps)
+        assert(len(covsWeights) == nAmps)
 
-            amp = fitPair[0]
-            fit = fitPair[1]
+        assert(len(covsNoB) == nAmps)
+        assert(len(covsModelNoB) == nAmps)
+        assert(len(covsWeightsNoB) == nAmps)
 
-            (meanVecOriginal, varVecOriginal, varVecModelOriginal,
-                weightsOriginal, varMask) = fit.getFitData(0, 0)
-            meanVecFinal, varVecFinal = meanVecOriginal[varMask], varVecOriginal[varMask]
-            varVecModelFinal = varVecModelOriginal[varMask]
-            meanVecOutliers = meanVecOriginal[np.invert(varMask)]
-            varVecOutliers = varVecOriginal[np.invert(varMask)]
-            varWeightsFinal = weightsOriginal[varMask]
-            # Get weighted reduced chi2
-            chi2FullModelVar = calculateWeightedReducedChi2(varVecFinal, varVecModelFinal,
-                                                            varWeightsFinal, len(meanVecFinal), 4)
+        for i, (amp, a, a2, aResVar, a3, a4) in enumerate(zip(covs, ax.flatten(),
+                                                              ax2.flatten(), axResCov00.flatten(),
+                                                              axCov01.flatten(), axCov10.flatten())):
 
-            (meanVecOrigCov01, varVecOrigCov01, varVecModelOrigCov01,
-                _, maskCov01) = fit.getFitData(0, 1)
-            meanVecFinalCov01, varVecFinalCov01 = meanVecOrigCov01[maskCov01], varVecOrigCov01[maskCov01]
-            varVecModelFinalCov01 = varVecModelOrigCov01[maskCov01]
-            meanVecOutliersCov01 = meanVecOrigCov01[np.invert(maskCov01)]
-            varVecOutliersCov01 = varVecOrigCov01[np.invert(maskCov01)]
+            muAmp, cov, model, weight = mu[amp], covs[amp], covsModel[amp], covsWeights[amp]
+            if len(cov):
+                aCoeffs, bCoeffs = aDict[amp], bDict[amp]
+                gain, noise = gainDict[amp], noiseDict[amp]
+                (meanVecOriginal, varVecOriginal, varVecModelOriginal,
+                    weightsOriginal, varMask) = getFitDataFromCovariances(0, 0, muAmp, cov, model, weight)
+                meanVecFinal, varVecFinal = meanVecOriginal[varMask], varVecOriginal[varMask]
+                varVecModelFinal = varVecModelOriginal[varMask]
+                meanVecOutliers = meanVecOriginal[np.invert(varMask)]
+                varVecOutliers = varVecOriginal[np.invert(varMask)]
+                varWeightsFinal = weightsOriginal[varMask]
+                # Get weighted reduced chi2
+                chi2FullModelVar = calculateWeightedReducedChi2(varVecFinal, varVecModelFinal,
+                                                                varWeightsFinal, len(meanVecFinal), 4)
 
-            (meanVecOrigCov10, varVecOrigCov10, varVecModelOrigCov10,
-                _, maskCov10) = fit.getFitData(1, 0)
-            meanVecFinalCov10, varVecFinalCov10 = meanVecOrigCov10[maskCov10], varVecOrigCov10[maskCov10]
-            varVecModelFinalCov10 = varVecModelOrigCov10[maskCov10]
-            meanVecOutliersCov10 = meanVecOrigCov10[np.invert(maskCov10)]
-            varVecOutliersCov10 = varVecOrigCov10[np.invert(maskCov10)]
+                (meanVecOrigCov01, varVecOrigCov01, varVecModelOrigCov01,
+                    _, maskCov01) = getFitDataFromCovariances(0, 0, muAmp, cov, model, weight)
+                meanVecFinalCov01, varVecFinalCov01 = meanVecOrigCov01[maskCov01], varVecOrigCov01[maskCov01]
+                varVecModelFinalCov01 = varVecModelOrigCov01[maskCov01]
+                meanVecOutliersCov01 = meanVecOrigCov01[np.invert(maskCov01)]
+                varVecOutliersCov01 = varVecOrigCov01[np.invert(maskCov01)]
 
-            # cuadratic fit for residuals below
-            par2 = np.polyfit(meanVecFinal, varVecFinal, 2, w=varWeightsFinal)
-            varModelFinalQuadratic = np.polyval(par2, meanVecFinal)
-            chi2QuadModelVar = calculateWeightedReducedChi2(varVecFinal, varModelFinalQuadratic,
-                                                            varWeightsFinal, len(meanVecFinal), 3)
+                (meanVecOrigCov10, varVecOrigCov10, varVecModelOrigCov10,
+                    _, maskCov10) = getFitDataFromCovariances(1, 0, muAmp, cov, model, weight)
+                meanVecFinalCov10, varVecFinalCov10 = meanVecOrigCov10[maskCov10], varVecOrigCov10[maskCov10]
+                varVecModelFinalCov10 = varVecModelOrigCov10[maskCov10]
+                meanVecOutliersCov10 = meanVecOrigCov10[np.invert(maskCov10)]
+                varVecOutliersCov10 = varVecOrigCov10[np.invert(maskCov10)]
 
-            # fit with no 'b' coefficient (c = a*b in Eq. 20 of Astier+19)
-            fitNoB = fit.copy()
-            fitNoB.params['c'].fix(val=0)
-            fitNoB.fitFullModel()
-            (meanVecFinalNoB, varVecFinalNoB, varVecModelFinalNoB,
-             varWeightsFinalNoB, maskNoB) = fitNoB.getFitData(0, 0, returnMasked=True)
-            chi2FullModelNoBVar = calculateWeightedReducedChi2(varVecFinalNoB, varVecModelFinalNoB,
-                                                               varWeightsFinalNoB, len(meanVecFinalNoB), 3)
+                # cuadratic fit for residuals below
+                par2 = np.polyfit(meanVecFinal, varVecFinal, 2, w=varWeightsFinal)
+                varModelFinalQuadratic = np.polyval(par2, meanVecFinal)
+                chi2QuadModelVar = calculateWeightedReducedChi2(varVecFinal, varModelFinalQuadratic,
+                                                                varWeightsFinal, len(meanVecFinal), 3)
 
-            if len(meanVecFinal):  # Empty if the whole amp is bad, for example.
-                stringLegend = (f"Gain: {fit.getGain():.4} e/DN \n" +
-                                f"Noise: {fit.getRon():.4} e \n" +
-                                r"$a_{00}$: %.3e 1/e"%fit.getA()[0, 0] +
-                                "\n" + r"$b_{00}$: %.3e 1/e"%fit.getB()[0, 0])
+                # fit with no 'b' coefficient (c = a*b in Eq. 20 of Astier+19)
+                covNoB, modelNoB, weightNoB = covsNoB[amp], covsModelNoB[amp], covsWeightsNoB[amp]
+                (meanVecFinalNoB, varVecFinalNoB, varVecModelFinalNoB,
+                 varWeightsFinalNoB, maskNoB) = getFitDataFromCovariances(0, 0, muAmp, covNoB, modelNoB, weightNoB,
+                                                                          returnMasked=True)
+                chi2FullModelNoBVar = calculateWeightedReducedChi2(varVecFinalNoB, varVecModelFinalNoB,
+                                                                   varWeightsFinalNoB, len(meanVecFinalNoB), 3)
+
+            #if len(meanVecFinal):  # Empty if the whole amp is bad, for example.
+                stringLegend = (f"Gain: {gain:.4} e/DN \n" +
+                                f"Noise: {noise:.4} e \n" +
+                                r"$a_{00}$: %.3e 1/e"%aCoeffs[0][0, 0] +
+                                "\n" + r"$b_{00}$: %.3e 1/e"%bCoeffs[0][0, 0])
                 minMeanVecFinal = np.min(meanVecFinal)
                 maxMeanVecFinal = np.max(meanVecFinal)
                 deltaXlim = maxMeanVecFinal - minMeanVecFinal
@@ -376,7 +433,8 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         return
 
-    def plotNormalizedCovariances(self, covFits, covFitsNoB, i, j, pdfPages, offset=0.004,
+    def plotNormalizedCovariances(self, i, j, inputMu, covs, covsModel, covsWeights, covsNoB, covsModelNoB,
+                                  covsWeightsNoB, pdfPages, offset=0.004,
                                   numberOfBins=10, plotData=True, topPlot=False, log=None):
         """Plot C_ij/mu vs mu.
 
@@ -414,9 +472,6 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         log : `lsst.log.Log`, optional
             Logger to handle messages.
         """
-
-        lchi2, la, lb, lcov = [], [], [], []
-
         if (not topPlot):
             fig = plt.figure(figsize=(8, 10))
             gs = gridspec.GridSpec(2, 1, height_ratios=[3, 1])
@@ -430,18 +485,25 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         ax0.tick_params(axis='both', labelsize='x-large')
         mue, rese, wce = [], [], []
         mueNoB, reseNoB, wceNoB = [], [], []
-        for counter, (amp, fit) in enumerate(covFits.items()):
-            mu, cov, model, weightCov, _ = fit.getFitData(i, j, divideByMu=True, returnMasked=True)
-            wres = (cov-model)*weightCov
-            chi2 = ((wres*wres).sum())/(len(mu)-3)
-            chi2bin = 0
+        for counter, amp in enumerate(covs):
+            muAmp, fullCov, fullCovModel, fullCovWeight = inputMu[amp], covs[amp], covsModel[amp], covsWeights[amp]
+            if len(fullCov) == 0: 
+                continue
+            mu, cov, model, weightCov, _ = getFitDataFromCovariances(i, j, muAmp, fullCov, fullCovModel,
+                                                                     fullCovWeight, divideByMu=True,
+                                                                     returnMasked=True)
             mue += list(mu)
             rese += list(cov - model)
             wce += list(weightCov)
 
-            fitNoB = covFitsNoB[amp]
+            fullCovNoB, fullCovModelNoB, fullCovWeightNoB = (covsNoB[amp], covsModelNoB[amp],
+                                                             covsWeightsNoB[amp])
+            if len(fullCovNoB) == 0:
+                continue
             (muNoB, covNoB, modelNoB,
-                weightCovNoB, _) = fitNoB.getFitData(i, j, divideByMu=True, returnMasked=True)
+                weightCovNoB, _) = getFitDataFromCovariances(i, j, muAmp, fullCovNoB, fullCovModelNoB,
+                                                             fullCovWeightNoB, divideByMu=True,
+                                                             returnMasked=True)
             mueNoB += list(muNoB)
             reseNoB += list(covNoB - modelNoB)
             wceNoB += list(weightCovNoB)
@@ -452,28 +514,13 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             gind = self.indexForBins(mu, numberOfBins)
 
             xb, yb, wyb, sigyb = self.binData(mu, cov, gind, weightCov)
-            chi2bin = (sigyb*wyb).mean()  # chi2 of enforcing the same value in each bin
             plt.errorbar(xb, yb+counter*offset, yerr=sigyb, marker='o', linestyle='none', markersize=6.5,
                          color=fit_curve.get_color(), label=f"{amp} (N: {len(mu)})")
             # plot the data
             if plotData:
                 points, = plt.plot(mu, cov + counter*offset, '.', color=fit_curve.get_color())
             plt.legend(loc='upper right', fontsize=8)
-            aij = fit.getA()[i, j]
-            bij = fit.getB()[i, j]
-            la.append(aij)
-            lb.append(bij)
-            if fit.getACov() is not None:
-                lcov.append(fit.getACov()[i, j, i, j])
-            else:
-                lcov.append(np.nan)
-            lchi2.append(chi2)
-            log.info('Cov%d%d %s: slope %g b %g  chi2 %f chi2bin %f'%(i, j, amp, aij, bij, chi2, chi2bin))
         # end loop on amps
-        la = np.array(la)
-        lb = np.array(lb)
-        lcov = np.array(lcov)
-        lchi2 = np.array(lchi2)
         mue = np.array(mue)
         rese = np.array(rese)
         wce = np.array(wce)
@@ -513,7 +560,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         return
 
     @staticmethod
-    def plot_a_b(covFits, pdfPages, bRange=3):
+    def plot_a_b(aDict, bDict, pdfPages, bRange=3):
         """Fig. 12 of Astier+19
 
         Color display of a and b arrays fits, averaged over channels.
@@ -530,9 +577,11 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             Maximum lag for b arrays.
         """
         a, b = [], []
-        for amp, fit in covFits.items():
-            a.append(fit.getA())
-            b.append(fit.getB())
+        for amp in aDict:
+            if len(aDict[amp]) == 0:
+                continue
+            a.append(aDict[amp][0])
+            b.append(bDict[amp][0])
         a = np.array(a).mean(axis=0)
         b = np.array(b).mean(axis=0)
         fig = plt.figure(figsize=(7, 11))
@@ -559,15 +608,18 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         return
 
     @staticmethod
-    def ab_vs_dist(covFits, pdfPages, bRange=4):
+    def ab_vs_dist(aDict, bDict, pdfPages, bRange=4):
         """Fig. 13 of Astier+19.
 
         Values of a and b arrays fits, averaged over amplifiers, as a function of distance.
 
         Parameters
         ----------
-        covFits: `dict`
-            Dictionary of CovFit objects, with amp names as keys.
+        aDict: `dict`
+            Dictionary of 'a' matrices (Eq. 20, Astier+19), with amp names as keys.
+
+        bDict: `dict
+            Dictionary of 'b' matrices (Eq. 20, Astier+19), with amp names as keys.
 
         pdfPages: `matplotlib.backends.backend_pdf.PdfPages`
             PDF file where the plots will be saved.
@@ -575,9 +627,15 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         bRange : `int`
             Maximum lag for b arrays.
         """
-        a = np.array([f.getA() for f in covFits.values()])
+        assert (len(aDict) == len(bDict))
+        a = []
+        for amp in aDict:
+            if len(aDict[amp]) == 0:
+                continue
+            a.append(aDict[amp][0])
+        a = np.array(a)
         y = a.mean(axis=0)
-        sy = a.std(axis=0)/np.sqrt(len(covFits))
+        sy = a.std(axis=0)/np.sqrt(len(aDict))
         i, j = np.indices(y.shape)
         upper = (i >= j).ravel()
         r = np.sqrt(i**2 + j**2).ravel()
@@ -598,9 +656,14 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         #
         axb = fig.add_subplot(212)
-        b = np.array([f.getB() for f in covFits.values()])
+        b = []
+        for amp in bDict:
+            if len(bDict[amp]) == 0:
+                continue
+            b.append(bDict[amp][0])
+        b = np.array(b)
         yb = b.mean(axis=0)
-        syb = b.std(axis=0)/np.sqrt(len(covFits))
+        syb = b.std(axis=0)/np.sqrt(len(bDict))
         ib, jb = np.indices(yb.shape)
         upper = (ib > jb).ravel()
         rb = np.sqrt(i**2 + j**2).ravel()
@@ -626,7 +689,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         return
 
     @staticmethod
-    def plotAcoeffsSum(covFits, pdfPages):
+    def plotAcoeffsSum(aDict, bDict, pdfPages):
         """Fig. 14. of Astier+19
 
         Cumulative sum of a_ij as a function of maximum separation. This plot displays the average over
@@ -634,16 +697,22 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         Parameters
         ----------
-        covFits: `dict`
-            Dictionary of CovFit objects, with amp names as keys.
+        aDict: `dict`
+            Dictionary of 'a' matrices (Eq. 20, Astier+19), with amp names as keys.
+
+        bDict: `dict
+            Dictionary of 'b' matrices (Eq. 20, Astier+19), with amp names as keys.
 
         pdfPages: `matplotlib.backends.backend_pdf.PdfPages`
             PDF file where the plots will be saved.
         """
+        assert (len(aDict) == len(bDict))
         a, b = [], []
-        for amp, fit in covFits.items():
-            a.append(fit.getA())
-            b.append(fit.getB())
+        for amp in aDict:
+            if len(aDict[amp]) == 0 or len(bDict[amp]) == 0:
+                continue
+            a.append(aDict[amp][0])
+            b.append(bDict[amp][0])
         a = np.array(a).mean(axis=0)
         b = np.array(b).mean(axis=0)
         fig = plt.figure(figsize=(7, 6))
@@ -668,7 +737,8 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         return
 
     @staticmethod
-    def plotRelativeBiasACoeffs(covFits, covFitsNoB, signalElectrons, pdfPages, maxr=None):
+    def plotRelativeBiasACoeffs(aDict, aDictNoB, fullCovsModel, fullCovsModelNoB, signalElectrons,
+                                gainDict, pdfPages, maxr=None):
         """Fig. 15 in Astier+19.
 
         Illustrates systematic bias from estimating 'a'
@@ -677,11 +747,11 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         Parameters
         ----------
-        covFits : `dict`
-            Dictionary of CovFit objects, with amp names as keys.
+        aDict: `dict`
+            Dictionary of 'a' matrices (Eq. 20, Astier+19), with amp names as keys.
 
-        covFitsNoB : `dict`
-           Dictionary of CovFit objects, with amp names as keys (b=0 in Eq. 20 of Astier+19).
+        aDictNoB: `dict`
+            Dictionary of 'a' matrices ('b'= 0 in Eq. 20, Astier+19), with amp names as keys.
 
         signalElectrons : `float`
             Signal at which to evaluate the a_ij coefficients.
@@ -695,21 +765,23 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         fig = plt.figure(figsize=(7, 11))
         title = [f"'a' relative bias at {signalElectrons} e", "'a' relative bias (b=0)"]
-        data = [covFits, covFitsNoB]
+        data = [(aDict, fullCovsModel), (aDictNoB, fullCovsModelNoB)]
 
-        for k in range(2):
+        for k, pair in enumerate(data):
             diffs = []
             amean = []
-            for fit in data[k].values():
-                if fit is None:
+            for amp in pair[0]:
+                covModel = pair[1][amp]
+                if len(covModel) == 0:
                     continue
-                aOld = computeApproximateAcoeffs(fit, signalElectrons)
-                a = fit.getA()
+                aOld = computeApproximateAcoeffs(covModel, signalElectrons, gainDict[amp])
+                a = pair[0][amp]
                 amean.append(a)
                 diffs.append((aOld-a))
             amean = np.array(amean).mean(axis=0)
             diff = np.array(diffs).mean(axis=0)
             diff = diff/amean
+            diff=diff[0][:]
             # The difference should be close to zero
             diff[0, 0] = 0
             if maxr is None:

@@ -26,7 +26,7 @@ from collections import Counter
 import lsst.afw.math as afwMath
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
-from .utils import (fitLeastSq, fitBootstrap, funcPolynomial, funcAstier)
+from .utils import (fitLeastSq, fitBootstrap, funcPolynomial, funcAstier, makeMockFlats)
 from scipy.optimize import least_squares
 
 import datetime
@@ -217,53 +217,65 @@ class PhotonTransferCurveDataset(IsrCalib):
     badAmps : `list`
         List with bad amplifiers names.
     inputExpIdPairs : `dict`, [`str`, `list`]
-        Dictonary keyed by amp names containing the input exposures IDs.
+        Dictionary keyed by amp names containing the input exposures IDs.
     expIdMask : `dict`, [`str`, `list`]
-        Dictonary keyed by amp names containing the mask produced after outlier rejection. The mask produced
+        Dictionary keyed by amp names containing the mask produced after outlier rejection. The mask produced
         by the "FULLCOVARIANCE" option may differ from the one produced in the other two PTC fit types.
     rawExpTimes : `dict`, [`str`, `list`]
-        Dictonary keyed by amp names containing the unmasked exposure times.
+        Dictionary keyed by amp names containing the unmasked exposure times.
     rawMeans : `dict`, [`str`, `list`]
-        Dictonary keyed by amp names containing the unmasked average of the means of the exposures in each
+        Dictionary keyed by amp names containing the unmasked average of the means of the exposures in each
         flat pair.
     rawVars : `dict`, [`str`, `list`]
-        Dictonary keyed by amp names containing the variance of the difference image of the exposure sin each
+        Dictionary keyed by amp names containing the variance of the difference image of the exposure sin each
         flat pair.
     gain : `dict`, [`str`, `list`]
-        Dictonary keyed by amp names containing the fitted gains.
+        Dictionary keyed by amp names containing the fitted gains.
     gainErr : `dict`, [`str`, `list`]
-        Dictonary keyed by amp names containing the errors on the fitted gains.
+        Dictionary keyed by amp names containing the errors on the fitted gains.
     noise : `dict`, [`str`, `list`]
-        Dictonary keyed by amp names containing the fitted noise.
+        Dictionary keyed by amp names containing the fitted noise.
     noiseErr : `dict`, [`str`, `list`]
-        Dictonary keyed by amp names containing the errors on the fitted noise.
+        Dictionary keyed by amp names containing the errors on the fitted noise.
     ptcFitPars : `dict`, [`str`, `list`]
-        Dictonary keyed by amp names containing the fitted parameters of the PTC model for ptcFitTye in
+        Dictionary keyed by amp names containing the fitted parameters of the PTC model for ptcFitTye in
         ["POLYNOMIAL", "EXPAPPROXIMATION"].
     ptcFitParsError : `dict`, [`str`, `list`]
-        Dictonary keyed by amp names containing the errors on the fitted parameters of the PTC model for
+        Dictionary keyed by amp names containing the errors on the fitted parameters of the PTC model for
         ptcFitTye in ["POLYNOMIAL", "EXPAPPROXIMATION"].
     ptcFitChiSq : `dict`, [`str`, `list`]
-        Dictonary keyed by amp names containing the reduced chi squared of the fit for ptcFitTye in
+        Dictionary keyed by amp names containing the reduced chi squared of the fit for ptcFitTye in
         ["POLYNOMIAL", "EXPAPPROXIMATION"].
-    covariancesFitsWithNoB : `dict`, [`str`, `list`]
-        Dictonary keyed by amp names containing CovFit objects that fit the measured
-        covariances to Eq. 20 of Astier+19, with "b" set to zero.
-    covariancesFits : `dict`, [`str`, `list`]
-        Dictonary keyed by amp names containinging CovFit objects that fit the measured
-        covariances to Eq. 20 of Astier+19.
+    covariances : `dict`, [`str`, `list`]
+        Dictionary keyed by amp names containing a list of measued covariances per mean flux.
+    covariancesModel : `dict`, [`str`, `list`]
+        Dictionary keyed by amp names containinging covariances model (Eq. 20 of Astier+19) per mean flux.
+    covariancessSqrtWeights : `dict`, [`str`, `list`]
+        Dictionary keyed by amp names containinging sqrt. of covariances weights.
     aMatrix : `dict`, [`str`, `list`]
-        Dictonary keyed by amp names containing the "a" parameters from the model in Eq. 20 of Astier+19.
+        Dictionary keyed by amp names containing the "a" parameters from the model in Eq. 20 of Astier+19.
     bMatrix : `dict`, [`str`, `list`]
-        Dictonary keyed by amp names containing the "b" parameters from the model in Eq. 20 of Astier+19.
+        Dictionary keyed by amp names containing the "b" parameters from the model in Eq. 20 of Astier+19.
+    covariancesNoB : `dict`, [`str`, `list`]
+        Dictionary keyed by amp names containing a list of measued covariances per mean flux ('b'=0 in
+        Astier+19).
+    covariancesModelNoB : `dict`, [`str`, `list`]
+        Dictionary keyed by amp names containinging covariances model (with 'b'=0 in Eq. 20 of Astier+19)
+        per mean flux.
+    covariancessSqrtWeightsNoB : `dict`, [`str`, `list`]
+        Dictionary keyed by amp names containinging sqrt. of covariances weights ('b' = 0 in Eq. 20 of
+        Astier+19).
+    aMatrixNoB : `dict`, [`str`, `list`]
+        Dictionary keyed by amp names containing the "a" parameters from the model in Eq. 20 of Astier+19
+        (and 'b' = 0).
     finalVars : `dict`, [`str`, `list`]
-        Dictonary keyed by amp names containing the masked variance of the difference image of each flat
+        Dictionary keyed by amp names containing the masked variance of the difference image of each flat
         pair.
     finalModelVars : `dict`, [`str`, `list`]
-        Dictonary keyed by amp names containing the masked modeled variance of the difference image of each
+        Dictionary keyed by amp names containing the masked modeled variance of the difference image of each
         flat pair.
     finalMeans : `dict`, [`str`, `list`]
-        Dictonary keyed by amp names containing the masked average of the means of the exposures in each
+        Dictionary keyed by amp names containing the masked average of the means of the exposures in each
         flat pair.
 
     Returns
@@ -277,42 +289,47 @@ class PhotonTransferCurveDataset(IsrCalib):
     _VERSION = 1.0
 
     def __init__(self, ampNames, ptcFitType, **kwargs):
-        # add items to __dict__ directly because __setattr__ is overridden
 
-        self.__dict__['ptcFitType'] = ptcFitType
-        self.__dict__['ampNames'] = ampNames
-        self.__dict__['badAmps'] = []
+        self.ptcFitType = ptcFitType
+        self.ampNames = ampNames
+        self.badAmps = []
 
-        self.__dict__["inputExpIdPairs"] = {ampName: [] for ampName in ampNames}
-        self.__dict__["expIdMask"] = {ampName: [] for ampName in ampNames}
-        self.__dict__["rawExpTimes"] = {ampName: [] for ampName in ampNames}
-        self.__dict__["rawMeans"] = {ampName: [] for ampName in ampNames}
-        self.__dict__["rawVars"] = {ampName: [] for ampName in ampNames}
-        self.__dict__["photoCharge"] = {ampName: [] for ampName in ampNames}
+        self.inputExpIdPairs = {ampName: [] for ampName in ampNames}
+        self.expIdMask = {ampName: [] for ampName in ampNames}
+        self.rawExpTimes = {ampName: [] for ampName in ampNames}
+        self.rawMeans = {ampName: [] for ampName in ampNames}
+        self.rawVars = {ampName: [] for ampName in ampNames}
+        self.photoCharge = {ampName: [] for ampName in ampNames}
 
-        self.__dict__['gain'] = {ampName: -1. for ampName in ampNames}
-        self.__dict__['gainErr'] = {ampName: -1. for ampName in ampNames}
-        self.__dict__['noise'] = {ampName: -1. for ampName in ampNames}
-        self.__dict__['noiseErr'] = {ampName: -1. for ampName in ampNames}
+        self.gain = {ampName: -1. for ampName in ampNames}
+        self.gainErr = {ampName: -1. for ampName in ampNames}
+        self.noise = {ampName: -1. for ampName in ampNames}
+        self.noiseErr = {ampName: -1. for ampName in ampNames}
 
-        self.__dict__['ptcFitPars'] = {ampName: [] for ampName in ampNames}
-        self.__dict__['ptcFitParsError'] = {ampName: [] for ampName in ampNames}
-        self.__dict__['ptcFitChiSq'] = {ampName: [] for ampName in ampNames}
+        self.ptcFitPars = {ampName: [] for ampName in ampNames}
+        self.ptcFitParsError = {ampName: [] for ampName in ampNames}
+        self.ptcFitChiSq = {ampName: [] for ampName in ampNames}
 
-        self.__dict__['covariancesFitsWithNoB'] = {ampName: [] for ampName in ampNames}
-        self.__dict__['covariancesFits'] = {ampName: [] for ampName in ampNames}
-        self.__dict__['aMatrix'] = {ampName: [] for ampName in ampNames}
-        self.__dict__['bMatrix'] = {ampName: [] for ampName in ampNames}
+        self.covariances = {ampName: [] for ampName in ampNames}
+        self.covariancesModel = {ampName: [] for ampName in ampNames}
+        self.covariancesSqrtWeights = {ampName: [] for ampName in ampNames}
+        self.aMatrix = {ampName: [] for ampName in ampNames}
+        self.bMatrix = {ampName: [] for ampName in ampNames}
+        self.covariancesNoB = {ampName: [] for ampName in ampNames}
+        self.covariancesModelNoB = {ampName: [] for ampName in ampNames}
+        self.covariancesSqrtWeightsNoB = {ampName: [] for ampName in ampNames}
+        self.aMatrixNoB = {ampName: [] for ampName in ampNames}
 
-        self.__dict__['finalVars'] = {ampName: [] for ampName in ampNames}
-        self.__dict__['finalModelVars'] = {ampName: [] for ampName in ampNames}
-        self.__dict__['finalMeans'] = {ampName: [] for ampName in ampNames}
+        self.finalVars = {ampName: [] for ampName in ampNames}
+        self.finalModelVars = {ampName: [] for ampName in ampNames}
+        self.finalMeans = {ampName: [] for ampName in ampNames}
 
         super().__init__(**kwargs)
         self.requiredAttributes.update(['badAmps', 'inputExpIdPairs', 'expIdMask', 'rawExpTimes',
                                         'rawMeans', 'rawVars', 'gain', 'gainErr', 'noise', 'noiseErr',
-                                        'ptcFitPars', 'ptcFitParsError', 'ptcFitChiSq',
-                                        'covariancesFitsWithNoB', "covariancesFits",
+                                        'ptcFitPars', 'ptcFitParsError', 'ptcFitChiSq', 'aMatrixNoB'
+                                        'covariances', 'covariancesModel', 'covariancesSqrtWeights',
+                                        'covariancesNoB', 'covariancesModelNoB', 'covariancesSqrtWeightsNoB',
                                         'aMatrix', 'bMatrix', 'finalVars', 'finalModelVars', 'finalMeans'])
 
     def updateMetadata(self, setDate=False, **kwargs):
@@ -375,10 +392,15 @@ class PhotonTransferCurveDataset(IsrCalib):
         calib.ptcFitPars = dictionary['ptcFitPars']
         calib.ptcFitParsError = dictionary['ptcFitParsError']
         calib.ptcFitChiSq = dictionary['ptcFitChiSq']
-        calib.covariancesFitsWithNoB = dictionary['covariancesFitsWithNoB']
-        calib.covariancesFits = dictionary['covariancesFits']
+        calib.covariances = dictionary['covariances']
+        calib.covariancesModel = dictionary['covariancesModel']
+        calib.covariancesSqrtWeights = dictionary['covariancesSqrtWeights']
         calib.aMatrix = dictionary['aMatrix']
         calib.bMatrix = dictionary['bMatrix']
+        calib.covariancesNoB = dictionary['covariancesNoB']
+        calib.covariancesModelNoB = dictionary['covariancesModelNoB']
+        calib.covariancesSqrtWeightsNoB = dictionary['covariancesSqrtWeightsNoB']
+        calib.aMatrixNoB = dictionary['aMatrixNoB']
         calib.finalVars = dictionary['finalVars']
         calib.finalModelVars = dictionary['finalModelVars']
         calib.finalMeans = dictionary['finalMeans']
@@ -418,23 +440,20 @@ class PhotonTransferCurveDataset(IsrCalib):
         outDict['ptcFitPars'] = self.ptcFitPars
         outDict['ptcFitParsError'] = self.ptcFitParsError
         outDict['ptcFitChiSq'] = self.ptcFitChiSq
-        outDict['covariancesFitsWithNoB'] = self.covariancesFitsWithNoB
-        outDict['covariancesFits'] = self.covariancesFits
+        outDict['covariances'] = self.covariances
+        outDict['covariancesModel'] = self.covariancesModel
+        outDict['covariancesSqrtWeights'] = self.covariancesSqrtWeights
         outDict['aMatrix'] = self.aMatrix
         outDict['bMatrix'] = self.bMatrix
+        outDict['covariancesNoB'] = self.covariancesNoB
+        outDict['covariancesModelNoB'] = self.covariancesModelNoB
+        outDict['covariancesSqrtWeightsNoB'] = self.covariancesSqrtWeightsNoB
+        outDict['aMatrixNoB'] = self.aMatrixNoB
         outDict['finalVars'] = self.finalVars
         outDict['finalModelVars'] = self.finalModelVars
         outDict['finalMeans'] = self.finalMeans
 
         return outDict
-
-    def __setattr__(self, attribute, value):
-        """Protect class attributes"""
-        if attribute not in self.__dict__:
-            raise AttributeError(f"{attribute} is not already a member of PhotonTransferCurveDataset, which"
-                                 " does not support setting of new attributes.")
-        else:
-            self.__dict__[attribute] = value
 
     def getExpIdsUsed(self, ampName):
         """Get the exposures used, i.e. not discarded, for a given amp.
@@ -566,17 +585,23 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         tupleRecords = []
         allTags = []
-        for expTime, (exp1, exp2) in expPairs.items():
-            expId1 = exp1.getInfo().getVisitInfo().getExposureId()
-            expId2 = exp2.getInfo().getVisitInfo().getExposureId()
+        tempCounter=0
+        for expTime in range(5,205, 5):
+        #for expTime, (exp1, exp2) in expPairs.items():
+            #expId1 = exp1.getInfo().getVisitInfo().getExposureId()
+            #expId2 = exp2.getInfo().getVisitInfo().getExposureId()
+            expId1 = tempCounter #TEMP
+            expId2 = tempCounter+1
             tupleRows = []
             nAmpsNan = 0
             for ampNumber, amp in enumerate(detector):
                 ampName = amp.getName()
                 # covAstier: (i, j, var (cov[0,0]), cov, npix)
                 doRealSpace = self.config.covAstierRealSpace
-                muDiff, varDiff, covAstier = self.measureMeanVarCov(exp1, exp2, region=amp.getBBox(),
-                                                                    covAstierRealSpace=doRealSpace)
+                bfPars = [8, 1.1e-7, 1.1e-7, 1.0e-8, 1.0e-8, 1.0e-9, 1.0e-9, 2.0]
+                exp1, exp2 = makeMockFlats(expTime, gain=1.5,powerLawBfParams=bfPars)
+                muDiff, varDiff, covAstier = self.measureMeanVarCov(exp1, exp2) #, region=amp.getBBox(),
+                                                                    #covAstierRealSpace=doRealSpace)
                 if np.isnan(muDiff) or np.isnan(varDiff) or (covAstier is None):
                     msg = (f"NaN mean or var, or None cov in amp {ampNumber} in exposure pair {expId1},"
                            f" {expId2} of detector {detNum}.")
@@ -598,6 +623,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 continue
             allTags += tags
             tupleRecords += tupleRows
+            tempCounter+=1 #TEMP
         covariancesWithTags = np.core.records.fromrecords(tupleRecords, names=allTags)
 
         if self.config.ptcFitType in ["FULLCOVARIANCE", ]:
@@ -714,13 +740,11 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                                       nSigmaFullFit=self.config.sigmaClipFullFitCovariancesAstier,
                                       maxIterFullFit=self.config.maxIterFullFitCovariancesAstier)
 
-        dataset.covariancesFits = covFits
-        dataset.covariancesFitsWithNoB = covFitsNoB
-        dataset = self.getOutputPtcDataCovAstier(dataset, covFits)
+        dataset = self.getOutputPtcDataCovAstier(dataset, covFits, covFitsNoB)
 
         return dataset
 
-    def getOutputPtcDataCovAstier(self, dataset, covFits):
+    def getOutputPtcDataCovAstier(self, dataset, covFits, covFitsNoB):
         """Get output data for PhotonTransferCurveCovAstierDataset from CovFit objects.
 
         Parameters
@@ -731,6 +755,9 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         covFits: `dict`
             Dictionary of CovFit objects, with amp names as keys.
 
+        covFitsNoB : `dict`
+             Dictionary of CovFit objects, with amp names as keys, and 'b=0' in Eq. 20 of Astier+19.
+
         Returns
         -------
         dataset : `lsst.cp.pipe.ptc.PhotonTransferCurveDataset`
@@ -739,9 +766,21 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             measured variance, modeled variance, a, and b coefficient matrices (see Astier+19) per amplifier.
             See the class `PhotonTransferCurveDatase`.
         """
-
+        assert(len(covFits) == len(covFitsNoB))
         for i, amp in enumerate(covFits):
             fit = covFits[amp]
+            fitNoB = covFitsNoB[amp]
+            # Save full covariances, covariances models, and their weights
+            dataset.covariances[amp] = fit.cov
+            dataset.covariancesModel[amp] = fit.evalCovModel()
+            dataset.covariancesSqrtWeights[amp] = fit.sqrtW
+            dataset.aMatrix[amp].append(fit.getA())
+            dataset.bMatrix[amp].append(fit.getB())
+            dataset.covariancesNoB[amp] = fitNoB.cov
+            dataset.covariancesModelNoB[amp] = fitNoB.evalCovModel()
+            dataset.covariancesSqrtWeightsNoB[amp] = fitNoB.sqrtW
+            dataset.aMatrixNoB[amp].append(fitNoB.getA())
+
             (meanVecFinal, varVecFinal, varVecModel,
                 wc, varMask) = fit.getFitData(0, 0, divideByMu=False, returnMasked=True)
             gain = fit.getGain()
@@ -753,8 +792,6 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             dataset.finalVars[amp].append(varVecFinal/(gain**2))
             dataset.finalModelVars[amp].append(varVecModel/(gain**2))
             dataset.finalMeans[amp].append(meanVecFinal/gain)
-            dataset.aMatrix[amp].append(fit.getA())
-            dataset.bMatrix[amp].append(fit.getB())
 
         return dataset
 
