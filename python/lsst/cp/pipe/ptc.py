@@ -455,7 +455,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
             butler.put(linearizer, datasetType='Linearizer', dataId={'detector': detNum,
                        'detectorName': detName, 'calibDate': calibDate})
-        self.log.info(f"Writing PTC data.")
+        self.log.info("Writing PTC data.")
         dataRef.put(datasetPtc, datasetType="photonTransferCurveDataset")
 
         return pipeBase.Struct(exitStatus=0)
@@ -486,7 +486,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             try:
                 tempFlat = dataRef.get("postISRCCD")
             except RuntimeError:
-                self.log.warn(f"postISR exposure could not be retrieved. Ignoring flat.")
+                self.log.warn("postISR exposure could not be retrieved. Ignoring flat.")
                 continue
             expDate = tempFlat.getInfo().getVisitInfo().getDate().get()
             expDict.setdefault(expDate, tempFlat)
@@ -500,13 +500,13 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             if len(listAtExpTime) < 2:
                 listAtExpTime.append(tempFlat)
             if len(listAtExpTime) > 2:
-                self.log.warn("More than 2 exposures found at expTime {expTime}. Dropping exposures "
+                self.log.warn(f"More than 2 exposures found at expTime {expTime}. Dropping exposures "
                               f"{listAtExpTime[2:]}.")
 
         for (key, value) in flatPairs.items():
             if len(value) < 2:
                 flatPairs.pop(key)
-                self.log.warn("Only one exposure found at expTime {key}. Dropping exposure {value}.")
+                self.log.warn(f"Only one exposure found at expTime {key}. Dropping exposure {value}.")
         return flatPairs
 
     def fitCovariancesAstier(self, dataset, covariancesWithTagsArray):
