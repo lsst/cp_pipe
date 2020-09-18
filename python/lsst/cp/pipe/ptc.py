@@ -33,6 +33,7 @@ import datetime
 
 from .astierCovPtcUtils import (fftSize, CovFft, computeCovDirect, fitData)
 from .linearity import LinearitySolveTask
+from .photodiode import getBOTphotodiodeData
 
 from lsst.pipe.tasks.getRepositoryData import DataRefListRunner
 
@@ -159,6 +160,21 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
         doc="Use bootstrap for the PTC fit parameters and errors?.",
         default=False,
     )
+    doPhotodiode = pexConfig.Field(
+        dtype=bool,
+        doc="Apply a correction based on the photodiode readings if available?",
+        default=True,
+    )
+    photodiodeDataPath = pexConfig.Field(
+        dtype=str,
+        doc="Gen2 only: path to locate the data photodiode data files.",
+        default=""
+    )
+    maxAduForLookupTableLinearizer = pexConfig.Field(
+        dtype=int,
+        doc="Maximum DN value for the LookupTable linearizer.",
+        default=2**18,
+    )
     instrumentName = pexConfig.Field(
         dtype=str,
         doc="Instrument name.",
@@ -216,6 +232,7 @@ class PhotonTransferCurveDataset:
         self.__dict__["rawExpTimes"] = {ampName: [] for ampName in ampNames}
         self.__dict__["rawMeans"] = {ampName: [] for ampName in ampNames}
         self.__dict__["rawVars"] = {ampName: [] for ampName in ampNames}
+        self.__dict__["photoCharge"] = {ampName: [] for ampName in ampNames}
 
         # Gain and noise
         self.__dict__["gain"] = {ampName: -1. for ampName in ampNames}
@@ -354,6 +371,26 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             id2 = exp2.getInfo().getVisitInfo().getExposureId()
             expIds.append((id1, id2))
         self.log.info(f"Measuring PTC using {expIds} exposures for detector {detector.getId()}")
+
+        # get photodiode data early so that logic can be put in to only use the
+        # data if all files are found, as partial corrections are not possible
+        # or at least require significant logic to deal with
+        if self.config.doPhotodiode:
+            for (expId1, expId2) in expIds:
+                charges = [-1, -1]  # necessary to have a not-found value to keep lists in step
+                for i, expId in enumerate([expId1, expId2]):
+                    # XXX you really need to remove this bit !!!!!!!!!!!!!!!!!!
+                    dataRef.dataId['expId'] = expId//1000
+                    if self.config.photodiodeDataPath:
+                        photodiodeData = getBOTphotodiodeData(dataRef, self.config.photodiodeDataPath)
+                    else:
+                        photodiodeData = getBOTphotodiodeData(dataRef)
+                    if photodiodeData:  # default path stored in function def to keep task clean
+                        charges[i] = photodiodeData.getCharge()
+
+                for ampName in ampNames:
+                    datasetPtc.photoCharge[ampName].append((charges[0], charges[1]))
+
         tupleRecords = []
         allTags = []
         for expTime, (exp1, exp2) in expPairs.items():
