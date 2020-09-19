@@ -19,7 +19,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-__all__ = ('PhotodiodeData')
+__all__ = ('PhotodiodeData', 'getBOTphotodiodeData')
 
 import os
 import numpy as np
@@ -89,5 +89,6 @@ class PhotodiodeData():
         charge = 0
         for i, (time, current) in enumerate(zip(self.times[:-1], self.values[:-1])):
             timestep = self.times[i+1] - time
-            charge += current * timestep
+            averageCurrent = (self.values[i+1] + current) / 2.
+            charge += averageCurrent * timestep
         return charge
