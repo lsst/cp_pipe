@@ -33,6 +33,7 @@ import datetime
 
 from .astierCovPtcUtils import (fftSize, CovFft, computeCovDirect, fitData)
 from .linearity import LinearitySolveTask
+from .photodiode import getBOTphotodiodeData
 
 from lsst.pipe.tasks.getRepositoryData import DataRefListRunner
 
@@ -159,6 +160,16 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
         doc="Use bootstrap for the PTC fit parameters and errors?.",
         default=False,
     )
+    doPhotodiode = pexConfig.Field(
+        dtype=bool,
+        doc="Apply a correction based on the photodiode readings if available?",
+        default=True,
+    )
+    photodiodeDataPath = pexConfig.Field(
+        dtype=str,
+        doc="Gen2 only: path to locate the data photodiode data files.",
+        default=""
+    )
     instrumentName = pexConfig.Field(
         dtype=str,
         doc="Instrument name.",
@@ -216,6 +227,7 @@ class PhotonTransferCurveDataset:
         self.__dict__["rawExpTimes"] = {ampName: [] for ampName in ampNames}
         self.__dict__["rawMeans"] = {ampName: [] for ampName in ampNames}
         self.__dict__["rawVars"] = {ampName: [] for ampName in ampNames}
+        self.__dict__["photoCharge"] = {ampName: [] for ampName in ampNames}
 
         # Gain and noise
         self.__dict__["gain"] = {ampName: -1. for ampName in ampNames}
@@ -354,6 +366,33 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             id2 = exp2.getInfo().getVisitInfo().getExposureId()
             expIds.append((id1, id2))
         self.log.info(f"Measuring PTC using {expIds} exposures for detector {detector.getId()}")
+
+        # get photodiode data early so that logic can be put in to only use the
+        # data if all files are found, as partial corrections are not possible
+        # or at least require significant logic to deal with
+        if self.config.doPhotodiode:
+            for (expId1, expId2) in expIds:
+                charges = [-1, -1]  # necessary to have a not-found value to keep lists in step
+                for i, expId in enumerate([expId1, expId2]):
+                    # //1000 is a Gen2 only hack, working around the fact an
+                    # exposure's ID is not the same as the expId in the
+                    # registry. Currently expId is concatenated with the
+                    # zero-padded detector ID. This will all go away in Gen3.
+                    dataRef.dataId['expId'] = expId//1000
+                    if self.config.photodiodeDataPath:
+                        photodiodeData = getBOTphotodiodeData(dataRef, self.config.photodiodeDataPath)
+                    else:
+                        photodiodeData = getBOTphotodiodeData(dataRef)
+                    if photodiodeData:  # default path stored in function def to keep task clean
+                        charges[i] = photodiodeData.getCharge()
+                    else:
+                        # full expId (not //1000) here, as that encodes the
+                        # the detector number as so is fully qualifying
+                        self.log.warn(f"No photodiode data found for {expId}")
+
+                for ampName in ampNames:
+                    datasetPtc.photoCharge[ampName].append((charges[0], charges[1]))
+
         tupleRecords = []
         allTags = []
         for expTime, (exp1, exp2) in expPairs.items():
@@ -418,7 +457,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
             butler.put(linearizer, datasetType='Linearizer', dataId={'detector': detNum,
                        'detectorName': detName, 'calibDate': calibDate})
-        self.log.info(f"Writing PTC data.")
+        self.log.info("Writing PTC data.")
         dataRef.put(datasetPtc, datasetType="photonTransferCurveDataset")
 
         return pipeBase.Struct(exitStatus=0)
@@ -449,7 +488,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             try:
                 tempFlat = dataRef.get("postISRCCD")
             except RuntimeError:
-                self.log.warn(f"postISR exposure could not be retrieved. Ignoring flat.")
+                self.log.warn("postISR exposure could not be retrieved. Ignoring flat.")
                 continue
             expDate = tempFlat.getInfo().getVisitInfo().getDate().get()
             expDict.setdefault(expDate, tempFlat)
@@ -463,13 +502,13 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             if len(listAtExpTime) < 2:
                 listAtExpTime.append(tempFlat)
             if len(listAtExpTime) > 2:
-                self.log.warn("More than 2 exposures found at expTime {expTime}. Dropping exposures "
+                self.log.warn(f"More than 2 exposures found at expTime {expTime}. Dropping exposures "
                               f"{listAtExpTime[2:]}.")
 
         for (key, value) in flatPairs.items():
             if len(value) < 2:
                 flatPairs.pop(key)
-                self.log.warn("Only one exposure found at expTime {key}. Dropping exposure {value}.")
+                self.log.warn(f"Only one exposure found at expTime {key}. Dropping exposure {value}.")
         return flatPairs
 
     def fitCovariancesAstier(self, dataset, covariancesWithTagsArray):
