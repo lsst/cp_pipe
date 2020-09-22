@@ -170,11 +170,6 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
         doc="Gen2 only: path to locate the data photodiode data files.",
         default=""
     )
-    maxAduForLookupTableLinearizer = pexConfig.Field(
-        dtype=int,
-        doc="Maximum DN value for the LookupTable linearizer.",
-        default=2**18,
-    )
     instrumentName = pexConfig.Field(
         dtype=str,
         doc="Instrument name.",
@@ -379,7 +374,10 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             for (expId1, expId2) in expIds:
                 charges = [-1, -1]  # necessary to have a not-found value to keep lists in step
                 for i, expId in enumerate([expId1, expId2]):
-                    # XXX you really need to remove this bit !!!!!!!!!!!!!!!!!!
+                    # //1000 is a Gen2 only hack, working around the fact an
+                    # exposure's ID is not the same as the expId in the
+                    # registry. Currently expId is concatenated with the
+                    # zero-padded detector ID. This will all go away in Gen3.
                     dataRef.dataId['expId'] = expId//1000
                     if self.config.photodiodeDataPath:
                         photodiodeData = getBOTphotodiodeData(dataRef, self.config.photodiodeDataPath)
@@ -387,6 +385,10 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                         photodiodeData = getBOTphotodiodeData(dataRef)
                     if photodiodeData:  # default path stored in function def to keep task clean
                         charges[i] = photodiodeData.getCharge()
+                    else:
+                        # full expId (not //1000) here, as that encodes the
+                        # the detector number as so is fully qualifying
+                        self.log.warn(f"No photodiode data found for {expId}")
 
                 for ampName in ampNames:
                     datasetPtc.photoCharge[ampName].append((charges[0], charges[1]))

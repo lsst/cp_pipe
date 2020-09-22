@@ -1,4 +1,4 @@
-# This file is part of obs_lsst.
+# This file is part of cp_pipe.
 #
 # Developed for the LSST Data Management System.
 # This product includes software developed by the LSST Project
@@ -39,6 +39,13 @@ def getBOTphotodiodeData(dataRef, dataPath='/project/shared/BOT/_parent/raw/phot
     dataRef : `lsst.daf.persistence.ButlerDataRef`
         dataRef of the of the detector/visit to load the data for.
 
+    dataPath : `str`, optional
+        Path at which to find the corresponding photodiode data files.
+
+    logger : `lsst.log.Log`, optional
+        Logger for logging warnings.
+
+
     Returns
     -------
     photodiodeData : `lsst.cp.pipe.photodiode.PhotodiodeData` or `None`
@@ -63,7 +70,7 @@ def getBOTphotodiodeData(dataRef, dataPath='/project/shared/BOT/_parent/raw/phot
     filePattern = 'Photodiode_Readings_%s_%06d.txt'
 
     dayObsAsNumber = dayObs.replace('-', '')
-    diodeFilename = os.path.join(dataPath, filePattern%(dayObsAsNumber, seqNum))
+    diodeFilename = os.path.join(dataPath, filePattern % (dayObsAsNumber, seqNum))
 
     if not os.path.exists(diodeFilename):
         logger.warn(f"Failed to find the photodiode data at {diodeFilename}")
