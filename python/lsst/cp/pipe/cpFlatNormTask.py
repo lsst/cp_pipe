@@ -146,7 +146,8 @@ class CpFlatNormalizationConnections(pipeBase.PipelineTaskConnections,
         name="camera",
         doc="Input camera to use for gain lookup.",
         storageClass="Camera",
-        dimensions=("instrument", "calibration_label"),
+        dimensions=("instrument",),
+        isCalibration=True,
     )
 
     outputScales = cT.Output(

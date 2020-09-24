@@ -29,10 +29,12 @@ from lsst.cp.pipe.cpCertify import CertifyCalibration
 import argparse
 import logging
 
+import astropy.time
+
 import lsst.log
 from lsst.log import Log
 
-from lsst.daf.butler import Butler
+from lsst.daf.butler import Butler, Timespan
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -44,6 +46,16 @@ if __name__ == "__main__":
     parser.add_argument("outputCollection", help="Output collection to add to.")
     parser.add_argument("datasetTypeName", help="Dataset type to bless.")
 
+    parser.add_argument(
+        "--search-all-inputs",
+        dest="lastRunOnly",
+        action="store_false",
+        default=True,
+        help=(
+            "Search all children of the given input collection if it is a "
+            "CHAINED collection, instead of just the most recent one."
+        )
+    )
     parser.add_argument("-v", "--verbose", action="store_const", dest="logLevel",
                         default=Log.INFO, const=Log.DEBUG,
                         help="Set the log level to DEBUG.")
@@ -51,9 +63,6 @@ if __name__ == "__main__":
                         help="Start date for using the calibration")
     parser.add_argument("-e", "--endDate",
                         help="End date for using the calibration")
-    parser.add_argument("-s", "--skipCalibrationLabel", action="store_true",
-                        default=False, dest="skipCL",
-                        help="Do not attempt to register the calibration label.")
 
     args = parser.parse_args()
     log = Log.getLogger("lsst.daf.butler")
@@ -66,12 +75,18 @@ if __name__ == "__main__":
 
     butler = Butler(args.root, run=args.inputCollection)
 
-    # Do the thing.
-    certify = CertifyCalibration(butler=butler,
-                                 inputCollection=args.inputCollection,
-                                 outputCollection=args.outputCollection)
+    # I'm not sure this is the best way to convert strings to Time objects, but
+    # it works fine on the bare dates we seem to be passing in these days, and
+    # I imagine it should work with more complete time strings as well.
+    timespan = Timespan(
+        begin=astropy.time.Time(args.beginDate) if args.beginDate is not None else None,
+        end=astropy.time.Time(args.endDate) if args.endDate is not None else None,
+    )
 
-    certify.findInputs(args.datasetTypeName)
-    if not args.skipCL:
-        certify.addCalibrationLabel(beginDate=args.beginDate, endDate=args.endDate)
-    certify.registerCalibrations(args.datasetTypeName)
+    # Do the thing.
+    certify = CertifyCalibration(registry=butler.registry,
+                                 inputCollection=args.inputCollection,
+                                 outputCollection=args.outputCollection,
+                                 lastRunOnly=not args.lastRunOnly)
+
+    certify.run(args.datasetTypeName, timespan)

@@ -334,15 +334,17 @@ class CrosstalkSolveConnections(pipeBase.PipelineTaskConnections,
         name="camera",
         doc="Camera the input data comes from.",
         storageClass="Camera",
-        dimensions=("instrument", "calibration_label"),
+        dimensions=("instrument",),
+        isCalibration=True,
     )
 
     outputCrosstalk = cT.Output(
-        name="crosstalkProposal",
+        name="crosstalk",
         doc="Output proposed crosstalk calibration.",
         storageClass="CrosstalkCalib",
         dimensions=("instrument", "detector"),
         multiple=False,
+        isCalibration=True,
     )
 
     def __init__(self, *, config=None):

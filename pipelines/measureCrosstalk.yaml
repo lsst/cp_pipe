@@ -30,4 +30,4 @@ tasks:
     class: lsst.cp.pipe.measureCrosstalk.CrosstalkSolveTask
     config:
       connections.inputRatios: 'cpCrosstalkRatio'
-      connections.outputCrosstalk: 'crosstalkProposal'
+      connections.outputCrosstalk: 'crosstalk'

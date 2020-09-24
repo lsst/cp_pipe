@@ -21,7 +21,7 @@ tasks:
     class: lsst.cp.pipe.cpCombine.CalibCombineTask
     config:
       connections.inputExps: 'cpFlatProc'
-      connections.outputData: 'flatProposal'
+      connections.outputData: 'flat'
       calibrationType: 'flat'
       calibrationDimensions: ['physical_filter']
       exposureScaling: None

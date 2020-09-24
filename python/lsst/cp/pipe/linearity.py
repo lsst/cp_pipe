@@ -55,6 +55,7 @@ class LinearitySolveConnections(pipeBase.PipelineTaskConnections,
         doc="Output linearity measurements.",
         storageClass="Linearizer",
         dimensions=("instrument", "detector"),
+        isCalibration=True,
     )
 
 
