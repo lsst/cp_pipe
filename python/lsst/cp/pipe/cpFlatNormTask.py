@@ -28,6 +28,8 @@ import lsst.pipe.base as pipeBase
 import lsst.pipe.base.connectionTypes as cT
 from lsst.cp.pipe.cpCombine import VignetteExposure
 
+from ._lookupStaticCalibration import lookupStaticCalibration
+
 __all__ = ["CpFlatMeasureTask", "CpFlatMeasureTaskConfig",
            "CpFlatNormalizationTask", "CpFlatNormalizationTaskConfig"]
 
@@ -147,6 +149,7 @@ class CpFlatNormalizationConnections(pipeBase.PipelineTaskConnections,
         doc="Input camera to use for gain lookup.",
         storageClass="Camera",
         dimensions=("instrument",),
+        lookupFunction=lookupStaticCalibration,
         isCalibration=True,
     )
 
