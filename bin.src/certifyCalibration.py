@@ -87,6 +87,6 @@ if __name__ == "__main__":
     certify = CertifyCalibration(registry=butler.registry,
                                  inputCollection=args.inputCollection,
                                  outputCollection=args.outputCollection,
-                                 lastRunOnly=not args.lastRunOnly)
+                                 lastRunOnly=args.lastRunOnly)
 
     certify.run(args.datasetTypeName, timespan)
