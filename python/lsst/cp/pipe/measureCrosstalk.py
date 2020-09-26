@@ -34,6 +34,8 @@ from lsst.pex.config import Config, Field, ListField, ConfigurableField
 from lsst.ip.isr import CrosstalkCalib, IsrProvenance
 from lsst.pipe.tasks.getRepositoryData import DataRefListRunner
 
+from ._lookupStaticCalibration import lookupStaticCalibration
+
 __all__ = ["CrosstalkExtractConfig", "CrosstalkExtractTask",
            "CrosstalkSolveTask", "CrosstalkSolveConfig",
            "MeasureCrosstalkConfig", "MeasureCrosstalkTask"]
@@ -334,15 +336,18 @@ class CrosstalkSolveConnections(pipeBase.PipelineTaskConnections,
         name="camera",
         doc="Camera the input data comes from.",
         storageClass="Camera",
-        dimensions=("instrument", "calibration_label"),
+        dimensions=("instrument",),
+        isCalibration=True,
+        lookupFunction=lookupStaticCalibration,
     )
 
     outputCrosstalk = cT.Output(
-        name="crosstalkProposal",
+        name="crosstalk",
         doc="Output proposed crosstalk calibration.",
         storageClass="CrosstalkCalib",
         dimensions=("instrument", "detector"),
         multiple=False,
+        isCalibration=True,
     )
 
     def __init__(self, *, config=None):

@@ -114,6 +114,7 @@ class CalibCombineConnections(pipeBase.PipelineTaskConnections,
         doc="Output combined proposed calibration.",
         storageClass="ExposureF",
         dimensions=("instrument", "detector"),
+        isCalibration=True,
     )
 
     def __init__(self, *, config=None):
@@ -128,7 +129,8 @@ class CalibCombineConnections(pipeBase.PipelineTaskConnections,
                 name=self.outputData.name,
                 doc=self.outputData.doc,
                 storageClass=self.outputData.storageClass,
-                dimensions=self.allConnections['outputData'].dimensions + newDimensions
+                dimensions=self.allConnections['outputData'].dimensions + newDimensions,
+                isCalibration=True,
             )
             self.dimensions.update(config.calibrationDimensions)
             self.outputData = newOutputData

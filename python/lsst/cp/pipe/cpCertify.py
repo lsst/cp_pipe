@@ -18,12 +18,10 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
-import datetime
-from astropy.time import Time
 
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
-from lsst.daf.butler import DatasetType
+from lsst.daf.butler import CollectionType
 
 
 class CertifyCalibration(pipeBase.Task):
@@ -34,154 +32,56 @@ class CertifyCalibration(pipeBase.Task):
 
     Parameters
     ----------
-    butler : `lsst.daf.butler.Butler`
-        Butler repository to use.
+    registry : `lsst.daf.butler.Registry`
+        Registry pointing at the butler repository to operate on.
     inputCollection : `str`
-        Data collection to pull calibrations from.
+        Data collection to pull calibrations from.  Usually an existing
+        `~CollectionType.RUN` or `~CollectionType.CHAINED` collection, and may
+        _not_ be a `~CollectionType.CALIBRATION` collection or a nonexistent
+        collection.
     outputCollection : `str`
-        Data collection to store final calibrations.
+        Data collection to store final calibrations.  If it already exists, it
+        must be a `~CollectionType.CALIBRATION` collection.  If not, a new
+        `~CollectionType.CALIBRATION` collection with this name will be
+        registered.
+    lastRunOnly : `bool`, optional
+        If `True` (default) and ``inputCollection`` is a
+        `~CollectionType.CHAINED` collection, only search its first child
+        collection (which usually corresponds to the last processing run),
+        instead of all child collections in the chain.  This behavior ensures
+        that datasets in a collection used as input to that processing run
+        are never included in the certification.
     **kwargs :
         Additional arguments forwarded to `lsst.pipe.base.Task.__init__`.
     """
     _DefaultName = 'CertifyCalibration'
     ConfigClass = pexConfig.Config
 
-    def __init__(self, *, butler, inputCollection, outputCollection,
-                 **kwargs):
+    def __init__(self, *, registry, inputCollection, outputCollection, lastRunOnly=True, **kwargs):
         super().__init__(**kwargs)
-        self.butler = butler
-        self.registry = self.butler.registry
+        self.registry = registry
+        if lastRunOnly:
+            try:
+                inputCollection, _ = next(iter(self.registry.getCollectionChain(inputCollection)))
+            except TypeError:
+                # Not a CHAINED collection; do nothing.
+                pass
         self.inputCollection = inputCollection
         self.outputCollection = outputCollection
 
-        self.calibrationLabel = None
-        self.instrument = None
-
-    def findInputs(self, datasetTypeName, inputDatasetTypeName=None):
-        """Find and prepare inputs for blessing.
+    def run(self, datasetTypeName, timespan):
+        """Certify all of the datasets of the given type in the input
+        collection.
 
         Parameters
         ----------
         datasetTypeName : `str`
-            Dataset that will be blessed.
-        inputDatasetTypeName : `str`, optional
-            Dataset name for the input datasets.  Default to
-            datasetTypeName + "Proposal".
-
-        Raises
-        ------
-        RuntimeError
-            Raised if no input datasets found or if the calibration
-            label exists and is not empty.
+            Name of the dataset type to certify.
+        timespan : `lsst.daf.butler.Timespan`
+            Timespan for the validity range.
         """
-        if inputDatasetTypeName is None:
-            inputDatasetTypeName = datasetTypeName + "Proposal"
-
-        self.inputValues = list(self.registry.queryDatasets(inputDatasetTypeName,
-                                                            collections=[self.inputCollection],
-                                                            deduplicate=True))
-        # THIS IS INELEGANT AT BEST => fixed by passing deduplicate=True above.
-        # self.inputValues = list(filter(lambda vv: self.inputCollection in vv.run, self.inputValues))
-
-        if len(self.inputValues) == 0:
-            raise RuntimeError(f"No inputs found for dataset {inputDatasetTypeName} "
-                               f"in {self.inputCollection}")
-
-        # Construct calibration label and choose instrument to use.
-        self.calibrationLabel = f"{datasetTypeName}/{self.inputCollection}"
-        self.instrument = self.inputValues[0].dataId['instrument']
-
-        # Prepare combination of new data ids and object data:
-        self.newDataIds = [value.dataId for value in self.inputValues]
-
-        self.objects = [self.butler.get(value) for value in self.inputValues]
-
-    def registerCalibrations(self, datasetTypeName):
-        """Add blessed inputs to the output collection.
-
-        Parameters
-        ----------
-        datasetTypeName : `str`
-            Dataset type these calibrations will be registered for.
-        """
-        # Find/make the run we will use for the output
-        self.registry.registerRun(self.outputCollection)
-        self.butler.run = self.outputCollection
-        self.butler.collection = None
-
-        try:
-            self.registerDatasetType(datasetTypeName, self.newDataIds[0])
-        except Exception as e:
-            print(f"Could not registerDatasetType {datasetTypeName}.  Failure {e}?")
-
-        with self.butler.transaction():
-            for newId, data in zip(self.newDataIds, self.objects):
-                self.butler.put(data, datasetTypeName, dataId=newId,
-                                calibration_label=self.calibrationLabel,
-                                producer=None)
-
-    def registerDatasetType(self, datasetTypeName, dataId):
-        """Ensure registry can handle this dataset type.
-
-        Parameters
-        ----------
-        datasetTypeName : `str`
-            Name of the dataset that will be registered.
-        dataId : `lsst.daf.butler.dataId`
-            Data ID providing the list of dimensions for the new
-            datasetType.
-        """
-        storageClassMap = {'crosstalk': 'CrosstalkCalib'}
-        storageClass = storageClassMap.get(datasetTypeName, 'ExposureF')
-
-        dimensionArray = set(list(dataId.keys()) + ["calibration_label"])
-        datasetType = DatasetType(datasetTypeName,
-                                  dimensionArray,
-                                  storageClass,
-                                  universe=self.butler.registry.dimensions)
-        self.butler.registry.registerDatasetType(datasetType)
-
-    def addCalibrationLabel(self, name=None, instrument=None,
-                            beginDate="1970-01-01", endDate="2038-12-31"):
-
-        """Method to allow tasks to add calibration_label for master calibrations.
-
-        Parameters
-        ----------
-        name : `str`, optional
-            A unique string for the calibration_label key.
-        instrument : `str`, optional
-            Instrument this calibration is for.
-        beginDate : `str`, optional
-            An ISO 8601 date string for the beginning of the valid date range.
-        endDate : `str`, optional
-            An ISO 8601 date string for the end of the valid date range.
-
-        Raises
-        ------
-        RuntimeError :
-            Raised if the instrument or calibration_label name are not set.
-        """
-        if name is None:
-            name = self.calibrationLabel
-        if instrument is None:
-            instrument = self.instrument
-        if name is None and instrument is None:
-            raise RuntimeError("Instrument and calibration_label name not set.")
-
-        try:
-            existingValues = self.registry.queryDataIds(['calibration_label'],
-                                                        instrument=self.instrument,
-                                                        calibration_label=name)
-            existingValues = [a for a in existingValues]
-            print(f"Found {len(existingValues)} Entries for {self.calibrationLabel}")
-        except LookupError:
-            self.butler.registry.insertDimensionData(
-                "calibration_label",
-                {
-                    "name": name,
-                    "instrument": instrument,
-                    "datetime_begin": Time(datetime.datetime.fromisoformat(beginDate), scale='utc'),
-                    "datetime_end": Time(datetime.datetime.fromisoformat(endDate), scale='utc'),
-                }
-            )
+        refs = set(self.registry.queryDatasets(datasetTypeName, collections=[self.inputCollection]))
+        if not refs:
+            raise RuntimeError(f"No inputs found for dataset {datasetTypeName} in {self.inputCollection}.")
+        self.registry.registerCollection(self.outputCollection, type=CollectionType.CALIBRATION)
+        self.registry.certify(self.outputCollection, refs, timespan)
