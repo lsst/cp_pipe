@@ -23,10 +23,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 from collections import Counter
 
+from astropy.table import Table
+
 import lsst.afw.math as afwMath
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
-from .utils import (fitLeastSq, fitBootstrap, funcPolynomial, funcAstier, makeMockFlats)
+from .utils import (fitLeastSq, fitBootstrap, funcPolynomial, funcAstier)
 from scipy.optimize import least_squares
 
 import datetime
@@ -270,7 +272,7 @@ class PhotonTransferCurveDataset(IsrCalib):
         (and 'b' = 0).
     finalVars : `dict`, [`str`, `list`]
         Dictionary keyed by amp names containing the masked variance of the difference image of each flat
-        pair.
+        pair
     finalModelVars : `dict`, [`str`, `list`]
         Dictionary keyed by amp names containing the masked modeled variance of the difference image of each
         flat pair.
@@ -288,7 +290,7 @@ class PhotonTransferCurveDataset(IsrCalib):
     _SCHEMA = 'Gen3 Photon Transfer Curve'
     _VERSION = 1.0
 
-    def __init__(self, ampNames, ptcFitType, **kwargs):
+    def __init__(self, ampNames=[], ptcFitType=None, **kwargs):
 
         self.ptcFitType = ptcFitType
         self.ampNames = ampNames
@@ -369,41 +371,72 @@ class PhotonTransferCurveDataset(IsrCalib):
             calibration.
         """
         calib = cls()
-
         if calib._OBSTYPE != dictionary['metadata']['OBSTYPE']:
             raise RuntimeError(f"Incorrect Photon Transfer Curve dataset  supplied. "
                                f"Expected {calib._OBSTYPE}, found {dictionary['metadata']['OBSTYPE']}")
 
         calib.setMetadata(dictionary['metadata'])
-
-        calib.ptcFitType = dictionary['fitType']
-        calib.badAmps = dictionary['badAmps']
-
-        calib.ampNames = dictionary['ampNames']
-        calib.inputExpIdPairs = dictionary['inputExpIdPairs']
-        calib.expIdMask = dictionary['expIdMask']
-        calib.rawExpTimes = dictionary['rawExpTimes']
-        calib.rawMeans = dictionary['rawMeans']
-        calib.rawVars = dictionary['rawVars']
-        calib.gain = dictionary['gain']
-        calib.gainErr = dictionary['gainErr']
-        calib.noise = dictionary['noise']
-        calib.noiseErr = dictionary['noiseErr']
-        calib.ptcFitPars = dictionary['ptcFitPars']
-        calib.ptcFitParsError = dictionary['ptcFitParsError']
-        calib.ptcFitChiSq = dictionary['ptcFitChiSq']
-        calib.covariances = dictionary['covariances']
-        calib.covariancesModel = dictionary['covariancesModel']
-        calib.covariancesSqrtWeights = dictionary['covariancesSqrtWeights']
-        calib.aMatrix = dictionary['aMatrix']
-        calib.bMatrix = dictionary['bMatrix']
-        calib.covariancesNoB = dictionary['covariancesNoB']
-        calib.covariancesModelNoB = dictionary['covariancesModelNoB']
-        calib.covariancesSqrtWeightsNoB = dictionary['covariancesSqrtWeightsNoB']
-        calib.aMatrixNoB = dictionary['aMatrixNoB']
-        calib.finalVars = dictionary['finalVars']
-        calib.finalModelVars = dictionary['finalModelVars']
-        calib.finalMeans = dictionary['finalMeans']
+        calib.ptcFitType = list(dictionary['ampNames'].values())[0]['ptcFitType']
+        calib.badAmps = list(dictionary['ampNames'].values())[0]['badAmps']
+        if calib.ptcFitType in ['FULLCOVARIANCE', ]:
+            # Number of final signal levels
+            nSignalPoints = len(list(dictionary['ampNames'].values())[0]['rawMeans'])
+            # The cov matrices are square
+            covMatrixSide = int(np.sqrt(len(list(dictionary['ampNames'].values())[0]['covariances']) /
+                                nSignalPoints))
+        for ampName in dictionary['ampNames']:
+            amp = dictionary['ampNames'][ampName]
+            calib.ampNames.append(ampName)
+            calib.inputExpIdPairs.setdefault(ampName, amp['inputExpIdPairs'])
+            calib.expIdMask.setdefault(ampName, amp['expIdMask'])
+            calib.rawExpTimes.setdefault(ampName, amp['rawExpTimes'])
+            calib.rawMeans.setdefault(ampName, amp['rawMeans'])
+            calib.rawVars.setdefault(ampName, amp['rawVars'])
+            calib.gain.setdefault(ampName, amp['gain'])
+            calib.gainErr.setdefault(ampName, amp['gainErr'])
+            calib.noise.setdefault(ampName, amp['noise'])
+            calib.noiseErr.setdefault(ampName, amp['noiseErr'])
+            calib.ptcFitPars.setdefault(ampName, amp['ptcFitPars'])
+            calib.ptcFitParsError.setdefault(ampName, amp['ptcFitParsError'])
+            calib.ptcFitChiSq.setdefault(ampName, amp['ptcFitChiSq'])
+            if calib.ptcFitType in ['FULLCOVARIANCE', ]:
+                calib.covariances.setdefault(ampName, amp['covariances'].reshape((nSignalPoints,
+                                                                                 covMatrixSide,
+                                                                                 covMatrixSide)))
+                calib.covariancesModel.setdefault(ampName, amp['covariancesModel'].reshape((nSignalPoints,
+                                                                                            covMatrixSide,
+                                                                                            covMatrixSide)))
+                calib.covariancesSqrtWeights.setdefault(ampName,
+                                                        amp['covariancesSqrtWeights'].reshape((nSignalPoints,
+                                                                                              covMatrixSide,
+                                                                                              covMatrixSide)))
+                calib.aMatrix.setdefault(ampName, amp['aMatrix'].reshape((covMatrixSide, covMatrixSide)))
+                calib.bMatrix.setdefault(ampName, amp['bMatrix'].reshape((covMatrixSide, covMatrixSide)))
+                calib.covariancesNoB.setdefault(ampName, amp['covariancesNoB'].reshape((nSignalPoints,
+                                                                                        covMatrixSide,
+                                                                                        covMatrixSide)))
+                calib.covariancesModelNoB.setdefault(ampName,
+                                                     amp['covariancesModelNoB'].reshape(
+                                                         (nSignalPoints, covMatrixSide, covMatrixSide)))
+                calib.covariancesSqrtWeightsNoB.setdefault(ampName,
+                                                           amp['covariancesSqrtWeightsNoB'].reshape(
+                                                               (nSignalPoints, covMatrixSide, covMatrixSide)))
+                calib.aMatrixNoB.setdefault(ampName,
+                                            amp['aMatrixNoB'].reshape(
+                                                (covMatrixSide, covMatrixSide)))
+            else:
+                calib.covariances.setdefault(ampName, [])
+                calib.covariancesModel.setdefault(ampName, [])
+                calib.covariancesSqrtWeights.setdefault(ampName, [])
+                calib.aMatrix.setdefault(ampName, [])
+                calib.bMatrix.setdefault(ampName, [])
+                calib.covariancesNoB.setdefault(ampName, [])
+                calib.covariancesModelNoB.setdefault(ampName, [])
+                calib.covariancesSqrtWeightsNoB.setdefault(ampName, [])
+                calib.aMatrixNoB.setdefault(ampName, [])
+            calib.finalVars.setdefault(ampName, amp['finalVars'])
+            calib.finalModelVars.setdefault(ampName, amp['finalModelVars'])
+            calib.finalMeans.setdefault(ampName, amp['finalMeans'])
 
         calib.updateMetadata()
         return calib
@@ -425,8 +458,8 @@ class PhotonTransferCurveDataset(IsrCalib):
         metadata = self.getMetadata()
         outDict['metadata'] = metadata
 
-        outDict['fitType'] = self.fitType
-        outDict['ampNames'] = self.ampnames
+        outDict['ptcFitType'] = self.ptcFitType
+        outDict['ampNames'] = self.ampNames
         outDict['badAmps'] = self.badAmps
         outDict['inputExpIdPairs'] = self.inputExpIdPairs
         outDict['expIdMask'] = self.expIdMask
@@ -454,6 +487,149 @@ class PhotonTransferCurveDataset(IsrCalib):
         outDict['finalMeans'] = self.finalMeans
 
         return outDict
+
+    @classmethod
+    def fromTable(cls, tableList):
+        """Construct calibration from a list of tables.
+
+        This method uses the `fromDict` method to create the
+        calibration, after constructing an appropriate dictionary from
+        the input tables.
+
+        Parameters
+        ----------
+        tableList : `list` [`lsst.afw.table.Table`]
+            List of tables to use to construct the datasetPtc.
+
+        Returns
+        -------
+        calib : `lsst.cp.pipe.`
+            The calibration defined in the tables.
+        """
+        ptcTable = tableList[0]
+
+        metadata = ptcTable.meta
+        inDict = dict()
+        inDict['metadata'] = metadata
+        inDict['ampNames'] = dict()
+
+        for record in ptcTable:
+            ampName = record['AMPLIFIER_NAME']
+
+            inDict['ampNames'][ampName] = {
+                'ptcFitType': record['PTC_FIT_TYPE'],
+                'inputExpIdPairs': record['INPUT_EXP_ID_PAIRS'],
+                'expIdMask': record['EXP_ID_MASK'],
+                'rawExpTimes': record['RAW_EXP_TIMES'],
+                'rawMeans': record['RAW_MEANS'],
+                'rawVars': record['RAW_VARS'],
+                'gain': record['GAIN'],
+                'gainErr': record['GAIN_ERR'],
+                'noise': record['NOISE'],
+                'noiseErr': record['NOISE_ERR'],
+                'ptcFitPars': record['PTC_FIT_PARS'],
+                'ptcFitParsError': record['PTC_FIT_PARS_ERROR'],
+                'ptcFitChiSq': record['PTC_FIT_CHI_SQ'],
+                'covariances': record['COVARIANCES'],
+                'covariancesModel': record['COVARIANCES_MODEL'],
+                'covariancesSqrtWeights': record['COVARIANCES_SQRT_WEIGHTS'],
+                'aMatrix': record['A_MATRIX'],
+                'bMatrix': record['B_MATRIX'],
+                'covariancesNoB': record['COVARIANCES_NO_B'],
+                'covariancesModelNoB': record['COVARIANCES_MODEL_NO_B'],
+                'covariancesSqrtWeightsNoB': record['COVARIANCES_SQRT_WEIGHTS_NO_B'],
+                'aMatrixNoB': record['A_MATRIX_NO_B'],
+                'finalVars': record['FINAL_VARS'],
+                'finalModelVars': record['FINAL_MODEL_VARS'],
+                'finalMeans': record['FINAL_MEANS'],
+                'badAmps': record['BAD_AMPS'] if 'BAD_AMPS' in record else []
+            }
+
+        return cls().fromDict(inDict)
+
+    def toTable(self):
+        """Construct a list of tables containing the information in this calibration
+
+        The list of tables should create an identical calibration
+        after being passed to this class's fromTable method.
+
+        Returns
+        -------
+        tableList : `list` [`astropy.table.Table`]
+            List of tables containing the linearity calibration
+            information.
+        """
+        tableList = []
+        self.updateMetadata()
+        if self.ptcFitType in ['FULLCOVARIANCE', ]:
+            nSignalPoints = list(self.covariances.values())[0].shape[0]
+            covMatrixSide = list(self.covariances.values())[0].shape[1]
+        else:
+            # empty lists
+            nSignalPoints = 0
+            covMatrixSide = -1
+        catalog = Table([{'AMPLIFIER_NAME': ampName,
+                          'PTC_FIT_TYPE': self.ptcFitType,
+                          'INPUT_EXP_ID_PAIRS': self.inputExpIdPairs[ampName] if
+                          len(self.inputExpIdPairs[ampName]) else np.nan,
+                          'EXP_ID_MASK': self.expIdMask[ampName] if
+                          len(self.expIdMask[ampName]) else np.nan,
+                          'RAW_EXP_TIMES': self.rawExpTimes[ampName] if
+                          len(self.rawExpTimes[ampName]) else np.nan,
+                          'RAW_MEANS': self.rawMeans[ampName] if len(self.rawMeans[ampName]) else np.nan,
+                          'RAW_VARS': self.rawVars[ampName] if len(self.rawVars[ampName]) else np.nan,
+                          'GAIN': self.gain[ampName],
+                          'GAIN_ERR': self.gainErr[ampName],
+                          'NOISE': self.noise[ampName],
+                          'NOISE_ERR': self.noiseErr[ampName],
+                          'PTC_FIT_PARS': self.ptcFitPars[ampName] if
+                          len(self.ptcFitPars[ampName]) else np.nan,
+                          'PTC_FIT_PARS_ERROR': self.ptcFitParsError[ampName] if
+                          len(self.ptcFitParsError[ampName]) else np.nan,
+                          'PTC_FIT_CHI_SQ': self.ptcFitChiSq[ampName],
+                          'COVARIANCES': np.array(self.covariances[ampName]).reshape(
+                              nSignalPoints*covMatrixSide**2) if len(self.covariances[ampName]) else np.nan,
+                          'COVARIANCES_MODEL':
+                              np.array(self.covariancesModel[ampName]).reshape(
+                                  nSignalPoints*covMatrixSide**2) if
+                              len(self.covariancesModel[ampName]) else np.nan,
+                          'COVARIANCES_SQRT_WEIGHTS':
+                              np.array(self.covariancesSqrtWeights[ampName]).reshape(
+                                  nSignalPoints*covMatrixSide**2) if
+                              len(self.covariancesSqrtWeights[ampName]) else np.nan,
+                          'A_MATRIX': np.array(self.aMatrix[ampName]).reshape(covMatrixSide**2) if
+                              len(self.aMatrix[ampName]) else np.nan,
+                          'B_MATRIX': np.array(self.bMatrix[ampName]).reshape(covMatrixSide**2) if
+                              len(self.bMatrix[ampName]) else np.nan,
+                          'COVARIANCES_NO_B':
+                              np.array(self.covariancesNoB[ampName]).reshape(
+                                  nSignalPoints*covMatrixSide**2) if
+                              len(self.covariancesNoB[ampName]) else np.nan,
+                          'COVARIANCES_MODEL_NO_B':
+                              np.array(self.covariancesModelNoB[ampName]).reshape(
+                                  nSignalPoints*covMatrixSide**2) if
+                              len(self.covariancesModelNoB[ampName]) else np.nan,
+                          'COVARIANCES_SQRT_WEIGHTS_NO_B':
+                              np.array(self.covariancesSqrtWeightsNoB[ampName]).reshape(
+                                  nSignalPoints*covMatrixSide**2)
+                              if len(self.covariancesSqrtWeightsNoB[ampName]) else np.nan,
+                          'A_MATRIX_NO_B': np.array(self.aMatrixNoB[ampName]).reshape(covMatrixSide**2) if
+                              len(self.aMatrixNoB[ampName]) else np.nan,
+                          'FINAL_VARS': self.finalVars[ampName] if len(self.finalVars[ampName]) else np.nan,
+                          'FINAL_MODEL_VARS': self.finalModelVars[ampName]
+                          if len(self.finalModelVars[ampName]) else np.nan,
+                          'FINAL_MEANS': self.finalMeans[ampName] if len(self.finalMeans[ampName])
+                              else np.nan,
+                          'BAD_AMPS': self.badAmps if len(self.badAmps) else np.nan
+                          } for ampName in self.ampNames])
+
+        inMeta = self.getMetadata().toDict()
+        outMeta = {k: v for k, v in inMeta.items() if v is not None}
+        outMeta.update({k: "" for k, v in inMeta.items() if v is None})
+        catalog.meta = outMeta
+        tableList.append(catalog)
+
+        return(tableList)
 
     def getExpIdsUsed(self, ampName):
         """Get the exposures used, i.e. not discarded, for a given amp.
@@ -585,23 +761,17 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         tupleRecords = []
         allTags = []
-        tempCounter=0
-        for expTime in range(5,205, 5):
-        #for expTime, (exp1, exp2) in expPairs.items():
-            #expId1 = exp1.getInfo().getVisitInfo().getExposureId()
-            #expId2 = exp2.getInfo().getVisitInfo().getExposureId()
-            expId1 = tempCounter #TEMP
-            expId2 = tempCounter+1
+        for expTime, (exp1, exp2) in expPairs.items():
+            expId1 = exp1.getInfo().getVisitInfo().getExposureId()
+            expId2 = exp2.getInfo().getVisitInfo().getExposureId()
             tupleRows = []
             nAmpsNan = 0
             for ampNumber, amp in enumerate(detector):
                 ampName = amp.getName()
                 # covAstier: (i, j, var (cov[0,0]), cov, npix)
                 doRealSpace = self.config.covAstierRealSpace
-                bfPars = [8, 1.1e-7, 1.1e-7, 1.0e-8, 1.0e-8, 1.0e-9, 1.0e-9, 2.0]
-                exp1, exp2 = makeMockFlats(expTime, gain=1.5,powerLawBfParams=bfPars)
-                muDiff, varDiff, covAstier = self.measureMeanVarCov(exp1, exp2) #, region=amp.getBBox(),
-                                                                    #covAstierRealSpace=doRealSpace)
+                muDiff, varDiff, covAstier = self.measureMeanVarCov(exp1, exp2, region=amp.getBBox(),
+                                                                    covAstierRealSpace=doRealSpace)
                 if np.isnan(muDiff) or np.isnan(varDiff) or (covAstier is None):
                     msg = (f"NaN mean or var, or None cov in amp {ampNumber} in exposure pair {expId1},"
                            f" {expId2} of detector {detNum}.")
@@ -623,7 +793,6 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 continue
             allTags += tags
             tupleRecords += tupleRows
-            tempCounter+=1 #TEMP
         covariancesWithTags = np.core.records.fromrecords(tupleRecords, names=allTags)
 
         if self.config.ptcFitType in ["FULLCOVARIANCE", ]:
@@ -634,28 +803,30 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             # Fill up PhotonTransferCurveDataset object.
             datasetPtc = self.fitPtc(datasetPtc, self.config.ptcFitType)
 
+        detName = detector.getName()
+        now = datetime.datetime.utcnow()
+        calibDate = now.strftime("%Y-%m-%d")
+        butler = dataRef.getButler()
+        datasetPtc.updateMetadata(setDate=True, detectorName=detName, detectorId=detector.getId(),
+                                  instrument=camera.getName())
         # Fit a poynomial to calculate non-linearity and persist linearizer.
         if self.config.doCreateLinearizer:
             # Fit (non)linearity of signal vs time curve.
             # Fill up PhotonTransferCurveDataset object.
             # Fill up array for LUT linearizer (tableArray).
-            # Produce coefficients for Polynomial ans Squared linearizers.
+            # Produce coefficients for Polynomial and Squared linearizers.
             # Build linearizer objects.
             dimensions = {'camera': camera.getName(), 'detector': detector.getId()}
             linearityResults = self.linearity.run(datasetPtc, camera, dimensions)
             linearizer = linearityResults.outputLinearizer
 
-            butler = dataRef.getButler()
             self.log.info("Writing linearizer:")
-
-            detName = detector.getName()
-            now = datetime.datetime.utcnow()
-            calibDate = now.strftime("%Y-%m-%d")
-
             butler.put(linearizer, datasetType='Linearizer', dataId={'detector': detNum,
                        'detectorName': detName, 'calibDate': calibDate})
-        self.log.info("Writing PTC data.")
-        dataRef.put(datasetPtc, datasetType="photonTransferCurveDataset")
+
+        self.log.info(f"Writing PTC data.")
+        butler.put(datasetPtc, datasetType='photonTransferCurveDataset', dataId={'detector': detNum,
+                   'detectorName': detName, 'calibDate': calibDate})
 
         return pipeBase.Struct(exitStatus=0)
 
@@ -1219,6 +1390,9 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 dataset.ptcFitPars[ampName] = np.nan
                 dataset.ptcFitParsError[ampName] = np.nan
                 dataset.ptcFitChiSq[ampName] = np.nan
+                dataset.finalVars[ampName] = np.nan
+                dataset.finalModelVars[ampName] = np.nan
+                dataset.finalMeans[ampName] = np.nan
                 continue
 
             # Fit the PTC
@@ -1233,6 +1407,10 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             dataset.ptcFitPars[ampName] = parsFit
             dataset.ptcFitParsError[ampName] = parsFitErr
             dataset.ptcFitChiSq[ampName] = reducedChiSqPtc
+            # Masked variances (measured and modeled) and means.
+            dataset.finalVars[ampName] = varVecFinal
+            dataset.finalModelVars[ampName] = ptcFunc(parsFit, meanVecFinal)
+            dataset.finalMeans[ampName] = meanVecFinal
 
             if ptcFitType == 'EXPAPPROXIMATION':
                 ptcGain = parsFit[1]

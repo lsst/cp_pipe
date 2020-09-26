@@ -30,9 +30,9 @@ import os
 from matplotlib.backends.backend_pdf import PdfPages
 
 import lsst.ip.isr as isr
+import lsst.cp.pipe as cpPipe
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
-import pickle
 
 from .utils import (funcAstier, funcPolynomial, NonexistentDatasetTaskDataIdContainer,
                     calculateWeightedReducedChi2)
@@ -117,9 +117,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         """
 
         datasetFile = self.config.datasetFileName
-
-        with open(datasetFile, "rb") as f:
-            datasetPtc = pickle.load(f)
+        datasetPtc = cpPipe.ptc.PhotonTransferCurveDataset.readFits(datasetFile)
 
         dirname = dataRef.getUri(datasetType='cpPipePlotRoot', write=True)
         if not os.path.exists(dirname):
@@ -218,7 +216,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         Parameters
         ----------
         mu : `dict`, [`str`, `list`]
-            dict keyd by amp name with mean signal values.
+            Dictionary keyed by amp name with mean signal values.
 
         covs : `dict`, [`str`, `list`]
             Dictionary keyed by amp names containing a list of measued covariances per mean flux.
@@ -331,16 +329,16 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                 # fit with no 'b' coefficient (c = a*b in Eq. 20 of Astier+19)
                 covNoB, modelNoB, weightNoB = covsNoB[amp], covsModelNoB[amp], covsWeightsNoB[amp]
                 (meanVecFinalNoB, varVecFinalNoB, varVecModelFinalNoB,
-                 varWeightsFinalNoB, maskNoB) = getFitDataFromCovariances(0, 0, muAmp, covNoB, modelNoB, weightNoB,
-                                                                          returnMasked=True)
+                 varWeightsFinalNoB, maskNoB) = getFitDataFromCovariances(0, 0, muAmp, covNoB, modelNoB,
+                                                                          weightNoB, returnMasked=True)
                 chi2FullModelNoBVar = calculateWeightedReducedChi2(varVecFinalNoB, varVecModelFinalNoB,
-                                                                   varWeightsFinalNoB, len(meanVecFinalNoB), 3)
+                                                                   varWeightsFinalNoB, len(meanVecFinalNoB),
+                                                                   3)
 
-            #if len(meanVecFinal):  # Empty if the whole amp is bad, for example.
                 stringLegend = (f"Gain: {gain:.4} e/DN \n" +
                                 f"Noise: {noise:.4} e \n" +
-                                r"$a_{00}$: %.3e 1/e"%aCoeffs[0][0, 0] +
-                                "\n" + r"$b_{00}$: %.3e 1/e"%bCoeffs[0][0, 0])
+                                r"$a_{00}$: %.3e 1/e"%aCoeffs[0, 0] +
+                                "\n" + r"$b_{00}$: %.3e 1/e"%bCoeffs[0, 0])
                 minMeanVecFinal = np.min(meanVecFinal)
                 maxMeanVecFinal = np.max(meanVecFinal)
                 deltaXlim = maxMeanVecFinal - minMeanVecFinal
@@ -442,17 +440,35 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         Parameters
         ----------
-        covFits: `dict`
-            Dictionary of CovFit objects, with amp names as keys.
-
-        covFitsNoB: `dict`
-           Dictionary of CovFit objects, with amp names as keys (b=0 in Eq. 20 of Astier+19).
-
         i : `int`
             Covariane lag
 
-        j : `int
+        j : `int`
             Covariance lag
+
+        inputMu : `dict`, [`str`, `list`]
+            Dictionary keyed by amp name with mean signal values.
+
+        covs : `dict`, [`str`, `list`]
+            Dictionary keyed by amp names containing a list of measued covariances per mean flux.
+
+        covsModel : `dict`, [`str`, `list`]
+            Dictionary keyed by amp names containinging covariances model (Eq. 20 of Astier+19) per mean flux.
+
+        covsWeights : `dict`, [`str`, `list`]
+            Dictionary keyed by amp names containinging sqrt. of covariances weights.
+
+        covsNoB : `dict`, [`str`, `list`]
+            Dictionary keyed by amp names containing a list of measued covariances per mean flux ('b'=0 in
+            Astier+19).
+
+        covsModelNoB : `dict`, [`str`, `list`]
+            Dictionary keyed by amp names containing covariances model (with 'b'=0 in Eq. 20 of Astier+19)
+            per mean flux.
+
+        covsWeightsNoB : `dict`, [`str`, `list`]
+            Dictionary keyed by amp names containing sqrt. of covariances weights ('b' = 0 in Eq. 20 of
+            Astier+19).
 
         pdfPages: `matplotlib.backends.backend_pdf.PdfPages`
             PDF file where the plots will be saved.
@@ -486,8 +502,9 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         mue, rese, wce = [], [], []
         mueNoB, reseNoB, wceNoB = [], [], []
         for counter, amp in enumerate(covs):
-            muAmp, fullCov, fullCovModel, fullCovWeight = inputMu[amp], covs[amp], covsModel[amp], covsWeights[amp]
-            if len(fullCov) == 0: 
+            muAmp, fullCov, fullCovModel, fullCovWeight = (inputMu[amp], covs[amp], covsModel[amp],
+                                                           covsWeights[amp])
+            if len(fullCov) == 0:
                 continue
             mu, cov, model, weightCov, _ = getFitDataFromCovariances(i, j, muAmp, fullCov, fullCovModel,
                                                                      fullCovWeight, divideByMu=True,
@@ -567,8 +584,13 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         Parameters
         ----------
-        covFits: `dict`
-            Dictionary of CovFit objects, with amp names as keys.
+        aDict : `dict`, [`numpy.array`]
+            Dictionary keyed by amp names containing the fitted 'a' coefficients from the model
+            in Eq. 20 of Astier+19 (if `ptcFitType` is `FULLCOVARIANCE`).
+
+        bDict : `dict`, [`numpy.array`]
+            Dictionary keyed by amp names containing the fitted 'b' coefficients from the model
+            in Eq. 20 of Astier+19 (if `ptcFitType` is `FULLCOVARIANCE`).
 
         pdfPages: `matplotlib.backends.backend_pdf.PdfPages`
             PDF file where the plots will be saved.
@@ -580,8 +602,8 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         for amp in aDict:
             if len(aDict[amp]) == 0:
                 continue
-            a.append(aDict[amp][0])
-            b.append(bDict[amp][0])
+            a.append(aDict[amp])
+            b.append(bDict[amp])
         a = np.array(a).mean(axis=0)
         b = np.array(b).mean(axis=0)
         fig = plt.figure(figsize=(7, 11))
@@ -615,11 +637,13 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         Parameters
         ----------
-        aDict: `dict`
-            Dictionary of 'a' matrices (Eq. 20, Astier+19), with amp names as keys.
+        aDict : `dict`, [`numpy.array`]
+            Dictionary keyed by amp names containing the fitted 'a' coefficients from the model
+            in Eq. 20 of Astier+19 (if `ptcFitType` is `FULLCOVARIANCE`).
 
-        bDict: `dict
-            Dictionary of 'b' matrices (Eq. 20, Astier+19), with amp names as keys.
+        bDict : `dict`, [`numpy.array`]
+            Dictionary keyed by amp names containing the fitted 'b' coefficients from the model
+            in Eq. 20 of Astier+19 (if `ptcFitType` is `FULLCOVARIANCE`).
 
         pdfPages: `matplotlib.backends.backend_pdf.PdfPages`
             PDF file where the plots will be saved.
@@ -632,7 +656,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         for amp in aDict:
             if len(aDict[amp]) == 0:
                 continue
-            a.append(aDict[amp][0])
+            a.append(aDict[amp])
         a = np.array(a)
         y = a.mean(axis=0)
         sy = a.std(axis=0)/np.sqrt(len(aDict))
@@ -660,7 +684,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         for amp in bDict:
             if len(bDict[amp]) == 0:
                 continue
-            b.append(bDict[amp][0])
+            b.append(bDict[amp])
         b = np.array(b)
         yb = b.mean(axis=0)
         syb = b.std(axis=0)/np.sqrt(len(bDict))
@@ -697,11 +721,13 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         Parameters
         ----------
-        aDict: `dict`
-            Dictionary of 'a' matrices (Eq. 20, Astier+19), with amp names as keys.
+        aDict : `dict`, [`numpy.array`]
+            Dictionary keyed by amp names containing the fitted 'a' coefficients from the model
+            in Eq. 20 of Astier+19 (if `ptcFitType` is `FULLCOVARIANCE`).
 
-        bDict: `dict
-            Dictionary of 'b' matrices (Eq. 20, Astier+19), with amp names as keys.
+        bDict : `dict`, [`numpy.array`]
+            Dictionary keyed by amp names containing the fitted 'b' coefficients from the model
+            in Eq. 20 of Astier+19 (if `ptcFitType` is `FULLCOVARIANCE`).
 
         pdfPages: `matplotlib.backends.backend_pdf.PdfPages`
             PDF file where the plots will be saved.
@@ -711,8 +737,8 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         for amp in aDict:
             if len(aDict[amp]) == 0 or len(bDict[amp]) == 0:
                 continue
-            a.append(aDict[amp][0])
-            b.append(bDict[amp][0])
+            a.append(aDict[amp])
+            b.append(bDict[amp])
         a = np.array(a).mean(axis=0)
         b = np.array(b).mean(axis=0)
         fig = plt.figure(figsize=(7, 6))
@@ -753,11 +779,21 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         aDictNoB: `dict`
             Dictionary of 'a' matrices ('b'= 0 in Eq. 20, Astier+19), with amp names as keys.
 
+        fullCovsModel : `dict`, [`str`, `list`]
+            Dictionary keyed by amp names containing covariances model per mean flux.
+
+        fullCovsModelNoB : `dict`, [`str`, `list`]
+            Dictionary keyed by amp names containing covariances model (with 'b'=0 in Eq. 20 of
+            Astier+19) per mean flux.
+
         signalElectrons : `float`
             Signal at which to evaluate the a_ij coefficients.
 
         pdfPages: `matplotlib.backends.backend_pdf.PdfPages`
             PDF file where the plots will be saved.
+
+        gainDict : `dict`, [`str`, `float`]
+            Dicgionary keyed by amp names with the gains in e-/ADU.
 
         maxr : `int`, optional
             Maximum lag.
@@ -781,7 +817,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             amean = np.array(amean).mean(axis=0)
             diff = np.array(diffs).mean(axis=0)
             diff = diff/amean
-            diff=diff[0][:]
+            diff = diff[:]
             # The difference should be close to zero
             diff[0, 0] = 0
             if maxr is None:

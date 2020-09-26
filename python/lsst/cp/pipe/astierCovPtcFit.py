@@ -47,7 +47,7 @@ def computeApproximateAcoeffs(covModel, muEl, gain):
 
     gain : `float`
         Gain in e-/ADU.
-        
+
     Returns
     -------
     aCoeffsOld: `numpy.array`
@@ -59,7 +59,6 @@ def computeApproximateAcoeffs(covModel, muEl, gain):
     (fit.geA()).
     """
 
-    muAdu = np.array([muEl/gain])
     var = covModel[0, 0, 0]  # ADU^2
     # For a result in electrons^-1, we have to use mu in electrons.
 
@@ -420,15 +419,15 @@ class CovFit:
 
     def getA(self):
         """'a' matrix from Astier+19(e.g., Eq. 20)"""
-        return self.params['a'].full.reshape(self.r, self.r)
+        return np.array(self.params['a'].full.reshape(self.r, self.r))
 
     def getB(self):
         """'b' matrix from Astier+19(e.g., Eq. 20)"""
-        return self.params['c'].full.reshape(self.r, self.r)/self.getA()
+        return np.array(self.params['c'].full.reshape(self.r, self.r)/self.getA())
 
     def getC(self):
         """'c'='ab' matrix from Astier+19(e.g., Eq. 20)"""
-        return self.params['c'].full.reshape(self.r, self.r)
+        return np.array(self.params['c'].full.reshape(self.r, self.r))
 
     def _getCovParams(self, what):
         """Get covariance matrix of parameters from fit"""
