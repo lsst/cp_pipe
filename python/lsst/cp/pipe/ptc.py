@@ -334,7 +334,8 @@ class PhotonTransferCurveDataset(IsrCalib):
                                         'ptcFitPars', 'ptcFitParsError', 'ptcFitChiSq', 'aMatrixNoB'
                                         'covariances', 'covariancesModel', 'covariancesSqrtWeights',
                                         'covariancesNoB', 'covariancesModelNoB', 'covariancesSqrtWeightsNoB',
-                                        'aMatrix', 'bMatrix', 'finalVars', 'finalModelVars', 'finalMeans'])
+                                        'aMatrix', 'bMatrix', 'finalVars', 'finalModelVars', 'finalMeans',
+                                        'photoCharge'])
 
     def updateMetadata(self, setDate=False, **kwargs):
         """Update calibration metadata.
@@ -439,6 +440,7 @@ class PhotonTransferCurveDataset(IsrCalib):
             calib.finalVars.setdefault(ampName, amp['finalVars'])
             calib.finalModelVars.setdefault(ampName, amp['finalModelVars'])
             calib.finalMeans.setdefault(ampName, amp['finalMeans'])
+            calib.photoCharge.setdefault(ampName, amp['photoCharge'])
 
         calib.updateMetadata()
         return calib
@@ -487,6 +489,7 @@ class PhotonTransferCurveDataset(IsrCalib):
         outDict['finalVars'] = self.finalVars
         outDict['finalModelVars'] = self.finalModelVars
         outDict['finalMeans'] = self.finalMeans
+        outDict['photoCharge'] = self.photoCharge
 
         return outDict
 
@@ -544,7 +547,8 @@ class PhotonTransferCurveDataset(IsrCalib):
                 'finalVars': record['FINAL_VARS'],
                 'finalModelVars': record['FINAL_MODEL_VARS'],
                 'finalMeans': record['FINAL_MEANS'],
-                'badAmps': record['BAD_AMPS'] if 'BAD_AMPS' in record else []
+                'badAmps': record['BAD_AMPS'] if 'BAD_AMPS' in record else [],
+                'photoCharge': record['PHOTO_CHARGE']
             }
 
         return cls().fromDict(inDict)
@@ -563,13 +567,10 @@ class PhotonTransferCurveDataset(IsrCalib):
         """
         tableList = []
         self.updateMetadata()
-        if self.ptcFitType in ['FULLCOVARIANCE', ]:
-            nSignalPoints = list(self.covariances.values())[0].shape[0]
-            covMatrixSide = list(self.covariances.values())[0].shape[1]
-        else:
-            # empty lists
-            nSignalPoints = 0
-            covMatrixSide = -1
+
+        nSignalPoints = len(list(self.rawExpTimes.values())[0])
+        covMatrixSide = list(self.aMatrix.values())[0].shape[0]
+
         catalog = Table([{'AMPLIFIER_NAME': ampName,
                           'PTC_FIT_TYPE': self.ptcFitType,
                           'INPUT_EXP_ID_PAIRS': self.inputExpIdPairs[ampName],
@@ -607,7 +608,8 @@ class PhotonTransferCurveDataset(IsrCalib):
                           'FINAL_VARS': self.finalVars[ampName],
                           'FINAL_MODEL_VARS': self.finalModelVars[ampName],
                           'FINAL_MEANS': self.finalMeans[ampName],
-                          'BAD_AMPS': self.badAmps if len(self.badAmps) else np.nan
+                          'BAD_AMPS': self.badAmps if len(self.badAmps) else np.nan,
+                          'PHOTO_CHARGE': self.photoCharge[ampName]
                           } for ampName in self.ampNames])
 
         inMeta = self.getMetadata().toDict()
@@ -745,6 +747,10 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
                 for ampName in ampNames:
                     datasetPtc.photoCharge[ampName].append((charges[0], charges[1]))
+        else:
+            # Can't be an empty list, as initialized, as astropy.Table won't allow it when saving as fits
+            for ampName in ampNames:
+                datasetPtc.photoCharge[ampName] = np.repeat(np.nan, len(expIds))
 
         tupleRecords = []
         allTags = []
@@ -955,6 +961,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 dataset.gainErr[amp] = fit.getGainErr()
                 dataset.noise[amp] = np.sqrt(fit.getRon())
                 dataset.noiseErr[amp] = fit.getRonErr()
+
                 padLength = lenInputTimes - len(varVecFinal)
                 dataset.finalVars[amp] = np.pad(varVecFinal/(gain**2), (0, padLength), 'constant',
                                                 constant_values=-9999.0)
@@ -969,30 +976,19 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 nanMatrix = np.empty((matrixSide, matrixSide))
                 nanMatrix[:] = np.nan
 
-                dataset.covariances[amp] = np.repeat(nanMatrix, lenInputTimes).reshape((lenInputTimes,
-                                                                                        matrixSide,
-                                                                                        matrixSide))
-                dataset.covariancesModel[amp] = np.repeat(nanMatrix, lenInputTimes).reshape((lenInputTimes,
-                                                                                             matrixSide,
-                                                                                             matrixSide))
-                dataset.covariancesSqrtWeights[amp] = np.repeat(nanMatrix,
-                                                                lenInputTimes).reshape((lenInputTimes,
-                                                                                        matrixSide,
-                                                                                        matrixSide))
+                listNanMatrix = np.empty((lenInputTimes, matrixSide, matrixSide))
+                listNanMatrix[:] = np.nan
+
+                dataset.covariances[amp] = listNanMatrix
+                dataset.covariancesModel[amp] = listNanMatrix
+                dataset.covariancesSqrtWeights[amp] = listNanMatrix
                 dataset.aMatrix[amp] = nanMatrix
                 dataset.bMatrix[amp] = nanMatrix
-                dataset.covariancesNoB[amp] = np.repeat(nanMatrix, lenInputTimes).reshape((lenInputTimes,
-                                                                                           matrixSide,
-                                                                                           matrixSide))
-                dataset.covariancesModelNoB[amp] = np.repeat(nanMatrix,
-                                                             lenInputTimes).reshape((lenInputTimes,
-                                                                                     matrixSide,
-                                                                                     matrixSide))
-                dataset.covariancesSqrtWeightsNoB[amp] = np.repeat(nanMatrix,
-                                                                   lenInputTimes).reshape((lenInputTimes,
-                                                                                           matrixSide,
-                                                                                           matrixSide))
+                dataset.covariancesNoB[amp] = listNanMatrix
+                dataset.covariancesModelNoB[amp] = listNanMatrix
+                dataset.covariancesSqrtWeightsNoB[amp] = listNanMatrix
                 dataset.aMatrixNoB[amp] = nanMatrix
+
                 dataset.expIdMask[amp] = np.repeat(np.nan, lenInputTimes)
                 dataset.gain[amp] = np.nan
                 dataset.gainErr[amp] = np.nan
@@ -1319,6 +1315,25 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             to include information such as the fit vectors and the fit parameters. See
             the class `PhotonTransferCurveDatase`.
         """
+
+        matrixSide = self.config.maximumRangeCovariancesAstier
+        nanMatrix = np.empty((matrixSide, matrixSide))
+        nanMatrix[:] = np.nan
+
+        for amp in dataset.ampNames:
+            lenInputTimes = len(dataset.rawExpTimes[amp])
+            listNanMatrix = np.empty((lenInputTimes, matrixSide, matrixSide))
+            listNanMatrix[:] = np.nan
+
+            dataset.covariances[amp] = listNanMatrix
+            dataset.covariancesModel[amp] = listNanMatrix
+            dataset.covariancesSqrtWeights[amp] = listNanMatrix
+            dataset.aMatrix[amp] = nanMatrix
+            dataset.bMatrix[amp] = nanMatrix
+            dataset.covariancesNoB[amp] = listNanMatrix
+            dataset.covariancesModelNoB[amp] = listNanMatrix
+            dataset.covariancesSqrtWeightsNoB[amp] = listNanMatrix
+            dataset.aMatrixNoB[amp] = nanMatrix
 
         def errFunc(p, x, y):
             return ptcFunc(p, x) - y
