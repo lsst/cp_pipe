@@ -272,13 +272,15 @@ class PhotonTransferCurveDataset(IsrCalib):
         (and 'b' = 0).
     finalVars : `dict`, [`str`, `list`]
         Dictionary keyed by amp names containing the masked variance of the difference image of each flat
-        pair
+        pair. If needed, each array will be right-padded with -9999.0 to match the length of rawExpTimes.
     finalModelVars : `dict`, [`str`, `list`]
         Dictionary keyed by amp names containing the masked modeled variance of the difference image of each
-        flat pair.
+        flat pair. If needed, each array will be right-padded with -9999.0 to match the length of
+        rawExpTimes.
     finalMeans : `dict`, [`str`, `list`]
         Dictionary keyed by amp names containing the masked average of the means of the exposures in each
-        flat pair.
+        flat pair. If needed, each array will be right-padded with -9999.0 to match the length of
+        rawExpTimes.
 
     Returns
     -------
@@ -570,56 +572,41 @@ class PhotonTransferCurveDataset(IsrCalib):
             covMatrixSide = -1
         catalog = Table([{'AMPLIFIER_NAME': ampName,
                           'PTC_FIT_TYPE': self.ptcFitType,
-                          'INPUT_EXP_ID_PAIRS': self.inputExpIdPairs[ampName] if
-                          len(self.inputExpIdPairs[ampName]) else np.nan,
-                          'EXP_ID_MASK': self.expIdMask[ampName] if
-                          len(self.expIdMask[ampName]) else np.nan,
-                          'RAW_EXP_TIMES': self.rawExpTimes[ampName] if
-                          len(self.rawExpTimes[ampName]) else np.nan,
-                          'RAW_MEANS': self.rawMeans[ampName] if len(self.rawMeans[ampName]) else np.nan,
-                          'RAW_VARS': self.rawVars[ampName] if len(self.rawVars[ampName]) else np.nan,
+                          'INPUT_EXP_ID_PAIRS': self.inputExpIdPairs[ampName],
+                          'EXP_ID_MASK': self.expIdMask[ampName],
+                          'RAW_EXP_TIMES': self.rawExpTimes[ampName],
+                          'RAW_MEANS': self.rawMeans[ampName],
+                          'RAW_VARS': self.rawVars[ampName],
                           'GAIN': self.gain[ampName],
                           'GAIN_ERR': self.gainErr[ampName],
                           'NOISE': self.noise[ampName],
                           'NOISE_ERR': self.noiseErr[ampName],
-                          'PTC_FIT_PARS': self.ptcFitPars[ampName] if
-                          len(self.ptcFitPars[ampName]) else np.nan,
-                          'PTC_FIT_PARS_ERROR': self.ptcFitParsError[ampName] if
-                          len(self.ptcFitParsError[ampName]) else np.nan,
+                          'PTC_FIT_PARS': self.ptcFitPars[ampName],
+                          'PTC_FIT_PARS_ERROR': self.ptcFitParsError[ampName],
                           'PTC_FIT_CHI_SQ': self.ptcFitChiSq[ampName],
                           'COVARIANCES': np.array(self.covariances[ampName]).reshape(
-                              nSignalPoints*covMatrixSide**2) if len(self.covariances[ampName]) else np.nan,
+                              nSignalPoints*covMatrixSide**2),
                           'COVARIANCES_MODEL':
                               np.array(self.covariancesModel[ampName]).reshape(
-                                  nSignalPoints*covMatrixSide**2) if
-                              len(self.covariancesModel[ampName]) else np.nan,
+                                  nSignalPoints*covMatrixSide**2),
                           'COVARIANCES_SQRT_WEIGHTS':
                               np.array(self.covariancesSqrtWeights[ampName]).reshape(
-                                  nSignalPoints*covMatrixSide**2) if
-                              len(self.covariancesSqrtWeights[ampName]) else np.nan,
-                          'A_MATRIX': np.array(self.aMatrix[ampName]).reshape(covMatrixSide**2) if
-                              len(self.aMatrix[ampName]) else np.nan,
-                          'B_MATRIX': np.array(self.bMatrix[ampName]).reshape(covMatrixSide**2) if
-                              len(self.bMatrix[ampName]) else np.nan,
+                                  nSignalPoints*covMatrixSide**2),
+                          'A_MATRIX': np.array(self.aMatrix[ampName]).reshape(covMatrixSide**2),
+                          'B_MATRIX': np.array(self.bMatrix[ampName]).reshape(covMatrixSide**2),
                           'COVARIANCES_NO_B':
                               np.array(self.covariancesNoB[ampName]).reshape(
-                                  nSignalPoints*covMatrixSide**2) if
-                              len(self.covariancesNoB[ampName]) else np.nan,
+                                  nSignalPoints*covMatrixSide**2),
                           'COVARIANCES_MODEL_NO_B':
                               np.array(self.covariancesModelNoB[ampName]).reshape(
-                                  nSignalPoints*covMatrixSide**2) if
-                              len(self.covariancesModelNoB[ampName]) else np.nan,
+                                  nSignalPoints*covMatrixSide**2),
                           'COVARIANCES_SQRT_WEIGHTS_NO_B':
                               np.array(self.covariancesSqrtWeightsNoB[ampName]).reshape(
-                                  nSignalPoints*covMatrixSide**2)
-                              if len(self.covariancesSqrtWeightsNoB[ampName]) else np.nan,
-                          'A_MATRIX_NO_B': np.array(self.aMatrixNoB[ampName]).reshape(covMatrixSide**2) if
-                              len(self.aMatrixNoB[ampName]) else np.nan,
-                          'FINAL_VARS': self.finalVars[ampName] if len(self.finalVars[ampName]) else np.nan,
-                          'FINAL_MODEL_VARS': self.finalModelVars[ampName]
-                          if len(self.finalModelVars[ampName]) else np.nan,
-                          'FINAL_MEANS': self.finalMeans[ampName] if len(self.finalMeans[ampName])
-                              else np.nan,
+                                  nSignalPoints*covMatrixSide**2),
+                          'A_MATRIX_NO_B': np.array(self.aMatrixNoB[ampName]).reshape(covMatrixSide**2),
+                          'FINAL_VARS': self.finalVars[ampName],
+                          'FINAL_MODEL_VARS': self.finalModelVars[ampName],
+                          'FINAL_MEANS': self.finalMeans[ampName],
                           'BAD_AMPS': self.badAmps if len(self.badAmps) else np.nan
                           } for ampName in self.ampNames])
 
@@ -772,8 +759,13 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 doRealSpace = self.config.covAstierRealSpace
                 muDiff, varDiff, covAstier = self.measureMeanVarCov(exp1, exp2, region=amp.getBBox(),
                                                                     covAstierRealSpace=doRealSpace)
+                datasetPtc.rawExpTimes[ampName].append(expTime)
+                datasetPtc.rawMeans[ampName].append(muDiff)
+                datasetPtc.rawVars[ampName].append(varDiff)
+                datasetPtc.inputExpIdPairs[ampName] = expIds
+
                 if np.isnan(muDiff) or np.isnan(varDiff) or (covAstier is None):
-                    msg = (f"NaN mean or var, or None cov in amp {ampNumber} in exposure pair {expId1},"
+                    msg = (f"NaN mean or var, or None cov in amp {ampName} in exposure pair {expId1},"
                            f" {expId2} of detector {detNum}.")
                     self.log.warn(msg)
                     nAmpsNan += 1
@@ -781,10 +773,6 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 tags = ['mu', 'i', 'j', 'var', 'cov', 'npix', 'ext', 'expTime', 'ampName']
                 if (muDiff <= self.config.minMeanSignal) or (muDiff >= self.config.maxMeanSignal):
                     continue
-                datasetPtc.rawExpTimes[ampName].append(expTime)
-                datasetPtc.rawMeans[ampName].append(muDiff)
-                datasetPtc.rawVars[ampName].append(varDiff)
-                datasetPtc.inputExpIdPairs[ampName].append((expId1, expId2))
 
                 tupleRows += [(muDiff, ) + covRow + (ampNumber, expTime, ampName) for covRow in covAstier]
             if nAmpsNan == len(ampNames):
@@ -938,31 +926,81 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             See the class `PhotonTransferCurveDatase`.
         """
         assert(len(covFits) == len(covFitsNoB))
-        for i, amp in enumerate(covFits):
-            fit = covFits[amp]
-            fitNoB = covFitsNoB[amp]
-            # Save full covariances, covariances models, and their weights
-            dataset.covariances[amp] = fit.cov
-            dataset.covariancesModel[amp] = fit.evalCovModel()
-            dataset.covariancesSqrtWeights[amp] = fit.sqrtW
-            dataset.aMatrix[amp].append(fit.getA())
-            dataset.bMatrix[amp].append(fit.getB())
-            dataset.covariancesNoB[amp] = fitNoB.cov
-            dataset.covariancesModelNoB[amp] = fitNoB.evalCovModel()
-            dataset.covariancesSqrtWeightsNoB[amp] = fitNoB.sqrtW
-            dataset.aMatrixNoB[amp].append(fitNoB.getA())
 
-            (meanVecFinal, varVecFinal, varVecModel,
-                wc, varMask) = fit.getFitData(0, 0, divideByMu=False, returnMasked=True)
-            gain = fit.getGain()
-            dataset.expIdMask[amp] = varMask
-            dataset.gain[amp] = gain
-            dataset.gainErr[amp] = fit.getGainErr()
-            dataset.noise[amp] = np.sqrt(np.fabs(fit.getRon()))
-            dataset.noiseErr[amp] = fit.getRonErr()
-            dataset.finalVars[amp].append(varVecFinal/(gain**2))
-            dataset.finalModelVars[amp].append(varVecModel/(gain**2))
-            dataset.finalMeans[amp].append(meanVecFinal/gain)
+        for i, amp in enumerate(dataset.ampNames):
+            lenInputTimes = len(dataset.rawExpTimes[amp])
+            # Not used when ptcFitType is 'FULLCOVARIANCE'
+            dataset.ptcFitPars[amp] = np.nan
+            dataset.ptcFitParsError[amp] = np.nan
+            dataset.ptcFitChiSq[amp] = np.nan
+            if amp in covFits:
+                fit = covFits[amp]
+                fitNoB = covFitsNoB[amp]
+                # Save full covariances, covariances models, and their weights
+                dataset.covariances[amp] = fit.cov
+                dataset.covariancesModel[amp] = fit.evalCovModel()
+                dataset.covariancesSqrtWeights[amp] = fit.sqrtW
+                dataset.aMatrix[amp] = fit.getA()
+                dataset.bMatrix[amp] = fit.getB()
+                dataset.covariancesNoB[amp] = fitNoB.cov
+                dataset.covariancesModelNoB[amp] = fitNoB.evalCovModel()
+                dataset.covariancesSqrtWeightsNoB[amp] = fitNoB.sqrtW
+                dataset.aMatrixNoB[amp] = fitNoB.getA()
+
+                (meanVecFinal, varVecFinal, varVecModel,
+                    wc, varMask) = fit.getFitData(0, 0, divideByMu=False, returnMasked=True)
+                gain = fit.getGain()
+                dataset.expIdMask[amp] = varMask
+                dataset.gain[amp] = gain
+                dataset.gainErr[amp] = fit.getGainErr()
+                dataset.noise[amp] = np.sqrt(fit.getRon())
+                dataset.noiseErr[amp] = fit.getRonErr()
+                padLength = lenInputTimes - len(varVecFinal)
+                dataset.finalVars[amp] = np.pad(varVecFinal/(gain**2), (0, padLength), 'constant',
+                                                constant_values=-9999.0)
+                dataset.finalModelVars[amp] = np.pad(varVecModel/(gain**2), (0, padLength), 'constant',
+                                                     constant_values=-9999.0)
+                dataset.finalMeans[amp] = np.pad(meanVecFinal/gain, (0, padLength), 'constant',
+                                                 constant_values=-9999.0)
+            else:
+                # Bad amp
+                # Entries need to have proper dimensions so read/write with astropy.Table works.
+                matrixSide = self.config.maximumRangeCovariancesAstier
+                nanMatrix = np.empty((matrixSide, matrixSide))
+                nanMatrix[:] = np.nan
+
+                dataset.covariances[amp] = np.repeat(nanMatrix, lenInputTimes).reshape((lenInputTimes,
+                                                                                        matrixSide,
+                                                                                        matrixSide))
+                dataset.covariancesModel[amp] = np.repeat(nanMatrix, lenInputTimes).reshape((lenInputTimes,
+                                                                                             matrixSide,
+                                                                                             matrixSide))
+                dataset.covariancesSqrtWeights[amp] = np.repeat(nanMatrix,
+                                                                lenInputTimes).reshape((lenInputTimes,
+                                                                                        matrixSide,
+                                                                                        matrixSide))
+                dataset.aMatrix[amp] = nanMatrix
+                dataset.bMatrix[amp] = nanMatrix
+                dataset.covariancesNoB[amp] = np.repeat(nanMatrix, lenInputTimes).reshape((lenInputTimes,
+                                                                                           matrixSide,
+                                                                                           matrixSide))
+                dataset.covariancesModelNoB[amp] = np.repeat(nanMatrix,
+                                                             lenInputTimes).reshape((lenInputTimes,
+                                                                                     matrixSide,
+                                                                                     matrixSide))
+                dataset.covariancesSqrtWeightsNoB[amp] = np.repeat(nanMatrix,
+                                                                   lenInputTimes).reshape((lenInputTimes,
+                                                                                           matrixSide,
+                                                                                           matrixSide))
+                dataset.aMatrixNoB[amp] = nanMatrix
+                dataset.expIdMask[amp] = np.repeat(np.nan, lenInputTimes)
+                dataset.gain[amp] = np.nan
+                dataset.gainErr[amp] = np.nan
+                dataset.noise[amp] = np.nan
+                dataset.noiseErr[amp] = np.nan
+                dataset.finalVars[amp] = np.repeat(np.nan, lenInputTimes)
+                dataset.finalModelVars[amp] = np.repeat(np.nan, lenInputTimes)
+                dataset.finalMeans[amp] = np.repeat(np.nan, lenInputTimes)
 
         return dataset
 
@@ -1307,13 +1345,19 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 # The first and second parameters of initial fit are discarded (bias and gain)
                 # for the final NL coefficients
                 dataset.badAmps.append(ampName)
+                dataset.expIdMask[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
                 dataset.gain[ampName] = np.nan
                 dataset.gainErr[ampName] = np.nan
                 dataset.noise[ampName] = np.nan
                 dataset.noiseErr[ampName] = np.nan
-                dataset.ptcFitPars[ampName] = np.nan
-                dataset.ptcFitParsError[ampName] = np.nan
+                dataset.ptcFitPars[ampName] = (np.repeat(np.nan, self.config.polynomialFitDegree + 1) if
+                                               ptcFitType in ["POLYNOMIAL", ] else np.repeat(np.nan, 3))
+                dataset.ptcFitParsError[ampName] = (np.repeat(np.nan, self.config.polynomialFitDegree + 1) if
+                                                    ptcFitType in ["POLYNOMIAL", ] else np.repeat(np.nan, 3))
                 dataset.ptcFitChiSq[ampName] = np.nan
+                dataset.finalVars[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
+                dataset.finalModelVars[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
+                dataset.finalMeans[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
                 continue
 
             mask = mask & goodPoints
@@ -1351,13 +1395,21 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                     # The first and second parameters of initial fit are discarded (bias and gain)
                     # for the final NL coefficients
                     dataset.badAmps.append(ampName)
+                    dataset.expIdMask[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
                     dataset.gain[ampName] = np.nan
                     dataset.gainErr[ampName] = np.nan
                     dataset.noise[ampName] = np.nan
                     dataset.noiseErr[ampName] = np.nan
-                    dataset.ptcFitPars[ampName] = np.nan
-                    dataset.ptcFitParsError[ampName] = np.nan
+                    dataset.ptcFitPars[ampName] = (np.repeat(np.nan, self.config.polynomialFitDegree + 1)
+                                                   if ptcFitType in ["POLYNOMIAL", ] else
+                                                   np.repeat(np.nan, 3))
+                    dataset.ptcFitParsError[ampName] = (np.repeat(np.nan, self.config.polynomialFitDegree + 1)
+                                                        if ptcFitType in ["POLYNOMIAL", ] else
+                                                        np.repeat(np.nan, 3))
                     dataset.ptcFitChiSq[ampName] = np.nan
+                    dataset.finalVars[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
+                    dataset.finalModelVars[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
+                    dataset.finalMeans[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
                     break
                 nDroppedTotal = Counter(mask)[False]
                 self.log.debug(f"Iteration {count}: discarded {nDroppedTotal} points in total for {ampName}")
@@ -1383,16 +1435,19 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 # The first and second parameters of initial fit are discarded (bias and gain)
                 # for the final NL coefficients
                 dataset.badAmps.append(ampName)
+                dataset.expIdMask[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
                 dataset.gain[ampName] = np.nan
                 dataset.gainErr[ampName] = np.nan
                 dataset.noise[ampName] = np.nan
                 dataset.noiseErr[ampName] = np.nan
-                dataset.ptcFitPars[ampName] = np.nan
-                dataset.ptcFitParsError[ampName] = np.nan
+                dataset.ptcFitPars[ampName] = (np.repeat(np.nan, self.config.polynomialFitDegree + 1) if
+                                               ptcFitType in ["POLYNOMIAL", ] else np.repeat(np.nan, 3))
+                dataset.ptcFitParsError[ampName] = (np.repeat(np.nan, self.config.polynomialFitDegree + 1) if
+                                                    ptcFitType in ["POLYNOMIAL", ] else np.repeat(np.nan, 3))
                 dataset.ptcFitChiSq[ampName] = np.nan
-                dataset.finalVars[ampName] = np.nan
-                dataset.finalModelVars[ampName] = np.nan
-                dataset.finalMeans[ampName] = np.nan
+                dataset.finalVars[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
+                dataset.finalModelVars[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
+                dataset.finalMeans[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
                 continue
 
             # Fit the PTC
@@ -1407,10 +1462,15 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             dataset.ptcFitPars[ampName] = parsFit
             dataset.ptcFitParsError[ampName] = parsFitErr
             dataset.ptcFitChiSq[ampName] = reducedChiSqPtc
-            # Masked variances (measured and modeled) and means.
-            dataset.finalVars[ampName] = varVecFinal
-            dataset.finalModelVars[ampName] = ptcFunc(parsFit, meanVecFinal)
-            dataset.finalMeans[ampName] = meanVecFinal
+            # Masked variances (measured and modeled) and means. Need to pad the array so astropy.Table does
+            # not crash (the mask may vary per amp).
+            padLength = len(dataset.rawExpTimes[ampName]) - len(varVecFinal)
+            dataset.finalVars[ampName] = np.pad(varVecFinal, (0, padLength), 'constant',
+                                                constant_values=-9999.0)
+            dataset.finalModelVars[ampName] = np.pad(ptcFunc(parsFit, meanVecFinal), (0, padLength),
+                                                     'constant', constant_values=-9999.0)
+            dataset.finalMeans[ampName] = np.pad(meanVecFinal, (0, padLength), 'constant',
+                                                 constant_values=-9999.0)
 
             if ptcFitType == 'EXPAPPROXIMATION':
                 ptcGain = parsFit[1]

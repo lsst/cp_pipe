@@ -292,7 +292,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                                                               axCov01.flatten(), axCov10.flatten())):
 
             muAmp, cov, model, weight = mu[amp], covs[amp], covsModel[amp], covsWeights[amp]
-            if len(cov):
+            if not np.isnan(cov).all():  # If all the entries ara np.nan, this is a bad amp.
                 aCoeffs, bCoeffs = aDict[amp], bDict[amp]
                 gain, noise = gainDict[amp], noiseDict[amp]
                 (meanVecOriginal, varVecOriginal, varVecModelOriginal,
@@ -600,7 +600,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         """
         a, b = [], []
         for amp in aDict:
-            if len(aDict[amp]) == 0:
+            if np.isnan(aDict[amp]).all():
                 continue
             a.append(aDict[amp])
             b.append(bDict[amp])
@@ -654,7 +654,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         assert (len(aDict) == len(bDict))
         a = []
         for amp in aDict:
-            if len(aDict[amp]) == 0:
+            if np.isnan(aDict[amp]).all():
                 continue
             a.append(aDict[amp])
         a = np.array(a)
@@ -682,7 +682,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         axb = fig.add_subplot(212)
         b = []
         for amp in bDict:
-            if len(bDict[amp]) == 0:
+            if np.isnan(bDict[amp]).all():
                 continue
             b.append(bDict[amp])
         b = np.array(b)
@@ -735,7 +735,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         assert (len(aDict) == len(bDict))
         a, b = [], []
         for amp in aDict:
-            if len(aDict[amp]) == 0 or len(bDict[amp]) == 0:
+            if np.isnan(aDict[amp]).all() or np.isnan(bDict[amp]).all():
                 continue
             a.append(aDict[amp])
             b.append(bDict[amp])
@@ -808,7 +808,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             amean = []
             for amp in pair[0]:
                 covModel = pair[1][amp]
-                if len(covModel) == 0:
+                if np.isnan(covModel).all():
                     continue
                 aOld = computeApproximateAcoeffs(covModel, signalElectrons, gainDict[amp])
                 a = pair[0][amp]
@@ -892,11 +892,13 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             meanVecOriginal = np.array(dataset.rawMeans[amp])
             varVecOriginal = np.array(dataset.rawVars[amp])
             mask = dataset.expIdMask[amp]
-            if not len(mask):  # Empty if the whole amp is bad
+            if np.isnan(mask[0]):  # All NaNs the whole amp is bad
                 a.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
                 a2.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
                 a3.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
                 continue
+            else:
+                mask = mask.astype(bool)
             meanVecFinal = meanVecOriginal[mask]
             varVecFinal = varVecOriginal[mask]
             meanVecOutliers = meanVecOriginal[np.invert(mask)]
@@ -949,7 +951,6 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             minMeanVecOriginal = np.min(meanVecOriginal)
             maxMeanVecOriginal = np.max(meanVecOriginal)
             deltaXlim = maxMeanVecOriginal - minMeanVecOriginal
-
             a.plot(meanVecFit, ptcFunc(pars, meanVecFit), color='red')
             a.plot(meanVecFinal, ptcNoiseAdu**2 + (1./ptcGain)*meanVecFinal, color='green',
                    linestyle='--')
@@ -1019,10 +1020,12 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         f2, ax2 = plt.subplots(nrows=nRows, ncols=nCols, sharex='col', sharey='row', figsize=(13, 10))
         for i, (amp, a, a2) in enumerate(zip(dataset.ampNames, ax.flatten(), ax2.flatten())):
             mask = dataset.expIdMask[amp]
-            if not len(mask):
+            if np.isnan(mask[0]):
                 a.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
                 a2.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
                 continue
+            else:
+                mask = mask.astype(bool)
             meanVecFinal = np.array(dataset.rawMeans[amp])[mask]
             timeVecFinal = np.array(dataset.rawExpTimes[amp])[mask]
 
