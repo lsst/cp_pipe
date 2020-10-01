@@ -268,8 +268,9 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         ampNames = [amp.getName() for amp in amps]
         datasetPtc = PhotonTransferCurveDataset(ampNames, self.config.ptcFitType)
 
-        # Get the pairs of flat indexed by expTime
         expPairs = self.makePairs(dataRefList)
+
+        # Get the pairs of flats indexed by expTime
         expIds = []
         for (exp1, exp2) in expPairs.values():
             id1 = exp1.getInfo().getVisitInfo().getExposureId()
@@ -324,6 +325,25 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             elif ampName in self.config.minMeanSignal:
                 minMeanSignalDict[ampName] = self.config.minMeanSignal[ampName]
 
+        outputs = self.run(expPairs, datasetPtc, camera, detector, detNum, ampNames)
+
+        if outputs.linearizer is not None:
+            butler = dataRef.getButler()
+            self.log.info("Writing linearizer:")
+
+            detName = detector.getName()
+            now = datetime.datetime.utcnow()
+            calibDate = now.strftime("%Y-%m-%d")
+
+            butler.put(outputs.linearizer, datasetType='Linearizer', dataId={'detector': detNum,
+                       'detectorName': detName, 'calibDate': calibDate})
+
+        self.log.info("Writing PTC data.")
+        dataRef.put(outputs.datasetPtc, datasetType="photonTransferCurveDataset")
+
+    def run(self, expPairs, datasetPtc, camera, detector, detNum, ampNames):
+        """
+        """
         tupleRecords = []
         allTags = []
         for expTime, (exp1, exp2) in expPairs.items():
@@ -384,11 +404,6 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             # Fill up PhotonTransferCurveDataset object.
             datasetPtc = self.fitPtc(datasetPtc, self.config.ptcFitType)
 
-        detName = detector.getName()
-        now = datetime.datetime.utcnow()
-        calibDate = now.strftime("%Y-%m-%d")
-        butler = dataRef.getButler()
-
         datasetPtc.updateMetadata(setDate=True, camera=camera, detector=detector)
 
         # Fit a poynomial to calculate non-linearity and persist linearizer.
@@ -401,21 +416,13 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             dimensions = {'camera': camera.getName(), 'detector': detector.getId()}
             linearityResults = self.linearity.run(datasetPtc, camera, dimensions)
             linearizer = linearityResults.outputLinearizer
+        else:
+            linearizer = None
 
-            self.log.info("Writing linearizer:")
-
-            detName = detector.getName()
-            now = datetime.datetime.utcnow()
-            calibDate = now.strftime("%Y-%m-%d")
-
-            butler.put(linearizer, datasetType='linearizer',
-                       dataId={'detector': detNum, 'detectorName': detName, 'calibDate': calibDate})
-
-        self.log.info(f"Writing PTC data.")
-        butler.put(datasetPtc, datasetType='photonTransferCurveDataset', dataId={'detector': detNum,
-                   'detectorName': detName, 'calibDate': calibDate})
-
-        return pipeBase.Struct(exitStatus=0)
+        return pipeBase.Struct(
+            datasetPtc=datasetPtc,
+            linearizer=linearizer
+        )
 
     def makePairs(self, dataRefList):
         """Produce a list of flat pairs indexed by exposure time.
