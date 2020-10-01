@@ -22,7 +22,7 @@
 import numpy as np
 import copy
 import itertools
-from scipy.stats import median_absolute_deviation as mad
+from scipy.stats import median_abs_deviation as mad
 from scipy.signal import fftconvolve
 from scipy.optimize import leastsq
 from .astierCovFitParameters import FitParameters
@@ -419,11 +419,12 @@ class CovFit:
 
     def getA(self):
         """'a' matrix from Astier+19(e.g., Eq. 20)"""
-        return np.array(self.params['a'].full.reshape(self.r, self.r))
+        print ("HOLAAAAA: ", type(self.params['a'].full.reshape(self.r, self.r)))
+        return self.params['a'].full.reshape(self.r, self.r)
 
     def getB(self):
         """'b' matrix from Astier+19(e.g., Eq. 20)"""
-        return np.array(self.params['c'].full.reshape(self.r, self.r)/self.getA())
+        return self.params['c'].full.reshape(self.r, self.r)/self.getA()
 
     def getC(self):
         """'c'='ab' matrix from Astier+19(e.g., Eq. 20)"""
@@ -594,7 +595,7 @@ class CovFit:
             params, paramsCov, _, mesg, ierr = leastsq(self.weightedRes, pInit, full_output=True)
             wres = self.weightedRes(params)
             # Do not count the outliers as significant
-            sig = mad(wres[wres != 0])
+            sig = mad(wres[wres != 0], scale='normal')
             mask = (np.abs(wres) > (nSigma*sig))
             self.sqrtW.flat[mask] = 0  # flatten makes a copy
             nOutliers = mask.sum()

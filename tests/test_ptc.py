@@ -34,7 +34,7 @@ import lsst.utils.tests
 
 import lsst.cp.pipe as cpPipe
 import lsst.ip.isr.isrMock as isrMock
-from lsst.cp.pipe.ptc import PhotonTransferCurveDataset
+from lsst.ip.isr import PhotonTransferCurveDataset
 from lsst.cp.pipe.astierCovPtcUtils import fitData
 from lsst.cp.pipe.utils import (funcPolynomial, makeMockFlats)
 

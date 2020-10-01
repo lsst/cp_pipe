@@ -414,7 +414,7 @@ def getFitDataFromCovariances(i, j, mu, fullCov, fullCovModel, fullCovSqrtWeight
     divideByMu: `bool`, optional
         Divide returned covariance, model, and weights by the mean signal mu?
 
-    returneMasked : `bool`, optional
+    returnMasked : `bool`, optional
         Use mask (based on weights) in returned arrays (mu, covariance, and model)?
 
     Returns
