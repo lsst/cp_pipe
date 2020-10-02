@@ -30,7 +30,6 @@ import os
 from matplotlib.backends.backend_pdf import PdfPages
 
 import lsst.ip.isr as isr
-import lsst.cp.pipe as cpPipe
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 
@@ -40,6 +39,8 @@ from matplotlib.ticker import MaxNLocator
 
 from .astierCovPtcFit import computeApproximateAcoeffs
 from .astierCovPtcUtils import getFitDataFromCovariances
+
+from lsst.ip.isr import PhotonTransferCurveDataset
 
 
 class PlotPhotonTransferCurveTaskConfig(pexConfig.Config):
@@ -117,7 +118,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         """
 
         datasetFile = self.config.datasetFileName
-        datasetPtc = cpPipe.ptc.PhotonTransferCurveDataset.readFits(datasetFile)
+        datasetPtc = PhotonTransferCurveDataset.readFits(datasetFile)
 
         dirname = dataRef.getUri(datasetType='cpPipePlotRoot', write=True)
         if not os.path.exists(dirname):
@@ -160,7 +161,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         Parameters
         ----------
-        dataset : `lsst.cp.pipe.ptc.PhotonTransferCurveDataset`
+        dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
             The dataset containing the necessary information to produce the plots.
 
         pdfPages: `matplotlib.backends.backend_pdf.PdfPages`
@@ -841,7 +842,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         Parameters
         ----------
-        dataset : `lsst.cp.pipe.ptc.PhotonTransferCurveDataset`
+        dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
             The dataset containing the means, variances, exposure times, and mask.
 
         ptcFitType : `str`
@@ -991,7 +992,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         Parameters
         ----------
-        dataset : `lsst.cp.pipe.ptc.PhotonTransferCurveDataset`
+        dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
             The dataset containing the means, variances, exposure times, and mask.
 
         linearizer : `lsst.ip.isr.Linearizer`
