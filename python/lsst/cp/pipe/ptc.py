@@ -287,7 +287,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 for ampName in ampNames:
                     datasetPtc.photoCharge[ampName].append((charges[0], charges[1]))
         else:
-            # Can't be an empty list, as initialized, as astropy.Table won't allow it when saving as fits
+            # Can't be an empty list, as initialized, because astropy.Table won't allow it
+            # when saving as fits
             for ampName in ampNames:
                 datasetPtc.photoCharge[ampName] = np.repeat(np.nan, len(expIds))
 
@@ -340,8 +341,9 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         now = datetime.datetime.utcnow()
         calibDate = now.strftime("%Y-%m-%d")
         butler = dataRef.getButler()
-        datasetPtc.updateMetadata(setDate=True, detectorName=detName, detectorId=detector.getId(),
-                                  instrument=camera.getName())
+
+        datasetPtc.updateMetadata(setDate=True, camera=camera, detector=detector)
+
         # Fit a poynomial to calculate non-linearity and persist linearizer.
         if self.config.doCreateLinearizer:
             # Fit (non)linearity of signal vs time curve.
@@ -512,11 +514,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 # Bad amp
                 # Entries need to have proper dimensions so read/write with astropy.Table works.
                 matrixSide = self.config.maximumRangeCovariancesAstier
-                nanMatrix = np.empty((matrixSide, matrixSide))
-                nanMatrix[:] = np.nan
-
-                listNanMatrix = np.empty((lenInputTimes, matrixSide, matrixSide))
-                listNanMatrix[:] = np.nan
+                nanMatrix = np.full((matrixSide, matrixSide), np.nan)
+                listNanMatrix = np.full((lenInputTimes, matrixSide, matrixSide), np.nan)
 
                 dataset.covariances[amp] = listNanMatrix
                 dataset.covariancesModel[amp] = listNanMatrix
