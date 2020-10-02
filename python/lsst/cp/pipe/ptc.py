@@ -292,6 +292,9 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             for ampName in ampNames:
                 datasetPtc.photoCharge[ampName] = np.repeat(np.nan, len(expIds))
 
+        for ampName in ampNames:
+            datasetPtc.inputExpIdPairs[ampName] = expIds
+
         tupleRecords = []
         allTags = []
         for expTime, (exp1, exp2) in expPairs.items():
@@ -308,7 +311,6 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 datasetPtc.rawExpTimes[ampName].append(expTime)
                 datasetPtc.rawMeans[ampName].append(muDiff)
                 datasetPtc.rawVars[ampName].append(varDiff)
-                datasetPtc.inputExpIdPairs[ampName] = expIds
 
                 if np.isnan(muDiff) or np.isnan(varDiff) or (covAstier is None):
                     msg = (f"NaN mean or var, or None cov in amp {ampName} in exposure pair {expId1},"
@@ -505,11 +507,11 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
                 padLength = lenInputTimes - len(varVecFinal)
                 dataset.finalVars[amp] = np.pad(varVecFinal/(gain**2), (0, padLength), 'constant',
-                                                constant_values=-9999.0)
+                                                constant_values=np.nan)
                 dataset.finalModelVars[amp] = np.pad(varVecModel/(gain**2), (0, padLength), 'constant',
-                                                     constant_values=-9999.0)
+                                                     constant_values=np.nan)
                 dataset.finalMeans[amp] = np.pad(meanVecFinal/gain, (0, padLength), 'constant',
-                                                 constant_values=-9999.0)
+                                                 constant_values=np.nan)
             else:
                 # Bad amp
                 # Entries need to have proper dimensions so read/write with astropy.Table works.
@@ -1019,11 +1021,11 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             # not crash (the mask may vary per amp).
             padLength = len(dataset.rawExpTimes[ampName]) - len(varVecFinal)
             dataset.finalVars[ampName] = np.pad(varVecFinal, (0, padLength), 'constant',
-                                                constant_values=-9999.0)
+                                                constant_values=np.nan)
             dataset.finalModelVars[ampName] = np.pad(ptcFunc(parsFit, meanVecFinal), (0, padLength),
-                                                     'constant', constant_values=-9999.0)
+                                                     'constant', constant_values=np.nan)
             dataset.finalMeans[ampName] = np.pad(meanVecFinal, (0, padLength), 'constant',
-                                                 constant_values=-9999.0)
+                                                 constant_values=np.nan)
 
             if ptcFitType == 'EXPAPPROXIMATION':
                 ptcGain = parsFit[1]

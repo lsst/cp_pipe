@@ -419,7 +419,6 @@ class CovFit:
 
     def getA(self):
         """'a' matrix from Astier+19(e.g., Eq. 20)"""
-        print ("HOLAAAAA: ", type(self.params['a'].full.reshape(self.r, self.r)))
         return self.params['a'].full.reshape(self.r, self.r)
 
     def getB(self):
