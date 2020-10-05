@@ -38,8 +38,6 @@ from lsst.ip.isr import PhotonTransferCurveDataset
 from lsst.cp.pipe.astierCovPtcUtils import fitData
 from lsst.cp.pipe.utils import (funcPolynomial, makeMockFlats)
 
-import os
-
 
 class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
     """A test case for the PTC task."""
@@ -89,62 +87,6 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         for ampName in self.ampNames:  # just the expTimes and means here - vars vary per function
             self.dataset.rawExpTimes[ampName] = timeVec
             self.dataset.rawMeans[ampName] = muVec
-
-    def test_ptcDataset(self):
-        """Test that write/read methods of PhotonTransferCurveDataset work"""
-
-        localDataset = copy.copy(self.dataset)
-        # Fill the set up with made up data.
-        nSignalPoints = 5
-        nSideCovMatrix = 2
-        localDataset.ptcFitType = 'POLYNOMIAL'
-        localDataset.badAmps = [localDataset.ampNames[0], localDataset.ampNames[1]]
-
-        for ampName in localDataset.ampNames:
-            localDataset.inputExpIdPairs[ampName] = np.repeat(1, nSignalPoints)
-            localDataset.expIdMask[ampName] = [True, False, True, True, False, True, False, True, True,
-                                               True, True, False, True, False, True]
-            localDataset.expIdMask[ampName] = np.arange(nSignalPoints)
-            # overwrite rawExpTimes from setup
-            localDataset.rawExpTimes[ampName] = np.arange(nSignalPoints)
-            localDataset.rawMeans[ampName] = self.flux*np.arange(nSignalPoints)
-            localDataset.rawVars[ampName] = self.noiseSq + self.c1*self.flux*np.arange(nSignalPoints)
-            localDataset.photoCharge[ampName] = np.repeat(np.nan, nSignalPoints)
-            localDataset.gain[ampName] = self.gain
-            localDataset.gainErr[ampName] = 0.1
-            localDataset.noise[ampName] = self.noiseSq
-            localDataset.noiseErr[ampName] = 2.0
-            localDataset.ptcFitPars[ampName] = np.array([10.0, 1.5, 1e-6])
-            localDataset.ptcFitParsError[ampName] = np.array([1.0, 0.2, 1e-7])
-            localDataset.ptcFitChiSq[ampName] = 1.0
-            localDataset.covariances[ampName] = np.full((nSignalPoints, nSideCovMatrix, nSideCovMatrix),
-                                                        105.0)
-            localDataset.covariancesModel[ampName] = np.full((nSignalPoints, nSideCovMatrix, nSideCovMatrix),
-                                                             100.0)
-            localDataset.covariancesSqrtWeights[ampName] = np.full((nSignalPoints, nSideCovMatrix,
-                                                                   nSideCovMatrix), 10.0)
-            localDataset.aMatrix[ampName] = np.full((nSideCovMatrix, nSideCovMatrix), 1e-6)
-            localDataset.bMatrix[ampName] = np.full((nSideCovMatrix, nSideCovMatrix), np.nan)
-            localDataset.covariancesNoB[ampName] = np.full((nSignalPoints, nSideCovMatrix, nSideCovMatrix),
-                                                           np.nan)
-            localDataset.covariancesModelNoB[ampName] = np.full((nSignalPoints, nSideCovMatrix,
-                                                                nSideCovMatrix), np.nan)
-            localDataset.covariancesSqrtWeightsNoB[ampName] = np.full((nSignalPoints, nSideCovMatrix,
-                                                                      nSideCovMatrix), np.nan)
-            localDataset.aMatrixNoB[ampName] = np.full((nSideCovMatrix, nSideCovMatrix), np.nan)
-            localDataset.finalVars[ampName] = self.noiseSq + self.c1*self.flux*np.arange(nSignalPoints)
-            localDataset.finalModelVars[ampName] = np.repeat(100.0, nSignalPoints)
-            localDataset.finalMeans[ampName] = self.flux*np.arange(nSignalPoints)
-
-        # Round trip (write-read) with FITS
-        localDataset.writeFits("ptcDataset.fits")
-        _ = PhotonTransferCurveDataset.readFits("ptcDataset.fits")
-        # Round trip with yaml
-        localDataset.writeText("ptcDataset.yaml")
-        _ = PhotonTransferCurveDataset.readText("ptcDataset.yaml")
-
-        os.remove("ptcDataset.fits")
-        os.remove("ptcDataset.yaml")
 
     def test_covAstier(self):
         """Test to check getCovariancesAstier

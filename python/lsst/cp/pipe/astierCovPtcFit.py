@@ -39,7 +39,7 @@ def computeApproximateAcoeffs(covModel, muEl, gain):
 
     Parameters
     ---------
-    covModel : `numpy.array`
+    covModel : `list`
         Covariance model from Eq. 20 in Astier+19.
 
     muEl : `np.array`
@@ -58,10 +58,9 @@ def computeApproximateAcoeffs(covModel, muEl, gain):
     Returns the "a" array, computed this way, to be compared to the actual a_array from the full model
     (fit.geA()).
     """
-
+    covModel = np.array(covModel)
     var = covModel[0, 0, 0]  # ADU^2
     # For a result in electrons^-1, we have to use mu in electrons.
-
     return covModel[0, :, :]/(var*muEl)
 
 

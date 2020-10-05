@@ -36,9 +36,7 @@ from .linearity import LinearitySolveTask
 from .photodiode import getBOTphotodiodeData
 
 from lsst.pipe.tasks.getRepositoryData import DataRefListRunner
-
 from lsst.ip.isr import PhotonTransferCurveDataset
-
 
 __all__ = ['MeasurePhotonTransferCurveTask',
            'MeasurePhotonTransferCurveTaskConfig']
@@ -1043,5 +1041,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             dataset.noiseErr[ampName] = ptcNoiseErr
         if not len(dataset.ptcFitType) == 0:
             dataset.ptcFitType = ptcFitType
+        if len(dataset.badAmps) == 0:
+            dataset.badAmps = np.repeat(np.nan, len(list(dataset.rawExpTimes.values())[0]))
 
         return dataset

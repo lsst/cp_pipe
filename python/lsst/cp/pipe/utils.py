@@ -336,8 +336,8 @@ def fitLeastSq(initialParams, dataX, dataY, function, weightsY=None):
         pCov *= reducedChiSq
     else:
         pCov = np.zeros((len(initialParams), len(initialParams)))
-        pCov[:, :] = np.inf
-        reducedChiSq = np.inf
+        pCov[:, :] = np.nan
+        reducedChiSq = np.nan
 
     errorVec = []
     for i in range(len(pFit)):

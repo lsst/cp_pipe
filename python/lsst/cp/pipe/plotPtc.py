@@ -293,8 +293,8 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                                                               axCov01.flatten(), axCov10.flatten())):
 
             muAmp, cov, model, weight = mu[amp], covs[amp], covsModel[amp], covsWeights[amp]
-            if not np.isnan(cov).all():  # If all the entries ara np.nan, this is a bad amp.
-                aCoeffs, bCoeffs = aDict[amp], bDict[amp]
+            if not np.isnan(np.array(cov)).all():  # If all the entries ara np.nan, this is a bad amp.
+                aCoeffs, bCoeffs = np.array(aDict[amp]), np.array(bDict[amp])
                 gain, noise = gainDict[amp], noiseDict[amp]
                 (meanVecOriginal, varVecOriginal, varVecModelOriginal,
                     weightsOriginal, varMask) = getFitDataFromCovariances(0, 0, muAmp, cov, model, weight)
@@ -335,7 +335,6 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                 chi2FullModelNoBVar = calculateWeightedReducedChi2(varVecFinalNoB, varVecModelFinalNoB,
                                                                    varWeightsFinalNoB, len(meanVecFinalNoB),
                                                                    3)
-
                 stringLegend = (f"Gain: {gain:.4} e/DN \n" +
                                 f"Noise: {noise:.4} e \n" +
                                 r"$a_{00}$: %.3e 1/e"%aCoeffs[0, 0] +
@@ -892,7 +891,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                                              ax3.flatten())):
             meanVecOriginal = np.array(dataset.rawMeans[amp])
             varVecOriginal = np.array(dataset.rawVars[amp])
-            mask = dataset.expIdMask[amp]
+            mask = np.array(dataset.expIdMask[amp])
             if np.isnan(mask[0]):  # All NaNs the whole amp is bad
                 a.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
                 a2.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
@@ -904,8 +903,8 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             varVecFinal = varVecOriginal[mask]
             meanVecOutliers = meanVecOriginal[np.invert(mask)]
             varVecOutliers = varVecOriginal[np.invert(mask)]
-            pars, parsErr = dataset.ptcFitPars[amp], dataset.ptcFitParsError[amp]
-            ptcRedChi2 = dataset.ptcFitChiSq[amp]
+            pars, parsErr = np.array(dataset.ptcFitPars[amp]), np.array(dataset.ptcFitParsError[amp])
+            ptcRedChi2 = np.array(dataset.ptcFitChiSq[amp])
             if ptcFitType == 'EXPAPPROXIMATION':
                 if len(meanVecFinal):
                     ptcA00, ptcA00error = pars[0], parsErr[0]
