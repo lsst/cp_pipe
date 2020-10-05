@@ -39,6 +39,11 @@ from lsst.cp.pipe.astierCovPtcUtils import fitData
 from lsst.cp.pipe.utils import (funcPolynomial, makeMockFlats)
 
 
+class FakeCamera(list):
+    def getName(self):
+        return "FakeCam"
+
+
 class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
     """A test case for the PTC task."""
 
@@ -183,13 +188,13 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             localDataset = task.fitPtc(localDataset, ptcFitType=fitType)
             # linDataset: Dictionary of `lsst.cp.pipe.ptc.LinearityResidualsAndLinearizersDataset`
             linDataset = task.linearity.run(localDataset,
-                                            camera=[self.flatExp1.getDetector()],
+                                            camera=FakeCamera([self.flatExp1.getDetector()]),
                                             inputDims={'detector': 0})
             linDataset = linDataset.outputLinearizer
         else:
             localDataset = task.fitPtc(localDataset, ptcFitType=fitType)
             linDataset = task.linearity.run(localDataset,
-                                            camera=[self.flatExp1.getDetector()],
+                                            camera=FakeCamera([self.flatExp1.getDetector()]),
                                             inputDims={'detector': 0})
             linDataset = linDataset.outputLinearizer
 

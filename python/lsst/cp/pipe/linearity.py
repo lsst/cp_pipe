@@ -238,6 +238,7 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
                     linearityFit = [tableIndex, 0]
                     tableIndex += 1
             elif self.config.linearityType in ['Spline']:
+                # See discussion in `lsst.ip.isr.linearize.py` before modifying.
                 numPerBin, binEdges = np.histogram(linearOrdinate, bins=self.config.fitOrder)
                 with np.errstate(invalid="ignore"):
                     values = np.histogram(linearOrdinate, bins=self.config.fitOrder,
@@ -293,9 +294,10 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
             self.debugFit('solution', inputOrdinate[fluxMask], linearOrdinate,
                           linearizeModel[fluxMask], None, ampName)
 
-        linearizer.hasLinearity=True
+        linearizer.hasLinearity = True
         linearizer.validate()
-        linearizer.updateMetadata(setDate=True)
+        linearizer.updateMetadata(camera=camera, detector=detector, filterName='NONE')
+        linearizer.updateMetadata(setDate=True, setCalibId=True)
         provenance = IsrProvenance(calibType='linearizer')
 
         return pipeBase.Struct(

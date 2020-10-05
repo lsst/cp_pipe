@@ -361,8 +361,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             now = datetime.datetime.utcnow()
             calibDate = now.strftime("%Y-%m-%d")
 
-            butler.put(linearizer, datasetType='linearizer', dataId={'detector': detNum
-                       'detectorName': detName, 'calibDate': calibDate})
+            butler.put(linearizer, datasetType='linearizer',
+                       dataId={'detector': detNum, 'detectorName': detName, 'calibDate': calibDate})
 
         self.log.info(f"Writing PTC data.")
         butler.put(datasetPtc, datasetType='photonTransferCurveDataset', dataId={'detector': detNum,
