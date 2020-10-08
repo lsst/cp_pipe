@@ -381,3 +381,82 @@ def fitData(tupleName, maxMu=1e9, r=8, nSigmaFullFit=5.5, maxIterFullFit=3):
         c.params['c'].release()
         c.fitFullModel(nSigma=nSigmaFullFit, maxFitIter=maxIterFullFit)
     return covFitList, covFitNoBList
+
+
+def getFitDataFromCovariances(i, j, mu, fullCov, fullCovModel, fullCovSqrtWeights, gain=1.0,
+                              divideByMu=False, returnMasked=False):
+    """Get measured signal and covariance, cov model, weigths, and mask at covariance lag (i, j).
+
+    Parameters
+    ----------
+    i :  `int`
+        Lag for covariance matrix.
+
+    j: `int`
+        Lag for covariance matrix.
+
+    mu : `list`
+        Mean signal values.
+
+    fullCov: `list` of `numpy.array`
+        Measured covariance matrices at each mean signal level in mu.
+
+    fullCovSqrtWeights: `list` of `numpy.array`
+        List of square root of measured covariances at each mean signal level in mu.
+
+    fullCovModel : `list` of `numpy.array`
+        List of modeled covariances at each mean signal level in mu.
+
+    gain : `float`, optional
+        Gain, in e-/ADU. If other than 1.0 (default), the returned quantities will be in
+        electrons or powers of electrons.
+
+    divideByMu: `bool`, optional
+        Divide returned covariance, model, and weights by the mean signal mu?
+
+    returnMasked : `bool`, optional
+        Use mask (based on weights) in returned arrays (mu, covariance, and model)?
+
+    Returns
+    -------
+    mu : `numpy.array`
+        list of signal values at (i, j).
+
+    covariance : `numpy.array`
+        Covariance at (i, j) at each mean signal mu value (fullCov[:, i, j]).
+
+    covarianceModel : `numpy.array`
+        Covariance model at (i, j).
+
+    weights : `numpy.array`
+        Weights at (i, j).
+
+    mask : `numpy.array`, optional
+        Boolean mask of the covariance at (i,j).
+
+    Notes
+    -----
+    This function is a method of the `CovFit` class.
+    """
+    mu = np.array(mu)
+    fullCov = np.array(fullCov)
+    fullCovModel = np.array(fullCovModel)
+    fullCovSqrtWeights = np.array(fullCovSqrtWeights)
+    covariance = fullCov[:, i, j]*(gain**2)
+    covarianceModel = fullCovModel[:, i, j]*(gain**2)
+    weights = fullCovSqrtWeights[:, i, j]/(gain**2)
+
+    # select data used for the fit
+    mask = weights != 0
+    if returnMasked:
+        weights = weights[mask]
+        covarianceModel = covarianceModel[mask]
+        mu = mu[mask]
+        covariance = covariance[mask]
+
+    if divideByMu:
+        covariance /= mu
+        covarianceModel /= mu
+        weights *= mu
+
+    return mu, covariance, covarianceModel, weights, mask

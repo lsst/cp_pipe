@@ -22,7 +22,7 @@
 import numpy as np
 import copy
 import itertools
-from scipy.stats import median_absolute_deviation as mad
+from scipy.stats import median_abs_deviation as mad
 from scipy.signal import fftconvolve
 from scipy.optimize import leastsq
 from .astierCovFitParameters import FitParameters
@@ -31,7 +31,7 @@ from .astierCovFitParameters import FitParameters
 __all__ = ["CovFit"]
 
 
-def computeApproximateAcoeffs(fit, muEl):
+def computeApproximateAcoeffs(covModel, muEl, gain):
     """Compute the "a" coefficients of the Antilogus+14 (1402.0725) model as in
     Guyonnet+15 (1501.01577, eq. 16, the slope of cov/var at a given flux mu in electrons).
 
@@ -39,8 +39,14 @@ def computeApproximateAcoeffs(fit, muEl):
 
     Parameters
     ---------
-    fit: `lsst.cp.pipe.astierCovPtcFit.CovFit`
-        CovFit object
+    covModel : `list`
+        Covariance model from Eq. 20 in Astier+19.
+
+    muEl : `np.array`
+        Mean signal in electrons
+
+    gain : `float`
+        Gain in e-/ADU.
 
     Returns
     -------
@@ -52,14 +58,10 @@ def computeApproximateAcoeffs(fit, muEl):
     Returns the "a" array, computed this way, to be compared to the actual a_array from the full model
     (fit.geA()).
     """
-
-    gain = fit.getGain()
-    muAdu = np.array([muEl/gain])
-    model = fit.evalCovModel(muAdu)
-    var = model[0, 0, 0]  # ADU^2
+    covModel = np.array(covModel)
+    var = covModel[0, 0, 0]  # ADU^2
     # For a result in electrons^-1, we have to use mu in electrons.
-
-    return model[0, :, :]/(var*muEl)
+    return covModel[0, :, :]/(var*muEl)
 
 
 def makeCovArray(inputTuple, maxRangeFromTuple=8):
@@ -424,7 +426,7 @@ class CovFit:
 
     def getC(self):
         """'c'='ab' matrix from Astier+19(e.g., Eq. 20)"""
-        return self.params['c'].full.reshape(self.r, self.r)
+        return np.array(self.params['c'].full.reshape(self.r, self.r))
 
     def _getCovParams(self, what):
         """Get covariance matrix of parameters from fit"""
@@ -543,7 +545,7 @@ class CovFit:
         To be used via:
         c = CovFit(nt)
         c.initFit()
-        coeffs, cov, _, mesg, ierr = leastsq(c.weightedRes, c.getParamValues(), full_output=True )
+        coeffs, cov, _, mesg, ierr = leastsq(c.weightedRes, c.getParamValues(), full_output=True)
         """
         return self.wres(params).flatten()
 
@@ -591,7 +593,7 @@ class CovFit:
             params, paramsCov, _, mesg, ierr = leastsq(self.weightedRes, pInit, full_output=True)
             wres = self.weightedRes(params)
             # Do not count the outliers as significant
-            sig = mad(wres[wres != 0])
+            sig = mad(wres[wres != 0], scale='normal')
             mask = (np.abs(wres) > (nSigma*sig))
             self.sqrtW.flat[mask] = 0  # flatten makes a copy
             nOutliers = mask.sum()
@@ -618,15 +620,15 @@ class CovFit:
         return mask.sum() - len(self.params.free)
 
     def getFitData(self, i, j, divideByMu=False, unitsElectrons=False, returnMasked=False):
-        """Get measured signal and covariance, cov model, weigths, and mask.
+        """Get measured signal and covariance, cov model, weigths, and mask at covariance lag (i, j).
 
         Parameters
         ---------
         i: `int`
-            Lag for covariance
+            Lag for covariance matrix.
 
         j: `int`
-            Lag for covariance
+            Lag for covariance matrix.
 
         divideByMu: `bool`, optional
             Divide covariance, model, and weights by signal mu?
@@ -636,7 +638,7 @@ class CovFit:
             multiplied by the adequte factors of the gain to return quantities in electrons
             (or powers of electrons).
 
-        returneMasked : `bool`, optional
+        returnMasked : `bool`, optional
             Use mask (based on weights) in returned arrays (mu, covariance, and model)?
 
         Returns
@@ -647,7 +649,7 @@ class CovFit:
         covariance: `numpy.array`
             Covariance arrays, indexed by mean signal mu (self.cov[:, i, j]).
 
-        model: `numpy.array`
+        covarianceModel: `numpy.array`
             Covariance model (model).
 
         weights: `numpy.array`
@@ -669,23 +671,23 @@ class CovFit:
 
         mu = self.mu*gain
         covariance = self.cov[:, i, j]*(gain**2)
-        model = self.evalCovModel()[:, i, j]*(gain**2)
+        covarianceModel = self.evalCovModel()[:, i, j]*(gain**2)
         weights = self.sqrtW[:, i, j]/(gain**2)
 
         # select data used for the fit:
         mask = self.getMaskCov(i, j)
         if returnMasked:
             weights = weights[mask]
-            model = model[mask]
+            covarianceModel = covarianceModel[mask]
             mu = mu[mask]
             covariance = covariance[mask]
 
         if divideByMu:
             covariance /= mu
-            model /= mu
+            covarianceModel /= mu
             weights *= mu
 
-        return mu, covariance, model, weights, mask
+        return mu, covariance, covarianceModel, weights, mask
 
     def __call__(self, params):
         self.setParamValues(params)

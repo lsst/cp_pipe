@@ -34,7 +34,7 @@ import lsst.utils.tests
 
 import lsst.cp.pipe as cpPipe
 import lsst.ip.isr.isrMock as isrMock
-from lsst.cp.pipe.ptc import PhotonTransferCurveDataset
+from lsst.ip.isr import PhotonTransferCurveDataset
 from lsst.cp.pipe.astierCovPtcUtils import fitData
 from lsst.cp.pipe.utils import (funcPolynomial, makeMockFlats)
 
@@ -126,13 +126,13 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             allTags += tags
             tupleRecords += tupleRows
         covariancesWithTags = np.core.records.fromrecords(tupleRecords, names=allTags)
-        covFits, _ = fitData(covariancesWithTags)
-        localDataset = task.getOutputPtcDataCovAstier(localDataset, covFits)
+        covFits, covFitsNoB = fitData(covariancesWithTags)
+        localDataset = task.getOutputPtcDataCovAstier(localDataset, covFits, covFitsNoB)
         # Chek the gain and that the ratio of the variance caclulated via cov Astier (FFT) and
         # that calculated with the standard PTC calculation (afw) is close to 1.
         for amp in self.ampNames:
             self.assertAlmostEqual(localDataset.gain[amp], 0.75, places=2)
-            for v1, v2 in zip(varStandard[amp], localDataset.finalVars[amp][0]):
+            for v1, v2 in zip(varStandard[amp], localDataset.finalVars[amp]):
                 v2 *= (0.75**2)  # convert to electrons
                 self.assertAlmostEqual(v1/v2, 1.0, places=1)
 
@@ -350,9 +350,6 @@ class MeasurePhotonTransferCurveDatasetTestCase(lsst.utils.tests.TestCase):
         test = PhotonTransferCurveDataset(['C00', 'C01'], " ")
         test.inputExpIdPairs = {'C00': [(123, 234), (345, 456), (567, 678)],
                                 'C01': [(123, 234), (345, 456), (567, 678)]}
-
-        with self.assertRaises(AttributeError):
-            test.newItem = 1
 
 
 class TestMemory(lsst.utils.tests.MemoryTestCase):
