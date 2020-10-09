@@ -20,7 +20,6 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 import numpy as np
-import matplotlib.pyplot as plt
 from collections import Counter
 
 import lsst.afw.math as afwMath
@@ -55,14 +54,14 @@ class PhotonTransferCurveExtractConnections(pipeBase.PipelineTaskConnections,
         dimensions=("instrument", "exposure", "detector"),
         multiple=True,
     )
-    
+
     outputCovariances = cT.Output(
         name="ptcCovariances",
         doc="Extracted flat (co)variances.",
         storageClass="StructuredDataDict",
         dimensions=("instrument", "exposure", "detector"),
     )
-    
+
     outputPartialPtcDataset = cT.Output(
         name="ptcPartialDataset",
         doc="Ptc dataset partially filled.",
@@ -72,7 +71,7 @@ class PhotonTransferCurveExtractConnections(pipeBase.PipelineTaskConnections,
 
 
 class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConnections,
-                                            pipelineConnections=PhotonTransferCurveExtractConnections):
+                                       pipelineConnections=PhotonTransferCurveExtractConnections):
     """Configuration for the measurement of covariances from flats.
     """
     ccdKey = pexConfig.Field(
@@ -168,121 +167,133 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConnections,
 
 
 class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
-                                        pipeBase.CmdLineTask): 
+                                     pipeBase.CmdLineTask):
     """Task to measure covariances from flat fields.
     """
     ConfigClass = PhotonTransferCurveExtractConfig
     _DefaultName = 'cpPtcExtract'
 
     def run(self, exposurePairs, datasetPtc, camera, detector, detNum):
-    """
-    exposurePairs : `list`
+        """
+        exposurePairs : `list`
         List with flat pairs.
-    """
-    
-    expIds = []
-    for (exp1, exp2) in expPairs.values():
-        id1 = exp1.getInfo().getVisitInfo().getExposureId()
-        id2 = exp2.getInfo().getVisitInfo().getExposureId()
-        expIds.append((id1, id2))
-    self.log.info(f"Measuring PTC using {expIds} exposures for detector {detector.getId()}")
+        """
+        expIds = []
+        for (exp1, exp2) in exposurePairs.values():
+            id1 = exp1.getInfo().getVisitInfo().getExposureId()
+            id2 = exp2.getInfo().getVisitInfo().getExposureId()
+            expIds.append((id1, id2))
+        self.log.info(f"Measuring PTC using {expIds} exposures for detector {detector.getId()}")
 
-    # get photodiode data early so that logic can be put in to only use the
-    # data if all files are found, as partial corrections are not possible
-    # or at least require significant logic to deal with
-    datasetPtc = self._setBOTPhotocharge(dataRef, datasetPtc, expIds)
+        for ampName in datasetPtc.ampNames:
+            datasetPtc.inputExpIdPairs[ampName] = expIds
 
-    for ampName in datasetPtc.ampNames:
-        datasetPtc.inputExpIdPairs[ampName] = expIds
-    
-    tupleRecords = []
-    allTags = []
-    for expTime, (exp1, exp2) in expPairs.items():
-        expId1 = exp1.getInfo().getVisitInfo().getExposureId()
-        expId2 = exp2.getInfo().getVisitInfo().getExposureId()
-        tupleRows = []
-        nAmpsNan = 0
-        for ampNumber, amp in enumerate(detector):
-            ampName = amp.getName()
-            # covAstier: (i, j, var (cov[0,0]), cov, npix)
-            doRealSpace = self.config.covAstierRealSpace
-            muDiff, varDiff, covAstier = self.measureMeanVarCov(exp1, exp2, region=amp.getBBox(),
-                                                                covAstierRealSpace=doRealSpace)
-            datasetPtc.rawExpTimes[ampName].append(expTime)
-            datasetPtc.rawMeans[ampName].append(muDiff)
-            datasetPtc.rawVars[ampName].append(varDiff)
+        maxMeanSignalDict = {ampName: 1e6 for ampName in ampNames}
+        minMeanSignalDict = {ampName: 0.0 for ampName in ampNames}
+        for ampName in ampNames:
+            if 'ALL_AMPS' in self.config.maxMeanSignal:
+                maxMeanSignalDict[ampName] = self.config.maxMeanSignal['ALL_AMPS']
+            elif ampName in self.config.maxMeanSignal:
+                maxMeanSignalDict[ampName] = self.config.maxMeanSignal[ampName]
 
-            if np.isnan(muDiff) or np.isnan(varDiff) or (covAstier is None):
-                msg = (f"NaN mean or var, or None cov in amp {ampName} in exposure pair {expId1},"
-                       f" {expId2} of detector {detNum}.")
+            if 'ALL_AMPS' in self.config.minMeanSignal:
+                minMeanSignalDict[ampName] = self.config.minMeanSignal['ALL_AMPS']
+            elif ampName in self.config.minMeanSignal:
+                minMeanSignalDict[ampName] = self.config.minMeanSignal[ampName]
+
+
+        tupleRecords = []
+        allTags = []
+        for expTime, (exp1, exp2) in exposurePairs.items():
+            expId1 = exp1.getInfo().getVisitInfo().getExposureId()
+            expId2 = exp2.getInfo().getVisitInfo().getExposureId()
+            tupleRows = []
+            nAmpsNan = 0
+            for ampNumber, amp in enumerate(detector):
+                ampName = amp.getName()
+                # covAstier: (i, j, var (cov[0,0]), cov, npix)
+                doRealSpace = self.config.covAstierRealSpace
+                muDiff, varDiff, covAstier = self.measureMeanVarCov(exp1, exp2, region=amp.getBBox(),
+                                                                    covAstierRealSpace=doRealSpace)
+                datasetPtc.rawExpTimes[ampName].append(expTime)
+                datasetPtc.rawMeans[ampName].append(muDiff)
+                datasetPtc.rawVars[ampName].append(varDiff)
+
+                if np.isnan(muDiff) or np.isnan(varDiff) or (covAstier is None):
+                    msg = (f"NaN mean or var, or None cov in amp {ampName} in exposure pair {expId1},"
+                           f" {expId2} of detector {detNum}.")
+                    self.log.warn(msg)
+                    nAmpsNan += 1
+                    continue
+                tags = ['mu', 'i', 'j', 'var', 'cov', 'npix', 'ext', 'expTime', 'ampName']
+                if (muDiff <= self.config.minMeanSignal) or (muDiff >= self.config.maxMeanSignal):
+                    continue
+
+                tupleRows += [(muDiff, ) + covRow + (ampNumber, expTime, ampName) for covRow in covAstier]
+            if nAmpsNan == len(datasetPtc.ampNames):
+                msg = f"NaN mean in all amps of exposure pair {expId1}, {expId2} of detector {detNum}."
                 self.log.warn(msg)
-                nAmpsNan += 1
                 continue
-            tags = ['mu', 'i', 'j', 'var', 'cov', 'npix', 'ext', 'expTime', 'ampName']
-            if (muDiff <= self.config.minMeanSignal) or (muDiff >= self.config.maxMeanSignal):
-                continue
+            allTags += tags
+            tupleRecords += tupleRows
+        covariancesWithTags = np.core.records.fromrecords(tupleRecords, names=allTags)
 
-            tupleRows += [(muDiff, ) + covRow + (ampNumber, expTime, ampName) for covRow in covAstier]
-        if nAmpsNan == len(ampNames):
-            msg = f"NaN mean in all amps of exposure pair {expId1}, {expId2} of detector {detNum}."
-            self.log.warn(msg)
-            continue
-        allTags += tags
-        tupleRecords += tupleRows
-    covariancesWithTags = np.core.records.fromrecords(tupleRecords, names=allTags)
-    
-    return pipeBase.Struct(
-        outputCovariances = covariancesWithTags,
-        outputPartialPtcDataset = datasetPtc
-    )
+        return pipeBase.Struct(
+            outputCovariances=covariancesWithTags,
+            outputPartialPtcDataset=datasetPtc
+        )
 
-    def makePairs(self, dataRefList):
-        """Produce a list of flat pairs indexed by exposure time.
+    def _setBOTPhotocharge(self, dataRef, datasetPtc, expIdList):
+        """Set photoCharge attribute in PTC dataset
+
         Parameters
         ----------
-        dataRefList : `list` [`lsst.daf.peristence.ButlerDataRef`]
-            Data references for exposures for detectors to process.
-        Return
-        ------
-        flatPairs : `dict` [`float`, `lsst.afw.image.exposure.exposure.ExposureF`]
-          Dictionary that groups flat-field exposures that have the same exposure time (seconds).
-        Notes
-        -----
-        We use the difference of one pair of flat-field images taken at the same exposure time when
-        calculating the PTC to reduce Fixed Pattern Noise. If there are > 2 flat-field images with the
-        same exposure time, the first two are kept and the rest discarded.
+        dataRef : `lsst.daf.peristence.ButlerDataRef`
+            Data reference for exposurre for detector to process.
+
+        datasetPtc : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
+            The dataset containing information such as the means, variances and exposure times.
+
+        expIdList : `list`
+            List with exposure pairs Ids (one pair per list entry).
+
+        Returns
+        -------
+        datasetPtc: `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
+            This is the same dataset as the input parameter, however, it has been modified
+            to update the datasetPtc.photoCharge attribute.
         """
+        if self.config.doPhotodiode:
+            for (expId1, expId2) in expIdList:
+                charges = [-1, -1]  # necessary to have a not-found value to keep lists in step
+                for i, expId in enumerate([expId1, expId2]):
+                    # //1000 is a Gen2 only hack, working around the fact an
+                    # exposure's ID is not the same as the expId in the
+                    # registry. Currently expId is concatenated with the
+                    # zero-padded detector ID. This will all go away in Gen3.
+                    dataRef.dataId['expId'] = expId//1000
+                    if self.config.photodiodeDataPath:
+                        photodiodeData = getBOTphotodiodeData(dataRef, self.config.photodiodeDataPath)
+                    else:
+                        photodiodeData = getBOTphotodiodeData(dataRef)
+                    if photodiodeData:  # default path stored in function def to keep task clean
+                        charges[i] = photodiodeData.getCharge()
+                    else:
+                        # full expId (not //1000) here, as that encodes the
+                        # the detector number as so is fully qualifying
+                        self.log.warn(f"No photodiode data found for {expId}")
 
-        # Organize exposures by observation date.
-        expDict = {}
-        for dataRef in dataRefList:
-            try:
-                tempFlat = dataRef.get("postISRCCD")
-            except RuntimeError:
-                self.log.warn("postISR exposure could not be retrieved. Ignoring flat.")
-                continue
-            expDate = tempFlat.getInfo().getVisitInfo().getDate().get()
-            expDict.setdefault(expDate, tempFlat)
-        sortedExps = {k: expDict[k] for k in sorted(expDict)}
+                for ampName in datasetPtc.ampNames:
+                    datasetPtc.photoCharge[ampName].append((charges[0], charges[1]))
+        else:
+            # Can't be an empty list, as initialized, because astropy.Table won't allow it
+            # when saving as fits
+            for ampName in datasetPtc.ampNames:
+                datasetPtc.photoCharge[ampName] = np.repeat(np.nan, len(expIdList))
 
-        flatPairs = {}
-        for exp in sortedExps:
-            tempFlat = sortedExps[exp]
-            expTime = tempFlat.getInfo().getVisitInfo().getExposureTime()
-            listAtExpTime = flatPairs.setdefault(expTime, [])
-            if len(listAtExpTime) < 2:
-                listAtExpTime.append(tempFlat)
-            if len(listAtExpTime) > 2:
-                self.log.warn(f"More than 2 exposures found at expTime {expTime}. Dropping exposures "
-                              f"{listAtExpTime[2:]}.")
+        return datasetPtc
 
-        for (key, value) in flatPairs.items():
-            if len(value) < 2:
-                flatPairs.pop(key)
-                self.log.warn(f"Only one exposure found at expTime {key}. Dropping exposure {value}.")
-        return flatPairs
-
-   def measureMeanVarCov(self, exposure1, exposure2, region=None, covAstierRealSpace=False):
+    def measureMeanVarCov(self, exposure1, exposure2, region=None, covAstierRealSpace=False):
         """Calculate the mean of each of two exposures and the variance and covariance of their difference.
         The variance is calculated via afwMath, and the covariance via the methods in Astier+19 (appendix A).
         In theory, var = covariance[0,0]. This should be validated, and in the future, we may decide to just
@@ -484,6 +495,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
 
         return cov, nPix
 
+
 class PhotonTransferCurveSolveConnections(pipeBase.PipelineTaskConnections,
                                           dimensions=("instrument", "detector")):
     inputCovariances = cT.Input(
@@ -513,22 +525,19 @@ class PhotonTransferCurveSolveConnections(pipeBase.PipelineTaskConnections,
         dimensions=("instrument", "detector"),
         multiple=False,
     )
+    outputLinearizer = cT.Output(
+        name="linearizerProposal",
+        doc="Output proposed linearizer.",
+        storageClass="Linearizer",
+        dimensions=("instrument", "detector"),
+        multiple=False,
+    )
 
 
 class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
                                      pipelineConnections=PhotonTransferCurveSolveConnections):
     """Configuration for fitting measured covariances and making linearizer.
     """
-    ptcFitType = pexConfig.ChoiceField(
-        dtype=str,
-        doc="Fit PTC to Eq. 16, Eq. 20 in Astier+19, or to a polynomial.",
-        default="POLYNOMIAL",
-        allowed={
-            "POLYNOMIAL": "n-degree polynomial (use 'polynomialFitDegree' to set 'n').",
-            "EXPAPPROXIMATION": "Approximation in Astier+19 (Eq. 16).",
-            "FULLCOVARIANCE": "Full covariances model in Astier+19 (Eq. 20)"
-        }
-    )
     sigmaClipFullFitCovariancesAstier = pexConfig.Field(
         dtype=float,
         doc="sigma clip for full model fit for FULLCOVARIANCE ptcFitType ",
@@ -544,11 +553,6 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
         doc="Degree of polynomial to fit the PTC, when 'ptcFitType'=POLYNOMIAL.",
         default=3,
     )
-    linearity = pexConfig.ConfigurableField(
-        target=LinearitySolveTask,
-        doc="Task to solve the linearity."
-    )
-
     doCreateLinearizer = pexConfig.Field(
         dtype=bool,
         doc="Calculate non-linearity and persist linearizer?",
@@ -575,7 +579,6 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
 
     def runQuantum(self, butlerQC, inputRefs, outputRefs):
         """Ensure that the input and output dimensions are passed along.
-        
         Parameters
         ----------
         butlerQC : `lsst.daf.butler.butlerQuantumContext.ButlerQuantumContext`
@@ -597,7 +600,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
     def run(self, inputCovariances, inputPartialPtcDatset, linearitySubtask, detector,
             camera=None, inputDims=None, outputDims=None):
         """Combine ratios to produce crosstalk coefficients.
-        
+
         Parameters
         ----------
         inputCovariances : `numpy.recarray`
@@ -610,9 +613,9 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             i: lag dimension
             j: lag dimension
             npix: number of pixels used for covariance calculation.
-        
+
         inputPartialPtcDatset : `lsst.ip.isr.PhotonTransferCurveDataset`
-            The dataset containing information such as the means, variances, 
+            The dataset containing information such as the means, variances,
             and exposure times.
         camera : `lsst.afw.cameraGeom.Camera`
             Input camera.
@@ -620,7 +623,6 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             DataIds to use to construct provenance.
         outputDims : `list` [`lsst.daf.butler.DataCoordinate`]
             DataIds to use to populate the output calibration.
-        
         Returns
         -------
         results : `lsst.pipe.base.Struct`
@@ -663,6 +665,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
 
         return pipeBase.Struct(
             outputPtcDataset=calib,
+            outputLinearizer=linearizer,
             outputProvenance=provenance,
         )
 
@@ -1061,15 +1064,20 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             dataset.badAmps = np.repeat(np.nan, len(list(dataset.rawExpTimes.values())[0]))
 
         return dataset
-#-------------------------------------------------------
 
 
-class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
-    """Config class for photon transfer curve measurement task"""
-    ccdKey = pexConfig.Field(
-        dtype=str,
-        doc="The key by which to pull a detector from a dataId, e.g. 'ccd' or 'detector'.",
-        default='ccd',
+class MeasurePhotonTransferCurveTaskConfig(Config):
+    extract = ConfigurableField(
+        target=PhotonTransferCurveExtractTask,
+        doc="Task to measure covariances from flats.",
+    )
+    solver = ConfigurableField(
+        target=PhotonTransferCurveSolveTask,
+        doc="Task to fit models to the measured covariances.",
+    )
+    linearity = pexConfig.ConfigurableField(
+        target=LinearitySolveTask,
+        doc="Task to solve the linearity."
     )
     ptcFitType = pexConfig.ChoiceField(
         dtype=str,
@@ -1217,7 +1225,6 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
 
 class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
     """A class to calculate, fit, and plot a PTC from a set of flat pairs.
-
     The Photon Transfer Curve (var(signal) vs mean(signal)) is a standard tool
     used in astronomical detectors characterization (e.g., Janesick 2001,
     Janesick 2007). If ptcFitType is "EXPAPPROXIMATION" or "POLYNOMIAL",  this task calculates the
@@ -1228,26 +1235,21 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
     16 of Astier+19 ("The Shape of the Photon Transfer Curve of CCD sensors",
     arXiv:1905.08677) can be fitted to the PTC curve. These models include
     parameters such as the gain (e/DN) and readout noise.
-
     Linearizers to correct for signal-chain non-linearity are also calculated.
     The `Linearizer` class, in general, can support per-amp linearizers, but in this
     task this is not supported.
-
     If ptcFitType is "FULLCOVARIANCE", the covariances of the difference images are calculated via the
     DFT methods described in Astier+19 and the variances for the PTC are given by the cov[0,0] elements
     at each signal level. The full model in Equation 20 of Astier+19 is fit to the PTC to get the gain
     and the noise.
-
     Parameters
     ----------
-
     *args: `list`
         Positional arguments passed to the Task constructor. None used at this
         time.
     **kwargs: `dict`
         Keyword arguments passed on to the Task constructor. None used at this
         time.
-
     """
 
     RunnerClass = DataRefListRunner
@@ -1255,20 +1257,21 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
     _DefaultName = "measurePhotonTransferCurve"
 
     def __init__(self, *args, **kwargs):
-        pipeBase.CmdLineTask.__init__(self, *args, **kwargs)
+        super().__init__(**kwargs)
+        self.makeSubtask("extract")
+        self.makeSubtask("solver")
         self.makeSubtask("linearity")
-        plt.interactive(False)  # stop windows popping up when plotting. When headless, use 'agg' backend too
-        self.config.validate()
-        self.config.freeze()
+        
+        #plt.interactive(False)  # stop windows popping up when plotting. When headless, use 'agg' backend too
+        #self.config.validate()
+        #self.config.freeze()
 
     @pipeBase.timeMethod
     def runDataRef(self, dataRefList):
         """Run the Photon Transfer Curve (PTC) measurement task.
-
         For a dataRef (which is each detector here),
         and given a list of exposure pairs (postISR) at different exposure times,
         measure the PTC.
-
         Parameters
         ----------
         dataRefList : `list` [`lsst.daf.peristence.ButlerDataRef`]
@@ -1283,45 +1286,24 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         detNum = dataRef.dataId[self.config.ccdKey]
         camera = dataRef.get('camera')
         detector = camera[dataRef.dataId[self.config.ccdKey]]
-
+     
         amps = detector.getAmplifiers()
         ampNames = [amp.getName() for amp in amps]
-        datasetPtc = PhotonTransferCurveDataset(ampNames, self.config.ptcFitType)
+        datasetPtc = PhotonTransferCurveDataset(ampNames, self.config.ptcFitType) 
 
-        # Get the pairs of flats indexed by expTime
+        # Get the pairs of flat indexed by expTime
         expPairs = self.makePairs(dataRefList)
-
-        expIds = []
-        for (exp1, exp2) in expPairs.values():
-            id1 = exp1.getInfo().getVisitInfo().getExposureId()
-            id2 = exp2.getInfo().getVisitInfo().getExposureId()
-            expIds.append((id1, id2))
-        self.log.info(f"Measuring PTC using {expIds} exposures for detector {detector.getId()}")
-
+        
         # get photodiode data early so that logic can be put in to only use the
         # data if all files are found, as partial corrections are not possible
         # or at least require significant logic to deal with
         datasetPtc = self._setBOTPhotocharge(dataRef, datasetPtc, expIds)
 
-        for ampName in ampNames:
-            datasetPtc.inputExpIdPairs[ampName] = expIds
+        result = self.extract.run(expPairs, camera, datasetPtc, detector, detNum)
+        finalResults = self.solve.run(result.outputCovariances, result.outputPartialPtcDataset,
+                                      self.linearity, detector, camera=camera)
 
-        maxMeanSignalDict = {ampName: 1e6 for ampName in ampNames}
-        minMeanSignalDict = {ampName: 0.0 for ampName in ampNames}
-        for ampName in ampNames:
-            if 'ALL_AMPS' in self.config.maxMeanSignal:
-                maxMeanSignalDict[ampName] = self.config.maxMeanSignal['ALL_AMPS']
-            elif ampName in self.config.maxMeanSignal:
-                maxMeanSignalDict[ampName] = self.config.maxMeanSignal[ampName]
-
-            if 'ALL_AMPS' in self.config.minMeanSignal:
-                minMeanSignalDict[ampName] = self.config.minMeanSignal['ALL_AMPS']
-            elif ampName in self.config.minMeanSignal:
-                minMeanSignalDict[ampName] = self.config.minMeanSignal[ampName]
-
-        outputs = self.run(expPairs, datasetPtc, camera, detector, detNum, ampNames)
-
-        if outputs.linearizer is not None:
+        if finalResults.outputLinearizer is not None:
             butler = dataRef.getButler()
             self.log.info("Writing linearizer:")
 
@@ -1329,158 +1311,24 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             now = datetime.datetime.utcnow()
             calibDate = now.strftime("%Y-%m-%d")
 
-            butler.put(outputs.linearizer, datasetType='Linearizer', dataId={'detector': detNum,
+            butler.put(finalResults.outputLinearizer, datasetType='Linearizer', dataId={'detector': detNum,
                        'detectorName': detName, 'calibDate': calibDate})
 
         self.log.info("Writing PTC data.")
-        dataRef.put(outputs.datasetPtc, datasetType="photonTransferCurveDataset")
+        dataRef.put(finalResults.outputPtcDatset, datasetType="photonTransferCurveDataset")        
 
-    def run(self, expPairs, datasetPtc, camera, detector, detNum, ampNames):
-        """
-        """
-        tupleRecords = []
-        allTags = []
-        for expTime, (exp1, exp2) in expPairs.items():
-            expId1 = exp1.getInfo().getVisitInfo().getExposureId()
-            expId2 = exp2.getInfo().getVisitInfo().getExposureId()
-            tupleRows = []
-            nAmpsNan = 0
-            tags = ['mu', 'i', 'j', 'var', 'cov', 'npix', 'ext', 'expTime', 'ampName']
-            for ampNumber, amp in enumerate(detector):
-                ampName = amp.getName()
-                # covAstier: (i, j, var (cov[0,0]), cov, npix)
-                doRealSpace = self.config.covAstierRealSpace
-                muDiff, varDiff, covAstier = self.measureMeanVarCov(exp1, exp2, region=amp.getBBox(),
-                                                                    covAstierRealSpace=doRealSpace)
-
-                if np.isnan(muDiff) or np.isnan(varDiff) or (covAstier is None):
-                    msg = (f"NaN mean or var, or None cov in amp {ampName} in exposure pair {expId1},"
-                           f" {expId2} of detector {detNum}.")
-                    self.log.warn(msg)
-                    nAmpsNan += 1
-                    continue
-                if (muDiff <= minMeanSignalDict[ampName]) or (muDiff >= maxMeanSignalDict[ampName]):
-                    continue
-
-                datasetPtc.rawExpTimes[ampName].append(expTime)
-                datasetPtc.rawMeans[ampName].append(muDiff)
-                datasetPtc.rawVars[ampName].append(varDiff)
-
-                tupleRows += [(muDiff, ) + covRow + (ampNumber, expTime, ampName) for covRow in covAstier]
-            if nAmpsNan == len(ampNames):
-                msg = f"NaN mean in all amps of exposure pair {expId1}, {expId2} of detector {detNum}."
-                self.log.warn(msg)
-                continue
-            allTags += tags
-            tupleRecords += tupleRows
-        covariancesWithTags = np.core.records.fromrecords(tupleRecords, names=allTags)
-
-        for ampName in datasetPtc.ampNames:
-            # Sort raw vectors by rawMeans index
-            index = np.argsort(datasetPtc.rawMeans[ampName])
-            datasetPtc.rawExpTimes[ampName] = np.array(datasetPtc.rawExpTimes[ampName])[index]
-            datasetPtc.rawMeans[ampName] = np.array(datasetPtc.rawMeans[ampName])[index]
-            datasetPtc.rawVars[ampName] = np.array(datasetPtc.rawVars[ampName])[index]
-
-        if self.config.ptcFitType in ["FULLCOVARIANCE", ]:
-            # Calculate covariances and fit them, including the PTC, to Astier+19 full model (Eq. 20)
-            # First, fit get the flat pairs that are masked, according to the regular PTC (C_00 vs mu)
-            # The points at these fluxes will also be masked when calculating the other covariances, C_ij)
-            newDatasetPtc = copy.copy(datasetPtc)
-            newDatasetPtc = self.fitPtc(newDatasetPtc, 'EXPAPPROXIMATION')
-            for ampName in datasetPtc.ampNames:
-                datasetPtc.expIdMask[ampName] = newDatasetPtc.expIdMask[ampName]
-
-            datasetPtc.fitType = "FULLCOVARIANCE"
-            datasetPtc = self.fitCovariancesAstier(datasetPtc, covariancesWithTags)
-        elif self.config.ptcFitType in ["EXPAPPROXIMATION", "POLYNOMIAL"]:
-            # Fit the PTC to a polynomial or to Astier+19 exponential approximation (Eq. 16)
-            # Fill up PhotonTransferCurveDataset object.
-            datasetPtc = self.fitPtc(datasetPtc, self.config.ptcFitType)
-
-        datasetPtc.updateMetadata(setDate=True, camera=camera, detector=detector)
-
-        # Fit a poynomial to calculate non-linearity and persist linearizer.
-        if self.config.doCreateLinearizer:
-            # Fit (non)linearity of signal vs time curve.
-            # Fill up PhotonTransferCurveDataset object.
-            # Fill up array for LUT linearizer (tableArray).
-            # Produce coefficients for Polynomial and Squared linearizers.
-            # Build linearizer objects.
-            dimensions = {'camera': camera.getName(), 'detector': detector.getId()}
-            linearityResults = self.linearity.run(datasetPtc, camera, dimensions)
-            linearizer = linearityResults.outputLinearizer
-        else:
-            linearizer = None
-
-        return pipeBase.Struct(
-            datasetPtc=datasetPtc,
-            linearizer=linearizer
-        )
-
-    def _setBOTPhotocharge(self, dataRef, datasetPtc, expIdList):
-        """Set photoCharge attribute in PTC dataset
-
-        Parameters
-        ----------
-        dataRef : `lsst.daf.peristence.ButlerDataRef`
-            Data reference for exposurre for detector to process.
-
-        datasetPtc : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
-            The dataset containing information such as the means, variances and exposure times.
-
-        expIdList : `list`
-            List with exposure pairs Ids (one pair per list entry).
-
-        Returns
-        -------
-        datasetPtc: `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
-            This is the same dataset as the input parameter, however, it has been modified
-            to update the datasetPtc.photoCharge attribute.
-        """
-        if self.config.doPhotodiode:
-            for (expId1, expId2) in expIdList:
-                charges = [-1, -1]  # necessary to have a not-found value to keep lists in step
-                for i, expId in enumerate([expId1, expId2]):
-                    # //1000 is a Gen2 only hack, working around the fact an
-                    # exposure's ID is not the same as the expId in the
-                    # registry. Currently expId is concatenated with the
-                    # zero-padded detector ID. This will all go away in Gen3.
-                    dataRef.dataId['expId'] = expId//1000
-                    if self.config.photodiodeDataPath:
-                        photodiodeData = getBOTphotodiodeData(dataRef, self.config.photodiodeDataPath)
-                    else:
-                        photodiodeData = getBOTphotodiodeData(dataRef)
-                    if photodiodeData:  # default path stored in function def to keep task clean
-                        charges[i] = photodiodeData.getCharge()
-                    else:
-                        # full expId (not //1000) here, as that encodes the
-                        # the detector number as so is fully qualifying
-                        self.log.warn(f"No photodiode data found for {expId}")
-
-                for ampName in datasetPtc.ampNames:
-                    datasetPtc.photoCharge[ampName].append((charges[0], charges[1]))
-        else:
-            # Can't be an empty list, as initialized, because astropy.Table won't allow it
-            # when saving as fits
-            for ampName in datasetPtc.ampNames:
-                datasetPtc.photoCharge[ampName] = np.repeat(np.nan, len(expIdList))
-
-        return datasetPtc
+        return finalResults
 
     def makePairs(self, dataRefList):
         """Produce a list of flat pairs indexed by exposure time.
-
         Parameters
         ----------
         dataRefList : `list` [`lsst.daf.peristence.ButlerDataRef`]
             Data references for exposures for detectors to process.
-
         Return
         ------
         flatPairs : `dict` [`float`, `lsst.afw.image.exposure.exposure.ExposureF`]
           Dictionary that groups flat-field exposures that have the same exposure time (seconds).
-
         Notes
         -----
         We use the difference of one pair of flat-field images taken at the same exposure time when
