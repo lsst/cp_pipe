@@ -29,6 +29,8 @@ import lsst.pipe.base as pipeBase
 from .utils import (fitLeastSq, fitBootstrap, funcPolynomial, funcAstier)
 from scipy.optimize import least_squares
 
+import lsst.pipe.base.connectionTypes as cT
+
 import datetime
 
 from .astierCovPtcUtils import (fftSize, CovFft, computeCovDirect, fitData)
@@ -42,6 +44,459 @@ import copy
 
 __all__ = ['MeasurePhotonTransferCurveTask',
            'MeasurePhotonTransferCurveTaskConfig']
+
+
+class PhotonTransferCurveExtractConnections(pipeBase.PipelineTaskConnections,
+                                            dimensions=("instrument", "exposure", "detector")):
+
+    inputExp = cT.Input(
+        name="ptcInputs",
+        doc="Input post-ISR processed exposures to measure covariances from.",
+        storageClass="Exposure",
+        dimensions=("instrument", "exposure", "detector"),
+        multiple=True,
+    )
+    
+    outputCovariances = cT.Output(
+        name="ptcCovariances",
+        doc="Extracted flat (co)variances.",
+        storageClass="StructuredDataDict",
+        dimensions=("instrument", "exposure", "detector"),
+    )
+    
+    outputPartialPtcDataset = cT.Output(
+        name="ptcPartialDataset",
+        doc="Ptc dataset partially filled.",
+        storageClass="PhotonTransferCurveDataset",
+        dimensions=("instrument", "exposure", "detector"),
+    )
+
+
+class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConnections,
+                                            pipelineConnections=PhotonTransferCurveExtractConnections):
+    """Configuration for the measurement of covariances from flats.
+    """
+    ccdKey = pexConfig.Field(
+        dtype=str,
+        doc="The key by which to pull a detector from a dataId, e.g. 'ccd' or 'detector'.",
+        default='ccd',
+    )
+    ptcFitType = pexConfig.ChoiceField(
+        dtype=str,
+        doc="Fit PTC to Eq. 16, Eq. 20 in Astier+19, or to a polynomial.",
+        default="POLYNOMIAL",
+        allowed={
+            "POLYNOMIAL": "n-degree polynomial (use 'polynomialFitDegree' to set 'n').",
+            "EXPAPPROXIMATION": "Approximation in Astier+19 (Eq. 16).",
+            "FULLCOVARIANCE": "Full covariances model in Astier+19 (Eq. 20)"
+        }
+    )
+    sigmaClipFullFitCovariancesAstier = pexConfig.Field(
+        dtype=float,
+        doc="sigma clip for full model fit for FULLCOVARIANCE ptcFitType ",
+        default=5.0,
+    )
+    maxIterFullFitCovariancesAstier = pexConfig.Field(
+        dtype=int,
+        doc="Maximum number of iterations in full model fit for FULLCOVARIANCE ptcFitType",
+        default=3,
+    )
+    maximumRangeCovariancesAstier = pexConfig.Field(
+        dtype=int,
+        doc="Maximum range of covariances as in Astier+19",
+        default=8,
+    )
+    covAstierRealSpace = pexConfig.Field(
+        dtype=bool,
+        doc="Calculate covariances in real space or via FFT? (see appendix A of Astier+19).",
+        default=False,
+    )
+    binSize = pexConfig.Field(
+        dtype=int,
+        doc="Bin the image by this factor in both dimensions.",
+        default=1,
+    )
+    minMeanSignal = pexConfig.Field(
+        dtype=float,
+        doc="Minimum value (inclusive) of mean signal (in DN) above which to consider.",
+        default=0,
+    )
+    maxMeanSignal = pexConfig.Field(
+        dtype=float,
+        doc="Maximum value (inclusive) of mean signal (in DN) below which to consider.",
+        default=9e6,
+    )
+    initialNonLinearityExclusionThresholdPositive = pexConfig.RangeField(
+        dtype=float,
+        doc="Initially exclude data points with a variance that are more than a factor of this from being"
+            " linear in the positive direction, from the PTC fit. Note that these points will also be"
+            " excluded from the non-linearity fit. This is done before the iterative outlier rejection,"
+            " to allow an accurate determination of the sigmas for said iterative fit.",
+        default=0.12,
+        min=0.0,
+        max=1.0,
+    )
+    initialNonLinearityExclusionThresholdNegative = pexConfig.RangeField(
+        dtype=float,
+        doc="Initially exclude data points with a variance that are more than a factor of this from being"
+            " linear in the negative direction, from the PTC fit. Note that these points will also be"
+            " excluded from the non-linearity fit. This is done before the iterative outlier rejection,"
+            " to allow an accurate determination of the sigmas for said iterative fit.",
+        default=0.25,
+        min=0.0,
+        max=1.0,
+    )
+    sigmaCutPtcOutliers = pexConfig.Field(
+        dtype=float,
+        doc="Sigma cut for outlier rejection in PTC.",
+        default=5.0,
+    )
+    maskNameList = pexConfig.ListField(
+        dtype=str,
+        doc="Mask list to exclude from statistics calculations.",
+        default=['SUSPECT', 'BAD', 'NO_DATA'],
+    )
+    nSigmaClipPtc = pexConfig.Field(
+        dtype=float,
+        doc="Sigma cut for afwMath.StatisticsControl()",
+        default=5.5,
+    )
+    nIterSigmaClipPtc = pexConfig.Field(
+        dtype=int,
+        doc="Number of sigma-clipping iterations for afwMath.StatisticsControl()",
+        default=1,
+    )
+    doPhotodiode = pexConfig.Field(
+        dtype=bool,
+        doc="Apply a correction based on the photodiode readings if available?",
+        default=True,
+    )
+    photodiodeDataPath = pexConfig.Field(
+        dtype=str,
+        doc="Gen2 only: path to locate the data photodiode data files.",
+        default=""
+    )
+
+
+class PhotonTransferCurveExtractConfig(pipeBase.PipelineTask,
+                                        pipeBase.CmdLineTask): 
+    """Task to measure covariances from flat fields.
+    """
+    ConfigClass = PhotonTransferCurveExtractConfig
+    _DefaultName = 'cpPtcExtract'
+
+    def run(self, exposurePairs, datasetPtc, camera, detector, detNum):
+    """
+    exposurePairs : `list`
+        List with flat pairs.
+    """
+    
+    expIds = []
+    for (exp1, exp2) in expPairs.values():
+        id1 = exp1.getInfo().getVisitInfo().getExposureId()
+        id2 = exp2.getInfo().getVisitInfo().getExposureId()
+        expIds.append((id1, id2))
+    self.log.info(f"Measuring PTC using {expIds} exposures for detector {detector.getId()}")
+
+    # get photodiode data early so that logic can be put in to only use the
+    # data if all files are found, as partial corrections are not possible
+    # or at least require significant logic to deal with
+    datasetPtc = self._setBOTPhotocharge(dataRef, datasetPtc, expIds)
+
+    for ampName in datasetPtc.ampNames:
+        datasetPtc.inputExpIdPairs[ampName] = expIds
+    
+    tupleRecords = []
+    allTags = []
+    for expTime, (exp1, exp2) in expPairs.items():
+        expId1 = exp1.getInfo().getVisitInfo().getExposureId()
+        expId2 = exp2.getInfo().getVisitInfo().getExposureId()
+        tupleRows = []
+        nAmpsNan = 0
+        for ampNumber, amp in enumerate(detector):
+            ampName = amp.getName()
+            # covAstier: (i, j, var (cov[0,0]), cov, npix)
+            doRealSpace = self.config.covAstierRealSpace
+            muDiff, varDiff, covAstier = self.measureMeanVarCov(exp1, exp2, region=amp.getBBox(),
+                                                                covAstierRealSpace=doRealSpace)
+            datasetPtc.rawExpTimes[ampName].append(expTime)
+            datasetPtc.rawMeans[ampName].append(muDiff)
+            datasetPtc.rawVars[ampName].append(varDiff)
+
+            if np.isnan(muDiff) or np.isnan(varDiff) or (covAstier is None):
+                msg = (f"NaN mean or var, or None cov in amp {ampName} in exposure pair {expId1},"
+                       f" {expId2} of detector {detNum}.")
+                self.log.warn(msg)
+                nAmpsNan += 1
+                continue
+            tags = ['mu', 'i', 'j', 'var', 'cov', 'npix', 'ext', 'expTime', 'ampName']
+            if (muDiff <= self.config.minMeanSignal) or (muDiff >= self.config.maxMeanSignal):
+                continue
+
+            tupleRows += [(muDiff, ) + covRow + (ampNumber, expTime, ampName) for covRow in covAstier]
+        if nAmpsNan == len(ampNames):
+            msg = f"NaN mean in all amps of exposure pair {expId1}, {expId2} of detector {detNum}."
+            self.log.warn(msg)
+            continue
+        allTags += tags
+        tupleRecords += tupleRows
+    covariancesWithTags = np.core.records.fromrecords(tupleRecords, names=allTags)
+    
+    return pipeBase.Struct(
+        outputCovariances = covariancesWithTags,
+        outputPartialPtcDataset = datasetPtc
+    )
+
+    def makePairs(self, dataRefList):
+        """Produce a list of flat pairs indexed by exposure time.
+        Parameters
+        ----------
+        dataRefList : `list` [`lsst.daf.peristence.ButlerDataRef`]
+            Data references for exposures for detectors to process.
+        Return
+        ------
+        flatPairs : `dict` [`float`, `lsst.afw.image.exposure.exposure.ExposureF`]
+          Dictionary that groups flat-field exposures that have the same exposure time (seconds).
+        Notes
+        -----
+        We use the difference of one pair of flat-field images taken at the same exposure time when
+        calculating the PTC to reduce Fixed Pattern Noise. If there are > 2 flat-field images with the
+        same exposure time, the first two are kept and the rest discarded.
+        """
+
+        # Organize exposures by observation date.
+        expDict = {}
+        for dataRef in dataRefList:
+            try:
+                tempFlat = dataRef.get("postISRCCD")
+            except RuntimeError:
+                self.log.warn("postISR exposure could not be retrieved. Ignoring flat.")
+                continue
+            expDate = tempFlat.getInfo().getVisitInfo().getDate().get()
+            expDict.setdefault(expDate, tempFlat)
+        sortedExps = {k: expDict[k] for k in sorted(expDict)}
+
+        flatPairs = {}
+        for exp in sortedExps:
+            tempFlat = sortedExps[exp]
+            expTime = tempFlat.getInfo().getVisitInfo().getExposureTime()
+            listAtExpTime = flatPairs.setdefault(expTime, [])
+            if len(listAtExpTime) < 2:
+                listAtExpTime.append(tempFlat)
+            if len(listAtExpTime) > 2:
+                self.log.warn(f"More than 2 exposures found at expTime {expTime}. Dropping exposures "
+                              f"{listAtExpTime[2:]}.")
+
+        for (key, value) in flatPairs.items():
+            if len(value) < 2:
+                flatPairs.pop(key)
+                self.log.warn(f"Only one exposure found at expTime {key}. Dropping exposure {value}.")
+        return flatPairs
+
+   def measureMeanVarCov(self, exposure1, exposure2, region=None, covAstierRealSpace=False):
+        """Calculate the mean of each of two exposures and the variance and covariance of their difference.
+        The variance is calculated via afwMath, and the covariance via the methods in Astier+19 (appendix A).
+        In theory, var = covariance[0,0]. This should be validated, and in the future, we may decide to just
+        keep one (covariance).
+        Parameters
+        ----------
+        exposure1 : `lsst.afw.image.exposure.exposure.ExposureF`
+            First exposure of flat field pair.
+        exposure2 : `lsst.afw.image.exposure.exposure.ExposureF`
+            Second exposure of flat field pair.
+        region : `lsst.geom.Box2I`, optional
+            Region of each exposure where to perform the calculations (e.g, an amplifier).
+        covAstierRealSpace : `bool`, optional
+            Should the covariannces in Astier+19 be calculated in real space or via FFT?
+            See Appendix A of Astier+19.
+        Returns
+        -------
+        mu : `float` or `NaN`
+            0.5*(mu1 + mu2), where mu1, and mu2 are the clipped means of the regions in
+            both exposures. If either mu1 or m2 are NaN's, the returned value is NaN.
+        varDiff : `float` or `NaN`
+            Half of the clipped variance of the difference of the regions inthe two input
+            exposures. If either mu1 or m2 are NaN's, the returned value is NaN.
+        covDiffAstier : `list` or `NaN`
+            List with tuples of the form (dx, dy, var, cov, npix), where:
+                dx : `int`
+                    Lag in x
+                dy : `int`
+                    Lag in y
+                var : `float`
+                    Variance at (dx, dy).
+                cov : `float`
+                    Covariance at (dx, dy).
+                nPix : `int`
+                    Number of pixel pairs used to evaluate var and cov.
+            If either mu1 or m2 are NaN's, the returned value is NaN.
+        """
+
+        if region is not None:
+            im1Area = exposure1.maskedImage[region]
+            im2Area = exposure2.maskedImage[region]
+        else:
+            im1Area = exposure1.maskedImage
+            im2Area = exposure2.maskedImage
+
+        if self.config.binSize > 1:
+            im1Area = afwMath.binImage(im1Area, self.config.binSize)
+            im2Area = afwMath.binImage(im2Area, self.config.binSize)
+
+        im1MaskVal = exposure1.getMask().getPlaneBitMask(self.config.maskNameList)
+        im1StatsCtrl = afwMath.StatisticsControl(self.config.nSigmaClipPtc,
+                                                 self.config.nIterSigmaClipPtc,
+                                                 im1MaskVal)
+        im1StatsCtrl.setNanSafe(True)
+        im1StatsCtrl.setAndMask(im1MaskVal)
+
+        im2MaskVal = exposure2.getMask().getPlaneBitMask(self.config.maskNameList)
+        im2StatsCtrl = afwMath.StatisticsControl(self.config.nSigmaClipPtc,
+                                                 self.config.nIterSigmaClipPtc,
+                                                 im2MaskVal)
+        im2StatsCtrl.setNanSafe(True)
+        im2StatsCtrl.setAndMask(im2MaskVal)
+
+        #  Clipped mean of images; then average of mean.
+        mu1 = afwMath.makeStatistics(im1Area, afwMath.MEANCLIP, im1StatsCtrl).getValue()
+        mu2 = afwMath.makeStatistics(im2Area, afwMath.MEANCLIP, im2StatsCtrl).getValue()
+        if np.isnan(mu1) or np.isnan(mu2):
+            return np.nan, np.nan, None
+        mu = 0.5*(mu1 + mu2)
+
+        # Take difference of pairs
+        # symmetric formula: diff = (mu2*im1-mu1*im2)/(0.5*(mu1+mu2))
+        temp = im2Area.clone()
+        temp *= mu1
+        diffIm = im1Area.clone()
+        diffIm *= mu2
+        diffIm -= temp
+        diffIm /= mu
+
+        diffImMaskVal = diffIm.getMask().getPlaneBitMask(self.config.maskNameList)
+        diffImStatsCtrl = afwMath.StatisticsControl(self.config.nSigmaClipPtc,
+                                                    self.config.nIterSigmaClipPtc,
+                                                    diffImMaskVal)
+        diffImStatsCtrl.setNanSafe(True)
+        diffImStatsCtrl.setAndMask(diffImMaskVal)
+
+        varDiff = 0.5*(afwMath.makeStatistics(diffIm, afwMath.VARIANCECLIP, diffImStatsCtrl).getValue())
+
+        # Get the mask and identify good pixels as '1', and the rest as '0'.
+        w1 = np.where(im1Area.getMask().getArray() == 0, 1, 0)
+        w2 = np.where(im2Area.getMask().getArray() == 0, 1, 0)
+
+        w12 = w1*w2
+        wDiff = np.where(diffIm.getMask().getArray() == 0, 1, 0)
+        w = w12*wDiff
+
+        maxRangeCov = self.config.maximumRangeCovariancesAstier
+        if covAstierRealSpace:
+            covDiffAstier = computeCovDirect(diffIm.getImage().getArray(), w, maxRangeCov)
+        else:
+            shapeDiff = diffIm.getImage().getArray().shape
+            fftShape = (fftSize(shapeDiff[0] + maxRangeCov), fftSize(shapeDiff[1]+maxRangeCov))
+            c = CovFft(diffIm.getImage().getArray(), w, fftShape, maxRangeCov)
+            covDiffAstier = c.reportCovFft(maxRangeCov)
+
+        return mu, varDiff, covDiffAstier
+
+    def computeCovDirect(self, diffImage, weightImage, maxRange):
+        """Compute covariances of diffImage in real space.
+        For lags larger than ~25, it is slower than the FFT way.
+        Taken from https://github.com/PierreAstier/bfptc/
+        Parameters
+        ----------
+        diffImage : `numpy.array`
+            Image to compute the covariance of.
+        weightImage : `numpy.array`
+            Weight image of diffImage (1's and 0's for good and bad pixels, respectively).
+        maxRange : `int`
+            Last index of the covariance to be computed.
+        Returns
+        -------
+        outList : `list`
+            List with tuples of the form (dx, dy, var, cov, npix), where:
+                dx : `int`
+                    Lag in x
+                dy : `int`
+                    Lag in y
+                var : `float`
+                    Variance at (dx, dy).
+                cov : `float`
+                    Covariance at (dx, dy).
+                nPix : `int`
+                    Number of pixel pairs used to evaluate var and cov.
+        """
+        outList = []
+        var = 0
+        # (dy,dx) = (0,0) has to be first
+        for dy in range(maxRange + 1):
+            for dx in range(0, maxRange + 1):
+                if (dx*dy > 0):
+                    cov1, nPix1 = self.covDirectValue(diffImage, weightImage, dx, dy)
+                    cov2, nPix2 = self.covDirectValue(diffImage, weightImage, dx, -dy)
+                    cov = 0.5*(cov1 + cov2)
+                    nPix = nPix1 + nPix2
+                else:
+                    cov, nPix = self.covDirectValue(diffImage, weightImage, dx, dy)
+                if (dx == 0 and dy == 0):
+                    var = cov
+                outList.append((dx, dy, var, cov, nPix))
+
+        return outList
+
+    def covDirectValue(self, diffImage, weightImage, dx, dy):
+        """Compute covariances of diffImage in real space at lag (dx, dy).
+        Taken from https://github.com/PierreAstier/bfptc/ (c.f., appendix of Astier+19).
+        Parameters
+        ----------
+        diffImage : `numpy.array`
+            Image to compute the covariance of.
+        weightImage : `numpy.array`
+            Weight image of diffImage (1's and 0's for good and bad pixels, respectively).
+        dx : `int`
+            Lag in x.
+        dy : `int`
+            Lag in y.
+        Returns
+        -------
+        cov : `float`
+            Covariance at (dx, dy)
+        nPix : `int`
+            Number of pixel pairs used to evaluate var and cov.
+        """
+        (nCols, nRows) = diffImage.shape
+        # switching both signs does not change anything:
+        # it just swaps im1 and im2 below
+        if (dx < 0):
+            (dx, dy) = (-dx, -dy)
+        # now, we have dx >0. We have to distinguish two cases
+        # depending on the sign of dy
+        if dy >= 0:
+            im1 = diffImage[dy:, dx:]
+            w1 = weightImage[dy:, dx:]
+            im2 = diffImage[:nCols - dy, :nRows - dx]
+            w2 = weightImage[:nCols - dy, :nRows - dx]
+        else:
+            im1 = diffImage[:nCols + dy, dx:]
+            w1 = weightImage[:nCols + dy, dx:]
+            im2 = diffImage[-dy:, :nRows - dx]
+            w2 = weightImage[-dy:, :nRows - dx]
+        # use the same mask for all 3 calculations
+        wAll = w1*w2
+        # do not use mean() because weightImage=0 pixels would then count
+        nPix = wAll.sum()
+        im1TimesW = im1*wAll
+        s1 = im1TimesW.sum()/nPix
+        s2 = (im2*wAll).sum()/nPix
+        p = (im1TimesW*im2).sum()/nPix
+        cov = p - s1*s2
+
+        return cov, nPix
+
+
+#-------------------------------------------------------
 
 
 class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
