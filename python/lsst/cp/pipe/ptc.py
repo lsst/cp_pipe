@@ -268,9 +268,9 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         ampNames = [amp.getName() for amp in amps]
         datasetPtc = PhotonTransferCurveDataset(ampNames, self.config.ptcFitType)
 
+        # Get the pairs of flats indexed by expTime
         expPairs = self.makePairs(dataRefList)
 
-        # Get the pairs of flats indexed by expTime
         expIds = []
         for (exp1, exp2) in expPairs.values():
             id1 = exp1.getInfo().getVisitInfo().getExposureId()
@@ -281,33 +281,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         # get photodiode data early so that logic can be put in to only use the
         # data if all files are found, as partial corrections are not possible
         # or at least require significant logic to deal with
-        if self.config.doPhotodiode:
-            for (expId1, expId2) in expIds:
-                charges = [-1, -1]  # necessary to have a not-found value to keep lists in step
-                for i, expId in enumerate([expId1, expId2]):
-                    # //1000 is a Gen2 only hack, working around the fact an
-                    # exposure's ID is not the same as the expId in the
-                    # registry. Currently expId is concatenated with the
-                    # zero-padded detector ID. This will all go away in Gen3.
-                    dataRef.dataId['expId'] = expId//1000
-                    if self.config.photodiodeDataPath:
-                        photodiodeData = getBOTphotodiodeData(dataRef, self.config.photodiodeDataPath)
-                    else:
-                        photodiodeData = getBOTphotodiodeData(dataRef)
-                    if photodiodeData:  # default path stored in function def to keep task clean
-                        charges[i] = photodiodeData.getCharge()
-                    else:
-                        # full expId (not //1000) here, as that encodes the
-                        # the detector number as so is fully qualifying
-                        self.log.warn(f"No photodiode data found for {expId}")
-
-                for ampName in ampNames:
-                    datasetPtc.photoCharge[ampName].append((charges[0], charges[1]))
-        else:
-            # Can't be an empty list, as initialized, because astropy.Table won't allow it
-            # when saving as fits
-            for ampName in ampNames:
-                datasetPtc.photoCharge[ampName] = np.repeat(np.nan, len(expIds))
+        datasetPtc = self._setBOTPhotocharge(dataRef, datasetPtc, expIds)
 
         for ampName in ampNames:
             datasetPtc.inputExpIdPairs[ampName] = expIds
@@ -424,6 +398,56 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             linearizer=linearizer
         )
 
+    def _setBOTPhotocharge(self, dataRef, datasetPtc, expIdList):
+        """Set photoCharge attribute in PTC dataset
+
+        Parameters
+        ----------
+        dataRef : `lsst.daf.peristence.ButlerDataRef`
+            Data reference for exposurre for detector to process.
+
+        datasetPtc : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
+            The dataset containing information such as the means, variances and exposure times.
+
+        expIdList : `list`
+            List with exposure pairs Ids (one pair per list entry).
+
+        Returns
+        -------
+        datasetPtc: `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
+            This is the same dataset as the input parameter, however, it has been modified
+            to update the datasetPtc.photoCharge attribute.
+        """
+        if self.config.doPhotodiode:
+            for (expId1, expId2) in expIdList:
+                charges = [-1, -1]  # necessary to have a not-found value to keep lists in step
+                for i, expId in enumerate([expId1, expId2]):
+                    # //1000 is a Gen2 only hack, working around the fact an
+                    # exposure's ID is not the same as the expId in the
+                    # registry. Currently expId is concatenated with the
+                    # zero-padded detector ID. This will all go away in Gen3.
+                    dataRef.dataId['expId'] = expId//1000
+                    if self.config.photodiodeDataPath:
+                        photodiodeData = getBOTphotodiodeData(dataRef, self.config.photodiodeDataPath)
+                    else:
+                        photodiodeData = getBOTphotodiodeData(dataRef)
+                    if photodiodeData:  # default path stored in function def to keep task clean
+                        charges[i] = photodiodeData.getCharge()
+                    else:
+                        # full expId (not //1000) here, as that encodes the
+                        # the detector number as so is fully qualifying
+                        self.log.warn(f"No photodiode data found for {expId}")
+
+                for ampName in datasetPtc.ampNames:
+                    datasetPtc.photoCharge[ampName].append((charges[0], charges[1]))
+        else:
+            # Can't be an empty list, as initialized, because astropy.Table won't allow it
+            # when saving as fits
+            for ampName in datasetPtc.ampNames:
+                datasetPtc.photoCharge[ampName] = np.repeat(np.nan, len(expIdList))
+
+        return datasetPtc
+
     def makePairs(self, dataRefList):
         """Produce a list of flat pairs indexed by exposure time.
 
@@ -502,7 +526,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         Returns
         -------
         dataset: `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
-            This is the same dataset as the input paramter, however, it has been modified
+            This is the same dataset as the input parameter, however, it has been modified
             to include information such as the fit vectors and the fit parameters. See
             the class `PhotonTransferCurveDatase`.
         """
@@ -530,7 +554,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         Returns
         -------
         dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
-            This is the same dataset as the input paramter, however, it has been modified
+            This is the same dataset as the input parameter, however, it has been modified
             to include extra information such as the mask 1D array, gains, reoudout noise, measured signal,
             measured variance, modeled variance, a, and b coefficient matrices (see Astier+19) per amplifier.
             See the class `PhotonTransferCurveDatase`.
@@ -973,7 +997,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         Returns
         -------
         dataset: `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
-            This is the same dataset as the input paramter, however, it has been modified
+            This is the same dataset as the input parameter, however, it has been modified
             to include information such as the fit vectors and the fit parameters. See
             the class `PhotonTransferCurveDatase`.
         """
