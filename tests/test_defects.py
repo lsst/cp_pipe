@@ -29,11 +29,10 @@ import copy
 import lsst.utils
 import lsst.utils.tests
 
+import lsst.ip.isr as ipIsr
 import lsst.cp.pipe as cpPipe
-from lsst.cp.pipe.utils import countMaskedPixels
 from lsst.ip.isr import isrMock
 from lsst.geom import Box2I, Point2I, Extent2I
-import lsst.meas.algorithms as measAlg
 
 
 class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
@@ -41,14 +40,6 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
 
     def setUp(self):
         self.defaultConfig = cpPipe.defects.FindDefectsTask.ConfigClass()
-
-        for config in [self.defaultConfig.isrForDarks, self.defaultConfig.isrForFlats]:
-            config.doCrosstalk = False
-            config.doUseOpticsTransmission = False
-            config.doUseFilterTransmission = False
-            config.doUseSensorTransmission = False
-            config.doUseAtmosphereTransmission = False
-            config.doAttachTransmissionCurve = False
 
         self.flatMean = 2000
         self.darkMean = 1
@@ -105,16 +96,16 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         self.flatExp.image.array[:] = flatData
         self.darkExp.image.array[:] = darkData
 
-        self.defaultTask = cpPipe.defects.FindDefectsTask(config=self.defaultConfig)
+        self.defaultTask = cpPipe.defects.FindDefectsTask()  # config=self.defaultConfig)
 
-        self.allDefectsList = measAlg.Defects()
+        self.allDefectsList = ipIsr.Defects()
 
-        self.brightDefectsList = measAlg.Defects()
+        self.brightDefectsList = ipIsr.Defects()
         for d in self.brightBBoxes:
             self.brightDefectsList.append(d)
             self.allDefectsList.append(d)
 
-        self.darkDefectsList = measAlg.Defects()
+        self.darkDefectsList = ipIsr.Defects()
         for d in self.darkBBoxes:
             self.darkDefectsList.append(d)
             self.allDefectsList.append(d)
@@ -123,14 +114,14 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         """A helper function for the tests of maskBlocksIfIntermitentBadPixelsInColumn.
         """
         config = copy.copy(self.defaultConfig)
-        config.badOnAndOffPixelColumnThreshold = 10
-        config.goodPixelColumnGapThreshold = 5
-        config.nPixBorderUpDown = 0
-        config.nPixBorderLeftRight = 0
+        config.measure.badOnAndOffPixelColumnThreshold = 10
+        config.measure.goodPixelColumnGapThreshold = 5
+        config.measure.nPixBorderUpDown = 0
+        config.measure.nPixBorderLeftRight = 0
 
         task = cpPipe.defects.FindDefectsTask(config=config)
 
-        defectsWithColumns = task.maskBlocksIfIntermitentBadPixelsInColumn(inputDefects)
+        defectsWithColumns = task.measure.maskBlocksIfIntermitentBadPixelsInColumn(inputDefects)
         boxesMeasured = []
         for defect in defectsWithColumns:
             boxesMeasured.append(defect.getBBox())
@@ -480,12 +471,13 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
 
     def test_defectFindingAllSensor(self):
         config = copy.copy(self.defaultConfig)
-        config.nPixBorderLeftRight = 0
-        config.nPixBorderUpDown = 0
+        config.measure.nPixBorderLeftRight = 0
+        config.measure.nPixBorderUpDown = 0
 
         task = cpPipe.defects.FindDefectsTask(config=config)
 
-        defects = task.findHotAndColdPixels(self.flatExp, 'flat')
+        defects = task.measure.findHotAndColdPixels(self.flatExp, [config.measure.nSigmaBright,
+                                                                   config.measure.nSigmaDark])
 
         allBBoxes = self.darkBBoxes + self.brightBBoxes
 
@@ -498,9 +490,10 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
 
     def test_defectFindingEdgeIgnore(self):
         config = copy.copy(self.defaultConfig)
-        config.nPixBorderUpDown = 0
+        config.measure.nPixBorderUpDown = 0
         task = cpPipe.defects.FindDefectsTask(config=config)
-        defects = task.findHotAndColdPixels(self.flatExp, 'flat')
+        defects = task.measure.findHotAndColdPixels(self.flatExp, [config.measure.nSigmaBright,
+                                                                   config.measure.nSigmaDark])
 
         shouldBeFound = self.darkBBoxes[self.noEdges] + self.brightBBoxes[self.noEdges]
 
@@ -515,61 +508,14 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         for boxMissed in shouldBeMissed:
             self.assertNotIn(boxMissed, boxesMeasured)
 
-    def test_postProcessDefectSets(self):
-        """Tests the way in which the defect sets merge.
-
-        There is potential for logic errors in their combination
-        so several combinations of defects and combination methods
-        are tested here."""
-        defects = self.defaultTask.findHotAndColdPixels(self.flatExp, 'flat')
-
-        # defect list has length one
-        merged = self.defaultTask._postProcessDefectSets([defects], self.flatExp.getDimensions(), 'FRACTION')
-        self.assertEqual(defects, merged)
-
-        # should always be true regardless of config
-        # defect list now has length 2
-        merged = self.defaultTask._postProcessDefectSets([defects, defects], self.flatExp.getDimensions(),
-                                                         'FRACTION')
-        self.assertEqual(defects, merged)
-
-        # now start manipulating defect lists
-        config = copy.copy(self.defaultConfig)
-        config.combinationMode = 'FRACTION'
-        config.combinationFraction = 0.85
-        task = cpPipe.defects.FindDefectsTask(config=config)
-        merged = task._postProcessDefectSets([defects, defects], self.flatExp.getDimensions(), 'FRACTION')
-
-        defectList = [defects]*10  # 10 identical defect sets
-        # remove one defect from one of them, should still be over threshold
-        defectList[7] = defectList[7][:-1]
-        merged = task._postProcessDefectSets(defectList, self.flatExp.getDimensions(), 'FRACTION')
-        self.assertEqual(defects, merged)
-
-        # remove another and should be under threshold
-        defectList[3] = defectList[3][:-1]
-        merged = task._postProcessDefectSets(defectList, self.flatExp.getDimensions(), 'FRACTION')
-        self.assertNotEqual(defects, merged)
-
-        # now test the AND and OR modes
-        defectList = [defects]*10  # 10 identical defect sets
-        merged = task._postProcessDefectSets(defectList, self.flatExp.getDimensions(), 'AND')
-        self.assertEqual(defects, merged)
-
-        defectList[7] = defectList[7][:-1]
-        merged = task._postProcessDefectSets(defectList, self.flatExp.getDimensions(), 'AND')
-        self.assertNotEqual(defects, merged)
-
-        merged = task._postProcessDefectSets(defectList, self.flatExp.getDimensions(), 'OR')
-        self.assertEqual(defects, merged)
-
     def test_pixelCounting(self):
         """Test that the number of defective pixels identified is as expected."""
         config = copy.copy(self.defaultConfig)
-        config.nPixBorderUpDown = 0
-        config.nPixBorderLeftRight = 0
+        config.measure.nPixBorderUpDown = 0
+        config.measure.nPixBorderLeftRight = 0
         task = cpPipe.defects.FindDefectsTask(config=config)
-        defects = task.findHotAndColdPixels(self.flatExp, 'flat')
+        defects = task.measure.findHotAndColdPixels(self.flatExp, [config.measure.nSigmaBright,
+                                                                   config.measure.nSigmaDark])
 
         defectArea = 0
         for defect in defects:
@@ -587,7 +533,7 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
 
         # Test the result of _nPixFromDefects()
         # via two different ways of calculating area.
-        self.assertEqual(defectArea, task._nPixFromDefects(defects))
+        # self.assertEqual(defectArea, task._nPixFromDefects(defects))
         # defectArea should be >= crossCheck
         self.assertGreaterEqual(defectArea, crossCheck)
 
@@ -597,7 +543,7 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         mi = testImage.maskedImage
 
         imageSize = testImage.getBBox().getArea()
-        nGood = self.defaultTask._getNumGoodPixels(mi)
+        nGood = self.defaultTask.measure._getNumGoodPixels(mi)
 
         self.assertEqual(imageSize, nGood)
 
@@ -606,9 +552,9 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         noDataBox = Box2I(Point2I(31, 49), Extent2I(3, 6))
         testImage.mask[noDataBox] |= NODATABIT
 
-        self.assertEqual(imageSize - noDataBox.getArea(), self.defaultTask._getNumGoodPixels(mi))
+        self.assertEqual(imageSize - noDataBox.getArea(), self.defaultTask.measure._getNumGoodPixels(mi))
         # check for misfire; we're setting NO_DATA here, not BAD
-        self.assertEqual(imageSize, self.defaultTask._getNumGoodPixels(mi, 'BAD'))
+        self.assertEqual(imageSize, self.defaultTask.measure._getNumGoodPixels(mi, 'BAD'))
 
         testImage.mask[noDataBox] ^= NODATABIT  # XOR to reset what we did
         self.assertEqual(imageSize, nGood)
@@ -617,23 +563,7 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         badBox = Box2I(Point2I(85, 98), Extent2I(4, 7))
         testImage.mask[badBox] |= BADBIT
 
-        self.assertEqual(imageSize - badBox.getArea(), self.defaultTask._getNumGoodPixels(mi, 'BAD'))
-
-    def test_edgeMasking(self):
-        """Check that the right number of edge pixels are masked by _setEdgeBits()"""
-        testImage = self.flatExp.clone()
-        mi = testImage.maskedImage
-
-        self.assertEqual(countMaskedPixels(mi, 'EDGE'), 0)
-        self.defaultTask._setEdgeBits(mi)
-
-        hEdge = self.defaultConfig.nPixBorderLeftRight
-        vEdge = self.defaultConfig.nPixBorderUpDown
-        xSize, ySize = mi.getDimensions()
-
-        nEdge = xSize*vEdge*2 + ySize*hEdge*2 - hEdge*vEdge*4
-
-        self.assertEqual(countMaskedPixels(mi, 'EDGE'), nEdge)
+        self.assertEqual(imageSize - badBox.getArea(), self.defaultTask.measure._getNumGoodPixels(mi, 'BAD'))
 
 
 class TestMemory(lsst.utils.tests.MemoryTestCase):

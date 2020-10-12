@@ -19,96 +19,58 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-
-__all__ = ['FindDefectsTask',
-           'FindDefectsTaskConfig', ]
-
 import numpy as np
-import os
-import warnings
 
-import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
+import lsst.pipe.base.connectionTypes as cT
+
+from lsstDebug import getDebugFrame
+import lsst.pex.config as pexConfig
+
 import lsst.afw.image as afwImage
-import lsst.meas.algorithms as measAlg
 import lsst.afw.math as afwMath
 import lsst.afw.detection as afwDetection
 import lsst.afw.display as afwDisplay
 from lsst.afw import cameraGeom
 from lsst.geom import Box2I, Point2I
-import lsst.daf.base as dafBase
-
-from lsst.ip.isr import IsrTask
-from .utils import NonexistentDatasetTaskDataIdContainer, SingleVisitListTaskRunner, countMaskedPixels, \
-    validateIsrConfig
+from lsst.meas.algorithms import SourceDetectionTask
+from lsst.ip.isr import IsrTask, Defects
+from .utils import countMaskedPixels
 
 
-class FindDefectsTaskConfig(pexConfig.Config):
-    """Config class for defect finding"""
+__all__ = ['MeasureDefectsTaskConfig', 'MeasureDefectsTask',
+           'MergeDefectsTaskConfig', 'MergeDefectsTask',
+           'FindDefectsTask', 'FindDefectsTaskConfig', ]
 
-    isrForFlats = pexConfig.ConfigurableField(
-        target=IsrTask,
-        doc="Task to perform instrumental signature removal",
+
+class MeasureDefectsConnections(pipeBase.PipelineTaskConnections,
+                                dimensions=("instrument", "exposure", "detector")):
+    inputExp = cT.Input(
+        name="defectExps",
+        doc="Input ISR-processed exposures to measure.",
+        storageClass="Exposure",
+        dimensions=("instrument", "detector", "exposure"),
+        multiple=False
     )
-    isrForDarks = pexConfig.ConfigurableField(
-        target=IsrTask,
-        doc="Task to perform instrumental signature removal",
+    camera = cT.Input(
+        name='camera',
+        doc="Camera associated with this exposure.",
+        storageClass="Camera",
+        dimensions=("instrument", ),
     )
-    isrMandatoryStepsFlats = pexConfig.ListField(
-        dtype=str,
-        doc=("isr operations that must be performed for valid results when using flats."
-             " Raises if any of these are False"),
-        default=['doAssembleCcd', 'doFringe']
+
+    outputDefects = cT.Output(
+        name="singleExpDefects",
+        doc="Output measured defects.",
+        storageClass="Defects",
+        dimensions=("instrument", "detector", "exposure"),
     )
-    isrMandatoryStepsDarks = pexConfig.ListField(
-        dtype=str,
-        doc=("isr operations that must be performed for valid results when using darks. "
-             "Raises if any of these are False"),
-        default=['doAssembleCcd', 'doFringe']
-    )
-    isrForbiddenStepsFlats = pexConfig.ListField(
-        dtype=str,
-        doc=("isr operations that must NOT be performed for valid results when using flats."
-             " Raises if any of these are True"),
-        default=['doBrighterFatter', 'doUseOpticsTransmission',
-                 'doUseFilterTransmission', 'doUseSensorTransmission', 'doUseAtmosphereTransmission']
-    )
-    isrForbiddenStepsDarks = pexConfig.ListField(
-        dtype=str,
-        doc=("isr operations that must NOT be performed for valid results when using darks."
-             " Raises if any of these are True"),
-        default=['doBrighterFatter', 'doUseOpticsTransmission',
-                 'doUseFilterTransmission', 'doUseSensorTransmission', 'doUseAtmosphereTransmission']
-    )
-    isrDesirableSteps = pexConfig.ListField(
-        dtype=str,
-        doc=("isr operations that it is advisable to perform, but are not mission-critical."
-             " WARNs are logged for any of these found to be False."),
-        default=['doBias']
-    )
-    ccdKey = pexConfig.Field(
-        dtype=str,
-        doc="The key by which to pull a detector from a dataId, e.g. 'ccd' or 'detector'",
-        default='ccd',
-    )
-    imageTypeKey = pexConfig.Field(
-        dtype=str,
-        doc="The key for the butler to use by which to check whether images are darks or flats",
-        default='imageType',
-    )
-    mode = pexConfig.ChoiceField(
-        doc=("Use single master calibs (flat and dark) for finding defects, or a list of raw visits?"
-             " If MASTER, a single visit number should be supplied, for which the corresponding master flat"
-             " and dark will be used. If VISITS, the list of visits will be used, treating the flats and "
-             " darks as appropriate, depending on their image types, as determined by their imageType from"
-             " config.imageTypeKey"),
-        dtype=str,
-        default="VISITS",
-        allowed={
-            "VISITS": "Calculate defects from a list of raw visits",
-            "MASTER": "Use the corresponding master calibs from the specified visit to measure defects",
-        }
-    )
+
+
+class MeasureDefectsTaskConfig(pipeBase.PipelineTaskConfig,
+                               pipelineConnections=MeasureDefectsConnections):
+    """Configuration for measuring linearity from an exposure
+    """
     nSigmaBright = pexConfig.Field(
         dtype=float,
         doc=("Number of sigma above mean for bright pixel detection. The default value was found to be",
@@ -119,7 +81,7 @@ class FindDefectsTaskConfig(pexConfig.Config):
         dtype=float,
         doc=("Number of sigma below mean for dark pixel detection. The default value was found to be",
              " appropriate for some LSST sensors in DM-17490."),
-        default=5.0,
+        default=-5.0,
     )
     nPixBorderUpDown = pexConfig.Field(
         dtype=int,
@@ -155,456 +117,61 @@ class FindDefectsTaskConfig(pexConfig.Config):
              " defect will be located there."),
         default=False,
     )
-    assertSameRun = pexConfig.Field(
-        dtype=bool,
-        doc=("Ensure that all visits are from the same run? Raises if this is not the case, or"
-             "if the run key isn't found."),
-        default=False,  # false because most obs_packages don't have runs. obs_lsst/ts8 overrides this.
-    )
-    ignoreFilters = pexConfig.Field(
-        dtype=bool,
-        doc=("Set the filters used in the CALIB_ID to NONE regardless of the filters on the input"
-             " images. Allows mixing of filters in the input flats. Set to False if you think"
-             " your defects might be chromatic and want to have registry support for varying"
-             " defects with respect to filter."),
-        default=True,
-    )
-    nullFilterName = pexConfig.Field(
-        dtype=str,
-        doc=("The name of the null filter if ignoreFilters is True. Usually something like NONE or EMPTY"),
-        default="NONE",
-    )
-    combinationMode = pexConfig.ChoiceField(
-        doc="Which types of defects to identify",
-        dtype=str,
-        default="FRACTION",
-        allowed={
-            "AND": "Logical AND the pixels found in each visit to form set ",
-            "OR": "Logical OR the pixels found in each visit to form set ",
-            "FRACTION": "Use pixels found in more than config.combinationFraction of visits ",
-        }
-    )
-    combinationFraction = pexConfig.RangeField(
-        dtype=float,
-        doc=("The fraction (0..1) of visits in which a pixel was found to be defective across"
-             " the visit list in order to be marked as a defect. Note, upper bound is exclusive, so use"
-             " mode AND to require pixel to appear in all images."),
-        default=0.7,
-        min=0,
-        max=1,
-    )
-    makePlots = pexConfig.Field(
-        dtype=bool,
-        doc=("Plot histograms for each visit for each amp (one plot per detector) and the final"
-             " defects overlaid on the sensor."),
-        default=False,
-    )
-    writeAs = pexConfig.ChoiceField(
-        doc="Write the output file as ASCII or FITS table",
-        dtype=str,
-        default="FITS",
-        allowed={
-            "ASCII": "Write the output as an ASCII file",
-            "FITS": "Write the output as an FITS table",
-            "BOTH": "Write the output as both a FITS table and an ASCII file",
-        }
-    )
+
+    def validate(self):
+        super().validate()
+        if self.nSigmaBright < 0.0:
+            raise ValueError("nSigmaBright must be above 0.0.")
+        if self.nSigmaDark > 0.0:
+            raise ValueError("nSigmaDark must be below 0.0.")
 
 
-class FindDefectsTask(pipeBase.CmdLineTask):
-    """Task for finding defects in sensors.
-
-    The task has two modes of operation, defect finding in raws and in
-    master calibrations, which work as follows.
-
-    Master calib defect finding
-    ----------------------------
-
-    A single visit number is supplied, for which the corresponding flat & dark
-    will be used. This is because, at present at least, there is no way to pass
-    a calibration exposure ID from the command line to a command line task.
-
-    The task retrieves the corresponding dark and flat exposures for the
-    supplied visit. If a flat is available the task will (be able to) look
-    for both bright and dark defects. If only a dark is found then only bright
-    defects will be sought.
-
-    All pixels above/below the specified nSigma which lie with the specified
-    borders for flats/darks are identified as defects.
-
-    Raw visit defect finding
-    ------------------------
-
-    A list of exposure IDs are supplied for defect finding. The task will
-    detect bright pixels in the dark frames, if supplied, and bright & dark
-    pixels in the flats, if supplied, i.e. if you only supply darks you will
-    only be given bright defects. This is done automatically from the imageType
-    of the exposure, so the input exposure list can be a mix.
-
-    As with the master calib detection, all pixels above/below the specified
-    nSigma which lie with the specified borders for flats/darks are identified
-    as defects. Then, a post-processing step is done to merge these detections,
-    with pixels appearing in a fraction [0..1] of the images are kept as defects
-    and those appearing below that occurrence-threshold are discarded.
+class MeasureDefectsTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
+    """Measure the defects from one exposure.
     """
+    ConfigClass = MeasureDefectsTaskConfig
+    _DefaultName = 'cpDefectMeasure'
 
-    RunnerClass = SingleVisitListTaskRunner
-    ConfigClass = FindDefectsTaskConfig
-    _DefaultName = "findDefects"
+    def run(self, inputExp, camera):
+        detector = inputExp.getDetector()
 
-    def __init__(self, *args, **kwargs):
-        pipeBase.CmdLineTask.__init__(self, *args, **kwargs)
-        self.makeSubtask("isrForFlats")
-        self.makeSubtask("isrForDarks")
+        # midTime += self._getMjd(inputExp)
+        filterName = inputExp.getFilter().getName()
+        datasetType = inputExp.getVisitInfo()
+        defects = self.findHotAndColdPixels(inputExp, [self.nSigmaBright, self.nSigmaDark])
+        # datasetType)
 
-        validateIsrConfig(self.isrForFlats, self.config.isrMandatoryStepsFlats,
-                          self.config.isrForbiddenStepsFlats, self.config.isrDesirableSteps)
-        validateIsrConfig(self.isrForDarks, self.config.isrMandatoryStepsDarks,
-                          self.config.isrForbiddenStepsDarks, self.config.isrDesirableSteps)
-        self.config.validate()
-        self.config.freeze()
+        msg = "Found %s defects containing %s pixels in master %s"
+        self.log.info(msg, len(defects), self._nPixFromDefects(defects), datasetType)
 
-    @classmethod
-    def _makeArgumentParser(cls):
-        """Augment argument parser for the FindDefectsTask."""
-        parser = pipeBase.ArgumentParser(name=cls._DefaultName)
-        parser.add_argument("--visitList", dest="visitList", nargs="*",
-                            help=("List of visits to use. Same for each detector."
-                                  " Uses the normal 0..10:3^234 syntax"))
-        parser.add_id_argument("--id", datasetType="newDefects",
-                               ContainerClass=NonexistentDatasetTaskDataIdContainer,
-                               help="The ccds to use, e.g. --id ccd=0..100")
-        return parser
+        defects.updateMetadata(camera=camera, detector=detector, filterName=filterName,
+                               setCalibId=True, setDate=True)
+        return pipeBase.Struct(
+            outputDefects=defects,
+        )
 
-    @pipeBase.timeMethod
-    def runDataRef(self, dataRef, visitList):
-        """Run the defect finding task.
-
-        Find the defects, as described in the main task docstring, from a
-        dataRef and a list of visit(s).
-
-        Parameters
-        ----------
-        dataRef : `lsst.daf.persistence.ButlerDataRef`
-            dataRef for the detector for the visits to be fit.
-        visitList : `list` [`int`]
-            List of visits to be processed. If config.mode == 'VISITS' then the
-            list of visits is used. If config.mode == 'MASTER' then the length
-            of visitList must be one, and the corresponding master calibrations
-            are used.
-
-        Returns
-        -------
-        result : `lsst.pipe.base.Struct`
-            Result struct with Components:
-
-            - ``defects`` : `lsst.meas.algorithms.Defect`
-              The defects found by the task.
-            - ``exitStatus`` : `int`
-              The exit code.
-        """
-
-        detNum = dataRef.dataId[self.config.ccdKey]
-        self.log.info("Calculating defects using %s visits for detector %s" % (visitList, detNum))
-
-        defectLists = {'dark': [], 'flat': []}
-
-        midTime = 0
-        filters = set()
-
-        if self.config.mode == 'MASTER':
-            if len(visitList) > 1:
-                raise RuntimeError(f"Must only specify one visit when using mode MASTER, got {visitList}")
-            dataRef.dataId['expId'] = visitList[0]
-
-            for datasetType in defectLists.keys():
-                exp = dataRef.get(datasetType)
-                midTime += self._getMjd(exp)
-                filters.add(exp.getFilter().getName())
-                defects = self.findHotAndColdPixels(exp, datasetType)
-
-                msg = "Found %s defects containing %s pixels in master %s"
-                self.log.info(msg, len(defects), self._nPixFromDefects(defects), datasetType)
-                defectLists[datasetType].append(defects)
-                if self.config.makePlots:
-                    self._plot(dataRef, exp, visitList[0], self._getNsigmaForPlot(datasetType),
-                               defects, datasetType)
-            midTime /= len(defectLists.keys())
-
-        elif self.config.mode == 'VISITS':
-            butler = dataRef.getButler()
-
-            if self.config.assertSameRun:
-                runs = self._getRunListFromVisits(butler, visitList)
-                if len(runs) != 1:
-                    raise RuntimeError(f"Got data from runs {runs} with assertSameRun==True")
-
-            for visit in visitList:
-                imageType = butler.queryMetadata('raw', self.config.imageTypeKey, dataId={'expId': visit})[0]
-                imageType = imageType.lower()
-                dataRef.dataId['expId'] = visit
-
-                if imageType == 'flat':  # note different isr tasks
-                    exp = self.isrForFlats.runDataRef(dataRef).exposure
-                    defects = self.findHotAndColdPixels(exp, imageType)
-                    defectLists['flat'].append(defects)
-                    midTime += self._getMjd(exp)
-                    filters.add(exp.getFilter().getName())
-
-                elif imageType == 'dark':
-                    exp = self.isrForDarks.runDataRef(dataRef).exposure
-                    defects = self.findHotAndColdPixels(exp, imageType)
-                    defectLists['dark'].append(defects)
-                    midTime += self._getMjd(exp)
-                    filters.add(exp.getFilter().getName())
-
-                else:
-                    raise RuntimeError(f"Failed on imageType {imageType}. Only flats and darks supported")
-
-                msg = "Found %s defects containing %s pixels in visit %s"
-                self.log.info(msg, len(defects), self._nPixFromDefects(defects), visit)
-
-                if self.config.makePlots:
-                    self._plot(dataRef, exp, visit, self._getNsigmaForPlot(imageType), defects, imageType)
-
-            midTime /= len(visitList)
-
-        msg = "Combining %s defect sets from darks for detector %s"
-        self.log.info(msg, len(defectLists['dark']), detNum)
-        mergedDefectsFromDarks = self._postProcessDefectSets(defectLists['dark'], exp.getDimensions(),
-                                                             self.config.combinationMode)
-        msg = "Combining %s defect sets from flats for detector %s"
-        self.log.info(msg, len(defectLists['flat']), detNum)
-        mergedDefectsFromFlats = self._postProcessDefectSets(defectLists['flat'], exp.getDimensions(),
-                                                             self.config.combinationMode)
-
-        msg = "Combining bright and dark defect sets for detector %s"
-        self.log.info(msg, detNum)
-        brightDarkPostMerge = [mergedDefectsFromDarks, mergedDefectsFromFlats]
-        allDefects = self._postProcessDefectSets(brightDarkPostMerge, exp.getDimensions(), mode='OR')
-
-        self._writeData(dataRef, allDefects, midTime, filters)
-
-        self.log.info("Finished finding defects in detector %s" % detNum)
-        return pipeBase.Struct(defects=allDefects, exitStatus=0)
-
-    def _getNsigmaForPlot(self, imageType):
-        assert imageType in ['flat', 'dark']
-        nSig = self.config.nSigmaBright if imageType == 'flat' else self.config.nSigmaDark
-        return nSig
-
-    @staticmethod
-    def _nPixFromDefects(defect):
-        """Count the number of pixels in a defect object."""
-        nPix = 0
-        for d in defect:
-            nPix += d.getBBox().getArea()
-        return nPix
-
-    def _writeData(self, dataRef, defects, midTime, filters):
-        """Write the data out to the defect file.
-
-        Parameters
-        ----------
-        dataRef : `lsst.daf.persistence.ButlerDataRef`
-            dataRef for the detector for defects to be written.
-        defects : `lsst.meas.algorithms.Defect`
-            The defects to be written.
-        """
-        date = dafBase.DateTime(midTime, dafBase.DateTime.MJD).toPython().isoformat()
-
-        detName = self._getDetectorNameShort(dataRef)
-        instrumentName = self._getInstrumentName(dataRef)
-        detNum = self._getDetectorNumber(dataRef)
-        if not self.config.ignoreFilters:
-            filt = self._filterSetToFilterString(filters)
-        else:
-            filt = self.config.nullFilterName
-
-        CALIB_ID = f"detectorName={detName} detector={detNum} calibDate={date} ccd={detNum} filter={filt}"
-        try:
-            raftName = self._getRaftName(dataRef)
-            CALIB_ID += f" raftName={raftName}"
-        except Exception:
-            pass
-
-        now = dafBase.DateTime.now().toPython()
-        mdOriginal = defects.getMetadata()
-        mdSupplemental = {"INSTRUME": instrumentName,
-                          "DETECTOR": dataRef.dataId['detector'],
-                          "CALIBDATE": date,
-                          "CALIB_ID": CALIB_ID,
-                          "CALIB_CREATION_DATE": now.date().isoformat(),
-                          "CALIB_CREATION_TIME": now.time().isoformat()}
-
-        mdOriginal.update(mdSupplemental)
-
-        # TODO: DM-23508 sort out the butler abuse from here-on down in Gen3
-        # defects should simply be butler.put()
-        templateFilename = dataRef.getUri(write=True)  # does not guarantee that full path exists
-        baseDirName = os.path.dirname(templateFilename)
-        # ingest curated calibs demands detectorName is lowercase
-        detNameFull = self._getDetectorNameFull(dataRef)
-        dirName = os.path.join(baseDirName, instrumentName, "defects", detNameFull.lower())
-        if not os.path.exists(dirName):
-            os.makedirs(dirName)
-
-        date += ".fits"
-        filename = os.path.join(dirName, date)
-
-        msg = "Writing defects to %s in format: %s"
-        self.log.info(msg, os.path.splitext(filename)[0], self.config.writeAs)
-        if self.config.writeAs in ['FITS', 'BOTH']:
-            defects.writeFits(filename)
-        if self.config.writeAs in ['ASCII', 'BOTH']:
-            wroteTo = defects.writeText(filename)
-            assert(os.path.splitext(wroteTo)[0] == os.path.splitext(filename)[0])
-        return
-
-    @staticmethod
-    def _filterSetToFilterString(filters):
-        return "~".join([f for f in filters])
-
-    @staticmethod
-    def _getDetectorNumber(dataRef):
-        """The detector's integer identifier."""
-        dataRefDetNum = dataRef.dataId['detector']
-        camera = dataRef.get('camera')
-        detectorDetNum = camera[dataRef.dataId['detector']].getId()
-        assert dataRefDetNum == detectorDetNum
-        return dataRefDetNum
-
-    @staticmethod
-    def _getInstrumentName(dataRef):
-        camera = dataRef.get('camera')
-        return camera.getName()
-
-    @staticmethod
-    def _getDetectorNameFull(dataRef):
-        """The detector's self-reported full name, e.g. R12_S01."""
-        camera = dataRef.get('camera')
-        return camera[dataRef.dataId['detector']].getName()
-
-    @staticmethod
-    def _getDetectorNameShort(dataRef):
-        """The detectorName per the butler, e.g. slot name, e.g. S12."""
-        butler = dataRef.getButler()
-        detectorName = butler.queryMetadata('raw', ['detectorName'], dataRef.dataId)[0]
-        return detectorName
-
-    @staticmethod
-    def _getRaftName(dataRef):
-        """The detectorName per the butler, e.g. slot name, e.g. S12."""
-        butler = dataRef.getButler()
-        raftName = butler.queryMetadata('raw', ['raftName'], dataRef.dataId)[0]
-        return raftName
-
-    @staticmethod
-    def _getMjd(exp, timescale=dafBase.DateTime.UTC):
-        vi = exp.getInfo().getVisitInfo()
-        dateObs = vi.getDate()
-        mjd = dateObs.get(dafBase.DateTime.MJD)
-        return mjd
-
-    @staticmethod
-    def _getRunListFromVisits(butler, visitList):
-        """Return the set of runs for the visits in visitList."""
-        runs = set()
-        for visit in visitList:
-            runs.add(butler.queryMetadata('raw', 'run', dataId={'expId': visit})[0])
-        return runs
-
-    def _postProcessDefectSets(self, defectList, imageDimensions, mode):
-        """Combine a list of defects to make a single defect object.
-
-        AND, OR or use percentage of visits in which defects appear
-        depending on config.
-
-        Parameters
-        ----------
-        defectList : `list` [`lsst.meas.algorithms.Defect`]
-            The lList of defects to merge.
-        imageDimensions : `tuple` [`int`]
-            The size of the image.
-        mode : `str`
-            The combination mode to use, either 'AND', 'OR' or 'FRACTION'
-
-        Returns
-        -------
-        defects : `lsst.meas.algorithms.Defect`
-            The defect set resulting from the merge.
-        """
-        # so that empty lists can be passed in for input data
-        # where only flats or darks are supplied
-        if defectList == []:
-            return []
-
-        if len(defectList) == 1:  # single input - no merging to do
-            return defectList[0]
-
-        sumImage = afwImage.MaskedImageF(imageDimensions)
-        for defects in defectList:
-            for defect in defects:
-                sumImage.image[defect.getBBox()] += 1
-        sumImage /= len(defectList)
-
-        nDetected = len(np.where(sumImage.image.array > 0)[0])
-        self.log.info("Pre-merge %s pixels with non-zero detections" % nDetected)
-
-        if mode == 'OR':  # must appear in any
-            indices = np.where(sumImage.image.array > 0)
-        else:
-            if mode == 'AND':  # must appear in all
-                threshold = 1
-            elif mode == 'FRACTION':
-                threshold = self.config.combinationFraction
-            else:
-                raise RuntimeError(f"Got unsupported combinationMode {mode}")
-            indices = np.where(sumImage.image.array >= threshold)
-
-        BADBIT = sumImage.mask.getPlaneBitMask('BAD')
-        sumImage.mask.array[indices] |= BADBIT
-
-        self.log.info("Post-merge %s pixels marked as defects" % len(indices[0]))
-
-        if self.config.edgesAsDefects:
-            self.log.info("Masking edge pixels as defects in addition to previously identified defects")
-            self._setEdgeBits(sumImage, 'BAD')
-
-        defects = measAlg.Defects.fromMask(sumImage, 'BAD')
-        return defects
-
-    @staticmethod
-    def _getNumGoodPixels(maskedIm, badMaskString="NO_DATA"):
-        """Return the number of non-bad pixels in the image."""
-        nPixels = maskedIm.mask.array.size
-        nBad = countMaskedPixels(maskedIm, badMaskString)
-        return nPixels - nBad
-
-    def findHotAndColdPixels(self, exp, imageType, setMask=False):
+    def findHotAndColdPixels(self, exp, nSigma):
         """Find hot and cold pixels in an image.
 
-        Using config-defined thresholds on a per-amp basis, mask pixels
-        that are nSigma above threshold in dark frames (hot pixels),
-        or nSigma away from the clipped mean in flats (hot & cold pixels).
+        Using config-defined thresholds on a per-amp basis, mask
+        pixels that are nSigma above threshold in dark frames (hot
+        pixels), or nSigma away from the clipped mean in flats (hot &
+        cold pixels).
 
         Parameters
         ----------
         exp : `lsst.afw.image.exposure.Exposure`
             The exposure in which to find defects.
-        imageType : `str`
-            The image type, either 'dark' or 'flat'.
-        setMask : `bool`
-            If true, update exp with hot and cold pixels.
-            hot: DETECTED
-            cold: DETECTED_NEGATIVE
+        nSigma : `list [ `float` ]
+            Detection threshold to use.  Positive for DETECTED pixels,
+            negative for DETECTED_NEGATIVE pixels.
 
         Returns
         -------
-        defects : `lsst.meas.algorithms.Defect`
+        defects : `lsst.ip.isr.Defect`
             The defects found in the image.
+
         """
-        assert imageType in ['flat', 'dark']
 
         self._setEdgeBits(exp)
         maskedIm = exp.maskedImage
@@ -612,8 +179,6 @@ class FindDefectsTask(pipeBase.CmdLineTask):
         # the detection polarity for afwDetection, True for positive,
         # False for negative, and therefore True for darks as they only have
         # bright pixels, and both for flats, as they have bright and dark pix
-        polarities = {'dark': [True], 'flat': [True, False]}[imageType]
-
         footprintList = []
 
         for amp in exp.getDetector():
@@ -634,16 +199,19 @@ class FindDefectsTask(pipeBase.CmdLineTask):
             if self._getNumGoodPixels(ampImg) == 0:  # amp contains no usable pixels
                 continue
 
+            # Remove a background estimate
             ampImg -= afwMath.makeStatistics(ampImg, afwMath.MEANCLIP, ).getValue()
 
             mergedSet = None
-            for polarity in polarities:
-                nSig = self.config.nSigmaBright if polarity else self.config.nSigmaDark
+            for sigma in nSigma:
+                nSig = np.abs(sigma)
+                # self.debugHistogram('ampFlux', ampImg, nSig)
+                polarity = {-1: False, 1: True}[np.sign(sigma)]
+
                 threshold = afwDetection.createThreshold(nSig, 'stdev', polarity=polarity)
 
                 footprintSet = afwDetection.FootprintSet(ampImg, threshold)
-                if setMask:
-                    footprintSet.setMask(maskedIm.mask, ("DETECTED" if polarity else "DETECTED_NEGATIVE"))
+                footprintSet.setMask(maskedIm.mask, ("DETECTED" if polarity else "DETECTED_NEGATIVE"))
 
                 if mergedSet is None:
                     mergedSet = footprintSet
@@ -652,30 +220,64 @@ class FindDefectsTask(pipeBase.CmdLineTask):
 
             footprintList += mergedSet.getFootprints()
 
-        defects = measAlg.Defects.fromFootprintList(footprintList)
+            # self.debugView('defectMap', ampImg,
+            #                Defects.fromFootprintList(mergedSet.getFootprints()), detector)
+
+        defects = Defects.fromFootprintList(footprintList)
         defects = self.maskBlocksIfIntermitentBadPixelsInColumn(defects)
 
         return defects
 
+    @staticmethod
+    def _getNumGoodPixels(maskedIm, badMaskString="NO_DATA"):
+        """Return the number of non-bad pixels in the image."""
+        nPixels = maskedIm.mask.array.size
+        nBad = countMaskedPixels(maskedIm, badMaskString)
+        return nPixels - nBad
+
+    def _setEdgeBits(self, exposureOrMaskedImage, maskplaneToSet='EDGE'):
+        """Set edge bits on an exposure or maskedImage.
+        Raises
+        ------
+        TypeError
+            Raised if parameter ``exposureOrMaskedImage`` is an invalid type.
+        """
+        if isinstance(exposureOrMaskedImage, afwImage.Exposure):
+            mi = exposureOrMaskedImage.maskedImage
+        elif isinstance(exposureOrMaskedImage, afwImage.MaskedImage):
+            mi = exposureOrMaskedImage
+        else:
+            t = type(exposureOrMaskedImage)
+            raise TypeError(f"Function supports exposure or maskedImage but not {t}")
+
+        MASKBIT = mi.mask.getPlaneBitMask(maskplaneToSet)
+        if self.config.nPixBorderLeftRight:
+            mi.mask[: self.config.nPixBorderLeftRight, :, afwImage.LOCAL] |= MASKBIT
+            mi.mask[-self.config.nPixBorderLeftRight:, :, afwImage.LOCAL] |= MASKBIT
+        if self.config.nPixBorderUpDown:
+            mi.mask[:, : self.config.nPixBorderUpDown, afwImage.LOCAL] |= MASKBIT
+            mi.mask[:, -self.config.nPixBorderUpDown:, afwImage.LOCAL] |= MASKBIT
+
     def maskBlocksIfIntermitentBadPixelsInColumn(self, defects):
         """Mask blocks in a column if there are on-and-off bad pixels
 
-        If there's a column with on and off bad pixels, mask all the pixels in between,
-        except if there is a large enough gap of consecutive good pixels between two
-        bad pixels in the column.
+        If there's a column with on and off bad pixels, mask all the
+        pixels in between, except if there is a large enough gap of
+        consecutive good pixels between two bad pixels in the column.
 
         Parameters
         ---------
-        defects: `lsst.meas.algorithms.Defect`
+        defects: `lsst.ip.isr.Defect`
             The defects found in the image so far
 
         Returns
         ------
-        defects: `lsst.meas.algorithms.Defect`
-            If the number of bad pixels in a column is not larger or equal than
-            self.config.badPixelColumnThreshold, the iput list is returned. Otherwise,
-            the defects list returned will include boxes that mask blocks of on-and-of
-            pixels.
+        defects: `lsst.ip.isr.Defect`
+            If the number of bad pixels in a column is not larger or
+            equal than self.config.badPixelColumnThreshold, the iput
+            list is returned. Otherwise, the defects list returned
+            will include boxes that mask blocks of on-and-of pixels.
+
         """
         # Get the (x, y) values of each bad pixel in amp.
         coordinates = []
@@ -708,28 +310,30 @@ class FindDefectsTask(pipeBase.CmdLineTask):
     def _markBlocksInBadColumn(self, x, y, multipleX, defects):
         """Mask blocks in a column if number of on-and-off bad pixels is above threshold.
 
-        This function is called if the number of on-and-off bad pixels in a column
-        is larger or equal than self.config.badOnAndOffPixelColumnThreshold.
+        This function is called if the number of on-and-off bad pixels
+        in a column is larger or equal than
+        self.config.badOnAndOffPixelColumnThreshold.
 
         Parameters
         ---------
-            x: list
-                Lower left x coordinate of defect box. x coordinate is along the short axis if amp.
-
-            y: list
-                Lower left y coordinate of defect box. x coordinate is along the long axis if amp.
-
-            multipleX: list
-                List of x coordinates in amp. with multiple bad pixels (i.e., columns with defects).
-
-            defects: `lsst.meas.algorithms.Defect`
-                The defcts found in the image so far
+        x: `list`
+            Lower left x coordinate of defect box. x coordinate is
+            along the short axis if amp.
+        y: `list`
+            Lower left y coordinate of defect box. x coordinate is
+            along the long axis if amp.
+        multipleX: list
+            List of x coordinates in amp. with multiple bad pixels
+            (i.e., columns with defects).
+        defects: `lsst.ip.isr.Defect`
+            The defcts found in the image so far
 
         Returns
         -------
-        defects: `lsst.meas.algorithms.Defect`
-            The defects list returned that will include boxes that mask blocks
-            of on-and-of pixels.
+        defects: `lsst.ip.isr.Defect`
+            The defects list returned that will include boxes that
+            mask blocks of on-and-of pixels.
+
         """
         with defects.bulk_update():
             goodPixelColumnGapThreshold = self.config.goodPixelColumnGapThreshold
@@ -755,84 +359,8 @@ class FindDefectsTask(pipeBase.CmdLineTask):
                     defects.append(s)
         return defects
 
-    def _setEdgeBits(self, exposureOrMaskedImage, maskplaneToSet='EDGE'):
-        """Set edge bits on an exposure or maskedImage.
-
-        Raises
-        ------
-        TypeError
-            Raised if parameter ``exposureOrMaskedImage`` is an invalid type.
-        """
-        if isinstance(exposureOrMaskedImage, afwImage.Exposure):
-            mi = exposureOrMaskedImage.maskedImage
-        elif isinstance(exposureOrMaskedImage, afwImage.MaskedImage):
-            mi = exposureOrMaskedImage
-        else:
-            t = type(exposureOrMaskedImage)
-            raise TypeError(f"Function supports exposure or maskedImage but not {t}")
-
-        MASKBIT = mi.mask.getPlaneBitMask(maskplaneToSet)
-        if self.config.nPixBorderLeftRight:
-            mi.mask[: self.config.nPixBorderLeftRight, :, afwImage.LOCAL] |= MASKBIT
-            mi.mask[-self.config.nPixBorderLeftRight:, :, afwImage.LOCAL] |= MASKBIT
-        if self.config.nPixBorderUpDown:
-            mi.mask[:, : self.config.nPixBorderUpDown, afwImage.LOCAL] |= MASKBIT
-            mi.mask[:, -self.config.nPixBorderUpDown:, afwImage.LOCAL] |= MASKBIT
-
-    def _plot(self, dataRef, exp, visit, nSig, defects, imageType):  # pragma: no cover
-        """Plot the defects and pixel histograms.
-
-        Parameters
-        ----------
-        dataRef : `lsst.daf.persistence.ButlerDataRef`
-            dataRef for the detector.
-        exp : `lsst.afw.image.exposure.Exposure`
-            The exposure in which the defects were found.
-        visit : `int`
-            The visit number.
-        nSig : `float`
-            The number of sigma used for detection
-        defects : `lsst.meas.algorithms.Defect`
-            The defects to plot.
-        imageType : `str`
-            The type of image, either 'dark' or 'flat'.
-
-        Currently only for LSST sensors. Plots are written to the path
-        given by the butler for the ``cpPipePlotRoot`` dataset type.
-        """
-        import matplotlib.pyplot as plt
-        from matplotlib.backends.backend_pdf import PdfPages
-
-        afwDisplay.setDefaultBackend("matplotlib")
-        plt.interactive(False)  # seems to need reasserting here
-
-        dirname = dataRef.getUri(datasetType='cpPipePlotRoot', write=True)
-        if not os.path.exists(dirname):
-            os.makedirs(dirname)
-
-        detNum = exp.getDetector().getId()
-        nAmps = len(exp.getDetector())
-
-        if self.config.mode == "MASTER":
-            filename = f"defectPlot_det{detNum}_master-{imageType}_for-exp{visit}.pdf"
-        elif self.config.mode == "VISITS":
-            filename = f"defectPlot_det{detNum}_{imageType}_exp{visit}.pdf"
-
-        filenameFull = os.path.join(dirname, filename)
-
-        with warnings.catch_warnings():
-            msg = "Matplotlib is currently using agg, which is a non-GUI backend, so cannot show the figure."
-            warnings.filterwarnings("ignore", message=msg)
-            with PdfPages(filenameFull) as pdfPages:
-                if nAmps == 16:
-                    self._plotAmpHistogram(dataRef, exp, visit, nSig)
-                    pdfPages.savefig()
-
-                self._plotDefects(exp, visit, defects, imageType)
-                pdfPages.savefig()
-        self.log.info("Wrote plot(s) to %s" % filenameFull)
-
-    def _plotDefects(self, exp, visit, defects, imageType):  # pragma: no cover
+    def debugView(self, stepname, ampImage, defects, detector):
+        # def _plotDefects(self, exp, visit, defects, imageType):  # pragma: no cover
         """Plot the defects found by the task.
 
         Parameters
@@ -841,43 +369,38 @@ class FindDefectsTask(pipeBase.CmdLineTask):
             The exposure in which the defects were found.
         visit : `int`
             The visit number.
-        defects : `lsst.meas.algorithms.Defect`
+        defects : `lsst.ip.isr.Defect`
             The defects to plot.
         imageType : `str`
             The type of image, either 'dark' or 'flat'.
         """
-        expCopy = exp.clone()  # we mess with the copy later, so make a clone
-        del exp  # del for safety - no longer needed as we have a copy so remove from scope to save mistakes
-        maskedIm = expCopy.maskedImage
+        frame = getDebugFrame(self._display, stepname)
+        if frame:
+            disp = afwDisplay.Display(frame=frame)
+            disp.scale('asinh', 'zscale')
+            disp.setMaskTransparency(80)
+            disp.setMaskPlaneColor("BAD", afwDisplay.RED)
 
-        defects.maskPixels(expCopy.maskedImage, "BAD")
-        detector = expCopy.getDetector()
+            maskedIm = ampImage.clone()
+            defects.maskPixels(maskedIm, "BAD")
 
-        disp = afwDisplay.Display(0, reopenPlot=True, dpi=200)
+            mpDict = maskedIm.mask.getMaskPlaneDict()
+            for plane in mpDict.keys():
+                if plane in ['BAD']:
+                    continue
+                disp.setMaskPlaneColor(plane, afwDisplay.IGNORE)
 
-        if imageType == "flat":  # set each amp image to have a mean of 1.00
-            for amp in detector:
-                ampIm = maskedIm.image[amp.getBBox()]
-                ampIm -= afwMath.makeStatistics(ampIm, afwMath.MEANCLIP).getValue() + 1
+            disp.setImageColormap('gray')
+            disp.mtv(maskedIm)
+            cameraGeom.utils.overlayCcdBoxes(detector, isTrimmed=True, display=disp)
+            prompt = "Press Enter to continue [c]... "
+            while True:
+                ans = input(prompt).lower()
+                if ans in ('', 'c', ):
+                    break
 
-        mpDict = maskedIm.mask.getMaskPlaneDict()
-        for plane in mpDict.keys():
-            if plane in ['BAD']:
-                continue
-            disp.setMaskPlaneColor(plane, afwDisplay.IGNORE)
-
-        disp.scale('asinh', 'zscale')
-        disp.setMaskTransparency(80)
-        disp.setMaskPlaneColor("BAD", afwDisplay.RED)
-
-        disp.setImageColormap('gray')
-        title = (f"Detector: {detector.getName()[-3:]} {detector.getSerial()}"
-                 f", Type: {imageType}, visit: {visit}")
-        disp.mtv(maskedIm, title=title)
-
-        cameraGeom.utils.overlayCcdBoxes(detector, isTrimmed=True, display=disp)
-
-    def _plotAmpHistogram(self, dataRef, exp, visit, nSigmaUsed):  # pragma: no cover
+    def debugHistogram(self, stepname, ampImage, nSigmaUsed, exp):
+        # def _plotAmpHistogram(self, dataRef, exp, visit, nSigmaUsed):  # pragma: no cover
         """
         Make a histogram of the distribution of pixel values for each amp.
 
@@ -898,13 +421,14 @@ class FindDefectsTask(pipeBase.CmdLineTask):
         nSigmaUsed : `float`
             The number of sigma used for detection
         """
-        import matplotlib.pyplot as plt
+        frame = getDebugFrame(self._display, stepname)
+        if frame:
+            import matplotlib.pyplot as plt
 
         detector = exp.getDetector()
-
-        if len(detector) != 16:
-            raise RuntimeError("Plotting currently only supported for 16 amp detectors")
-        fig, ax = plt.subplots(nrows=4, ncols=4, sharex='col', sharey='row', figsize=(13, 10))
+        nX = np.floor(np.sqrt(len(detector)))
+        nY = len(detector) // nX
+        fig, ax = plt.subplots(nrows=nY, ncols=nX, sharex='col', sharey='row', figsize=(13, 10))
 
         expTime = exp.getInfo().getVisitInfo().getExposureTime()
 
@@ -953,3 +477,279 @@ class FindDefectsTask(pipeBase.CmdLineTask):
             a.set_xlabel("ADU/s")
 
         return
+
+
+class MergeDefectsConnections(pipeBase.PipelineTaskConnections,
+                              dimensions=("instrument", "detector")):
+    inputDefects = cT.Input(
+        name="singleExpDefects",
+        doc="Measured defect lists.",
+        storageClass="Defects",
+        dimensions=("instrument", "detector", "exposure"),
+        multiple=True,
+    )
+    camera = cT.Input(
+        name='camera',
+        doc="Camera associated with these defects.",
+        storageClass="Camera",
+        dimensions=("instrument", ),
+    )
+
+    mergedDefects = cT.Output(
+        name="defects",
+        doc="Final merged defects.",
+        storageClass="Defects",
+        dimensions=("instrument", "detector"),
+    )
+
+
+class MergeDefectsTaskConfig(pipeBase.PipelineTaskConfig,
+                             pipelineConnections=MergeDefectsConnections):
+    """Configuration for merging single exposure defects.
+    """
+    assertSameRun = pexConfig.Field(
+        dtype=bool,
+        doc=("Ensure that all visits are from the same run? Raises if this is not the case, or"
+             "if the run key isn't found."),
+        default=False,  # false because most obs_packages don't have runs. obs_lsst/ts8 overrides this.
+    )
+    ignoreFilters = pexConfig.Field(
+        dtype=bool,
+        doc=("Set the filters used in the CALIB_ID to NONE regardless of the filters on the input"
+             " images. Allows mixing of filters in the input flats. Set to False if you think"
+             " your defects might be chromatic and want to have registry support for varying"
+             " defects with respect to filter."),
+        default=True,
+    )
+    nullFilterName = pexConfig.Field(
+        dtype=str,
+        doc=("The name of the null filter if ignoreFilters is True. Usually something like NONE or EMPTY"),
+        default="NONE",
+    )
+    combinationMode = pexConfig.ChoiceField(
+        doc="Which types of defects to identify",
+        dtype=str,
+        default="FRACTION",
+        allowed={
+            "AND": "Logical AND the pixels found in each visit to form set ",
+            "OR": "Logical OR the pixels found in each visit to form set ",
+            "FRACTION": "Use pixels found in more than config.combinationFraction of visits ",
+        }
+    )
+    combinationFraction = pexConfig.RangeField(
+        dtype=float,
+        doc=("The fraction (0..1) of visits in which a pixel was found to be defective across"
+             " the visit list in order to be marked as a defect. Note, upper bound is exclusive, so use"
+             " mode AND to require pixel to appear in all images."),
+        default=0.7,
+        min=0,
+        max=1,
+    )
+
+
+class MergeDefectsTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
+    """Merge the defects from multiple exposures.
+    """
+    ConfigClass = MergeDefectsTaskConfig
+    _DefaultName = 'cpDefectMerge'
+
+    def run(self, inputDefects, camera):
+        detectorId = inputDefects[0].getMetadata().get('DETECTOR', None)
+        if not detectorId:
+            raise RuntimeError("Cannot identify detector id.")
+        detector = camera[detectorId]
+
+        sumImage = afwImage.MaskedImageF(detector.getBBox())
+        for inDefect in inputDefects:
+            for defect in inDefect:
+                sumImage.image[defect.getBBox()] += 1.0
+        sumImage /= len(inputDefects)
+
+        nDetected = len(np.where(sumImage.getImage().getArray() > 0)[0])
+        self.log.info("Pre-merge %s pixels with non-zero detections" % nDetected)
+
+        if self.config.combinationMode == 'AND':
+            threshold = 1.0
+        elif self.config.combinationMode == 'OR':
+            threshold = 0.0
+        elif self.config.combinationMode == 'FRACTION':
+            threshold = self.config.combinationFraction
+        else:
+            raise RuntimeError(f"Got unsupported combinationMode {self.config.combinationMode}")
+        indices = np.where(sumImage.getImage().getArray() >= threshold)
+
+        BADBIT = sumImage.getMask().getPlaneBitMask('BAD')
+        sumImage.getMask().getArray()[indices] != BADBIT
+
+        self.log.info("Post-merge %s pixels marked as defects" % len(indices[0]))
+
+        if self.config.edgesAsDefects:
+            self.log.info("Masking edge pixels as defects.")
+            # Do the same as IsrTask.maskEdges()
+            box = detector.getBBox()
+            subImage = sumImage[box]
+            box.grow(-self.nPixBorder)
+            SourceDetectionTask.setEdgeBits(subImage, box, BADBIT)
+
+        merged = Defects.fromMask(sumImage, 'BAD')
+        merged.updateMetadata(camera=camera, detector=detector, filterName=None,
+                              setCalibId=True, setDate=True)
+        return pipeBase.Struct(
+            mergedDefects=merged,
+        )
+
+
+class FindDefectsTaskConfig(pexConfig.Config):
+    measure = pexConfig.ConfigurableField(
+        target=MeasureDefectsTask,
+        doc="Task to measure single frame defects.",
+    )
+    merge = pexConfig.ConfigurableField(
+        target=MergeDefectsTask,
+        doc="Task to merge multiple defects together.",
+    )
+
+    isrForFlats = pexConfig.ConfigurableField(
+        target=IsrTask,
+        doc="Task to perform instrumental signature removal",
+    )
+    isrForDarks = pexConfig.ConfigurableField(
+        target=IsrTask,
+        doc="Task to perform instrumental signature removal",
+    )
+    isrMandatoryStepsFlats = pexConfig.ListField(
+        dtype=str,
+        doc=("isr operations that must be performed for valid results when using flats."
+             " Raises if any of these are False"),
+        default=['doAssembleCcd', 'doFringe']
+    )
+    isrMandatoryStepsDarks = pexConfig.ListField(
+        dtype=str,
+        doc=("isr operations that must be performed for valid results when using darks. "
+             "Raises if any of these are False"),
+        default=['doAssembleCcd', 'doFringe']
+    )
+    isrForbiddenStepsFlats = pexConfig.ListField(
+        dtype=str,
+        doc=("isr operations that must NOT be performed for valid results when using flats."
+             " Raises if any of these are True"),
+        default=['doBrighterFatter', 'doUseOpticsTransmission',
+                 'doUseFilterTransmission', 'doUseSensorTransmission', 'doUseAtmosphereTransmission']
+    )
+    isrForbiddenStepsDarks = pexConfig.ListField(
+        dtype=str,
+        doc=("isr operations that must NOT be performed for valid results when using darks."
+             " Raises if any of these are True"),
+        default=['doBrighterFatter', 'doUseOpticsTransmission',
+                 'doUseFilterTransmission', 'doUseSensorTransmission', 'doUseAtmosphereTransmission']
+    )
+    isrDesirableSteps = pexConfig.ListField(
+        dtype=str,
+        doc=("isr operations that it is advisable to perform, but are not mission-critical."
+             " WARNs are logged for any of these found to be False."),
+        default=['doBias']
+    )
+
+    ccdKey = pexConfig.Field(
+        dtype=str,
+        doc="The key by which to pull a detector from a dataId, e.g. 'ccd' or 'detector'",
+        default='ccd',
+    )
+    imageTypeKey = pexConfig.Field(
+        dtype=str,
+        doc="The key for the butler to use by which to check whether images are darks or flats",
+        default='imageType',
+    )
+
+
+class FindDefectsTask(pipeBase.CmdLineTask):
+    """Task for finding defects in sensors.
+
+    The task has two modes of operation, defect finding in raws and in
+    master calibrations, which work as follows.
+
+    Master calib defect finding
+    ----------------------------
+
+    A single visit number is supplied, for which the corresponding flat & dark
+    will be used. This is because, at present at least, there is no way to pass
+    a calibration exposure ID from the command line to a command line task.
+
+    The task retrieves the corresponding dark and flat exposures for the
+    supplied visit. If a flat is available the task will (be able to) look
+    for both bright and dark defects. If only a dark is found then only bright
+    defects will be sought.
+
+    All pixels above/below the specified nSigma which lie with the specified
+    borders for flats/darks are identified as defects.
+
+    Raw visit defect finding
+    ------------------------
+
+    A list of exposure IDs are supplied for defect finding. The task will
+    detect bright pixels in the dark frames, if supplied, and bright & dark
+    pixels in the flats, if supplied, i.e. if you only supply darks you will
+    only be given bright defects. This is done automatically from the imageType
+    of the exposure, so the input exposure list can be a mix.
+
+    As with the master calib detection, all pixels above/below the specified
+    nSigma which lie with the specified borders for flats/darks are identified
+    as defects. Then, a post-processing step is done to merge these detections,
+    with pixels appearing in a fraction [0..1] of the images are kept as defects
+    and those appearing below that occurrence-threshold are discarded.
+    """
+    ConfigClass = FindDefectsTaskConfig
+    _DefaultName = "findDefects"
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.makeSubtask("measure")
+        self.makeSubtask("merge")
+
+    @pipeBase.timeMethod
+    def runDataRef(self, dataRefList):
+        """Run the defect finding task.
+
+        Find the defects, as described in the main task docstring, from a
+        dataRef and a list of visit(s).
+
+        Parameters
+        ----------
+        dataRef : `lsst.daf.persistence.ButlerDataRef`
+            dataRef for the detector for the visits to be fit.
+        visitList : `list` [`int`]
+            List of visits to be processed. If config.mode == 'VISITS' then the
+            list of visits is used. If config.mode == 'MASTER' then the length
+            of visitList must be one, and the corresponding master calibrations
+            are used.
+
+        Returns
+        -------
+        result : `lsst.pipe.base.Struct`
+            Result struct with Components:
+
+            - ``defects`` : `lsst.ip.isr.Defect`
+              The defects found by the task.
+            - ``exitStatus`` : `int`
+              The exit code.
+        """
+        dataRef = dataRefList[0]
+        camera = dataRef.get("camera")
+
+        singleExpDefects = []
+        activeChip = None
+        for dataRef in dataRefList:
+            exposure = dataRef.get("postISRCCD")
+            if activeChip:
+                if exposure.getDetector().getName() != activeChip:
+                    raise RuntimeError("Too many input detectors supplied!")
+            else:
+                activeChip = exposure.getDetector().getName()
+
+            result = self.measure.run(exposure, camera)
+            singleExpDefects.append(result.outputDefect)
+
+        finalResults = self.merge.run(singleExpDefects, camera)
+        dataRef.put(finalResults.mergedDefects, "defects")
+
+        return finalResults
