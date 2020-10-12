@@ -1,0 +1,39 @@
+description: cp_pipe PTC calibration construction.
+tasks:
+  isr:
+    class: lsst.ip.isr.isrTask.IsrTask
+    config:
+      connections.ccdExposure: 'raw'
+      connections.outputExposure: 'cpPtcProc'
+      doWrite: True
+      doOverscan: True
+      doAssembleCcd: True
+      doBias: True
+      doVariance: False
+      doLinearize: False
+      doCrosstalk: True
+      doBrighterFatter: False
+      doDark: True
+      doStrayLight: False
+      doFlat: False
+      doFringe: False
+      doApplyGains: False
+      doDefect: True
+      doSaturationInterpolation: False
+      growSaturationFootprintSize: 0
+  ptcExtract:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
+    config:
+      connections.inputExp: 'cpPtcProc'
+      connections.outputCovariances: 'cpCovariances'
+      connections.outputPtcPartialDataset: 'cpPartialDataset'
+  ptcSolve:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
+    config:
+      connections.inputCovariances: 'cpCovariances'
+      connections.inputPtcPartialDataset: 'cpPartialDataset'
+      connections.outputPtcDataset: 'ptcDataset'
+  contracts: 
+    - ptcSolve.maximumRangeCovariancesAstier == ptcExtract.maximumRangeCovariancesAstier
+    - ptcSolve.minMeanSignal == ptcExtract.minMeanSignal
+    - ptcSolve.maxMeanSignal == ptcExtract.maxMeanSignal

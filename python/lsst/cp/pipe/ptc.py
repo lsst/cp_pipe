@@ -37,7 +37,7 @@ from .linearity import LinearitySolveTask
 from .photodiode import getBOTphotodiodeData
 
 from lsst.pipe.tasks.getRepositoryData import DataRefListRunner
-from lsst.ip.isr import PhotonTransferCurveDataset
+from lsst.ip.isr import PhotonTransferCurveDataset, IsrProvenance
 
 __all__ = ['PhotonTransferCurveExtractConfig', 'PhotonTransferCurveExtractTask',
            'PhotonTransferCurveSolveConfig', 'PhotonTransferCurveSolveTask',
@@ -70,25 +70,10 @@ class PhotonTransferCurveExtractConnections(pipeBase.PipelineTaskConnections,
     )
 
 
-class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConnections,
+class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
                                        pipelineConnections=PhotonTransferCurveExtractConnections):
     """Configuration for the measurement of covariances from flats.
     """
-    ccdKey = pexConfig.Field(
-        dtype=str,
-        doc="The key by which to pull a detector from a dataId, e.g. 'ccd' or 'detector'.",
-        default='ccd',
-    )
-    sigmaClipFullFitCovariancesAstier = pexConfig.Field(
-        dtype=float,
-        doc="sigma clip for full model fit for FULLCOVARIANCE ptcFitType ",
-        default=5.0,
-    )
-    maxIterFullFitCovariancesAstier = pexConfig.Field(
-        dtype=int,
-        doc="Maximum number of iterations in full model fit for FULLCOVARIANCE ptcFitType",
-        default=3,
-    )
     maximumRangeCovariancesAstier = pexConfig.Field(
         dtype=int,
         doc="Maximum range of covariances as in Astier+19",
@@ -114,31 +99,6 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConnections,
         doc="Maximum value (inclusive) of mean signal (in DN) below which to consider.",
         default=9e6,
     )
-    initialNonLinearityExclusionThresholdPositive = pexConfig.RangeField(
-        dtype=float,
-        doc="Initially exclude data points with a variance that are more than a factor of this from being"
-            " linear in the positive direction, from the PTC fit. Note that these points will also be"
-            " excluded from the non-linearity fit. This is done before the iterative outlier rejection,"
-            " to allow an accurate determination of the sigmas for said iterative fit.",
-        default=0.12,
-        min=0.0,
-        max=1.0,
-    )
-    initialNonLinearityExclusionThresholdNegative = pexConfig.RangeField(
-        dtype=float,
-        doc="Initially exclude data points with a variance that are more than a factor of this from being"
-            " linear in the negative direction, from the PTC fit. Note that these points will also be"
-            " excluded from the non-linearity fit. This is done before the iterative outlier rejection,"
-            " to allow an accurate determination of the sigmas for said iterative fit.",
-        default=0.25,
-        min=0.0,
-        max=1.0,
-    )
-    sigmaCutPtcOutliers = pexConfig.Field(
-        dtype=float,
-        doc="Sigma cut for outlier rejection in PTC.",
-        default=5.0,
-    )
     maskNameList = pexConfig.ListField(
         dtype=str,
         doc="Mask list to exclude from statistics calculations.",
@@ -153,16 +113,6 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConnections,
         dtype=int,
         doc="Number of sigma-clipping iterations for afwMath.StatisticsControl()",
         default=1,
-    )
-    doPhotodiode = pexConfig.Field(
-        dtype=bool,
-        doc="Apply a correction based on the photodiode readings if available?",
-        default=True,
-    )
-    photodiodeDataPath = pexConfig.Field(
-        dtype=str,
-        doc="Gen2 only: path to locate the data photodiode data files.",
-        default=""
     )
 
 
@@ -200,7 +150,6 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                 minMeanSignalDict[ampName] = self.config.minMeanSignal['ALL_AMPS']
             elif ampName in self.config.minMeanSignal:
                 minMeanSignalDict[ampName] = self.config.minMeanSignal[ampName]
-
 
         tupleRecords = []
         allTags = []
@@ -242,56 +191,6 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
             outputCovariances=covariancesWithTags,
             outputPartialPtcDataset=datasetPtc
         )
-
-    def _setBOTPhotocharge(self, dataRef, datasetPtc, expIdList):
-        """Set photoCharge attribute in PTC dataset
-
-        Parameters
-        ----------
-        dataRef : `lsst.daf.peristence.ButlerDataRef`
-            Data reference for exposurre for detector to process.
-
-        datasetPtc : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
-            The dataset containing information such as the means, variances and exposure times.
-
-        expIdList : `list`
-            List with exposure pairs Ids (one pair per list entry).
-
-        Returns
-        -------
-        datasetPtc: `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
-            This is the same dataset as the input parameter, however, it has been modified
-            to update the datasetPtc.photoCharge attribute.
-        """
-        if self.config.doPhotodiode:
-            for (expId1, expId2) in expIdList:
-                charges = [-1, -1]  # necessary to have a not-found value to keep lists in step
-                for i, expId in enumerate([expId1, expId2]):
-                    # //1000 is a Gen2 only hack, working around the fact an
-                    # exposure's ID is not the same as the expId in the
-                    # registry. Currently expId is concatenated with the
-                    # zero-padded detector ID. This will all go away in Gen3.
-                    dataRef.dataId['expId'] = expId//1000
-                    if self.config.photodiodeDataPath:
-                        photodiodeData = getBOTphotodiodeData(dataRef, self.config.photodiodeDataPath)
-                    else:
-                        photodiodeData = getBOTphotodiodeData(dataRef)
-                    if photodiodeData:  # default path stored in function def to keep task clean
-                        charges[i] = photodiodeData.getCharge()
-                    else:
-                        # full expId (not //1000) here, as that encodes the
-                        # the detector number as so is fully qualifying
-                        self.log.warn(f"No photodiode data found for {expId}")
-
-                for ampName in datasetPtc.ampNames:
-                    datasetPtc.photoCharge[ampName].append((charges[0], charges[1]))
-        else:
-            # Can't be an empty list, as initialized, because astropy.Table won't allow it
-            # when saving as fits
-            for ampName in datasetPtc.ampNames:
-                datasetPtc.photoCharge[ampName] = np.repeat(np.nan, len(expIdList))
-
-        return datasetPtc
 
     def measureMeanVarCov(self, exposure1, exposure2, region=None, covAstierRealSpace=False):
         """Calculate the mean of each of two exposures and the variance and covariance of their difference.
@@ -538,6 +437,11 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
                                      pipelineConnections=PhotonTransferCurveSolveConnections):
     """Configuration for fitting measured covariances and making linearizer.
     """
+    maximumRangeCovariancesAstier = pexConfig.Field(
+        dtype=int,
+        doc="Maximum range of covariances as in Astier+19",
+        default=8,
+    )
     sigmaClipFullFitCovariancesAstier = pexConfig.Field(
         dtype=float,
         doc="sigma clip for full model fit for FULLCOVARIANCE ptcFitType ",
@@ -558,10 +462,45 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
         doc="Calculate non-linearity and persist linearizer?",
         default=False,
     )
+    sigmaCutPtcOutliers = pexConfig.Field(
+        dtype=float,
+        doc="Sigma cut for outlier rejection in PTC.",
+        default=5.0,
+    )
     maxIterationsPtcOutliers = pexConfig.Field(
         dtype=int,
         doc="Maximum number of iterations for outlier rejection in PTC.",
         default=2,
+    )
+    minMeanSignal = pexConfig.Field(
+        dtype=float,
+        doc="Minimum value (inclusive) of mean signal (in DN) above which to consider.",
+        default=0,
+    )
+    maxMeanSignal = pexConfig.Field(
+        dtype=float,
+        doc="Maximum value (inclusive) of mean signal (in DN) below which to consider.",
+        default=9e6,
+    )
+    initialNonLinearityExclusionThresholdPositive = pexConfig.RangeField(
+        dtype=float,
+        doc="Initially exclude data points with a variance that are more than a factor of this from being"
+            " linear in the positive direction, from the PTC fit. Note that these points will also be"
+            " excluded from the non-linearity fit. This is done before the iterative outlier rejection,"
+            " to allow an accurate determination of the sigmas for said iterative fit.",
+        default=0.12,
+        min=0.0,
+        max=1.0,
+    )
+    initialNonLinearityExclusionThresholdNegative = pexConfig.RangeField(
+        dtype=float,
+        doc="Initially exclude data points with a variance that are more than a factor of this from being"
+            " linear in the negative direction, from the PTC fit. Note that these points will also be"
+            " excluded from the non-linearity fit. This is done before the iterative outlier rejection,"
+            " to allow an accurate determination of the sigmas for said iterative fit.",
+        default=0.25,
+        min=0.0,
+        max=1.0,
     )
     doFitBootstrap = pexConfig.Field(
         dtype=bool,
@@ -632,13 +571,13 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             ``outputProvenance`` : `lsst.ip.isr.IsrProvenance`
                 Provenance data for the new calibration.
         """
-        if self.config.ptcFitType in ["FULLCOVARIANCE", ]:
+        if inputPartialPtcDatset.ptcFitType in ["FULLCOVARIANCE", ]:
             # Calculate covariances and fit them, including the PTC, to Astier+19 full model (Eq. 20)
             datasetPtc = self.fitCovariancesAstier(inputPartialPtcDatset, inputCovariances)
-        elif self.config.ptcFitType in ["EXPAPPROXIMATION", "POLYNOMIAL"]:
+        elif inputPartialPtcDatset.ptcFitType in ["EXPAPPROXIMATION", "POLYNOMIAL"]:
             # Fit the PTC to a polynomial or to Astier+19 exponential approximation (Eq. 16)
             # Fill up PhotonTransferCurveDataset object.
-            datasetPtc = self.fitPtc(datasetPtc, self.config.ptcFitType)
+            datasetPtc = self.fitPtc(inputPartialPtcDatset, inputPartialPtcDatset.ptcFitType)
 
         datasetPtc.updateMetadata(setDate=True, camera=camera, detector=detector)
 
@@ -664,7 +603,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         provenance.updateMetadata()
 
         return pipeBase.Struct(
-            outputPtcDataset=calib,
+            outputPtcDataset=datasetPtc,
             outputLinearizer=linearizer,
             outputProvenance=provenance,
         )
@@ -1066,12 +1005,12 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         return dataset
 
 
-class MeasurePhotonTransferCurveTaskConfig(Config):
-    extract = ConfigurableField(
+class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
+    extract = pexConfig.ConfigurableField(
         target=PhotonTransferCurveExtractTask,
         doc="Task to measure covariances from flats.",
     )
-    solver = ConfigurableField(
+    solve = pexConfig.ConfigurableField(
         target=PhotonTransferCurveSolveTask,
         doc="Task to fit models to the measured covariances.",
     )
@@ -1089,122 +1028,10 @@ class MeasurePhotonTransferCurveTaskConfig(Config):
             "FULLCOVARIANCE": "Full covariances model in Astier+19 (Eq. 20)"
         }
     )
-    maximumRangeCovariancesAstier = pexConfig.Field(
-        dtype=int,
-        doc="Maximum range of covariances as in Astier+19",
-        default=8,
-    )
-    covAstierRealSpace = pexConfig.Field(
-        dtype=bool,
-        doc="Calculate covariances in real space or via FFT? (see appendix A of Astier+19).",
-        default=False,
-    )
-    polynomialFitDegree = pexConfig.Field(
-        dtype=int,
-        doc="Degree of polynomial to fit the PTC, when 'ptcFitType'=POLYNOMIAL.",
-        default=3,
-    )
-    linearity = pexConfig.ConfigurableField(
-        target=LinearitySolveTask,
-        doc="Task to solve the linearity."
-    )
-
-    doCreateLinearizer = pexConfig.Field(
-        dtype=bool,
-        doc="Calculate non-linearity and persist linearizer?",
-        default=False,
-    )
-
-    binSize = pexConfig.Field(
-        dtype=int,
-        doc="Bin the image by this factor in both dimensions.",
-        default=1,
-    )
-    minMeanSignal = pexConfig.DictField(
-        keytype=str,
-        itemtype=float,
-        doc="Minimum values (inclusive) of mean signal (in ADU) above which to consider, per amp."
-            " The same cut is applied to all amps if this dictionary is of the form"
-            " {'ALL_AMPS': value}",
-        default={'ALL_AMPS': 0.0},
-    )
-    maxMeanSignal = pexConfig.DictField(
-        keytype=str,
-        itemtype=float,
-        doc="Maximum values (inclusive) of mean signal (in ADU) below which to consider, per amp."
-            " The same cut is applied to all amps if this dictionary is of the form"
-            " {'ALL_AMPS': value}",
-        default={'ALL_AMPS': 1e6},
-    )
-    initialNonLinearityExclusionThresholdPositive = pexConfig.RangeField(
-        dtype=float,
-        doc="Initially exclude data points with a variance that are more than a factor of this from being"
-            " linear in the positive direction, from the PTC fit. Note that these points will also be"
-            " excluded from the non-linearity fit. This is done before the iterative outlier rejection,"
-            " to allow an accurate determination of the sigmas for said iterative fit.",
-        default=0.05,
-        min=0.0,
-        max=1.0,
-    )
-    initialNonLinearityExclusionThresholdNegative = pexConfig.RangeField(
-        dtype=float,
-        doc="Initially exclude data points with a variance that are more than a factor of this from being"
-            " linear in the negative direction, from the PTC fit. Note that these points will also be"
-            " excluded from the non-linearity fit. This is done before the iterative outlier rejection,"
-            " to allow an accurate determination of the sigmas for said iterative fit.",
-        default=0.25,
-        min=0.0,
-        max=1.0,
-    )
-    minMeanRatioTest = pexConfig.Field(
-        dtype=float,
-        doc="In the initial test to screen out bad points with a ratio test, points with low"
-            " flux can get inadvertantly screened.  This test only screens out points with flux"
-            " above this value.",
-        default=20000,
-    )
-    minVarPivotSearch = pexConfig.Field(
-        dtype=float,
-        doc="The code looks for a pivot signal point after which the variance starts decreasing at high-flux"
-            " to exclude then form the PTC model fit. However, sometimes at low fluxes, the variance"
-            " decreases slightly. Set this variable for the variance value, in ADU^2, after which the pivot "
-            " should be sought.",
-        default=10000,
-    )
-    sigmaCutPtcOutliers = pexConfig.Field(
-        dtype=float,
-        doc="Sigma cut for outlier rejection in PTC.",
-        default=5.0,
-    )
-    maskNameList = pexConfig.ListField(
+    ccdKey = pexConfig.Field(
         dtype=str,
-        doc="Mask list to exclude from statistics calculations.",
-        default=['SUSPECT', 'BAD', 'NO_DATA'],
-    )
-    nSigmaClipPtc = pexConfig.Field(
-        dtype=float,
-        doc="Sigma cut for afwMath.StatisticsControl()",
-        default=5.5,
-    )
-    nIterSigmaClipPtc = pexConfig.Field(
-        dtype=int,
-        doc="Number of sigma-clipping iterations for afwMath.StatisticsControl()",
-        default=1,
-    )
-    minNumberGoodPixelsForFft = pexConfig.Field(
-        dtype=int,
-        doc="Minimum number of acceptable good pixels per amp to calculate the covariances via FFT.",
-        default=10000,
-    )
-    maxIterationsPtcOutliers = pexConfig.Field(
-        dtype=int,
-        doc="Maximum number of iterations for outlier rejection in PTC.",
-        default=2,
-    )
-    doFitBootstrap = pexConfig.Field(
-        dtype=bool,
-        doc="Use bootstrap for the PTC fit parameters and errors?.",
-        default=False,
+        doc="The key by which to pull a detector from a dataId, e.g. 'ccd' or 'detector'.",
+        default='ccd',
     )
     doPhotodiode = pexConfig.Field(
         dtype=bool,
@@ -1216,32 +1043,30 @@ class MeasurePhotonTransferCurveTaskConfig(Config):
         doc="Gen2 only: path to locate the data photodiode data files.",
         default=""
     )
-    instrumentName = pexConfig.Field(
-        dtype=str,
-        doc="Instrument name.",
-        default='',
-    )
 
 
 class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
     """A class to calculate, fit, and plot a PTC from a set of flat pairs.
-    The Photon Transfer Curve (var(signal) vs mean(signal)) is a standard tool
-    used in astronomical detectors characterization (e.g., Janesick 2001,
-    Janesick 2007). If ptcFitType is "EXPAPPROXIMATION" or "POLYNOMIAL",  this task calculates the
-    PTC from a series of pairs of flat-field images; each pair taken at identical exposure
-    times. The difference image of each pair is formed to eliminate fixed pattern noise,
-    and then the variance of the difference image and the mean of the average image
-    are used to produce the PTC. An n-degree polynomial or the approximation in Equation
-    16 of Astier+19 ("The Shape of the Photon Transfer Curve of CCD sensors",
-    arXiv:1905.08677) can be fitted to the PTC curve. These models include
-    parameters such as the gain (e/DN) and readout noise.
+    The Photon Transfer Curve (var(signal) vs mean(signal)) is a standard
+    tool used in astronomical detectors characterization (e.g., Janesick 2001,
+    Janesick 2007). If ptcFitType is "EXPAPPROXIMATION" or "POLYNOMIAL",
+    this task calculates the PTC from a series of pairs of flat-field images;
+    each pair taken at identical exposure times. The difference image of each
+    pair is formed to eliminate fixed pattern noise, and then the variance
+    of the difference image and the mean of the average image
+    are used to produce the PTC. An n-degree polynomial or the approximation
+    in Equation 16 of Astier+19 ("The Shape of the Photon Transfer Curve
+    of CCD sensors", arXiv:1905.08677) can be fitted to the PTC curve. These
+    models include parameters such as the gain (e/DN) and readout noise.
     Linearizers to correct for signal-chain non-linearity are also calculated.
-    The `Linearizer` class, in general, can support per-amp linearizers, but in this
-    task this is not supported.
-    If ptcFitType is "FULLCOVARIANCE", the covariances of the difference images are calculated via the
-    DFT methods described in Astier+19 and the variances for the PTC are given by the cov[0,0] elements
-    at each signal level. The full model in Equation 20 of Astier+19 is fit to the PTC to get the gain
-    and the noise.
+    The `Linearizer` class, in general, can support per-amp linearizers, but
+    in this task this is not supported.
+    If ptcFitType is "FULLCOVARIANCE", the covariances of the difference
+    images are calculated via the DFT methods described in Astier+19 and the
+    variances for the PTC are given by the cov[0,0] elements at each signal
+    level. The full model in Equation 20 of Astier+19 is fit to the PTC
+    to get the gain and the noise.
+
     Parameters
     ----------
     *args: `list`
@@ -1259,12 +1084,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
     def __init__(self, *args, **kwargs):
         super().__init__(**kwargs)
         self.makeSubtask("extract")
-        self.makeSubtask("solver")
+        self.makeSubtask("solve")
         self.makeSubtask("linearity")
-        
-        #plt.interactive(False)  # stop windows popping up when plotting. When headless, use 'agg' backend too
-        #self.config.validate()
-        #self.config.freeze()
 
     @pipeBase.timeMethod
     def runDataRef(self, dataRefList):
@@ -1286,20 +1107,29 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         detNum = dataRef.dataId[self.config.ccdKey]
         camera = dataRef.get('camera')
         detector = camera[dataRef.dataId[self.config.ccdKey]]
-     
+
         amps = detector.getAmplifiers()
         ampNames = [amp.getName() for amp in amps]
-        datasetPtc = PhotonTransferCurveDataset(ampNames, self.config.ptcFitType) 
+        datasetPtc = PhotonTransferCurveDataset(ampNames, self.config.ptcFitType)
 
         # Get the pairs of flat indexed by expTime
         expPairs = self.makePairs(dataRefList)
-        
+
+        expIds = []
+        for (exp1, exp2) in expPairs.values():
+            id1 = exp1.getInfo().getVisitInfo().getExposureId()
+            id2 = exp2.getInfo().getVisitInfo().getExposureId()
+            expIds.append((id1, id2))
+        self.log.info(f"Measuring PTC using {expIds} exposures for detector {detector.getId()}")
+
+        for ampName in datasetPtc.ampNames:
+            datasetPtc.inputExpIdPairs[ampName] = expIds
+
         # get photodiode data early so that logic can be put in to only use the
         # data if all files are found, as partial corrections are not possible
         # or at least require significant logic to deal with
         datasetPtc = self._setBOTPhotocharge(dataRef, datasetPtc, expIds)
-
-        result = self.extract.run(expPairs, camera, datasetPtc, detector, detNum)
+        result = self.extract.run(expPairs, datasetPtc, camera, detector, detNum)
         finalResults = self.solve.run(result.outputCovariances, result.outputPartialPtcDataset,
                                       self.linearity, detector, camera=camera)
 
@@ -1315,7 +1145,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                        'detectorName': detName, 'calibDate': calibDate})
 
         self.log.info("Writing PTC data.")
-        dataRef.put(finalResults.outputPtcDatset, datasetType="photonTransferCurveDataset")        
+        dataRef.put(finalResults.outputPtcDataset, datasetType="photonTransferCurveDataset")
 
         return finalResults
 
@@ -2053,3 +1883,53 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         dataset.finalMeans[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
 
         return
+    
+    def _setBOTPhotocharge(self, dataRef, datasetPtc, expIdList):
+        """Set photoCharge attribute in PTC dataset
+
+        Parameters
+        ----------
+        dataRef : `lsst.daf.peristence.ButlerDataRef`
+            Data reference for exposurre for detector to process.
+
+        datasetPtc : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
+            The dataset containing information such as the means, variances and exposure times.
+
+        expIdList : `list`
+            List with exposure pairs Ids (one pair per list entry).
+
+        Returns
+        -------
+        datasetPtc: `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
+            This is the same dataset as the input parameter, however, it has been modified
+            to update the datasetPtc.photoCharge attribute.
+        """
+        if self.config.doPhotodiode:
+            for (expId1, expId2) in expIdList:
+                charges = [-1, -1]  # necessary to have a not-found value to keep lists in step
+                for i, expId in enumerate([expId1, expId2]):
+                    # //1000 is a Gen2 only hack, working around the fact an
+                    # exposure's ID is not the same as the expId in the
+                    # registry. Currently expId is concatenated with the
+                    # zero-padded detector ID. This will all go away in Gen3.
+                    dataRef.dataId['expId'] = expId//1000
+                    if self.config.photodiodeDataPath:
+                        photodiodeData = getBOTphotodiodeData(dataRef, self.config.photodiodeDataPath)
+                    else:
+                        photodiodeData = getBOTphotodiodeData(dataRef)
+                    if photodiodeData:  # default path stored in function def to keep task clean
+                        charges[i] = photodiodeData.getCharge()
+                    else:
+                        # full expId (not //1000) here, as that encodes the
+                        # the detector number as so is fully qualifying
+                        self.log.warn(f"No photodiode data found for {expId}")
+
+                for ampName in datasetPtc.ampNames:
+                    datasetPtc.photoCharge[ampName].append((charges[0], charges[1]))
+        else:
+            # Can't be an empty list, as initialized, because astropy.Table won't allow it
+            # when saving as fits
+            for ampName in datasetPtc.ampNames:
+                datasetPtc.photoCharge[ampName] = np.repeat(np.nan, len(expIdList))
+
+        return datasetPtc
