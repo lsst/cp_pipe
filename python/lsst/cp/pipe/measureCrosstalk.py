@@ -301,7 +301,7 @@ class CrosstalkExtractTask(pipeBase.PipelineTask,
             figure.clear()
 
             axes = figure.add_axes((0.1, 0.1, 0.8, 0.8))
-            axes.plt(pixelsIn, pixelsOut / pixelsIn, 'k+')
+            axes.plot(pixelsIn, pixelsOut / pixelsIn, 'k+')
             plt.xlabel("Source amplifier pixel value")
             plt.ylabel("Measured pixel ratio")
             plt.title(f"(Source {sourceName} -> Target {targetName}) median ratio: "
