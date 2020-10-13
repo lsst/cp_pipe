@@ -1101,74 +1101,86 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         if len(dataRefList) < 2:
             raise RuntimeError("Insufficient inputs to combine.")
 
-        # setup necessary objects
-        dataRef = dataRefList[0]
+        for dataRef in dataRefList:
 
-        detNum = dataRef.dataId[self.config.ccdKey]
-        camera = dataRef.get('camera')
-        detector = camera[dataRef.dataId[self.config.ccdKey]]
+            # setup necessary objects
+            detNum = dataRef.dataId[self.config.ccdKey]
+            camera = dataRef.get('camera')
+            detector = camera[dataRef.dataId[self.config.ccdKey]]
 
-        amps = detector.getAmplifiers()
-        ampNames = [amp.getName() for amp in amps]
-        datasetPtc = PhotonTransferCurveDataset(ampNames, self.config.ptcFitType)
+            amps = detector.getAmplifiers()
+            ampNames = [amp.getName() for amp in amps]
+            datasetPtc = PhotonTransferCurveDataset(ampNames, self.config.ptcFitType)
 
-        # Get the pairs of flat indexed by expTime
-        expPairs = self.makePairs(dataRefList)
+            # Get the pairs of flats per detector indexed by expTime
+            expPairs = self.makePairs(dataRefList, detNum)
 
-        expIds = []
-        for (exp1, exp2) in expPairs.values():
-            id1 = exp1.getInfo().getVisitInfo().getExposureId()
-            id2 = exp2.getInfo().getVisitInfo().getExposureId()
-            expIds.append((id1, id2))
-        self.log.info(f"Measuring PTC using {expIds} exposures for detector {detector.getId()}")
+            expIds = []
+            for (exp1, exp2) in expPairs.values():
+                id1 = exp1.getInfo().getVisitInfo().getExposureId()
+                id2 = exp2.getInfo().getVisitInfo().getExposureId()
+                expIds.append((id1, id2))
+            self.log.info(f"Measuring PTC using {expIds} exposures for detector {detector.getId()}")
 
-        for ampName in datasetPtc.ampNames:
-            datasetPtc.inputExpIdPairs[ampName] = expIds
+            for ampName in datasetPtc.ampNames:
+                datasetPtc.inputExpIdPairs[ampName] = expIds
 
-        # get photodiode data early so that logic can be put in to only use the
-        # data if all files are found, as partial corrections are not possible
-        # or at least require significant logic to deal with
-        datasetPtc = self._setBOTPhotocharge(dataRef, datasetPtc, expIds)
-        result = self.extract.run(expPairs, datasetPtc, camera, detector, detNum)
-        finalResults = self.solve.run(result.outputCovariances, result.outputPartialPtcDataset,
-                                      self.linearity, detector, camera=camera)
+            # get photodiode data early so that logic can be put in to only use the
+            # data if all files are found, as partial corrections are not possible
+            # or at least require significant logic to deal with
+            datasetPtc = self._setBOTPhotocharge(dataRef, datasetPtc, expIds)
+            result = self.extract.run(expPairs, datasetPtc, camera, detector, detNum)
+            finalResults = self.solve.run(result.outputCovariances, result.outputPartialPtcDataset,
+                                          self.linearity, detector, camera=camera)
 
-        if finalResults.outputLinearizer is not None:
-            butler = dataRef.getButler()
-            self.log.info("Writing linearizer:")
+            if finalResults.outputLinearizer is not None:
+                butler = dataRef.getButler()
+                self.log.info("Writing linearizer:")
 
-            detName = detector.getName()
-            now = datetime.datetime.utcnow()
-            calibDate = now.strftime("%Y-%m-%d")
+                detName = detector.getName()
+                now = datetime.datetime.utcnow()
+                calibDate = now.strftime("%Y-%m-%d")
 
-            butler.put(finalResults.outputLinearizer, datasetType='Linearizer', dataId={'detector': detNum,
-                       'detectorName': detName, 'calibDate': calibDate})
+                butler.put(finalResults.outputLinearizer, datasetType='Linearizer', dataId={'detector': detNum,
+                           'detectorName': detName, 'calibDate': calibDate})
 
-        self.log.info("Writing PTC data.")
-        dataRef.put(finalResults.outputPtcDataset, datasetType="photonTransferCurveDataset")
+            self.log.info("Writing PTC data.")
+            dataRef.put(finalResults.outputPtcDataset, datasetType="photonTransferCurveDataset")
 
-        return finalResults
+        return
 
-    def makePairs(self, dataRefList):
+    def makePairs(self, dataRefList, detNum):
         """Produce a list of flat pairs indexed by exposure time.
+        
         Parameters
         ----------
         dataRefList : `list` [`lsst.daf.peristence.ButlerDataRef`]
             Data references for exposures for detectors to process.
+        
+        detNum : `int`
+            Detector number for which to produce the exposure pairs.
+
         Return
         ------
-        flatPairs : `dict` [`float`, `lsst.afw.image.exposure.exposure.ExposureF`]
-          Dictionary that groups flat-field exposures that have the same exposure time (seconds).
+        flatPairs : `dict` [`float`,
+                            `lsst.afw.image.exposure.exposure.ExposureF`]
+          Dictionary that groups flat-field exposures that have the same 
+          exposure time (seconds).
+        
         Notes
         -----
-        We use the difference of one pair of flat-field images taken at the same exposure time when
-        calculating the PTC to reduce Fixed Pattern Noise. If there are > 2 flat-field images with the
+        We use the difference of one pair of flat-field images taken at the
+        same exposure time when calculating the PTC to reduce Fixed Pattern
+        Noise. If there are > 2 flat-field images with the
         same exposure time, the first two are kept and the rest discarded.
         """
 
         # Organize exposures by observation date.
         expDict = {}
         for dataRef in dataRefList:
+            thisDetNum = dataRef.dataId[self.config.ccdKey]
+            if not thisDetNum == detNum:
+                continue
             try:
                 tempFlat = dataRef.get("postISRCCD")
             except RuntimeError:
@@ -1177,7 +1189,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             expDate = tempFlat.getInfo().getVisitInfo().getDate().get()
             expDict.setdefault(expDate, tempFlat)
         sortedExps = {k: expDict[k] for k in sorted(expDict)}
-
+        
         flatPairs = {}
         for exp in sortedExps:
             tempFlat = sortedExps[exp]
@@ -1893,7 +1905,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             Data reference for exposurre for detector to process.
 
         datasetPtc : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
-            The dataset containing information such as the means, variances and exposure times.
+            The dataset containing information such as the means, variances
+            and exposure times.
 
         expIdList : `list`
             List with exposure pairs Ids (one pair per list entry).
@@ -1901,8 +1914,9 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         Returns
         -------
         datasetPtc: `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
-            This is the same dataset as the input parameter, however, it has been modified
-            to update the datasetPtc.photoCharge attribute.
+            This is the same dataset as the input parameter, however,
+            it has been modified to update the datasetPtc.photoCharge
+            attribute.
         """
         if self.config.doPhotodiode:
             for (expId1, expId2) in expIdList:
