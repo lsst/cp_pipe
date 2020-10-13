@@ -402,11 +402,11 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             tempFlat = sortedExps[exp]
             expTime = tempFlat.getInfo().getVisitInfo().getExposureTime()
             listAtExpTime = flatPairs.setdefault(expTime, [])
-            if len(listAtExpTime) < 2:
+            if len(listAtExpTime) >= 2:
+                self.log.warn(f"Already found 2 exposures at expTime {expTime}. "
+                              f"Ignoring exposure {tempFlat.getInfo().getVisitInfo().getExposureId()}")
+            else:
                 listAtExpTime.append(tempFlat)
-            if len(listAtExpTime) > 2:
-                self.log.warn(f"More than 2 exposures found at expTime {expTime}. Dropping exposures "
-                              f"{listAtExpTime[2:]}.")
 
         keysToDrop = []
         for (key, value) in flatPairs.items():
