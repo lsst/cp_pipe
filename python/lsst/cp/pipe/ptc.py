@@ -408,10 +408,16 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 self.log.warn(f"More than 2 exposures found at expTime {expTime}. Dropping exposures "
                               f"{listAtExpTime[2:]}.")
 
+        keysToDrop = []
         for (key, value) in flatPairs.items():
             if len(value) < 2:
+                keysToDrop.append(key)
+
+        if len(keysToDrop):
+            for key in keysToDrop:
+                self.log.warn(f"Only one exposure found at expTime {key}. Dropping exposure "
+                              f"{flatPairs[key][0].getInfo().getVisitInfo().getExposureId()}.")
                 flatPairs.pop(key)
-                self.log.warn(f"Only one exposure found at expTime {key}. Dropping exposure {value}.")
         return flatPairs
 
     def fitCovariancesAstier(self, dataset, covariancesWithTagsArray):
