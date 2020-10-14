@@ -801,12 +801,12 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             Input array with variances at each mean value.
 
         maxDeviationPositive : `float`
-            Maximum variance/mean ratio for good points, in the
-            positive direction.
+            Maximum deviation from being constant for the variance/mean
+            ratio, in the positive direction.
 
         maxDeviationNegative : `float`
-            Maximum variance/mean ratio for good points, in the
-            negative direction.
+            Maximum deviation from being constant for the variance/mean
+            ratio, in the negative direction.
 
         Return
         ------
