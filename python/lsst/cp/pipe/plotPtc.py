@@ -339,8 +339,8 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                                 f"Noise: {noise:.4} e \n" +
                                 r"$a_{00}$: %.3e 1/e"%aCoeffs[0, 0] +
                                 "\n" + r"$b_{00}$: %.3e 1/e"%bCoeffs[0, 0])
-                minMeanVecFinal = np.min(meanVecFinal)
-                maxMeanVecFinal = np.max(meanVecFinal)
+                minMeanVecFinal = np.nanmin(meanVecFinal)
+                maxMeanVecFinal = np.nanmax(meanVecFinal)
                 deltaXlim = maxMeanVecFinal - minMeanVecFinal
 
                 a.set_xlabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
@@ -945,11 +945,11 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             a3.set_xscale('linear', fontsize=labelFontSize)
             a3.set_yscale('linear', fontsize=labelFontSize)
 
-            minMeanVecFinal = np.min(meanVecFinal)
-            maxMeanVecFinal = np.max(meanVecFinal)
+            minMeanVecFinal = np.nanmin(meanVecFinal)
+            maxMeanVecFinal = np.nanmax(meanVecFinal)
             meanVecFit = np.linspace(minMeanVecFinal, maxMeanVecFinal, 100*len(meanVecFinal))
-            minMeanVecOriginal = np.min(meanVecOriginal)
-            maxMeanVecOriginal = np.max(meanVecOriginal)
+            minMeanVecOriginal = np.nanmin(meanVecOriginal)
+            maxMeanVecOriginal = np.nanmax(meanVecOriginal)
             deltaXlim = maxMeanVecOriginal - minMeanVecOriginal
             a.plot(meanVecFit, ptcFunc(pars, meanVecFit), color='red')
             a.plot(meanVecFinal, ptcNoiseAdu**2 + (1./ptcGain)*meanVecFinal, color='green',
