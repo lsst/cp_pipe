@@ -804,7 +804,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         Too high and points that are so bad that fit will fail will be included
         Too low and the non-linear points will be excluded, biasing the NL fit."""
         ratios = [b/a for (a, b) in zip(means, variances)]
-        medianRatio = np.median(ratios)
+        medianRatio = np.nanmedian(ratios)
         ratioDeviations = [(r/medianRatio)-1 for r in ratios]
 
         # so that it doesn't matter if the deviation is expressed as positive or negative
