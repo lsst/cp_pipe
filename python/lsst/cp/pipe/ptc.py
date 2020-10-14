@@ -792,6 +792,30 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
     def _getInitialGoodPoints(means, variances, maxDeviationPositive, maxDeviationNegative):
         """Return a boolean array to mask bad points.
 
+        Parameters
+        ----------
+        means : `numpy.array`
+            Input array with mean signal values.
+
+        variances : `numpy.array`
+            Input array with variances at each mean value.
+
+        maxDeviationPositive : `float`
+            Maximum variance/mean ratio for good points, in the
+            positive direction.
+
+        maxDeviationNegative : `float`
+            Maximum variance/mean ratio for good points, in the
+            negative direction.
+
+        Return
+        ------
+        goodPoints : `numpy.array` [`bool`]
+            Boolean array to select good (`True`) and bad (`False`)
+            points.
+
+        Notes
+        -----
         A linear function has a constant ratio, so find the median
         value of the ratios, and exclude the points that deviate
         from that by more than a factor of maxDeviationPositive/negative.
@@ -803,6 +827,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         Too high and points that are so bad that fit will fail will be included
         Too low and the non-linear points will be excluded, biasing the NL fit."""
+
+        assert(len(means) == len(variances))
         ratios = [b/a for (a, b) in zip(means, variances)]
         medianRatio = np.nanmedian(ratios)
         ratioDeviations = [(r/medianRatio)-1 for r in ratios]
