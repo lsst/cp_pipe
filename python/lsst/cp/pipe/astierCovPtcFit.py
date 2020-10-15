@@ -237,7 +237,8 @@ class CovFit:
 
     def __init__(self, inputTuple, maxRangeFromTuple=8):
         self.cov, self.vcov, self.mu = makeCovArray(inputTuple, maxRangeFromTuple)
-        self.sqrtW = 1./np.sqrt(self.vcov)
+        # make it nan safe, replacing nan's with 0 in weights
+        self.sqrtW = np.nan_to_num(1./np.sqrt(self.vcov))
         self.r = self.cov.shape[1]
 
     def subtractDistantOffset(self, maxLag=8, startLag=5, polDegree=1):
