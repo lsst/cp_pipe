@@ -436,5 +436,4 @@ def getFitDataFromCovariances(i, j, mu, fullCov, fullCovModel, fullCovSqrtWeight
         covariance /= mu
         covarianceModel /= mu
         weights *= mu
-
     return mu, covariance, covarianceModel, weights, mask

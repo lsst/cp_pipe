@@ -319,15 +319,13 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             expId2 = exp2.getInfo().getVisitInfo().getExposureId()
             tupleRows = []
             nAmpsNan = 0
+            tags = ['mu', 'i', 'j', 'var', 'cov', 'npix', 'ext', 'expTime', 'ampName']
             for ampNumber, amp in enumerate(detector):
                 ampName = amp.getName()
                 # covAstier: (i, j, var (cov[0,0]), cov, npix)
                 doRealSpace = self.config.covAstierRealSpace
                 muDiff, varDiff, covAstier = self.measureMeanVarCov(exp1, exp2, region=amp.getBBox(),
                                                                     covAstierRealSpace=doRealSpace)
-                datasetPtc.rawExpTimes[ampName].append(expTime)
-                datasetPtc.rawMeans[ampName].append(muDiff)
-                datasetPtc.rawVars[ampName].append(varDiff)
 
                 if np.isnan(muDiff) or np.isnan(varDiff) or (covAstier is None):
                     msg = (f"NaN mean or var, or None cov in amp {ampName} in exposure pair {expId1},"
@@ -335,9 +333,12 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                     self.log.warn(msg)
                     nAmpsNan += 1
                     continue
-                tags = ['mu', 'i', 'j', 'var', 'cov', 'npix', 'ext', 'expTime', 'ampName']
                 if (muDiff <= minMeanSignalDict[ampName]) or (muDiff >= maxMeanSignalDict[ampName]):
                     continue
+
+                datasetPtc.rawExpTimes[ampName].append(expTime)
+                datasetPtc.rawMeans[ampName].append(muDiff)
+                datasetPtc.rawVars[ampName].append(varDiff)
 
                 tupleRows += [(muDiff, ) + covRow + (ampNumber, expTime, ampName) for covRow in covAstier]
             if nAmpsNan == len(ampNames):
@@ -527,6 +528,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 (meanVecFinal, varVecFinal, varVecModel,
                     wc, varMask) = fit.getFitData(0, 0, divideByMu=False, returnMasked=True)
                 gain = fit.getGain()
+                # adjust mask to original size of rawExpTimes
+                # so far, only the min/max signal cut is in dataset.expIdMask
                 dataset.expIdMask[amp] = varMask
                 dataset.gain[amp] = gain
                 dataset.gainErr[amp] = fit.getGainErr()
@@ -672,6 +675,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         w12 = w1*w2
         wDiff = np.where(diffIm.getMask().getArray() == 0, 1, 0)
         w = w12*wDiff
+
+        w = wDiff
 
         maxRangeCov = self.config.maximumRangeCovariancesAstier
         if covAstierRealSpace:
