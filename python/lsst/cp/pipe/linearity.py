@@ -76,10 +76,15 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
             "None": "Create a dummy solution.",
         }
     )
-    fitOrder = pexConfig.Field(
+    polynomialOrder = pexConfig.Field(
         dtype=int,
-        doc="Degree of polynomial to fit or number of spline knots to use",
+        doc="Degree of polynomial to fit.",
         default=3,
+    )
+    splineKnots = pexConfig.Field(
+        dtype=int,
+        doc="Number of spline knots to use in fit.",
+        default=10,
     )
     maxLookupTableAdu = pexConfig.Field(
         dtype=int,
@@ -94,7 +99,7 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
     minLinearAdu = pexConfig.Field(
         dtype=float,
         doc="Minimum DN value to use to estimate linear term.",
-        default=10000.0,
+        default=2000.0,
     )
     nSigmaClipLinear = pexConfig.Field(
         dtype=float,
@@ -160,11 +165,10 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         These `c_i` are defined in terms of the direct polynomial fit:
             meanVector ~ P(x=timeVector) = sum_j k_j x^j
         such that c_(j-2) = -k_j/(k_1^j) in units of DN^(1-j) (c.f.,
-        Eq. 37 of 2003.05978). The `config.fitOrder` defines the
-        maximum order of x^j to fit.  As k_0 and k_1 are degenerate
-        with bias level and gain, they are not included in the
-        non-linearity correction.
-
+        Eq. 37 of 2003.05978). The `config.polynomialOrder` or
+        `config.splineKnots` define the maximum order of x^j to fit.
+        As k_0 and k_1 are degenerate with bias level and gain, they
+        are not included in the non-linearity correction.
         """
         detector = camera[inputDims['detector']]
 
@@ -174,6 +178,11 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         else:
             table = None
             tableIndex = None  # This will fail if we increment it.
+
+        if self.config.linearityType == 'Spline':
+            fitOrder = self.config.splineKnots
+        else:
+            fitOrder = self.config.polynomialOrder
 
         # Initialize the linearizer.
         linearizer = Linearizer(detector=detector, table=table, log=self.log)
@@ -186,34 +195,34 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
             else:
                 mask = inputPtc.expIdMask[ampName]
 
-            inputOrdinate = np.array(inputPtc.rawExpTimes[ampName])[mask]
-            inputAbscissa = np.array(inputPtc.rawMeans[ampName])[mask]
+            inputAbscissa = np.array(inputPtc.rawExpTimes[ampName])[mask]
+            inputOrdinate = np.array(inputPtc.rawMeans[ampName])[mask]
 
             # Determine proxy-to-linear-flux transformation
-            fluxMask = inputAbscissa < self.config.maxLinearAdu
-            lowMask = inputAbscissa > self.config.minLinearAdu
+            fluxMask = inputOrdinate < self.config.maxLinearAdu
+            lowMask = inputOrdinate > self.config.minLinearAdu
             fluxMask = fluxMask & lowMask
-            linearOrdinate = inputOrdinate[fluxMask]
             linearAbscissa = inputAbscissa[fluxMask]
+            linearOrdinate = inputOrdinate[fluxMask]
 
-            linearFit, linearFitErr, chiSq, weights = self.irlsFit([0.0, 100.0], linearOrdinate,
-                                                                   linearAbscissa, funcPolynomial)
+            linearFit, linearFitErr, chiSq, weights = self.irlsFit([0.0, 100.0], linearAbscissa,
+                                                                   linearOrdinate, funcPolynomial)
             # Convert this proxy-to-flux fit into an expected linear flux
-            linearOrdinate = linearFit[0] + linearFit[1] * inputOrdinate
+            linearOrdinate = linearFit[0] + linearFit[1] * inputAbscissa
 
             # Exclude low end outliers
             threshold = self.config.nSigmaClipLinear * np.sqrt(linearOrdinate)
-            fluxMask = np.abs(inputAbscissa - linearOrdinate) < threshold
+            fluxMask = np.abs(inputOrdinate - linearOrdinate) < threshold
             linearOrdinate = linearOrdinate[fluxMask]
-            fitAbscissa = inputAbscissa[fluxMask]
-            self.debugFit('linearFit', inputOrdinate, inputAbscissa, linearOrdinate, fluxMask, ampName)
+            fitOrdinate = inputOrdinate[fluxMask]
+            self.debugFit('linearFit', inputAbscissa, inputOrdinate, linearOrdinate, fluxMask, ampName)
 
             # Do fits
             if self.config.linearityType in ['Polynomial', 'Squared', 'LookupTable']:
-                polyFit = np.zeros(self.config.fitOrder + 1)
+                polyFit = np.zeros(fitOrder + 1)
                 polyFit[1] = 1.0
                 polyFit, polyFitErr, chiSq, weights = self.irlsFit(polyFit, linearOrdinate,
-                                                                   fitAbscissa, funcPolynomial)
+                                                                   fitOrdinate, funcPolynomial)
 
                 # Truncate the polynomial fit
                 k1 = polyFit[1]
@@ -221,8 +230,8 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
                 significant = np.where(np.abs(linearityFit) > 1e-10, True, False)
                 self.log.info(f"Significant polynomial fits: {significant}")
 
-                modelAbscissa = funcPolynomial(polyFit, linearOrdinate)
-                self.debugFit('polyFit', linearOrdinate, fitAbscissa, modelAbscissa, None, ampName)
+                modelOrdinate = funcPolynomial(polyFit, linearAbscissa)
+                self.debugFit('polyFit', linearAbscissa, fitOrdinate, modelOrdinate, None, ampName)
 
                 if self.config.linearityType == 'Squared':
                     linearityFit = [linearityFit[2]]
@@ -239,11 +248,26 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
                     tableIndex += 1
             elif self.config.linearityType in ['Spline']:
                 # See discussion in `lsst.ip.isr.linearize.py` before modifying.
-                numPerBin, binEdges = np.histogram(linearOrdinate, bins=self.config.fitOrder)
+                numPerBin, binEdges = np.histogram(linearOrdinate, bins=fitOrder)
                 with np.errstate(invalid="ignore"):
-                    values = np.histogram(linearOrdinate, bins=self.config.fitOrder,
-                                          weights=(inputAbscissa[fluxMask] - linearOrdinate))[0]/numPerBin
-                    binCenters = np.histogram(linearOrdinate, bins=self.config.fitOrder,
+                    # Algorithm note: With the counts of points per
+                    # bin above, the next histogram calculates the
+                    # values to put in each bin by weighting each
+                    # point by the correction value.
+                    values = np.histogram(linearOrdinate, bins=fitOrder,
+                                          weights=(inputOrdinate[fluxMask] - linearOrdinate))[0]/numPerBin
+
+                    # After this is done, the binCenters are
+                    # calculated by weighting by the value we're
+                    # binning over.  This ensures that widely
+                    # spaced/poorly sampled data aren't assigned to
+                    # the midpoint of the bin (as could be done using
+                    # the binEdges above), but to the weighted mean of
+                    # the inputs.  Note that both histograms are
+                    # scaled by the count per bin to normalize what
+                    # the histogram returns (a sum of the points
+                    # inside) into an average.
+                    binCenters = np.histogram(linearOrdinate, bins=fitOrder,
                                               weights=linearOrdinate)[0]/numPerBin
                     values = values[numPerBin > 0]
                     binCenters = binCenters[numPerBin > 0]
@@ -251,14 +275,14 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
                 self.debugFit('splineFit', binCenters, np.abs(values), values, None, ampName)
                 interp = afwMath.makeInterpolate(binCenters.tolist(), values.tolist(),
                                                  afwMath.stringToInterpStyle("AKIMA_SPLINE"))
-                modelAbscissa = linearOrdinate + interp.interpolate(linearOrdinate)
-                self.debugFit('splineFit', linearOrdinate, fitAbscissa, modelAbscissa, None, ampName)
+                modelOrdinate = linearOrdinate + interp.interpolate(linearOrdinate)
+                self.debugFit('splineFit', linearOrdinate, fitOrdinate, modelOrdinate, None, ampName)
 
                 # If we exclude a lot of points, we may end up with
                 # less than fitOrder points.  Pad out the low-flux end
                 # to ensure equal lengths.
-                if len(binCenters) != self.config.fitOrder:
-                    padN = self.config.fitOrder - len(binCenters)
+                if len(binCenters) != fitOrder:
+                    padN = fitOrder - len(binCenters)
                     binCenters = np.pad(binCenters, (padN, 0), 'linear_ramp',
                                         end_values=(binCenters.min() - 1.0, ))
                     # This stores the correction, which is zero at low values.
@@ -283,7 +307,7 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
             linearizer.fitChiSq[ampName] = chiSq
 
             image = afwImage.ImageF(len(inputOrdinate), 1)
-            image.getArray()[:, :] = inputAbscissa
+            image.getArray()[:, :] = inputOrdinate
             linearizeFunction = linearizer.getLinearityTypeByName(linearizer.linearityType[ampName])
             linearizeFunction()(image,
                                 **{'coeffs': linearizer.linearityCoeffs[ampName],
@@ -342,7 +366,7 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
 
         polyFit, polyFitErr, chiSq = fitLeastSq(initialParams, dataX, dataY, function, weightsY=weightsY)
         for iteration in range(10):
-            # Use cauchy weights
+            # Use Cauchy weights
             resid = np.abs(dataY - function(polyFit, dataX)) / np.sqrt(dataY)
             weightsY = 1.0 / (1.0 + np.sqrt(resid / 2.385))
             polyFit, polyFitErr, chiSq = fitLeastSq(initialParams, dataX, dataY, function, weightsY=weightsY)
@@ -382,17 +406,17 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
 
             fig.suptitle(f"{stepname} {ampName} {self.config.linearityType}")
             if stepname == 'linearFit':
-                axs[0].set_xlabel("Input Ordinate (time or mondiode)")
-                axs[0].set_ylabel("Input Abscissa (flux)")
+                axs[0].set_xlabel("Input Abscissa (time or mondiode)")
+                axs[0].set_ylabel("Input Ordinate (flux)")
                 axs[1].set_xlabel("Linear Ordinate (linear flux)")
                 axs[1].set_ylabel("Flux Difference: (input - linear)")
             elif stepname in ('polyFit', 'splineFit'):
-                axs[0].set_xlabel("Linear Ordinate (linear flux)")
-                axs[0].set_ylabel("Input Abscissa (flux)")
+                axs[0].set_xlabel("Linear Abscissa (linear flux)")
+                axs[0].set_ylabel("Input Ordinate (flux)")
                 axs[1].set_xlabel("Linear Ordinate (linear flux)")
                 axs[1].set_ylabel("Flux Difference: (input - full model fit)")
             elif stepname == 'solution':
-                axs[0].set_xlabel("Input Ordinate (time or mondiode)")
+                axs[0].set_xlabel("Input Abscissa (time or mondiode)")
                 axs[0].set_ylabel("Linear Ordinate (linear flux)")
                 axs[1].set_xlabel("Model flux (linear flux)")
                 axs[1].set_ylabel("Flux Difference: (linear - model)")
@@ -406,7 +430,7 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
             axs[1].scatter(yModel, yVector[mask] - yModel)
             fig.show()
 
-            prompt = "Press Enter or c to continue [chp]..."
+            prompt = "Press Enter or c to continue [chpx]..."
             while True:
                 ans = input(prompt).lower()
                 if ans in ("", " ", "c",):
@@ -424,13 +448,15 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
 class MeasureLinearityConfig(pexConfig.Config):
     solver = pexConfig.ConfigurableField(
         target=LinearitySolveTask,
-        doc="Task to convert ratio lists to crosstalk coefficients.",
+        doc="Task to convert PTC data to linearity solutions.",
     )
 
 
 class MeasureLinearityTask(pipeBase.CmdLineTask):
-    """Independent linearity code, reading in the PTC results.
+    """Stand alone Gen2 linearity measurement.
 
+    This class wraps the Gen3 linearity task to allow it to be run as
+    a Gen2 CmdLineTask.
     """
     ConfigClass = MeasureLinearityConfig
     _DefaultName = "measureLinearity"
