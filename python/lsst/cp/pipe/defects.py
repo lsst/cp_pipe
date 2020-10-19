@@ -915,7 +915,6 @@ class FindDefectsTask(pipeBase.CmdLineTask):
             mi.image.array /= expTime
             stats = afwMath.makeStatistics(mi, afwMath.MEANCLIP | afwMath.STDEVCLIP)
             mean, sigma = stats.getValue(afwMath.MEANCLIP), stats.getValue(afwMath.STDEVCLIP)
-
             # Get array of pixels
             EDGEBIT = exp.maskedImage.mask.getPlaneBitMask("EDGE")
             imgData = mi.image.array[(mi.mask.array & EDGEBIT) == 0].flatten()
