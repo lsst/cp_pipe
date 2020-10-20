@@ -158,15 +158,13 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
             expId2 = exp2.getInfo().getVisitInfo().getExposureId()
             tupleRows = []
             nAmpsNan = 0
+            tags = ['mu', 'i', 'j', 'var', 'cov', 'npix', 'ext', 'expTime', 'ampName']
             for ampNumber, amp in enumerate(detector):
                 ampName = amp.getName()
                 # covAstier: (i, j, var (cov[0,0]), cov, npix)
                 doRealSpace = self.config.covAstierRealSpace
                 muDiff, varDiff, covAstier = self.measureMeanVarCov(exp1, exp2, region=amp.getBBox(),
                                                                     covAstierRealSpace=doRealSpace)
-                datasetPtc.rawExpTimes[ampName].append(expTime)
-                datasetPtc.rawMeans[ampName].append(muDiff)
-                datasetPtc.rawVars[ampName].append(varDiff)
 
                 if np.isnan(muDiff) or np.isnan(varDiff) or (covAstier is None):
                     msg = (f"NaN mean or var, or None cov in amp {ampName} in exposure pair {expId1},"
@@ -174,9 +172,13 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                     self.log.warn(msg)
                     nAmpsNan += 1
                     continue
-                tags = ['mu', 'i', 'j', 'var', 'cov', 'npix', 'ext', 'expTime', 'ampName']
+
                 if (muDiff <= self.config.minMeanSignal) or (muDiff >= self.config.maxMeanSignal):
                     continue
+
+                datasetPtc.rawExpTimes[ampName].append(expTime)
+                datasetPtc.rawMeans[ampName].append(muDiff)
+                datasetPtc.rawVars[ampName].append(varDiff)
 
                 tupleRows += [(muDiff, ) + covRow + (ampNumber, expTime, ampName) for covRow in covAstier]
             if nAmpsNan == len(datasetPtc.ampNames):
@@ -761,7 +763,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         Too high and points that are so bad that fit will fail will be included
         Too low and the non-linear points will be excluded, biasing the NL fit."""
         ratios = [b/a for (a, b) in zip(means, variances)]
-        medianRatio = np.median(ratios)
+        medianRatio = np.nanmedian(ratios)
         ratioDeviations = [(r/medianRatio)-1 for r in ratios]
 
         # so that it doesn't matter if the deviation is expressed as positive or negative
@@ -843,14 +845,11 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             varVecOriginal = np.array(dataset.rawVars[ampName])
             varVecOriginal = self._makeZeroSafe(varVecOriginal)
 
-            mask = ((meanVecOriginal >= self.config.minMeanSignal) &
-                    (meanVecOriginal <= self.config.maxMeanSignal))
-
             goodPoints = self._getInitialGoodPoints(meanVecOriginal, varVecOriginal,
                                                     self.config.initialNonLinearityExclusionThresholdPositive,
                                                     self.config.initialNonLinearityExclusionThresholdNegative)
-            if not (mask.any() and goodPoints.any()):
-                msg = (f"\nSERIOUS: All points in either mask: {mask} or goodPoints: {goodPoints} are bad."
+            if not (goodPoints.any()):
+                msg = (f"\nSERIOUS: All points in goodPoints: {goodPoints} are bad."
                        f"Setting {ampName} to BAD.")
                 self.log.warn(msg)
                 # The first and second parameters of initial fit are discarded (bias and gain)
@@ -871,7 +870,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
                 dataset.finalMeans[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
                 continue
 
-            mask = mask & goodPoints
+            mask = goodPoints
 
             if ptcFitType == 'EXPAPPROXIMATION':
                 ptcFunc = funcAstier
@@ -1115,8 +1114,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         ampNames = [amp.getName() for amp in amps]
         datasetPtc = PhotonTransferCurveDataset(ampNames, self.config.ptcFitType)
 
-        # Get the pairs of flats per detector indexed by expTime
-        expPairs = self.makePairs(dataRefList, detNum)
+        # Get the pairs of flatsindexed by expTime
+        expPairs = self.makePairs(dataRefList)
 
         expIds = []
         for (exp1, exp2) in expPairs.values():
@@ -1152,16 +1151,13 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         return
 
-    def makePairs(self, dataRefList, detNum):
+    def makePairs(self, dataRefList):
         """Produce a list of flat pairs indexed by exposure time.
 
         Parameters
         ----------
         dataRefList : `list` [`lsst.daf.peristence.ButlerDataRef`]
             Data references for exposures for detectors to process.
-
-        detNum : `int`
-            Detector number for which to produce the exposure pairs.
 
         Return
         ------
@@ -1181,9 +1177,6 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         # Organize exposures by observation date.
         expDict = {}
         for dataRef in dataRefList:
-            thisDetNum = dataRef.dataId[self.config.ccdKey]
-            if not thisDetNum == detNum:
-                continue
             try:
                 tempFlat = dataRef.get("postISRCCD")
             except RuntimeError:
