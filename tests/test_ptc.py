@@ -51,6 +51,12 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         self.defaultConfig = cpPipe.ptc.MeasurePhotonTransferCurveTask.ConfigClass()
         self.defaultTask = cpPipe.ptc.MeasurePhotonTransferCurveTask(config=self.defaultConfig)
 
+        self.defaultConfigExtract = cpPipe.ptc.PhotonTransferCurveExtractTask.ConfigClass()
+        self.defaultTaskExtract = cpPipe.ptc.PhotonTransferCurveExtractTask(config=self.defaultConfigExtract)
+
+        self.defaultConfigSolve = cpPipe.ptc.PhotonTransferCurveSolveTask.ConfigClass()
+        self.defaultTaskSolve = cpPipe.ptc.PhotonTransferCurveSolveTask(config=self.defaultConfigSolve)
+
         self.flatMean = 2000
         self.readNoiseAdu = 10
         mockImageConfig = isrMock.IsrMock.ConfigClass()
@@ -103,8 +109,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         method (when doCovariancesAstier=false),
         """
         localDataset = copy.copy(self.dataset)
-        config = copy.copy(self.defaultConfig)
-        task = cpPipe.ptc.MeasurePhotonTransferCurveTask(config=config)
+        task = self.defaultTask
 
         expTimes = np.arange(5, 170, 5)
         tupleRecords = []
@@ -116,11 +121,11 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
             for ampNumber, amp in enumerate(self.ampNames):
                 # cov has (i, j, var, cov, npix)
-                muDiff, varDiff, covAstier = task.measureMeanVarCov(mockExp1, mockExp2)
+                muDiff, varDiff, covAstier = task.extract.measureMeanVarCov(mockExp1, mockExp2)
                 muStandard.setdefault(amp, []).append(muDiff)
                 varStandard.setdefault(amp, []).append(varDiff)
                 # Calculate covariances in an independent way: direct space
-                _, _, covsDirect = task.measureMeanVarCov(mockExp1, mockExp2, covAstierRealSpace=True)
+                _, _, covsDirect = task.extract.measureMeanVarCov(mockExp1, mockExp2, covAstierRealSpace=True)
 
                 # Test that the arrays "covs" (FFT) and "covDirect" (direct space) are the same
                 for row1, row2 in zip(covAstier, covsDirect):
@@ -146,9 +151,11 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
     def ptcFitAndCheckPtc(self, order=None, fitType='', doTableArray=False, doFitBootstrap=False):
         localDataset = copy.copy(self.dataset)
         config = copy.copy(self.defaultConfig)
+        configSolve = copy.copy(self.defaultConfigSolve)
+
         placesTests = 6
         if doFitBootstrap:
-            config.doFitBootstrap = True
+            configSolve.doFitBootstrap = True
             # Bootstrap method in cp_pipe/utils.py does multiple fits in the precense of noise.
             # Allow for more margin of error.
             placesTests = 3
@@ -160,12 +167,12 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                 for ampName in self.ampNames:
                     localDataset.rawVars[ampName] = [self.noiseSq + self.c1*mu + self.c2*mu**2 for
                                                      mu in localDataset.rawMeans[ampName]]
-                config.polynomialFitDegree = 2
+                configSolve.polynomialFitDegree = 2
             if order == 3:
                 for ampName in self.ampNames:
                     localDataset.rawVars[ampName] = [self.noiseSq + self.c1*mu + self.c2*mu**2 + self.c3*mu**3
                                                      for mu in localDataset.rawMeans[ampName]]
-                config.polynomialFitDegree = 3
+                configSolve.polynomialFitDegree = 3
         elif fitType == 'EXPAPPROXIMATION':
             g = self.gain
             for ampName in self.ampNames:
@@ -182,19 +189,20 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         else:
             config.linearity.linearityType = "Polynomial"
         task = cpPipe.ptc.MeasurePhotonTransferCurveTask(config=config)
+        solveTask = cpPipe.ptc.PhotonTransferCurveSolveTask(config=configSolve)
 
         if doTableArray:
             # Non-linearity
             numberAmps = len(self.ampNames)
             # localDataset: PTC dataset (lsst.cp.pipe.ptc.PhotonTransferCurveDataset)
-            localDataset = task.fitPtc(localDataset, ptcFitType=fitType)
+            localDataset = solveTask.fitPtc(localDataset, ptcFitType=fitType)
             # linDataset: Dictionary of `lsst.cp.pipe.ptc.LinearityResidualsAndLinearizersDataset`
             linDataset = task.linearity.run(localDataset,
                                             camera=FakeCamera([self.flatExp1.getDetector()]),
                                             inputDims={'detector': 0})
             linDataset = linDataset.outputLinearizer
         else:
-            localDataset = task.fitPtc(localDataset, ptcFitType=fitType)
+            localDataset = solveTask.fitPtc(localDataset, ptcFitType=fitType)
             linDataset = task.linearity.run(localDataset,
                                             camera=FakeCamera([self.flatExp1.getDetector()]),
                                             inputDims={'detector': 0})
@@ -265,14 +273,14 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                 self.ptcFitAndCheckPtc(fitType=fitType, order=order, doTableArray=createArray)
 
     def test_meanVarMeasurement(self):
-        task = self.defaultTask
+        task = self.defaultTaskExtract
         mu, varDiff, _ = task.measureMeanVarCov(self.flatExp1, self.flatExp2)
 
         self.assertLess(self.flatWidth - np.sqrt(varDiff), 1)
         self.assertLess(self.flatMean - mu, 1)
 
     def test_meanVarMeasurementWithNans(self):
-        task = self.defaultTask
+        task = self.defaultTaskExtract
         self.flatExp1.image.array[20:30, :] = np.nan
         self.flatExp2.image.array[20:30, :] = np.nan
 
@@ -301,7 +309,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         self.assertLess(expectedMu - mu, 1)
 
     def test_meanVarMeasurementAllNan(self):
-        task = self.defaultTask
+        task = self.defaultTaskExtract
         self.flatExp1.image.array[:, :] = np.nan
         self.flatExp2.image.array[:, :] = np.nan
 
