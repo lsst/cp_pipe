@@ -42,7 +42,7 @@ __all__ = ['PhotonTransferCurveExtractConfig', 'PhotonTransferCurveExtractTask',
 
 
 class PhotonTransferCurveExtractConnections(pipeBase.PipelineTaskConnections,
-                                            dimensions=("instrument", "exposure", "detector")):
+                                            dimensions=("instrument", "detector")):
 
     inputExp = cT.Input(
         name="ptcInputExposures",
@@ -50,6 +50,7 @@ class PhotonTransferCurveExtractConnections(pipeBase.PipelineTaskConnections,
         storageClass="Exposure",
         dimensions=("instrument", "exposure", "detector"),
         multiple=True,
+        deferLoad=False,
     )
 
     outputCovariances = cT.Output(
@@ -149,13 +150,11 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                 minMeanSignalDict[ampName] = self.config.minMeanSignal[ampName]
 
         tupleRecords = []
-        allTags = []
         for expTime, (exp1, exp2) in exposurePairs.items():
             expId1 = exp1.getInfo().getVisitInfo().getExposureId()
             expId2 = exp2.getInfo().getVisitInfo().getExposureId()
-            tupleRows = []
+            tupleRows = {}
             nAmpsNan = 0
-            tags = ['mu', 'i', 'j', 'var', 'cov', 'npix', 'ext', 'expTime', 'ampName']
             for ampNumber, amp in enumerate(detector):
                 ampName = amp.getName()
                 # covAstier: (i, j, var (cov[0,0]), cov, npix)
@@ -177,17 +176,19 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                 datasetPtc.rawMeans[ampName].append(muDiff)
                 datasetPtc.rawVars[ampName].append(varDiff)
 
-                tupleRows += [(muDiff, ) + covRow + (ampNumber, expTime, ampName) for covRow in covAstier]
+                tupleRows[(ampName, expId1, expId2)] = [(muDiff, ) + covRow + (ampNumber, expTime, ampName)
+                                                        for covRow in covAstier]
             if nAmpsNan == len(datasetPtc.ampNames):
                 msg = f"NaN mean in all amps of exposure pair {expId1}, {expId2} of detector {detNum}."
                 self.log.warn(msg)
                 continue
-            allTags += tags
-            tupleRecords += tupleRows
-        covariancesWithTags = np.core.records.fromrecords(tupleRecords, names=allTags)
+            tupleRecords.append(tupleRows)
+            # This empty dictionary is here to ensure that all input exposures/dataIds have corresponding
+            # outputs.
+            tupleRecords.append(dict())
 
         return pipeBase.Struct(
-            outputCovariances=covariancesWithTags,
+            outputCovariances=tupleRecords,
             outputPartialPtcDataset=datasetPtc
         )
 
@@ -558,9 +559,19 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             ``outputProvenance`` : `lsst.ip.isr.IsrProvenance`
                 Provenance data for the new calibration.
         """
+
+        tupleRecords = []
+        for dictionary in inputCovariances:
+            if not bool(dictionary):
+                continue
+            for key in dictionary:
+                tupleRecords += dictionary[key]
+        tags = ['mu', 'i', 'j', 'var', 'cov', 'npix', 'ext', 'expTime', 'ampName']
+        covariancesWithTags = np.core.records.fromrecords(tupleRecords, names=tags)
+
         if inputPartialPtcDatset.ptcFitType in ["FULLCOVARIANCE", ]:
             # Calculate covariances and fit them, including the PTC, to Astier+19 full model (Eq. 20)
-            datasetPtc = self.fitCovariancesAstier(inputPartialPtcDatset, inputCovariances)
+            datasetPtc = self.fitCovariancesAstier(inputPartialPtcDatset, covariancesWithTags)
         elif inputPartialPtcDatset.ptcFitType in ["EXPAPPROXIMATION", "POLYNOMIAL"]:
             # Fit the PTC to a polynomial or to Astier+19 exponential approximation (Eq. 16)
             # Fill up PhotonTransferCurveDataset object.
