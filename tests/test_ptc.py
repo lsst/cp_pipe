@@ -150,8 +150,8 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
     def ptcFitAndCheckPtc(self, order=None, fitType='', doTableArray=False, doFitBootstrap=False):
         localDataset = copy.copy(self.dataset)
-        config = copy.copy(self.defaultConfig)
         configSolve = copy.copy(self.defaultConfigSolve)
+        configLin = cpPipe.linearity.LinearitySolveTask.ConfigClass()
 
         placesTests = 6
         if doFitBootstrap:
@@ -181,15 +181,13 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         else:
             RuntimeError("Enter a fit function type: 'POLYNOMIAL' or 'EXPAPPROXIMATION'")
 
-        config.linearity.maxLookupTableAdu = 200000  # Max ADU in input mock flats
-        config.linearity.maxLinearAdu = 100000
-        config.linearity.minLinearAdu = 50000
+        configLin.maxLookupTableAdu = 200000  # Max ADU in input mock flats
         if doTableArray:
-            config.linearity.linearityType = "LookupTable"
+            configLin.linearityType = "LookupTable"
         else:
-            config.linearity.linearityType = "Polynomial"
-        task = cpPipe.ptc.MeasurePhotonTransferCurveTask(config=config)
+            configLin.linearityType = "Polynomial"
         solveTask = cpPipe.ptc.PhotonTransferCurveSolveTask(config=configSolve)
+        linearityTask = cpPipe.linearity.LinearitySolveTask(config=configLin)
 
         if doTableArray:
             # Non-linearity
@@ -197,22 +195,22 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             # localDataset: PTC dataset (lsst.cp.pipe.ptc.PhotonTransferCurveDataset)
             localDataset = solveTask.fitPtc(localDataset, ptcFitType=fitType)
             # linDataset: Dictionary of `lsst.cp.pipe.ptc.LinearityResidualsAndLinearizersDataset`
-            linDataset = task.linearity.run(localDataset,
-                                            camera=FakeCamera([self.flatExp1.getDetector()]),
-                                            inputDims={'detector': 0})
+            linDataset = linearityTask.run(localDataset,
+                                           camera=[self.flatExp1.getDetector()],
+                                           inputDims={'detector': 0})
             linDataset = linDataset.outputLinearizer
         else:
             localDataset = solveTask.fitPtc(localDataset, ptcFitType=fitType)
-            linDataset = task.linearity.run(localDataset,
-                                            camera=FakeCamera([self.flatExp1.getDetector()]),
-                                            inputDims={'detector': 0})
+            linDataset = linearityTask.run(localDataset,
+                                           camera=[self.flatExp1.getDetector()],
+                                           inputDims={'detector': 0})
             linDataset = linDataset.outputLinearizer
 
         if doTableArray:
             # check that the linearizer table has been filled out properly
             for i in np.arange(numberAmps):
-                tMax = (config.linearity.maxLookupTableAdu)/self.flux
-                timeRange = np.linspace(0., tMax, config.linearity.maxLookupTableAdu)
+                tMax = (configLin.maxLookupTableAdu)/self.flux
+                timeRange = np.linspace(0., tMax, configLin.maxLookupTableAdu)
                 signalIdeal = timeRange*self.flux
                 signalUncorrected = funcPolynomial(np.array([0.0, self.flux, self.k2NonLinearity]),
                                                    timeRange)

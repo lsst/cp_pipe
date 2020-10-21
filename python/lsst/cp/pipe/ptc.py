@@ -30,10 +30,7 @@ from scipy.optimize import least_squares
 
 import lsst.pipe.base.connectionTypes as cT
 
-import datetime
-
 from .astierCovPtcUtils import (fftSize, CovFft, computeCovDirect, fitData)
-from .linearity import LinearitySolveTask
 from .photodiode import getBOTphotodiodeData
 
 from lsst.pipe.tasks.getRepositoryData import DataRefListRunner
@@ -426,18 +423,11 @@ class PhotonTransferCurveSolveConnections(pipeBase.PipelineTaskConnections,
         dimensions=("instrument", "detector"),
         multiple=False,
     )
-    outputLinearizer = cT.Output(
-        name="linearizerProposal",
-        doc="Output proposed linearizer.",
-        storageClass="Linearizer",
-        dimensions=("instrument", "detector"),
-        multiple=False,
-    )
 
 
 class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
                                      pipelineConnections=PhotonTransferCurveSolveConnections):
-    """Configuration for fitting measured covariances and making linearizer.
+    """Configuration for fitting measured covariances.
     """
     maximumRangeCovariancesAstier = pexConfig.Field(
         dtype=int,
@@ -458,11 +448,6 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
         dtype=int,
         doc="Degree of polynomial to fit the PTC, when 'ptcFitType'=POLYNOMIAL.",
         default=3,
-    )
-    doCreateLinearizer = pexConfig.Field(
-        dtype=bool,
-        doc="Calculate non-linearity and persist linearizer?",
-        default=False,
     )
     sigmaCutPtcOutliers = pexConfig.Field(
         dtype=float,
@@ -538,7 +523,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         outputs = self.run(**inputs)
         butlerQC.put(outputs, outputRefs)
 
-    def run(self, inputCovariances, inputPartialPtcDatset, linearitySubtask, detector,
+    def run(self, inputCovariances, inputPartialPtcDatset, detector,
             camera=None, inputDims=None, outputDims=None):
         """Combine ratios to produce crosstalk coefficients.
 
@@ -583,19 +568,6 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
 
         datasetPtc.updateMetadata(setDate=True, camera=camera, detector=detector)
 
-        # Fit a poynomial to calculate non-linearity and persist linearizer.
-        if self.config.doCreateLinearizer:
-            # Fit (non)linearity of signal vs time curve.
-            # Fill up PhotonTransferCurveDataset object.
-            # Fill up array for LUT linearizer (tableArray).
-            # Produce coefficients for Polynomial and Squared linearizers.
-            # Build linearizer objects.
-            dimensions = {'camera': camera.getName(), 'detector': detector.getId()}
-            linearityResults = linearitySubtask.run(datasetPtc, camera, dimensions)
-            linearizer = linearityResults.outputLinearizer
-        else:
-            linearizer = None
-
         # Make an IsrProvenance().
         provenance = IsrProvenance(calibType="PTC")
         provenance._detectorName = detector.getName()
@@ -606,7 +578,6 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
 
         return pipeBase.Struct(
             outputPtcDataset=datasetPtc,
-            outputLinearizer=linearizer,
             outputProvenance=provenance,
         )
 
@@ -1013,10 +984,6 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
         target=PhotonTransferCurveSolveTask,
         doc="Task to fit models to the measured covariances.",
     )
-    linearity = pexConfig.ConfigurableField(
-        target=LinearitySolveTask,
-        doc="Task to solve the linearity."
-    )
     ptcFitType = pexConfig.ChoiceField(
         dtype=str,
         doc="Fit PTC to Eq. 16, Eq. 20 in Astier+19, or to a polynomial.",
@@ -1084,7 +1051,6 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         super().__init__(**kwargs)
         self.makeSubtask("extract")
         self.makeSubtask("solve")
-        self.makeSubtask("linearity")
 
     @pipeBase.timeMethod
     def runDataRef(self, dataRefList):
@@ -1133,18 +1099,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         datasetPtc = self._setBOTPhotocharge(dataRef, datasetPtc, expIds)
         result = self.extract.run(expPairs, datasetPtc, camera, detector, detNum)
         finalResults = self.solve.run(result.outputCovariances, result.outputPartialPtcDataset,
-                                      self.linearity, detector, camera=camera)
-
-        if finalResults.outputLinearizer is not None:
-            butler = dataRef.getButler()
-            self.log.info("Writing linearizer:")
-
-            detName = detector.getName()
-            now = datetime.datetime.utcnow()
-            calibDate = now.strftime("%Y-%m-%d")
-
-            butler.put(finalResults.outputLinearizer, datasetType='Linearizer', dataId={'detector': detNum,
-                       'detectorName': detName, 'calibDate': calibDate})
+                                      detector, camera=camera)
 
         self.log.info("Writing PTC data.")
         dataRef.put(finalResults.outputPtcDataset, datasetType="photonTransferCurveDataset")
