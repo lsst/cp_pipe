@@ -18,10 +18,13 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
+import argparse
+import astropy.time
+import sys
 
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
-from lsst.daf.butler import CollectionType
+from lsst.daf.butler import Butler, CollectionType, Timespan
 
 
 class CertifyCalibration(pipeBase.Task):
@@ -57,9 +60,12 @@ class CertifyCalibration(pipeBase.Task):
     _DefaultName = 'CertifyCalibration'
     ConfigClass = pexConfig.Config
 
-    def __init__(self, *, registry, inputCollection, outputCollection, lastRunOnly=True, **kwargs):
+    def __init__(self, *, butlerRoot, inputCollection, outputCollection, lastRunOnly=True, **kwargs):
         super().__init__(**kwargs)
-        self.registry = registry
+
+        butler = Butler(butlerRoot, run=inputCollection)
+        self.registry = butler.registry
+
         if lastRunOnly:
             try:
                 inputCollection, _ = next(iter(self.registry.getCollectionChain(inputCollection)))
@@ -69,7 +75,7 @@ class CertifyCalibration(pipeBase.Task):
         self.inputCollection = inputCollection
         self.outputCollection = outputCollection
 
-    def run(self, datasetTypeName, timespan):
+    def run(self, datasetTypeName, beginDate=None, endDate=None):
         """Certify all of the datasets of the given type in the input
         collection.
 
@@ -77,11 +83,70 @@ class CertifyCalibration(pipeBase.Task):
         ----------
         datasetTypeName : `str`
             Name of the dataset type to certify.
-        timespan : `lsst.daf.butler.Timespan`
-            Timespan for the validity range.
+        beginDate : `str`
+            Date this calibration should start being used.
+        endDate : `str`
+            Date this calibration should stop being used.
         """
+        timespan = Timespan(
+            begin=astropy.time.Time(beginDate) if beginDate is not None else None,
+            end=astropy.time.Time(endDate) if endDate is not None else None,
+        )
+
         refs = set(self.registry.queryDatasets(datasetTypeName, collections=[self.inputCollection]))
         if not refs:
             raise RuntimeError(f"No inputs found for dataset {datasetTypeName} in {self.inputCollection}.")
         self.registry.registerCollection(self.outputCollection, type=CollectionType.CALIBRATION)
         self.registry.certify(self.outputCollection, refs, timespan)
+
+
+def build_parser():
+    """Construct the argument parser for ``certifyCalibrations.py``.
+
+    Returns
+    -------
+    parser : `argparse.ArgumentParser`
+        The constructed argument parser.
+    """
+
+    parser = argparse.ArgumentParser(description="""
+    Certify a cp_pipe generated calibration as valid for a given date
+    range, and register them with the butler.
+    """)
+
+    parser.add_argument("root", help="Path to butler to use")
+    parser.add_argument("inputCollection", help="Input collection to pull from.")
+    parser.add_argument("outputCollection", help="Output collection to add to.")
+    parser.add_argument("datasetTypeName", help="Dataset type to bless.")
+
+    parser.add_argument("-b", "--beginDate",
+                        help="Start date for using the calibration")
+    parser.add_argument("-e", "--endDate",
+                        help="End date for using the calibration")
+    parser.add_argument(
+        "--search-all-inputs",
+        dest="lastRunOnly",
+        action="store_false",
+        default=True,
+        help=(
+            "Search all children of the given input collection if it is a "
+            "CHAINED collection, instead of just the most recent one."
+        )
+    )
+
+    return parser
+
+
+def main():
+    args = build_parser().parse_args()
+
+    try:
+        certify = CertifyCalibration(butlerRoot=args.root,
+                                     inputCollection=args.inputCollection,
+                                     outputCollection=args.outputCollection,
+                                     lastRunOnly=args.lastRunOnly)
+        certify.run(args.datasetTypeName, beginDate=args.beginDate, endDate=args.endDate)
+    except Exception as e:
+        print(f"{e}", file=sys.stderr)
+        return 1
+    return 0

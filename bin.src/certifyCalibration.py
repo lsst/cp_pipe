@@ -24,69 +24,9 @@
 """Mark cp_pipe generated calibrations as valid, and register them with
 the butler with an appropriate use date range.
 """
-from lsst.cp.pipe.cpCertify import CertifyCalibration
+import sys
+from lsst.cp.pipe.cpCertify import main
 
-import argparse
-import logging
-
-import astropy.time
-
-import lsst.log
-from lsst.log import Log
-
-from lsst.daf.butler import Butler, Timespan
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description=__doc__,
-        formatter_class=argparse.RawDescriptionHelpFormatter
-    )
-    parser.add_argument("root", help="Path to butler to use")
-    parser.add_argument("inputCollection", help="Input collection to pull from.")
-    parser.add_argument("outputCollection", help="Output collection to add to.")
-    parser.add_argument("datasetTypeName", help="Dataset type to bless.")
-
-    parser.add_argument(
-        "--search-all-inputs",
-        dest="lastRunOnly",
-        action="store_false",
-        default=True,
-        help=(
-            "Search all children of the given input collection if it is a "
-            "CHAINED collection, instead of just the most recent one."
-        )
-    )
-    parser.add_argument("-v", "--verbose", action="store_const", dest="logLevel",
-                        default=Log.INFO, const=Log.DEBUG,
-                        help="Set the log level to DEBUG.")
-    parser.add_argument("-b", "--beginDate",
-                        help="Start date for using the calibration")
-    parser.add_argument("-e", "--endDate",
-                        help="End date for using the calibration")
-
-    args = parser.parse_args()
-    log = Log.getLogger("lsst.daf.butler")
-    log.setLevel(args.logLevel)
-
-    # DM-22527: Clean up syntax/log handling in gen3 repo scripts.
-    lgr = logging.getLogger("lsst.daf.butler")
-    lgr.setLevel(logging.INFO if args.logLevel == Log.INFO else logging.DEBUG)
-    lgr.addHandler(lsst.log.LogHandler())
-
-    butler = Butler(args.root, run=args.inputCollection)
-
-    # I'm not sure this is the best way to convert strings to Time objects, but
-    # it works fine on the bare dates we seem to be passing in these days, and
-    # I imagine it should work with more complete time strings as well.
-    timespan = Timespan(
-        begin=astropy.time.Time(args.beginDate) if args.beginDate is not None else None,
-        end=astropy.time.Time(args.endDate) if args.endDate is not None else None,
-    )
-
-    # Do the thing.
-    certify = CertifyCalibration(registry=butler.registry,
-                                 inputCollection=args.inputCollection,
-                                 outputCollection=args.outputCollection,
-                                 lastRunOnly=args.lastRunOnly)
-
-    certify.run(args.datasetTypeName, timespan)
+    sys.exit(main())
