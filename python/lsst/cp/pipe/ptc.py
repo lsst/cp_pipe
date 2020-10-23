@@ -34,7 +34,9 @@ from .astierCovPtcUtils import (fftSize, CovFft, computeCovDirect, fitData)
 from .photodiode import getBOTphotodiodeData
 
 from lsst.pipe.tasks.getRepositoryData import DataRefListRunner
-from lsst.ip.isr import PhotonTransferCurveDataset, IsrProvenance
+from lsst.ip.isr import PhotonTransferCurveDataset
+
+from ._lookupStaticCalibration import lookupStaticCalibration
 
 __all__ = ['PhotonTransferCurveExtractConfig', 'PhotonTransferCurveExtractTask',
            'PhotonTransferCurveSolveConfig', 'PhotonTransferCurveSolveTask',
@@ -51,6 +53,15 @@ class PhotonTransferCurveExtractConnections(pipeBase.PipelineTaskConnections,
         dimensions=("instrument", "exposure", "detector"),
         multiple=True,
         deferLoad=False,
+    )
+
+    camera = cT.PrerequisiteInput(
+        name="camera",
+        doc="Camera the input data comes from.",
+        storageClass="Camera",
+        dimensions=("instrument",),
+        isCalibration=True,
+        lookupFunction=lookupStaticCalibration,
     )
 
     outputCovariances = cT.Output(
@@ -72,6 +83,16 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
                                        pipelineConnections=PhotonTransferCurveExtractConnections):
     """Configuration for the measurement of covariances from flats.
     """
+    ptcFitType = pexConfig.ChoiceField(
+        dtype=str,
+        doc="Fit PTC to Eq. 16, Eq. 20 in Astier+19, or to a polynomial.",
+        default="POLYNOMIAL",
+        allowed={
+            "POLYNOMIAL": "n-degree polynomial (use 'polynomialFitDegree' to set 'n').",
+            "EXPAPPROXIMATION": "Approximation in Astier+19 (Eq. 16).",
+            "FULLCOVARIANCE": "Full covariances model in Astier+19 (Eq. 20)"
+        }
+    )
     maximumRangeCovariancesAstier = pexConfig.Field(
         dtype=int,
         doc="Maximum range of covariances as in Astier+19",
@@ -121,17 +142,16 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
     ConfigClass = PhotonTransferCurveExtractConfig
     _DefaultName = 'cpPtcExtract'
 
-    def run(self, exposurePairs, datasetPtc, camera, detector, detNum):
+    def run(self, exposurePairs, camera):
         """
         exposurePairs : `list`
         List with flat pairs.
         """
-        expIds = []
-        for (exp1, exp2) in exposurePairs.values():
-            id1 = exp1.getInfo().getVisitInfo().getExposureId()
-            id2 = exp2.getInfo().getVisitInfo().getExposureId()
-            expIds.append((id1, id2))
-        self.log.info(f"Measuring PTC using {expIds} exposures for detector {detector.getId()}")
+        detector = list(exposurePairs.values())[0][0].getDetector()
+        detNum = detector.getId()
+        amps = detector.getAmplifiers()
+        ampNames = [amp.getName() for amp in amps]
+        datasetPtc = PhotonTransferCurveDataset(ampNames, self.config.ptcFitType)
 
         for ampName in datasetPtc.ampNames:
             datasetPtc.inputExpIdPairs[ampName] = expIds
@@ -517,14 +537,14 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         """
         inputs = butlerQC.get(inputRefs)
 
-        # Use the dimensions to set calib/provenance information.
+        # Use the dimensions to set calib information.
         inputs['inputDims'] = [exp.dataId.byName() for exp in inputRefs.inputCovariances]
         inputs['outputDims'] = [exp.dataId.byName() for exp in outputRefs.outputPtcDataset]
 
         outputs = self.run(**inputs)
         butlerQC.put(outputs, outputRefs)
 
-    def run(self, inputCovariances, inputPartialPtcDatset, detector,
+    def run(self, inputCovariances, inputPartialPtcDatset,
             camera=None, inputDims=None, outputDims=None):
         """Combine ratios to produce crosstalk coefficients.
 
@@ -547,7 +567,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         camera : `lsst.afw.cameraGeom.Camera`
             Input camera.
         inputDims : `list` [`lsst.daf.butler.DataCoordinate`]
-            DataIds to use to construct provenance.
+            DataIds to use.
         outputDims : `list` [`lsst.daf.butler.DataCoordinate`]
             DataIds to use to populate the output calibration.
         Returns
@@ -559,9 +579,10 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             ``outputProvenance`` : `lsst.ip.isr.IsrProvenance`
                 Provenance data for the new calibration.
         """
-
+        # Re-arrange data in the form of the recarray that fitCovariancesAstier is expecting
         tupleRecords = []
         for dictionary in inputCovariances:
+            # Dummy dictionary (empty)
             if not bool(dictionary):
                 continue
             for key in dictionary:
@@ -577,19 +598,11 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             # Fill up PhotonTransferCurveDataset object.
             datasetPtc = self.fitPtc(inputPartialPtcDatset, inputPartialPtcDatset.ptcFitType)
 
+        detector = inputDims.getDetector()
         datasetPtc.updateMetadata(setDate=True, camera=camera, detector=detector)
-
-        # Make an IsrProvenance().
-        provenance = IsrProvenance(calibType="PTC")
-        provenance._detectorName = detector.getName()
-        if inputDims:
-            provenance.fromDataIds(inputDims)
-            provenance._instrument = outputDims['instrument']
-        provenance.updateMetadata()
 
         return pipeBase.Struct(
             outputPtcDataset=datasetPtc,
-            outputProvenance=provenance,
         )
 
     def fitCovariancesAstier(self, dataset, covariancesWithTagsArray):
@@ -995,16 +1008,6 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
         target=PhotonTransferCurveSolveTask,
         doc="Task to fit models to the measured covariances.",
     )
-    ptcFitType = pexConfig.ChoiceField(
-        dtype=str,
-        doc="Fit PTC to Eq. 16, Eq. 20 in Astier+19, or to a polynomial.",
-        default="POLYNOMIAL",
-        allowed={
-            "POLYNOMIAL": "n-degree polynomial (use 'polynomialFitDegree' to set 'n').",
-            "EXPAPPROXIMATION": "Approximation in Astier+19 (Eq. 16).",
-            "FULLCOVARIANCE": "Full covariances model in Astier+19 (Eq. 20)"
-        }
-    )
     ccdKey = pexConfig.Field(
         dtype=str,
         doc="The key by which to pull a detector from a dataId, e.g. 'ccd' or 'detector'.",
@@ -1079,21 +1082,15 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         # setup necessary objects
         dataRef = dataRefList[0]
-
-        detNum = dataRef.dataId[self.config.ccdKey]
         camera = dataRef.get('camera')
-        detector = camera[dataRef.dataId[self.config.ccdKey]]
 
         if len(set([dataRef.dataId[self.config.ccdKey] for dataRef in dataRefList])) > 1:
             raise RuntimeError("Too many detectors supplied")
 
-        amps = detector.getAmplifiers()
-        ampNames = [amp.getName() for amp in amps]
-        datasetPtc = PhotonTransferCurveDataset(ampNames, self.config.ptcFitType)
-
         # Get the pairs of flatsindexed by expTime
         expPairs = self.makePairs(dataRefList)
-
+        detector = list(expPairs.values())[0][0].getDetector()
+        # Make a list of the Id's of the exp pairs
         expIds = []
         for (exp1, exp2) in expPairs.values():
             id1 = exp1.getInfo().getVisitInfo().getExposureId()
@@ -1101,16 +1098,16 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             expIds.append((id1, id2))
         self.log.info(f"Measuring PTC using {expIds} exposures for detector {detector.getId()}")
 
-        for ampName in datasetPtc.ampNames:
-            datasetPtc.inputExpIdPairs[ampName] = expIds
+        # Get first exposure
+        inputDims = list(expPairs.values())[0][0]
+        result = self.extract.run(expPairs, camera)
+        # Fill up the photodiode data, if found, that will be used by linearity task.
+        intermediatePtcDataset = self._setBOTPhotocharge(dataRef, result.outputPartialPtcDataset, expIds)
+        finalResults = self.solve.run(result.outputCovariances, intermediatePtcDataset, camera=camera,
+                                      inputDims=inputDims)
 
-        # get photodiode data early so that logic can be put in to only use the
-        # data if all files are found, as partial corrections are not possible
-        # or at least require significant logic to deal with
-        datasetPtc = self._setBOTPhotocharge(dataRef, datasetPtc, expIds)
-        result = self.extract.run(expPairs, datasetPtc, camera, detector, detNum)
-        finalResults = self.solve.run(result.outputCovariances, result.outputPartialPtcDataset,
-                                      detector, camera=camera)
+        for ampName in finalResults.outputPtcDataset.ampNames:
+            finalResults.outputPtcDataset.inputExpIdPairs[ampName] = expIds
 
         self.log.info("Writing PTC data.")
         dataRef.put(finalResults.outputPtcDataset, datasetType="photonTransferCurveDataset")
