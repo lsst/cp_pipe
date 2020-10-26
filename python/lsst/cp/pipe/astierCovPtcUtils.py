@@ -268,9 +268,11 @@ def loadData(tupleName, params, expIdMask):
     Params
     ------
     tupleName: `numpy.recarray`
-        Recarray with rows with at least ( mu1, mu2, cov ,var, i, j, npix), where:
-            mu1: mean value of flat1
-            mu2: mean value of flat2
+        Recarray with rows with at least (mu, afwVar, cov ,var, i, j, npix), where:
+            mu : 0.5*(m1 + m2), where:
+                mu1: mean value of flat1
+                mu2: mean value of flat2
+            afwVar : variance of difference flat, calculated with afw
             cov: covariance value at lag (i, j)
             var: variance (covariance value at lag (0, 0))
             i: lag dimension
@@ -313,9 +315,11 @@ def fitData(tupleName, expIdMask, r=8):
     Parameters
     ----------
     tupleName: `numpy.recarray`
-        Recarray with rows with at least ( mu1, mu2, cov ,var, i, j, npix), where:
-            mu1: mean value of flat1
-            mu2: mean value of flat2
+        Recarray with rows with at least (mu, afwVar, cov ,var, i, j, npix), where:
+            mu : 0.5*(m1 + m2), where:
+                mu1: mean value of flat1
+                mu2: mean value of flat2
+            afwVar : variance of difference flat, calculated with afw
             cov: covariance value at lag (i, j)
             var: variance (covariance value at lag (0, 0))
             i: lag dimension

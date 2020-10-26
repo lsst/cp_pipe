@@ -69,13 +69,7 @@ class PhotonTransferCurveExtractConnections(pipeBase.PipelineTaskConnections,
         doc="Extracted flat (co)variances.",
         storageClass="StructuredDataDict",
         dimensions=("instrument", "exposure", "detector"),
-    )
-
-    outputPartialPtcDataset = cT.Output(
-        name="ptcPartialDataset",
-        doc="Ptc dataset partially filled.",
-        storageClass="PhotonTransferCurveDataset",
-        dimensions=("instrument", "exposure", "detector"),
+        multiple=True,
     )
 
 
@@ -83,16 +77,6 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
                                        pipelineConnections=PhotonTransferCurveExtractConnections):
     """Configuration for the measurement of covariances from flats.
     """
-    ptcFitType = pexConfig.ChoiceField(
-        dtype=str,
-        doc="Fit PTC to Eq. 16, Eq. 20 in Astier+19, or to a polynomial.",
-        default="POLYNOMIAL",
-        allowed={
-            "POLYNOMIAL": "n-degree polynomial (use 'polynomialFitDegree' to set 'n').",
-            "EXPAPPROXIMATION": "Approximation in Astier+19 (Eq. 16).",
-            "FULLCOVARIANCE": "Full covariances model in Astier+19 (Eq. 20)"
-        }
-    )
     maximumRangeCovariancesAstier = pexConfig.Field(
         dtype=int,
         doc="Maximum range of covariances as in Astier+19",
@@ -142,6 +126,26 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
     ConfigClass = PhotonTransferCurveExtractConfig
     _DefaultName = 'cpPtcExtract'
 
+    def runQuantum(self, butlerQC, inputRefs, outputRefs):
+        """Ensure that the input and output dimensions are passed along.
+        Parameters
+        ----------
+        butlerQC : `lsst.daf.butler.butlerQuantumContext.ButlerQuantumContext`
+            Butler to operate on.
+        inputRefs : `lsst.pipe.base.connections.InputQuantizedConnection`
+            Input data refs to load.
+        ouptutRefs : `lsst.pipe.base.connections.OutputQuantizedConnection`
+            Output data refs to persist.
+        """
+        inputs = butlerQC.get(inputRefs)
+
+        # Use the dimensions to set calib information.
+        inputs['inputDims'] = [exp.dataId.byName() for exp in inputRefs.inputExp]
+        inputs['outputDims'] = [exp.dataId.byName() for exp in outputRefs.outputCovariances]
+
+        outputs = self.run(**inputs)
+        butlerQC.put(outputs, outputRefs)
+
     def run(self, exposurePairs, camera):
         """
         exposurePairs : `list`
@@ -151,7 +155,6 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         detNum = detector.getId()
         amps = detector.getAmplifiers()
         ampNames = [amp.getName() for amp in amps]
-        datasetPtc = PhotonTransferCurveDataset(ampNames, self.config.ptcFitType)
 
         for ampName in datasetPtc.ampNames:
             datasetPtc.inputExpIdPairs[ampName] = expIds
@@ -192,13 +195,9 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                 if (muDiff <= self.config.minMeanSignal) or (muDiff >= self.config.maxMeanSignal):
                     continue
 
-                datasetPtc.rawExpTimes[ampName].append(expTime)
-                datasetPtc.rawMeans[ampName].append(muDiff)
-                datasetPtc.rawVars[ampName].append(varDiff)
-
-                tupleRows[(ampName, expId1, expId2)] = [(muDiff, ) + covRow + (ampNumber, expTime, ampName)
-                                                        for covRow in covAstier]
-            if nAmpsNan == len(datasetPtc.ampNames):
+                tupleRows[(ampName, expId1, expId2)] = [(muDiff, varDiff) + covRow + (ampNumber, expTime,
+                                                        ampName) for covRow in covAstier]
+            if nAmpsNan == len(ampNames):
                 msg = f"NaN mean in all amps of exposure pair {expId1}, {expId2} of detector {detNum}."
                 self.log.warn(msg)
                 continue
@@ -209,7 +208,6 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
 
         return pipeBase.Struct(
             outputCovariances=tupleRecords,
-            outputPartialPtcDataset=datasetPtc
         )
 
     def measureMeanVarCov(self, exposure1, exposure2, region=None, covAstierRealSpace=False):
@@ -424,13 +422,6 @@ class PhotonTransferCurveSolveConnections(pipeBase.PipelineTaskConnections,
         dimensions=("instrument", "exposure", "detector"),
         multiple=False,
     )
-    inputPartialPtcDataset = cT.Input(
-        name="ptcPartialDataset",
-        doc="Ptc dataset.",
-        storageClass="PhotonTransferCurveDataset",
-        dimensions=("instrument", "exposure", "detector"),
-        multiple=True,
-    )
     camera = cT.PrerequisiteInput(
         name="camera",
         doc="Camera the input data comes from.",
@@ -450,6 +441,16 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
                                      pipelineConnections=PhotonTransferCurveSolveConnections):
     """Configuration for fitting measured covariances.
     """
+    ptcFitType = pexConfig.ChoiceField(
+        dtype=str,
+        doc="Fit PTC to Eq. 16, Eq. 20 in Astier+19, or to a polynomial.",
+        default="POLYNOMIAL",
+        allowed={
+            "POLYNOMIAL": "n-degree polynomial (use 'polynomialFitDegree' to set 'n').",
+            "EXPAPPROXIMATION": "Approximation in Astier+19 (Eq. 16).",
+            "FULLCOVARIANCE": "Full covariances model in Astier+19 (Eq. 20)"
+        }
+    )
     maximumRangeCovariancesAstier = pexConfig.Field(
         dtype=int,
         doc="Maximum range of covariances as in Astier+19",
@@ -539,31 +540,30 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
 
         # Use the dimensions to set calib information.
         inputs['inputDims'] = [exp.dataId.byName() for exp in inputRefs.inputCovariances]
-        inputs['outputDims'] = [exp.dataId.byName() for exp in outputRefs.outputPtcDataset]
 
         outputs = self.run(**inputs)
         butlerQC.put(outputs, outputRefs)
 
-    def run(self, inputCovariances, inputPartialPtcDatset,
-            camera=None, inputDims=None, outputDims=None):
-        """Combine ratios to produce crosstalk coefficients.
+    def run(self, inputCovariances, camera=None, inputDims=None, outputDims=None):
+        """Fit measure covariances to different models.
 
         Parameters
         ----------
-        inputCovariances : `numpy.recarray`
-            Tuple with at least (mu, cov, var, i, j, npix), where:
+        inputCovariances : `list`:
+            [dict[`(ampName, expid1, expId2)`], dict(),...]
+            The interleaved empty dictionary is there to ensure that all
+            input exposures/dataIds have corresponding outputs.
+            The values in the non-empty dictionary are tuples with at
+            least (mu, afwVar, cov, var, i, j, npix), where:
             mu : 0.5*(m1 + m2), where:
                 mu1: mean value of flat1
                 mu2: mean value of flat2
+            afwVar : variance of difference flat, calculated with afW
             cov: covariance value at lag(i, j)
-            var: variance(covariance value at lag(0, 0))
+            var: variance (covariance value at lag(0, 0))
             i: lag dimension
             j: lag dimension
             npix: number of pixels used for covariance calculation.
-
-        inputPartialPtcDatset : `lsst.ip.isr.PhotonTransferCurveDataset`
-            The dataset containing information such as the means, variances,
-            and exposure times.
         camera : `lsst.afw.cameraGeom.Camera`
             Input camera.
         inputDims : `list` [`lsst.daf.butler.DataCoordinate`]
@@ -575,9 +575,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         results : `lsst.pipe.base.Struct`
             The results struct containing:
             ``outputPtcDatset`` : `lsst.ip.isr.PhotonTransferCurveDataset`
-                Final PTC dataset.
-            ``outputProvenance`` : `lsst.ip.isr.IsrProvenance`
-                Provenance data for the new calibration.
+                Final PTC dataset, containing information such as the means, variances,
+                and exposure times.
         """
         # Re-arrange data in the form of the recarray that fitCovariancesAstier is expecting
         tupleRecords = []
@@ -587,16 +586,30 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
                 continue
             for key in dictionary:
                 tupleRecords += dictionary[key]
-        tags = ['mu', 'i', 'j', 'var', 'cov', 'npix', 'ext', 'expTime', 'ampName']
+        tags = ['mu', 'afwVar', 'i', 'j', 'var', 'cov', 'npix', 'ext', 'expTime', 'ampName']
         covariancesWithTags = np.core.records.fromrecords(tupleRecords, names=tags)
 
-        if inputPartialPtcDatset.ptcFitType in ["FULLCOVARIANCE", ]:
+        # Create PTC dataset and fill raw means, expTime, and afwVariances
+        ampNames = np.array(np.unique(covariancesWithTags['ampName']), dtype=str)
+        datasetPtc = PhotonTransferCurveDataset(ampNames, self.config.ptcFitType)
+        mask = (covariancesWithTags['i'] == 0) & (covariancesWithTags['j'] == 0)
+        for ampName in ampNames:
+            index = covariancesWithTags[mask]['ampName'] == ampName
+            rawExpTimes = covariancesWithTags[mask][index]['expTime']
+            rawMeans = covariancesWithTags[mask][index]['mu']
+            rawVars = covariancesWithTags[mask][index]['afwVar']
+
+            datasetPtc.rawExpTimes[ampName] = rawExpTimes
+            datasetPtc.rawMeans[ampName] = rawMeans
+            datasetPtc.rawVars[ampName] = rawVars
+
+        if self.config.ptcFitType in ["FULLCOVARIANCE", ]:
             # Calculate covariances and fit them, including the PTC, to Astier+19 full model (Eq. 20)
-            datasetPtc = self.fitCovariancesAstier(inputPartialPtcDatset, covariancesWithTags)
-        elif inputPartialPtcDatset.ptcFitType in ["EXPAPPROXIMATION", "POLYNOMIAL"]:
+            datasetPtc = self.fitCovariancesAstier(datasetPtc, covariancesWithTags)
+        elif self.config.ptcFitType in ["EXPAPPROXIMATION", "POLYNOMIAL"]:
             # Fit the PTC to a polynomial or to Astier+19 exponential approximation (Eq. 16)
             # Fill up PhotonTransferCurveDataset object.
-            datasetPtc = self.fitPtc(inputPartialPtcDatset, inputPartialPtcDatset.ptcFitType)
+            datasetPtc = self.fitPtc(datasetPtc)
 
         detector = inputDims.getDetector()
         datasetPtc.updateMetadata(setDate=True, camera=camera, detector=detector)
@@ -612,10 +625,11 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
             The dataset containing information such as the means, variances and exposure times.
         covariancesWithTagsArray : `numpy.recarray`
-            Tuple with at least (mu, cov, var, i, j, npix), where:
-            mu : 0.5*(m1 + m2), where:
+            Tuple with at least (mu, afwVar, cov, var, i, j, npix), where:
+            mu: 0.5*(m1 + m2), where:
                 mu1: mean value of flat1
                 mu2: mean value of flat2
+            afwVar: variance of difference flat, calculated with afw.
             cov: covariance value at lag(i, j)
             var: variance(covariance value at lag(0, 0))
             i: lag dimension
@@ -782,10 +796,11 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         array[array == 0] = substituteValue
         return array
 
-    def fitPtc(self, dataset, ptcFitType):
+    def fitPtc(self, dataset):
         """Fit the photon transfer curve to a polynimial or to Astier+19 approximation.
         Fit the photon transfer curve with either a polynomial of the order
-        specified in the task config, or using the Astier approximation.
+        specified in the task config, or using the exponential approximation
+        in Astier+19 (Eq. 16).
         Sigma clipping is performed iteratively for the fit, as well as an
         initial clipping of data points that are more than
         config.initialNonLinearityExclusionThreshold away from lying on a
@@ -797,17 +812,23 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         Parameters
         ----------
         dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
-            The dataset containing the means, variances and exposure times
-        ptcFitType : `str`
-            Fit a 'POLYNOMIAL' (degree: 'polynomialFitDegree') or
-            'EXPAPPROXIMATION' (Eq. 16 of Astier+19) to the PTC
+            The dataset containing the means, variances and exposure times.
         Returns
         -------
         dataset: `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
-            This is the same dataset as the input paramter, however, it has been modified
+            This is the same dataset as the input parameter, however, it has been modified
             to include information such as the fit vectors and the fit parameters. See
             the class `PhotonTransferCurveDatase`.
+
+        Raises
+        ------
+        RuntimeError:
+            Raises if dataset.ptcFitType is None.
         """
+        if dataset.ptcFitType is None:
+            raise RuntimeError(f"None ptcFitType in PTC dataset.")
+        else:
+            ptcFitType = dataset.ptcFitType
 
         matrixSide = self.config.maximumRangeCovariancesAstier
         nanMatrix = np.empty((matrixSide, matrixSide))
@@ -1101,13 +1122,14 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         # Get first exposure
         inputDims = list(expPairs.values())[0][0]
         result = self.extract.run(expPairs, camera)
-        # Fill up the photodiode data, if found, that will be used by linearity task.
-        intermediatePtcDataset = self._setBOTPhotocharge(dataRef, result.outputPartialPtcDataset, expIds)
-        finalResults = self.solve.run(result.outputCovariances, intermediatePtcDataset, camera=camera,
-                                      inputDims=inputDims)
+        finalResults = self.solve.run(result.outputCovariances, camera=camera, inputDims=inputDims)
 
         for ampName in finalResults.outputPtcDataset.ampNames:
             finalResults.outputPtcDataset.inputExpIdPairs[ampName] = expIds
+
+        # Fill up the photodiode data, if found, that will be used by linearity task.
+        finalResults.outputPtcDataset = self._setBOTPhotocharge(dataRef, finalResults.outputPtcDataset,
+                                                                expIds)
 
         self.log.info("Writing PTC data.")
         dataRef.put(finalResults.outputPtcDataset, datasetType="photonTransferCurveDataset")
@@ -1148,7 +1170,6 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             expDate = tempFlat.getInfo().getVisitInfo().getDate().get()
             expDict.setdefault(expDate, tempFlat)
         sortedExps = {k: expDict[k] for k in sorted(expDict)}
-
         flatPairs = {}
         for exp in sortedExps:
             tempFlat = sortedExps[exp]

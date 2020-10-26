@@ -70,10 +70,11 @@ def makeCovArray(inputTuple, maxRangeFromTuple=8):
     Parameters
     ----------
     inputTuple: `numpy.recarray`
-        Recarray with rows with at least (mu, cov, var, i, j, npix), where:
+        Recarray with rows with at least (mu, afwVar, cov, var, i, j, npix), where:
         mu : 0.5*(m1 + m2), where:
             mu1: mean value of flat1
             mu2: mean value of flat2
+        afwVar: variance of difference flat, calculated with afw
         cov: covariance value at lag(i, j)
         var: variance(covariance value at lag(0, 0))
         i: lag dimension
@@ -221,10 +222,11 @@ class CovFit:
     Parameters
     ----------
     inputTuple: `numpy.recarray`
-        Tuple with at least (mu, cov, var, i, j, npix), where:
-        mu : 0.5*(m1 + m2), where:
+        Tuple with at least (mu, afwVar, cov, var, i, j, npix), where:
+        mu: 0.5*(m1 + m2), where:
             mu1: mean value of flat1
             mu2: mean value of flat2
+        afwVar: variance of difference flat, calculated with afw.
         cov: covariance value at lag(i, j)
         var: variance(covariance value at lag(0, 0))
         i: lag dimension
