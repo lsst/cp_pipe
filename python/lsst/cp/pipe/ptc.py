@@ -426,7 +426,8 @@ class PhotonTransferCurveSolveConnections(pipeBase.PipelineTaskConnections,
         name="camera",
         doc="Camera the input data comes from.",
         storageClass="Camera",
-        dimensions=("instrument", "calibration_label"),
+        dimensions=("instrument",),
+        isCalibration=True,
     )
     outputPtcDataset = cT.Output(
         name="ptcDatsetProposal",
@@ -825,11 +826,10 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         RuntimeError:
             Raises if dataset.ptcFitType is None.
         """
-        if dataset.ptcFitType is None:
-            raise RuntimeError(f"None ptcFitType in PTC dataset.")
-        else:
+        if dataset.ptcFitType:
             ptcFitType = dataset.ptcFitType
-
+        else:
+            raise RuntimeError(f"None ptcFitType in PTC dataset.")
         matrixSide = self.config.maximumRangeCovariancesAstier
         nanMatrix = np.empty((matrixSide, matrixSide))
         nanMatrix[:] = np.nan

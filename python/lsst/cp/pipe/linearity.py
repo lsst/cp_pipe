@@ -171,7 +171,6 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         are not included in the non-linearity correction.
         """
         detector = camera[inputDims['detector']]
-
         if self.config.linearityType == 'LookupTable':
             table = np.zeros((len(detector), self.config.maxLookupTableAdu), dtype=np.float32)
             tableIndex = 0
@@ -216,7 +215,6 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
             linearOrdinate = linearOrdinate[fluxMask]
             fitOrdinate = inputOrdinate[fluxMask]
             self.debugFit('linearFit', inputAbscissa, inputOrdinate, linearOrdinate, fluxMask, ampName)
-
             # Do fits
             if self.config.linearityType in ['Polynomial', 'Squared', 'LookupTable']:
                 polyFit = np.zeros(fitOrder + 1)

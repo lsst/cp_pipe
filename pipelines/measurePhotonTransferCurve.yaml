@@ -28,14 +28,12 @@ tasks:
     config:
       connections.inputExp: 'cpPtcProc'
       connections.outputCovariances: 'cpCovariances'
-      connections.outputPtcPartialDataset: 'cpPartialDataset'
   ptcSolve:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
     config:
       connections.inputCovariances: 'cpCovariances'
-      connections.inputPtcPartialDataset: 'cpPartialDataset'
       connections.outputPtcDataset: 'ptcDataset'
-  contracts: 
-    - ptcSolve.maximumRangeCovariancesAstier == ptcExtract.maximumRangeCovariancesAstier
-    - ptcSolve.minMeanSignal == ptcExtract.minMeanSignal
-    - ptcSolve.maxMeanSignal == ptcExtract.maxMeanSignal
+contracts: 
+  - ptcSolve.maximumRangeCovariancesAstier == ptcExtract.maximumRangeCovariancesAstier
+  - ptcSolve.minMeanSignal == ptcExtract.minMeanSignal
+  - ptcSolve.maxMeanSignal == ptcExtract.maxMeanSignal
