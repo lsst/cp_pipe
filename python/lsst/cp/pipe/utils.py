@@ -428,13 +428,13 @@ def funcPolynomial(pars, x):
         Polynomial coefficients. Its length determines the polynomial order.
 
     x : `numpy.array`
-        Signal mu (ADU).
+        Abscisa array.
 
     Returns
     -------
-    C_00 (variance) in ADU^2.
+    Ordinate array after evaluating polynomial of order len(pars)-1 at `x`.
     """
-    return poly.polyval(x, [*pars])  # C_00
+    return poly.polyval(x, [*pars])
 
 
 def funcAstier(pars, x):
