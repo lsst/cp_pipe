@@ -511,7 +511,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             dataset.ptcFitPars[amp] = np.nan
             dataset.ptcFitParsError[amp] = np.nan
             dataset.ptcFitChiSq[amp] = np.nan
-            if amp in covFits:
+            if (amp in covFits and (covFits[amp].covParams is not None) and
+                    (covFitsNoB[amp].covParams is not None)):
                 fit = covFits[amp]
                 fitNoB = covFitsNoB[amp]
                 # Save full covariances, covariances models, and their weights

@@ -582,8 +582,6 @@ class CovFit:
             if counter == maxFitIter:
                 break
 
-        if ierr not in [1, 2, 3, 4]:
-            raise RuntimeError("Minimization failed: " + mesg)
         self.covParams = paramsCov
         return params
 
