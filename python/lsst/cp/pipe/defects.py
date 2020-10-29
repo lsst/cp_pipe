@@ -36,6 +36,7 @@ from lsst.geom import Box2I, Point2I
 from lsst.meas.algorithms import SourceDetectionTask
 from lsst.ip.isr import IsrTask, Defects
 from .utils import countMaskedPixels
+from lsst.pipe.tasks.getRepositoryData import DataRefListRunner
 
 
 __all__ = ['MeasureDefectsTaskConfig', 'MeasureDefectsTask',
@@ -110,13 +111,6 @@ class MeasureDefectsTaskConfig(pipeBase.PipelineTaskConfig,
              "'badOnAndOffPixelColumnThreshold')."),
         default=30,
     )
-    edgesAsDefects = pexConfig.Field(
-        dtype=bool,
-        doc=("Mark all edge pixels, as defined by nPixBorder[UpDown, LeftRight], as defects."
-             " Normal treatment is to simply exclude this region from the defect finding, such that no"
-             " defect will be located there."),
-        default=False,
-    )
 
     def validate(self):
         super().validate()
@@ -133,13 +127,27 @@ class MeasureDefectsTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
     _DefaultName = 'cpDefectMeasure'
 
     def run(self, inputExp, camera):
+        """Measure one exposure for defects.
+
+        Parameters
+        ----------
+        inputExp : `lsst.afw.image.Exposure`
+             Exposure to examine.
+        camera : `lsst.afw.cameraGeom.Camera`
+             Camera to use for metadata.
+
+        Returns
+        -------
+        results : `lsst.pipe.base.Struct`
+             Results struct containing:
+             - ``outputDefects` : `lsst.ip.isr.Defects`
+                 The defects measured from this exposure.
+        """
         detector = inputExp.getDetector()
 
-        # midTime += self._getMjd(inputExp)
         filterName = inputExp.getFilter().getName()
-        datasetType = inputExp.getVisitInfo()
-        defects = self.findHotAndColdPixels(inputExp, [self.nSigmaBright, self.nSigmaDark])
-        # datasetType)
+        datasetType = inputExp.getInfo().getVisitInfo()
+        defects = self.findHotAndColdPixels(inputExp, [self.config.nSigmaBright, self.config.nSigmaDark])
 
         msg = "Found %s defects containing %s pixels in master %s"
         self.log.info(msg, len(defects), self._nPixFromDefects(defects), datasetType)
@@ -149,6 +157,25 @@ class MeasureDefectsTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         return pipeBase.Struct(
             outputDefects=defects,
         )
+
+    @staticmethod
+    def _nPixFromDefects(defects):
+        """Count pixels in a defect.
+
+        Parameters
+        ----------
+        defects : `lsst.ip.isr.Defects`
+            Defects to measure.
+
+        Returns
+        -------
+        nPix : `int`
+            Number of defect pixels.
+        """
+        nPix = 0
+        for defect in defects:
+            nPix += defect.getBBox().getArea()
+        return nPix
 
     def findHotAndColdPixels(self, exp, nSigma):
         """Find hot and cold pixels in an image.
@@ -545,6 +572,13 @@ class MergeDefectsTaskConfig(pipeBase.PipelineTaskConfig,
         min=0,
         max=1,
     )
+    edgesAsDefects = pexConfig.Field(
+        dtype=bool,
+        doc=("Mark all edge pixels, as defined by nPixBorder[UpDown, LeftRight], as defects."
+             " Normal treatment is to simply exclude this region from the defect finding, such that no"
+             " defect will be located there."),
+        default=False,
+    )
 
 
 class MergeDefectsTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
@@ -555,7 +589,7 @@ class MergeDefectsTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
 
     def run(self, inputDefects, camera):
         detectorId = inputDefects[0].getMetadata().get('DETECTOR', None)
-        if not detectorId:
+        if detectorId is None:
             raise RuntimeError("Cannot identify detector id.")
         detector = camera[detectorId]
 
@@ -579,7 +613,7 @@ class MergeDefectsTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         indices = np.where(sumImage.getImage().getArray() >= threshold)
 
         BADBIT = sumImage.getMask().getPlaneBitMask('BAD')
-        sumImage.getMask().getArray()[indices] != BADBIT
+        sumImage.getMask().getArray()[indices] |= BADBIT
 
         self.log.info("Post-merge %s pixels marked as defects" % len(indices[0]))
 
@@ -701,6 +735,8 @@ class FindDefectsTask(pipeBase.CmdLineTask):
     ConfigClass = FindDefectsTaskConfig
     _DefaultName = "findDefects"
 
+    RunnerClass = DataRefListRunner
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.makeSubtask("measure")
@@ -715,13 +751,8 @@ class FindDefectsTask(pipeBase.CmdLineTask):
 
         Parameters
         ----------
-        dataRef : `lsst.daf.persistence.ButlerDataRef`
-            dataRef for the detector for the visits to be fit.
-        visitList : `list` [`int`]
-            List of visits to be processed. If config.mode == 'VISITS' then the
-            list of visits is used. If config.mode == 'MASTER' then the length
-            of visitList must be one, and the corresponding master calibrations
-            are used.
+        dataRefList : `list` [`lsst.daf.persistence.ButlerDataRef`]
+            dataRefs for the data to be checked for defects.
 
         Returns
         -------
@@ -747,9 +778,18 @@ class FindDefectsTask(pipeBase.CmdLineTask):
                 activeChip = exposure.getDetector().getName()
 
             result = self.measure.run(exposure, camera)
-            singleExpDefects.append(result.outputDefect)
+            singleExpDefects.append(result.outputDefects)
 
         finalResults = self.merge.run(singleExpDefects, camera)
-        dataRef.put(finalResults.mergedDefects, "defects")
+        metadata = finalResults.mergedDefects.getMetadata()
+        inputDims = {'calibDate': metadata['CALIBDATE'],
+                     'raftName': metadata['RAFTNAME'],
+                     'detectorName': metadata['SLOTNAME'],
+                     'detector': metadata['DETECTOR'],
+                     'ccd': metadata['DETECTOR'],
+                     'ccdnum': metadata['DETECTOR']}
+
+        butler = dataRef.getButler()
+        butler.put(finalResults.mergedDefects, "defects", inputDims)
 
         return finalResults
