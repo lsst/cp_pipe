@@ -44,7 +44,7 @@ __all__ = ['PhotonTransferCurveExtractConfig', 'PhotonTransferCurveExtractTask',
 
 
 class PhotonTransferCurveExtractConnections(pipeBase.PipelineTaskConnections,
-                                            dimensions=("instrument", "detector")):
+                                            dimensions=("instrument", "detector", "exposure")):
 
     inputExp = cT.Input(
         name="ptcInputExposures",
@@ -126,30 +126,15 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
     ConfigClass = PhotonTransferCurveExtractConfig
     _DefaultName = 'cpPtcExtract'
 
-    def runQuantum(self, butlerQC, inputRefs, outputRefs):
-        """Ensure that the input and output dimensions are passed along.
+    def run(self, exposurePairs, camera):
+        """Measure covariances from difference of flat pairs
+
         Parameters
         ----------
-        butlerQC : `lsst.daf.butler.butlerQuantumContext.ButlerQuantumContext`
-            Butler to operate on.
-        inputRefs : `lsst.pipe.base.connections.InputQuantizedConnection`
-            Input data refs to load.
-        ouptutRefs : `lsst.pipe.base.connections.OutputQuantizedConnection`
-            Output data refs to persist.
-        """
-        inputs = butlerQC.get(inputRefs)
-
-        # Use the dimensions to set calib information.
-        inputs['inputDims'] = [exp.dataId.byName() for exp in inputRefs.inputExp]
-        inputs['outputDims'] = [exp.dataId.byName() for exp in outputRefs.outputCovariances]
-
-        outputs = self.run(**inputs)
-        butlerQC.put(outputs, outputRefs)
-
-    def run(self, exposurePairs, camera):
-        """
         exposurePairs : `list`
-        List with flat pairs.
+            List with flat pairs.
+        camera : `lsst.afw.cameraGeom.Camera`
+            Input camera.
         """
         detector = list(exposurePairs.values())[0][0].getDetector()
         detNum = detector.getId()
@@ -420,7 +405,7 @@ class PhotonTransferCurveSolveConnections(pipeBase.PipelineTaskConnections,
         doc="Tuple with measured covariances from flats.",
         storageClass="StructuredDataDict",
         dimensions=("instrument", "exposure", "detector"),
-        multiple=False,
+        multiple=True,
     )
     camera = cT.PrerequisiteInput(
         name="camera",
@@ -428,6 +413,7 @@ class PhotonTransferCurveSolveConnections(pipeBase.PipelineTaskConnections,
         storageClass="Camera",
         dimensions=("instrument",),
         isCalibration=True,
+        lookupFunction=lookupStaticCalibration,
     )
     outputPtcDataset = cT.Output(
         name="ptcDatsetProposal",
