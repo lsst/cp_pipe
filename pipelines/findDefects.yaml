@@ -4,7 +4,7 @@ tasks:
     class: lsst.ip.isr.isrTask.IsrTask
     config:
       connections.ccdExposure: 'raw'
-      connections.outputExposure: 'cpCrosstalkProc'
+      connections.outputExposure: 'cpDefectsProc'
       doWrite: True
       doOverscan: True
       doAssembleCcd: True
@@ -25,9 +25,9 @@ tasks:
     class: lsst.cp.pipe.defects.MeasureDefectsTask
     config:
       connections.inputExp: 'cpDefectsProc'
-      connections.outputRatios: 'cpPartialDefects'
+      connections.outputDefects: 'cpPartialDefects'
   mergeDefects:
     class: lsst.cp.pipe.defects.MergeDefectsTask
     config:
-      connections.inputRatios: 'cpPartialDefects'
-      connections.outputCrosstalk: 'crosstalk'
+      connections.inputDefects: 'cpPartialDefects'
+      connections.mergedDefects: 'defects'

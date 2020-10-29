@@ -38,6 +38,7 @@ from lsst.ip.isr import IsrTask, Defects
 from .utils import countMaskedPixels
 from lsst.pipe.tasks.getRepositoryData import DataRefListRunner
 
+from ._lookupStaticCalibration import lookupStaticCalibration
 
 __all__ = ['MeasureDefectsTaskConfig', 'MeasureDefectsTask',
            'MergeDefectsTaskConfig', 'MergeDefectsTask',
@@ -53,11 +54,13 @@ class MeasureDefectsConnections(pipeBase.PipelineTaskConnections,
         dimensions=("instrument", "detector", "exposure"),
         multiple=False
     )
-    camera = cT.Input(
+    camera = cT.PrerequisiteInput(
         name='camera',
         doc="Camera associated with this exposure.",
         storageClass="Camera",
         dimensions=("instrument", ),
+        isCalibration=True,
+        lookupFunction=lookupStaticCalibration,
     )
 
     outputDefects = cT.Output(
@@ -515,11 +518,13 @@ class MergeDefectsConnections(pipeBase.PipelineTaskConnections,
         dimensions=("instrument", "detector", "exposure"),
         multiple=True,
     )
-    camera = cT.Input(
+    camera = cT.PrerequisiteInput(
         name='camera',
         doc="Camera associated with these defects.",
         storageClass="Camera",
         dimensions=("instrument", ),
+        isCalibration=True,
+        lookupFunction=lookupStaticCalibration,
     )
 
     mergedDefects = cT.Output(
@@ -527,6 +532,8 @@ class MergeDefectsConnections(pipeBase.PipelineTaskConnections,
         doc="Final merged defects.",
         storageClass="Defects",
         dimensions=("instrument", "detector"),
+        multiple=False,
+        isCalibration=True,
     )
 
 
