@@ -149,14 +149,17 @@ class MeasureDefectsTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         detector = inputExp.getDetector()
 
         filterName = inputExp.getFilter().getName()
-        datasetType = inputExp.getInfo().getVisitInfo()
+        datasetType = inputExp.getMetadata().get('IMGTYPE', 'UNKNOWN')
+
         defects = self.findHotAndColdPixels(inputExp, [self.config.nSigmaBright, self.config.nSigmaDark])
 
-        msg = "Found %s defects containing %s pixels in master %s"
+        msg = "Found %s defects containing %s pixels in %s"
         self.log.info(msg, len(defects), self._nPixFromDefects(defects), datasetType)
 
         defects.updateMetadata(camera=camera, detector=detector, filterName=filterName,
-                               setCalibId=True, setDate=True)
+                               setCalibId=True, setDate=True,
+                               cpDefectGenImageType=datasetType)
+
         return pipeBase.Struct(
             outputDefects=defects,
         )
@@ -600,41 +603,68 @@ class MergeDefectsTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
             raise RuntimeError("Cannot identify detector id.")
         detector = camera[detectorId]
 
-        sumImage = afwImage.MaskedImageF(detector.getBBox())
+        imageTypes = set()
         for inDefect in inputDefects:
+            imageType = inDefect.getMetadata().get('cpDefectGenImageType', 'UNKNOWN')
+            imageTypes.add(imageType)
+
+        # Determine common defect pixels separately for each input image type.
+        splitDefects = list()
+        for imageType in imageTypes:
+            sumImage = afwImage.MaskedImageF(detector.getBBox())
+            count = 0
+            for inDefect in inputDefects:
+                if imageType == inDefect.getMetadata().get('cpDefectGenImageType', 'UNKNOWN'):
+                    count += 1
+                    for defect in inDefect:
+                        sumImage.image[defect.getBBox()] += 1.0
+            sumImage /= count
+            nDetected = len(np.where(sumImage.getImage().getArray() > 0)[0])
+            self.log.info("Pre-merge %s pixels with non-zero detections for %s" % (nDetected, imageType))
+
+            if self.config.combinationMode == 'AND':
+                threshold = 1.0
+            elif self.config.combinationMode == 'OR':
+                threshold = 0.0
+            elif self.config.combinationMode == 'FRACTION':
+                threshold = self.config.combinationFraction
+            else:
+                raise RuntimeError(f"Got unsupported combinationMode {self.config.combinationMode}")
+            indices = np.where(sumImage.getImage().getArray() > threshold)
+            BADBIT = sumImage.getMask().getPlaneBitMask('BAD')
+            sumImage.getMask().getArray()[indices] |= BADBIT
+            self.log.info("Post-merge %s pixels marked as defects for %s" % (len(indices[0]), imageType))
+            partialDefect = Defects.fromMask(sumImage, 'BAD')
+            splitDefects.append(partialDefect)
+
+        # Do final combination of separate image types
+        finalImage = afwImage.MaskedImageF(detector.getBBox())
+        for inDefect in splitDefects:
             for defect in inDefect:
-                sumImage.image[defect.getBBox()] += 1.0
-        sumImage /= len(inputDefects)
+                finalImage.image[defect.getBBox()] += 1
+        finalImage /= len(splitDefects)
+        nDetected = len(np.where(finalImage.getImage().getArray() > 0)[0])
+        self.log.info("Pre-final merge %s pixels with non-zero detections" % (nDetected, ))
 
-        nDetected = len(np.where(sumImage.getImage().getArray() > 0)[0])
-        self.log.info("Pre-merge %s pixels with non-zero detections" % nDetected)
-
-        if self.config.combinationMode == 'AND':
-            threshold = 1.0
-        elif self.config.combinationMode == 'OR':
-            threshold = 0.0
-        elif self.config.combinationMode == 'FRACTION':
-            threshold = self.config.combinationFraction
-        else:
-            raise RuntimeError(f"Got unsupported combinationMode {self.config.combinationMode}")
-        indices = np.where(sumImage.getImage().getArray() >= threshold)
-
-        BADBIT = sumImage.getMask().getPlaneBitMask('BAD')
-        sumImage.getMask().getArray()[indices] |= BADBIT
-
-        self.log.info("Post-merge %s pixels marked as defects" % len(indices[0]))
+        # This combination is the OR of all image types
+        threshold = 0.0
+        indices = np.where(finalImage.getImage().getArray() > threshold)
+        BADBIT = finalImage.getMask().getPlaneBitMask('BAD')
+        finalImage.getMask().getArray()[indices] |= BADBIT
+        self.log.info("Post-final merge %s pixels marked as defects" % (len(indices[0]), ))
 
         if self.config.edgesAsDefects:
             self.log.info("Masking edge pixels as defects.")
             # Do the same as IsrTask.maskEdges()
             box = detector.getBBox()
-            subImage = sumImage[box]
+            subImage = finalImage[box]
             box.grow(-self.nPixBorder)
             SourceDetectionTask.setEdgeBits(subImage, box, BADBIT)
 
-        merged = Defects.fromMask(sumImage, 'BAD')
+        merged = Defects.fromMask(finalImage, 'BAD')
         merged.updateMetadata(camera=camera, detector=detector, filterName=None,
                               setCalibId=True, setDate=True)
+
         return pipeBase.Struct(
             mergedDefects=merged,
         )
