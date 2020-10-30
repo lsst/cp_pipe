@@ -501,6 +501,57 @@ def funcAstier(pars, x):
     return 0.5/(a00*gain*gain)*(np.exp(2*a00*x*gain)-1) + noise/(gain*gain)  # C_00
 
 
+def makeExpPairs(exposureList, log=None):
+    """Pair exposures by exposure time.
+
+    Parameters
+    ----------
+    expossureList : `list`[`lsst.afw.image.exposure.exposure.ExposureF`]
+        input list of exposures.
+
+    Returns
+    ------
+    flatPairs : `dict` [`float`,
+                        (`lsst.afw.image.exposure.exposure.ExposureF`,
+                        `lsst.afw.image.exposure.exposure.ExposureF`)]
+      Dictionary that groups flat-field exposures that have the same
+      exposure time (seconds).
+    log : `lsst.log.log`, optional
+        Logger to handle messages.
+
+    Notes
+    -----
+    We use the difference of one pair of flat-field images taken at the
+    same exposure time when calculating the PTC to reduce Fixed Pattern
+    Noise. If there are > 2 flat-field images with the
+    same exposure time, the first two are kept and the rest discarded.
+    """
+    flatPairs = {}
+    for exp in exposureList:
+        tempFlat = exp
+        expTime = tempFlat.getInfo().getVisitInfo().getExposureTime()
+        listAtExpTime = flatPairs.setdefault(expTime, [])
+        if len(listAtExpTime) >= 2:
+            if log:
+                log.warn(f"Already found 2 exposures at expTime {expTime}. "
+                         f"Ignoring exposure {tempFlat.getInfo().getVisitInfo().getExposureId()}")
+        else:
+            listAtExpTime.append(tempFlat)
+
+    keysToDrop = []
+    for (key, value) in flatPairs.items():
+        if len(value) < 2:
+            keysToDrop.append(key)
+
+    if len(keysToDrop):
+        for key in keysToDrop:
+            if log:
+                log.warn(f"Only one exposure found at expTime {key}. Dropping exposure "
+                         f"{flatPairs[key][0].getInfo().getVisitInfo().getExposureId()}.")
+            flatPairs.pop(key)
+    return flatPairs
+
+
 def checkExpLengthEqual(exp1, exp2, v1=None, v2=None, raiseWithMessage=False):
     """Check the exposure lengths of two exposures are equal.
 

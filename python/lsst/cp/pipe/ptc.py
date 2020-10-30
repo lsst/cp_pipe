@@ -25,7 +25,7 @@ from collections import Counter
 import lsst.afw.math as afwMath
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
-from .utils import (fitLeastSq, fitBootstrap, funcPolynomial, funcAstier)
+from .utils import (fitLeastSq, fitBootstrap, funcPolynomial, funcAstier, makeExpPairs)
 from scipy.optimize import least_squares
 
 import lsst.pipe.base.connectionTypes as cT
@@ -44,11 +44,12 @@ __all__ = ['PhotonTransferCurveExtractConfig', 'PhotonTransferCurveExtractTask',
 
 
 class PhotonTransferCurveExtractConnections(pipeBase.PipelineTaskConnections,
-                                            dimensions=("instrument", "detector", "exposure")):
+                                            dimensions=("instrument", "detector")):
 
-    inputExp = cT.Input(
-        name="ptcInputExposures",
-        doc="Input post-ISR processed exposures to measure covariances from.",
+    exposurePairs = cT.Input(
+        name="ptcInputExposurePairs",
+        doc="Input post-ISR processed exposure pairs (flats) to"
+            "measure covariances from.",
         storageClass="Exposure",
         dimensions=("instrument", "exposure", "detector"),
         multiple=True,
@@ -126,13 +127,37 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
     ConfigClass = PhotonTransferCurveExtractConfig
     _DefaultName = 'cpPtcExtract'
 
-    def run(self, exposurePairs, camera):
+    def runQuantum(self, butlerQC, inputRefs, outputRefs):
+        """Ensure that the input and output dimensions are passed along.
+        Parameters
+        ----------
+        butlerQC : `lsst.daf.butler.butlerQuantumContext.ButlerQuantumContext`
+            Butler to operate on.
+        inputRefs : `lsst.pipe.base.connections.InputQuantizedConnection`
+            Input data refs to load.
+        ouptutRefs : `lsst.pipe.base.connections.OutputQuantizedConnection`
+            Output data refs to persist.
+        """
+        inputs = butlerQC.get(inputRefs)
+        # Use the dimensions to set calib information.
+        inputs['inputDims'] = [exp.dataId.byName() for exp in inputRefs.exposurePairs]
+
+        inputs['exposurePairs'] = makeExpPairs(inputs['inputExp'], log=self.log)
+
+        outputs = self.run(**inputs)
+        butlerQC.put(outputs, outputRefs)
+
+    def run(self, exposurePairs, camera, inputDims=None):
         """Measure covariances from difference of flat pairs
 
         Parameters
         ----------
-        exposurePairs : `list`
-            List with flat pairs.
+        exposurePairs : `dict` [`float`,
+                        (`lsst.afw.image.exposure.exposure.ExposureF`,
+                        `lsst.afw.image.exposure.exposure.ExposureF`)]
+        Dictionary that groups flat-field exposures that have the same
+        exposure time (seconds).
+
         camera : `lsst.afw.cameraGeom.Camera`
             Input camera.
         """
@@ -190,7 +215,6 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
             # This empty dictionary is here to ensure that all input exposures/dataIds have corresponding
             # outputs.
             tupleRecords.append(dict())
-
         return pipeBase.Struct(
             outputCovariances=tupleRecords,
         )
@@ -1094,20 +1118,32 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         if len(set([dataRef.dataId[self.config.ccdKey] for dataRef in dataRefList])) > 1:
             raise RuntimeError("Too many detectors supplied")
 
-        # Get the pairs of flatsindexed by expTime
-        expPairs = self.makePairs(dataRefList)
-        detector = list(expPairs.values())[0][0].getDetector()
+        # Organize exposures by observation date.
+        expDict = {}
+        for dataRef in dataRefList:
+            try:
+                tempFlat = dataRef.get("postISRCCD")
+            except RuntimeError:
+                self.log.warn("postISR exposure could not be retrieved. Ignoring flat.")
+                continue
+            expDate = tempFlat.getInfo().getVisitInfo().getDate().get()
+            expDict.setdefault(expDate, tempFlat)
+        sortedExps = list({k: expDict[k] for k in sorted(expDict)}.values())
+        # Get the pairs of flats indexed by expTime
+        expPairsDict = makeExpPairs(sortedExps)
+        expPairsList = list(expPairsDict.values())
+        detector = expPairsList[0][0].getDetector()
         # Make a list of the Id's of the exp pairs
         expIds = []
-        for (exp1, exp2) in expPairs.values():
+        for (exp1, exp2) in expPairsList:
             id1 = exp1.getInfo().getVisitInfo().getExposureId()
             id2 = exp2.getInfo().getVisitInfo().getExposureId()
             expIds.append((id1, id2))
         self.log.info(f"Measuring PTC using {expIds} exposures for detector {detector.getId()}")
 
         # Get first exposure
-        inputDims = list(expPairs.values())[0][0]
-        result = self.extract.run(expPairs, camera)
+        inputDims = expPairsList[0][0]
+        result = self.extract.run(expPairsDict, camera)
         finalResults = self.solve.run(result.outputCovariances, camera=camera, inputDims=inputDims)
 
         for ampName in finalResults.outputPtcDataset.ampNames:
@@ -1121,65 +1157,6 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         dataRef.put(finalResults.outputPtcDataset, datasetType="photonTransferCurveDataset")
 
         return
-
-    def makePairs(self, dataRefList):
-        """Produce a list of flat pairs indexed by exposure time.
-
-        Parameters
-        ----------
-        dataRefList : `list` [`lsst.daf.peristence.ButlerDataRef`]
-            Data references for exposures for detectors to process.
-
-        Return
-        ------
-        flatPairs : `dict` [`float`,
-                            `lsst.afw.image.exposure.exposure.ExposureF`]
-          Dictionary that groups flat-field exposures that have the same
-          exposure time (seconds).
-
-        Notes
-        -----
-        We use the difference of one pair of flat-field images taken at the
-        same exposure time when calculating the PTC to reduce Fixed Pattern
-        Noise. If there are > 2 flat-field images with the
-        same exposure time, the first two are kept and the rest discarded.
-        """
-
-        # Organize exposures by observation date.
-        expDict = {}
-        for dataRef in dataRefList:
-            try:
-                tempFlat = dataRef.get("postISRCCD")
-            except RuntimeError:
-                self.log.warn("postISR exposure could not be retrieved. Ignoring flat.")
-                continue
-            expDate = tempFlat.getInfo().getVisitInfo().getDate().get()
-            expDict.setdefault(expDate, tempFlat)
-        sortedExps = {k: expDict[k] for k in sorted(expDict)}
-        flatPairs = {}
-        for exp in sortedExps:
-            tempFlat = sortedExps[exp]
-            expTime = tempFlat.getInfo().getVisitInfo().getExposureTime()
-            listAtExpTime = flatPairs.setdefault(expTime, [])
-            if len(listAtExpTime) >= 2:
-                self.log.warn(f"Already found 2 exposures at expTime {expTime}. "
-                              f"Ignoring exposure {tempFlat.getInfo().getVisitInfo().getExposureId()}")
-            else:
-                listAtExpTime.append(tempFlat)
-
-        keysToDrop = []
-        for (key, value) in flatPairs.items():
-            if len(value) < 2:
-                keysToDrop.append(key)
-
-        if len(keysToDrop):
-            for key in keysToDrop:
-                self.log.warn(f"Only one exposure found at expTime {key}. Dropping exposure "
-                              f"{flatPairs[key][0].getInfo().getVisitInfo().getExposureId()}.")
-                flatPairs.pop(key)
-        sortedFlatPairs = {k: flatPairs[k] for k in sorted(flatPairs)}
-        return sortedFlatPairs
-
 
     def _setBOTPhotocharge(self, dataRef, datasetPtc, expIdList):
         """Set photoCharge attribute in PTC dataset

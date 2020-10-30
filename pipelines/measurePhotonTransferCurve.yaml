@@ -1,29 +1,29 @@
 description: cp_pipe PTC calibration construction.
 tasks:
-  isr:
-    class: lsst.ip.isr.isrTask.IsrTask
-    config:
-      connections.ccdExposure: 'raw'
-      connections.outputExposure: 'cpPtcProc'
-      doWrite: True
-      doOverscan: True
-      doAssembleCcd: True
-      doBias: True
-      doVariance: True
-      doLinearize: True
-      doCrosstalk: True
-      doBrighterFatter: False
-      doDark: True
-      doStrayLight: False
-      doFlat: False
-      doFringe: False
-      doApplyGains: False
-      doDefect: True
-      doNanMasking: True
-      doInterpolate: True
-      doSaturationInterpolation: False
-      growSaturationFootprintSize: 0
-  ptcExtract:
+#  isr:
+#    class: lsst.ip.isr.isrTask.IsrTask
+#    config:
+#      connections.ccdExposure: 'raw'
+#      connections.outputExposure: 'cpPtcProc'
+#      doWrite: True
+#      doOverscan: True
+#      doAssembleCcd: True
+#      doBias: True
+#      doVariance: True
+#      doLinearize: True
+#      doCrosstalk: False
+#      doBrighterFatter: False
+#      doDark: True
+#      doStrayLight: False
+#      doFlat: False
+#      doFringe: False
+#      doApplyGains: False
+#      doDefect: True
+#      doNanMasking: True
+#      doInterpolate: True
+#      doSaturationInterpolation: False
+#      growSaturationFootprintSize: 0
+  ptcExtract2:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
     config:
       connections.inputExp: 'cpPtcProc'
@@ -34,6 +34,6 @@ tasks:
       connections.inputCovariances: 'cpCovariances'
       connections.outputPtcDataset: 'ptcDataset'
 contracts: 
-  - ptcSolve.maximumRangeCovariancesAstier == ptcExtract.maximumRangeCovariancesAstier
-  - ptcSolve.minMeanSignal == ptcExtract.minMeanSignal
-  - ptcSolve.maxMeanSignal == ptcExtract.maxMeanSignal
+  - ptcSolve.maximumRangeCovariancesAstier == ptcExtract2.maximumRangeCovariancesAstier
+  - ptcSolve.minMeanSignal == ptcExtract2.minMeanSignal
+  - ptcSolve.maxMeanSignal == ptcExtract2.maxMeanSignal
