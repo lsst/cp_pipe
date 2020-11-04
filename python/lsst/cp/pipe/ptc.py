@@ -46,7 +46,7 @@ __all__ = ['PhotonTransferCurveExtractConfig', 'PhotonTransferCurveExtractTask',
 class PhotonTransferCurveExtractConnections(pipeBase.PipelineTaskConnections,
                                             dimensions=("instrument", "detector")):
 
-    exposurePairs = cT.Input(
+    inputExp = cT.Input(
         name="ptcInputExposurePairs",
         doc="Input post-ISR processed exposure pairs (flats) to"
             "measure covariances from.",
@@ -140,14 +140,32 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         """
         inputs = butlerQC.get(inputRefs)
         # Use the dimensions to set calib information.
-        inputs['inputDims'] = [exp.dataId.byName() for exp in inputRefs.exposurePairs]
-
-        inputs['exposurePairs'] = makeExpPairs(inputs['inputExp'], log=self.log)
+        temp = makeExpPairs(inputs['inputExp'], log=self.log)
+        inputs['inputExp'] = temp
+        # Use the dimensions to set calib information.
+        inputs['inputDims'] = [exp.getInfo().getVisitInfo().getExposureId()
+                               for exp in np.array(list(inputs['inputExp'].values())).ravel()]
 
         outputs = self.run(**inputs)
+        outputExpIds = []
+        for dictionary in outputs.outputCovariances:
+            if 'test' in dictionary:
+                continue
+            # Keys: amp, expId1, expId2
+            # one entry per amp, same flat pairs: use first entry
+            _, expId1, expId2 = list(dictionary.keys())[0]
+            outputExpIds.append(expId1)
+            outputExpIds.append(expId2)
+
+        # Need to update outputRefs because some exposures may have been discarded
+        temp = []
+        for ref in outputRefs.outputCovariances:
+            initialId = ref.dataId['exposure']
+            if initialId not in outputExpIds:
+                outputs.outputCovariances.append(dict())
         butlerQC.put(outputs, outputRefs)
 
-    def run(self, exposurePairs, camera, inputDims=None):
+    def run(self, inputExp, camera, inputDims=None):
         """Measure covariances from difference of flat pairs
 
         Parameters
@@ -161,6 +179,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         camera : `lsst.afw.cameraGeom.Camera`
             Input camera.
         """
+        exposurePairs = inputExp
         detector = list(exposurePairs.values())[0][0].getDetector()
         detNum = detector.getId()
         amps = detector.getAmplifiers()
@@ -200,9 +219,12 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                            f" {expId2} of detector {detNum}.")
                     self.log.warn(msg)
                     nAmpsNan += 1
+                    # To to ensure that all input exposures/dataIds have corresponding outputs.
+                    tupleRecords.append(dict(test=1))
                     continue
 
                 if (muDiff <= self.config.minMeanSignal) or (muDiff >= self.config.maxMeanSignal):
+                    tupleRecords.append(dict(test=1))
                     continue
 
                 tupleRows[(ampName, expId1, expId2)] = [(muDiff, varDiff) + covRow + (ampNumber, expTime,
@@ -214,7 +236,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
             tupleRecords.append(tupleRows)
             # This empty dictionary is here to ensure that all input exposures/dataIds have corresponding
             # outputs.
-            tupleRecords.append(dict())
+            tupleRecords.append(dict(test=1))
         return pipeBase.Struct(
             outputCovariances=tupleRecords,
         )
@@ -551,7 +573,6 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
 
         # Use the dimensions to set calib information.
         inputs['inputDims'] = [exp.dataId.byName() for exp in inputRefs.inputCovariances]
-
         outputs = self.run(**inputs)
         butlerQC.put(outputs, outputRefs)
 
