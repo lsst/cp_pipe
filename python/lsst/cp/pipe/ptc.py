@@ -348,6 +348,12 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             allTags += tags
             tupleRecords += tupleRows
         covariancesWithTags = np.core.records.fromrecords(tupleRecords, names=allTags)
+        # Sort raw vectors by rawMeans index
+        for ampName in datasetPtc.ampNames:
+            index = np.argsort(datasetPtc.rawMeans[ampName])
+            datasetPtc.rawExpTimes[ampName] = np.array(datasetPtc.rawExpTimes[ampName])[index]
+            datasetPtc.rawMeans[ampName] = np.array(datasetPtc.rawMeans[ampName])[index]
+            datasetPtc.rawVars[ampName] = np.array(datasetPtc.rawVars[ampName])[index]
 
         if self.config.ptcFitType in ["FULLCOVARIANCE", ]:
             # Calculate covariances and fit them, including the PTC, to Astier+19 full model (Eq. 20)
@@ -443,7 +449,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 self.log.warn(f"Only one exposure found at expTime {key}. Dropping exposure "
                               f"{flatPairs[key][0].getInfo().getVisitInfo().getExposureId()}.")
                 flatPairs.pop(key)
-        return flatPairs
+        sortedFlatPairs = {k: flatPairs[k] for k in sorted(flatPairs)}
+        return sortedFlatPairs
 
     def fitCovariancesAstier(self, dataset, covariancesWithTagsArray):
         """Fit measured flat covariances to full model in Astier+19.
@@ -982,8 +989,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 ptcFunc = funcAstier
                 parsIniPtc = [-1e-9, 1.0, 10.]  # a00, gain, noise
                 # lowers and uppers obtained from studies by C. Lage (UC Davis, 11/2020).
-                bounds = self._boundsForAstier(parsIniPtc, lowers=[-1E-4, 0.5, -100],
-                                               uppers=[1E-4, 2.5, 100])
+                bounds = self._boundsForAstier(parsIniPtc, lowers=[-1e-4, 0.5, -100],
+                                               uppers=[1e-4, 2.5, 100])
             if ptcFitType == 'POLYNOMIAL':
                 ptcFunc = funcPolynomial
                 parsIniPtc = self._initialParsForPolynomial(self.config.polynomialFitDegree + 1)
