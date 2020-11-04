@@ -282,6 +282,51 @@ class NonexistentDatasetTaskDataIdContainer(pipeBase.DataIdContainer):
             self.refList += refList
 
 
+def irlsFit(initialParams, dataX, dataY, function, weightsY=None):
+    """Iteratively reweighted least squares fit.
+
+    This uses the `lsst.cp.pipe.utils.fitLeastSq`, but applies
+    weights based on the Cauchy distribution to the fitter.  See
+    e.g. Holland and Welsch, 1977, doi:10.1080/03610927708827533
+
+    Parameters
+    ----------
+    initialParams : `list` [`float`]
+        Starting parameters.
+    dataX : `numpy.array` [`float`]
+        Abscissa data.
+    dataY : `numpy.array` [`float`]
+        Ordinate data.
+    function : callable
+        Function to fit.
+    weightsY : `numpy.array` [`float`]
+        Weights to apply to the data.
+
+    Returns
+    -------
+    polyFit : `list` [`float`]
+        Final best fit parameters.
+    polyFitErr : `list` [`float`]
+        Final errors on fit parameters.
+    chiSq : `float`
+        Reduced chi squared.
+    weightsY : `list` [`float`]
+        Final weights used for each point.
+
+    """
+    if not weightsY:
+        weightsY = np.ones_like(dataX)
+
+    polyFit, polyFitErr, chiSq = fitLeastSq(initialParams, dataX, dataY, function, weightsY=weightsY)
+    for iteration in range(10):
+        # Use Cauchy weights
+        resid = np.abs(dataY - function(polyFit, dataX)) / np.sqrt(dataY)
+        weightsY = 1.0 / (1.0 + np.sqrt(resid / 2.385))
+        polyFit, polyFitErr, chiSq = fitLeastSq(initialParams, dataX, dataY, function, weightsY=weightsY)
+
+    return polyFit, polyFitErr, chiSq, weightsY
+
+
 def fitLeastSq(initialParams, dataX, dataY, function, weightsY=None):
     """Do a fit and estimate the parameter errors using using scipy.optimize.leastq.
 
