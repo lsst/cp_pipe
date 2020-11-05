@@ -533,7 +533,7 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
 
         # Test the result of _nPixFromDefects()
         # via two different ways of calculating area.
-        # self.assertEqual(defectArea, task._nPixFromDefects(defects))
+        self.assertEqual(defectArea, task.measure._nPixFromDefects(defects))
         # defectArea should be >= crossCheck
         self.assertGreaterEqual(defectArea, crossCheck)
 
@@ -564,6 +564,22 @@ class FindDefectsTaskTestCase(lsst.utils.tests.TestCase):
         testImage.mask[badBox] |= BADBIT
 
         self.assertEqual(imageSize - badBox.getArea(), self.defaultTask.measure._getNumGoodPixels(mi, 'BAD'))
+
+    def test_edgeMasking(self):
+        """Check that the right number of edge pixels are masked by _setEdgeBits()"""
+        testImage = self.flatExp.clone()
+        mi = testImage.maskedImage
+
+        self.assertEqual(cpPipe.utils.countMaskedPixels(mi, 'EDGE'), 0)
+        self.defaultTask.measure._setEdgeBits(mi)
+
+        hEdge = self.defaultConfig.measure.nPixBorderLeftRight
+        vEdge = self.defaultConfig.measure.nPixBorderUpDown
+        xSize, ySize = mi.getDimensions()
+
+        nEdge = xSize*vEdge*2 + ySize*hEdge*2 - hEdge*vEdge*4
+
+        self.assertEqual(cpPipe.utils.countMaskedPixels(mi, 'EDGE'), nEdge)
 
 
 class TestMemory(lsst.utils.tests.MemoryTestCase):

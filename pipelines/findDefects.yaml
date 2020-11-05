@@ -1,4 +1,4 @@
-description: cp_pipe CROSSTALK calibration construction.
+description: cp_pipe DEFECT calibration construction.
 tasks:
   isr:
     class: lsst.ip.isr.isrTask.IsrTask

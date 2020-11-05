@@ -73,7 +73,7 @@ class MeasureDefectsConnections(pipeBase.PipelineTaskConnections,
 
 class MeasureDefectsTaskConfig(pipeBase.PipelineTaskConfig,
                                pipelineConnections=MeasureDefectsConnections):
-    """Configuration for measuring linearity from an exposure
+    """Configuration for measuring defects from a list of exposures
     """
     nSigmaBright = pexConfig.Field(
         dtype=float,
@@ -151,7 +151,11 @@ class MeasureDefectsTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         filterName = inputExp.getFilter().getName()
         datasetType = inputExp.getMetadata().get('IMGTYPE', 'UNKNOWN')
 
-        defects = self.findHotAndColdPixels(inputExp, [self.config.nSigmaBright, self.config.nSigmaDark])
+        if datasetType.lower() == 'dark':
+            nSigmaList = [self.config.nSigmaBright]
+        else:
+            nSigmaList = [self.config.nSigmaBright, self.config.nSigmaDark]
+        defects = self.findHotAndColdPixels(inputExp, nSigmaList)
 
         msg = "Found %s defects containing %s pixels in %s"
         self.log.info(msg, len(defects), self._nPixFromDefects(defects), datasetType)
@@ -238,7 +242,7 @@ class MeasureDefectsTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
             mergedSet = None
             for sigma in nSigma:
                 nSig = np.abs(sigma)
-                # self.debugHistogram('ampFlux', ampImg, nSig)
+                self.debugHistogram('ampFlux', ampImg, nSig, exp)
                 polarity = {-1: False, 1: True}[np.sign(sigma)]
 
                 threshold = afwDetection.createThreshold(nSig, 'stdev', polarity=polarity)
@@ -253,8 +257,8 @@ class MeasureDefectsTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
 
             footprintList += mergedSet.getFootprints()
 
-            # self.debugView('defectMap', ampImg,
-            #                Defects.fromFootprintList(mergedSet.getFootprints()), detector)
+            self.debugView('defectMap', ampImg,
+                           Defects.fromFootprintList(mergedSet.getFootprints()), exp.getDetector())
 
         defects = Defects.fromFootprintList(footprintList)
         defects = self.maskBlocksIfIntermitentBadPixelsInColumn(defects)
@@ -433,7 +437,6 @@ class MeasureDefectsTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
                     break
 
     def debugHistogram(self, stepname, ampImage, nSigmaUsed, exp):
-        # def _plotAmpHistogram(self, dataRef, exp, visit, nSigmaUsed):  # pragma: no cover
         """
         Make a histogram of the distribution of pixel values for each amp.
 
@@ -458,57 +461,58 @@ class MeasureDefectsTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         if frame:
             import matplotlib.pyplot as plt
 
-        detector = exp.getDetector()
-        nX = np.floor(np.sqrt(len(detector)))
-        nY = len(detector) // nX
-        fig, ax = plt.subplots(nrows=nY, ncols=nX, sharex='col', sharey='row', figsize=(13, 10))
+            detector = exp.getDetector()
+            nX = np.floor(np.sqrt(len(detector)))
+            nY = len(detector) // nX
+            fig, ax = plt.subplots(nrows=nY, ncols=nX, sharex='col', sharey='row', figsize=(13, 10))
 
-        expTime = exp.getInfo().getVisitInfo().getExposureTime()
+            expTime = exp.getInfo().getVisitInfo().getExposureTime()
 
-        for (amp, a) in zip(reversed(detector), ax.flatten()):
-            mi = exp.maskedImage[amp.getBBox()]
+            for (amp, a) in zip(reversed(detector), ax.flatten()):
+                mi = exp.maskedImage[amp.getBBox()]
 
-            # normalize by expTime as we plot in ADU/s and don't always work with master calibs
-            mi.image.array /= expTime
-            stats = afwMath.makeStatistics(mi, afwMath.MEANCLIP | afwMath.STDEVCLIP)
-            mean, sigma = stats.getValue(afwMath.MEANCLIP), stats.getValue(afwMath.STDEVCLIP)
-            # Get array of pixels
-            EDGEBIT = exp.maskedImage.mask.getPlaneBitMask("EDGE")
-            imgData = mi.image.array[(mi.mask.array & EDGEBIT) == 0].flatten()
-            edgeData = mi.image.array[(mi.mask.array & EDGEBIT) != 0].flatten()
+                # normalize by expTime as we plot in ADU/s and don't always work with master calibs
+                mi.image.array /= expTime
+                stats = afwMath.makeStatistics(mi, afwMath.MEANCLIP | afwMath.STDEVCLIP)
+                mean, sigma = stats.getValue(afwMath.MEANCLIP), stats.getValue(afwMath.STDEVCLIP)
+                # Get array of pixels
+                EDGEBIT = exp.maskedImage.mask.getPlaneBitMask("EDGE")
+                imgData = mi.image.array[(mi.mask.array & EDGEBIT) == 0].flatten()
+                edgeData = mi.image.array[(mi.mask.array & EDGEBIT) != 0].flatten()
 
-            thrUpper = mean + nSigmaUsed*sigma
-            thrLower = mean - nSigmaUsed*sigma
+                thrUpper = mean + nSigmaUsed*sigma
+                thrLower = mean - nSigmaUsed*sigma
 
-            nRight = len(imgData[imgData > thrUpper])
-            nLeft = len(imgData[imgData < thrLower])
+                nRight = len(imgData[imgData > thrUpper])
+                nLeft = len(imgData[imgData < thrLower])
 
-            nsig = nSigmaUsed + 1.2  # add something small so the edge of the plot is out from level used
-            leftEdge = mean - nsig * nSigmaUsed*sigma
-            rightEdge = mean + nsig * nSigmaUsed*sigma
-            nbins = np.linspace(leftEdge, rightEdge, 1000)
-            ey, bin_borders, patches = a.hist(edgeData, histtype='step', bins=nbins, lw=1, edgecolor='red')
-            y, bin_borders, patches = a.hist(imgData, histtype='step', bins=nbins, lw=3, edgecolor='blue')
+                nsig = nSigmaUsed + 1.2  # add something small so the edge of the plot is out from level used
+                leftEdge = mean - nsig * nSigmaUsed*sigma
+                rightEdge = mean + nsig * nSigmaUsed*sigma
+                nbins = np.linspace(leftEdge, rightEdge, 1000)
+                ey, bin_borders, patches = a.hist(edgeData, histtype='step', bins=nbins,
+                                                  lw=1, edgecolor='red')
+                y, bin_borders, patches = a.hist(imgData, histtype='step', bins=nbins,
+                                                 lw=3, edgecolor='blue')
 
-            # Report number of entries in over-and -underflow bins, i.e. off the edges of the histogram
-            nOverflow = len(imgData[imgData > rightEdge])
-            nUnderflow = len(imgData[imgData < leftEdge])
+                # Report number of entries in over-and -underflow bins, i.e. off the edges of the histogram
+                nOverflow = len(imgData[imgData > rightEdge])
+                nUnderflow = len(imgData[imgData < leftEdge])
 
-            # Put v-lines and textboxes in
-            a.axvline(thrUpper, c='k')
-            a.axvline(thrLower, c='k')
-            msg = f"{amp.getName()}\nmean:{mean: .2f}\n$\\sigma$:{sigma: .2f}"
-            a.text(0.65, 0.6, msg, transform=a.transAxes, fontsize=11)
-            msg = f"nLeft:{nLeft}\nnRight:{nRight}\nnOverflow:{nOverflow}\nnUnderflow:{nUnderflow}"
-            a.text(0.03, 0.6, msg, transform=a.transAxes, fontsize=11.5)
+                # Put v-lines and textboxes in
+                a.axvline(thrUpper, c='k')
+                a.axvline(thrLower, c='k')
+                msg = f"{amp.getName()}\nmean:{mean: .2f}\n$\\sigma$:{sigma: .2f}"
+                a.text(0.65, 0.6, msg, transform=a.transAxes, fontsize=11)
+                msg = f"nLeft:{nLeft}\nnRight:{nRight}\nnOverflow:{nOverflow}\nnUnderflow:{nUnderflow}"
+                a.text(0.03, 0.6, msg, transform=a.transAxes, fontsize=11.5)
 
-            # set axis limits and scales
-            a.set_ylim([1., 1.7*np.max(y)])
-            lPlot, rPlot = a.get_xlim()
-            a.set_xlim(np.array([lPlot, rPlot]))
-            a.set_yscale('log')
-            a.set_xlabel("ADU/s")
-
+                # set axis limits and scales
+                a.set_ylim([1., 1.7*np.max(y)])
+                lPlot, rPlot = a.get_xlim()
+                a.set_xlim(np.array([lPlot, rPlot]))
+                a.set_yscale('log')
+                a.set_xlabel("ADU/s")
         return
 
 
