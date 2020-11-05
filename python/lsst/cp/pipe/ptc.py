@@ -300,7 +300,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         # Set defaults
         maxMeanSignalDict = {ampName: 1e6 for ampName in ampNames}
         minMeanSignalDict = {ampName: 0.0 for ampName in ampNames}
-        
+
         for ampCutoff in maxMeanSignalSplit:
             ampName = ampCutoff.split(":")[0]
             value = float(ampCutoff.split(":")[1])
@@ -478,7 +478,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             the class `PhotonTransferCurveDatase`.
         """
 
-        covFits, covFitsNoB = fitData(covariancesWithTagsArray, maxMu=1e9,
+        covFits, covFitsNoB = fitData(covariancesWithTagsArray,
                                       r=self.config.maximumRangeCovariancesAstier,
                                       nSigmaFullFit=self.config.sigmaClipFullFitCovariancesAstier,
                                       maxIterFullFit=self.config.maxIterFullFitCovariancesAstier)

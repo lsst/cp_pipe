@@ -272,26 +272,6 @@ class CovFit:
 
         return
 
-    def setMaxMu(self, maxMu):
-        """Select signal level based on max average signal in ADU"""
-        # mus are sorted at construction
-        index = self.mu < maxMu
-        k = index.sum()
-        self.mu = self.mu[:k]
-        self.cov = self.cov[:k, ...]
-        self.vcov = self.vcov[:k, ...]
-        self.sqrtW = self.sqrtW[:k, ...]
-
-        return
-
-    def setMaxMuElectrons(self, maxMuEl):
-        """Select signal level based on max average signal in electrons"""
-        g = self.getGain()
-        kill = (self.mu*g > maxMuEl)
-        self.sqrtW[kill, :, :] = 0
-
-        return
-
     def copy(self):
         """Make a copy of params"""
         cop = copy.deepcopy(self)
@@ -604,7 +584,6 @@ class CovFit:
         if ierr not in [1, 2, 3, 4]:
             raise RuntimeError("Minimization failed: " + mesg)
         self.covParams = paramsCov
-
         return params
 
     def ndof(self):
