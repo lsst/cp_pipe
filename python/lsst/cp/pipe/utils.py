@@ -22,7 +22,7 @@
 
 __all__ = ['PairedVisitListTaskRunner', 'SingleVisitListTaskRunner',
            'NonexistentDatasetTaskDataIdContainer', 'parseCmdlineNumberString',
-           'countMaskedPixels', 'checkExpLengthEqual']
+           'countMaskedPixels', 'checkExpLengthEqual', 'ddict2dict']
 
 import re
 import numpy as np
@@ -587,3 +587,24 @@ def validateIsrConfig(isrTask, mandatory=None, forbidden=None, desirable=None, u
     if checkTrim:  # subtask setting, seems non-trivial to combine with above lists
         if not isrTask.assembleCcd.config.doTrim:
             raise RuntimeError("Must trim when assembling CCDs. Set config.isr.assembleCcd.doTrim to True")
+
+
+def ddict2dict(d):
+    """Convert nested default dictionaries to regular dictionaries.
+
+    This is needed to prevent yaml persistence issues.
+
+    Parameters
+    ----------
+    d : `defaultdict`
+        A possibly nested set of `defaultdict`.
+
+    Returns
+    -------
+    dict : `dict`
+        A possibly nested set of `dict`.
+    """
+    for k, v in d.items():
+        if isinstance(v, dict):
+            d[k] = ddict2dict(v)
+    return dict(d)

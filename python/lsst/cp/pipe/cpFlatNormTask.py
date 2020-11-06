@@ -27,6 +27,7 @@ import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 import lsst.pipe.base.connectionTypes as cT
 from lsst.cp.pipe.cpCombine import VignetteExposure
+from lsst.cp.pipe.utils import ddict2dict
 
 from ._lookupStaticCalibration import lookupStaticCalibration
 
@@ -308,7 +309,7 @@ class CpFlatNormalizationTask(pipeBase.PipelineTask,
                     outputScales['detScale'][det][amp.getName()] = detScales[detAmpId].tolist()
 
         return pipeBase.Struct(
-            outputScales=outputScales,
+            outputScales=ddict2dict(outputScales),
         )
 
     def measureScales(self, bgMatrix, bgCounts=None, iterations=10):

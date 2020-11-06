@@ -33,6 +33,7 @@ from lsst.afw.display import getDisplay
 from lsst.pex.config import Config, Field, ListField, ConfigurableField
 from lsst.ip.isr import CrosstalkCalib, IsrProvenance
 from lsst.pipe.tasks.getRepositoryData import DataRefListRunner
+from lsst.cp.pipe.utils import ddict2dict
 
 from ._lookupStaticCalibration import lookupStaticCalibration
 
@@ -225,7 +226,7 @@ class CrosstalkExtractTask(pipeBase.PipelineTask,
                 count = np.sum(select)
                 self.log.debug("  Source amplifier: %s", sourceAmpName)
 
-                outputFluxes[sourceChip][sourceAmpName] = sourceAmpImage.image.array[select]
+                outputFluxes[sourceChip][sourceAmpName] = sourceAmpImage.image.array[select].tolist()
 
                 for targetAmp in targetDetector:
                     # iterate over targetExposure
@@ -252,8 +253,8 @@ class CrosstalkExtractTask(pipeBase.PipelineTask,
             outputRatios[targetChip][sourceChip] = ratioDict
 
         return pipeBase.Struct(
-            outputRatios=outputRatios,
-            outputFluxes=outputFluxes
+            outputRatios=ddict2dict(outputRatios),
+            outputFluxes=ddict2dict(outputFluxes)
         )
 
     def debugView(self, stepname, exposure):
