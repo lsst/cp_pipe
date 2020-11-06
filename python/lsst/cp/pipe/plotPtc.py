@@ -256,7 +256,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             PDF file where the plots will be saved.
         """
 
-        legendFontSize = 7
+        legendFontSize = 6.5
         labelFontSize = 7
         titleFontSize = 9
         supTitleFontSize = 18
@@ -338,7 +338,8 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                 stringLegend = (f"Gain: {gain:.4} e/ADU \n" +
                                 f"Noise: {noise:.4} e \n" +
                                 r"$a_{00}$: %.3e 1/e"%aCoeffs[0, 0] +
-                                "\n" + r"$b_{00}$: %.3e 1/e"%bCoeffs[0, 0])
+                                "\n" + r"$b_{00}$: %.3e 1/e"%bCoeffs[0, 0] +
+                                f"\nLast in fit: {meanVecFinal[-1]:.7} ADU ")
                 minMeanVecFinal = np.nanmin(meanVecFinal)
                 maxMeanVecFinal = np.nanmax(meanVecFinal)
                 deltaXlim = maxMeanVecFinal - minMeanVecFinal
