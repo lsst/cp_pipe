@@ -684,8 +684,6 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         wDiff = np.where(diffIm.getMask().getArray() == 0, 1, 0)
         w = w12*wDiff
 
-        w = wDiff
-
         maxRangeCov = self.config.maximumRangeCovariancesAstier
         if covAstierRealSpace:
             covDiffAstier = computeCovDirect(diffIm.getImage().getArray(), w, maxRangeCov)

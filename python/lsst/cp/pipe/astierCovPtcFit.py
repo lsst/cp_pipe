@@ -510,7 +510,7 @@ class CovFit:
         return
 
     def chi2(self):
-        """Calculate weighte chi2 of full-model fit."""
+        """Calculate weighted chi2 of full-model fit."""
         return(self.weightedRes()**2).sum()
 
     def wres(self, params=None):
