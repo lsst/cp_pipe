@@ -108,15 +108,21 @@ class MakeBrighterFatterKernelTaskConfig(pexConfig.Config):
         doc="The key by which to pull a detector from a dataId, e.g. 'ccd' or 'detector'",
         default='ccd',
     )
-    minMeanSignal = pexConfig.Field(
-        dtype=float,
-        doc="Minimum value of mean signal (in ADU) to consider.",
-        default=0,
+    minMeanSignal = pexConfig.DictField(
+        keytype=str,
+        itemtype=float,
+        doc="Minimum values (inclusive) of mean signal (in ADU) above which to consider, per amp."
+            " The same cut is applied to all amps if this dictionary is of the form"
+            " {'ALL_AMPS': value}",
+        default={'ALL_AMPS': 0.0},
     )
-    maxMeanSignal = pexConfig.Field(
-        dtype=float,
-        doc="Maximum value to of mean signal (in ADU) to consider.",
-        default=9e6,
+    maxMeanSignal = pexConfig.DictField(
+        keytype=str,
+        itemtype=float,
+        doc="Maximum values (inclusive) of mean signal (in ADU) below which to consider, per amp."
+            " The same cut is applied to all amps if this dictionary is of the form"
+            " {'ALL_AMPS': value}",
+        default={'ALL_AMPS': 1e6},
     )
     maxIterRegression = pexConfig.Field(
         dtype=int,

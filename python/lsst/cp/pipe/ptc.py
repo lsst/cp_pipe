@@ -61,7 +61,7 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
     )
     sigmaClipFullFitCovariancesAstier = pexConfig.Field(
         dtype=float,
-        doc="sigma clip for full model fit for FULLCOVARIANCE ptcFitType ",
+        doc="Sigma clip for full model fit for FULLCOVARIANCE ptcFitType ",
         default=5.0,
     )
     maxIterFullFitCovariancesAstier = pexConfig.Field(
@@ -100,17 +100,21 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
         doc="Bin the image by this factor in both dimensions.",
         default=1,
     )
-    minMeanSignal = pexConfig.Field(
-        dtype=str,
+    minMeanSignal = pexConfig.DictField(
+        keytype=str,
+        itemtype=float,
         doc="Minimum values (inclusive) of mean signal (in ADU) above which to consider, per amp."
-            " Expected format: AMPNAME:VALUE^AMPNAME:VALUE...^AMPNAME:VALUE. Default: 0 ADU",
-        default='',
+            " The same cut is applied to all amps if this dictionary is of the form"
+            " {'ALL_AMPS': value}",
+        default={'ALL_AMPS': 0.0},
     )
-    maxMeanSignal = pexConfig.Field(
-        dtype=str,
+    maxMeanSignal = pexConfig.DictField(
+        keytype=str,
+        itemtype=float,
         doc="Maximum values (inclusive) of mean signal (in ADU) below which to consider, per amp."
-            " Expected format: AMPNAME:VALUE^AMPNAME:VALUE...^AMPNAME:VALUE. Default: 1e6 ADU",
-        default='',
+            " The same cut is applied to all amps if this dictionary is of the form"
+            " {'ALL_AMPS': value}",
+        default={'ALL_AMPS': 1e6},
     )
     initialNonLinearityExclusionThresholdPositive = pexConfig.RangeField(
         dtype=float,
@@ -295,29 +299,18 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         for ampName in ampNames:
             datasetPtc.inputExpIdPairs[ampName] = expIds
 
-        maxMeanSignalSplit = self.config.maxMeanSignal.split('^')
-        minMeanSignalSplit = self.config.minMeanSignal.split('^')
-        # Set defaults
         maxMeanSignalDict = {ampName: 1e6 for ampName in ampNames}
         minMeanSignalDict = {ampName: 0.0 for ampName in ampNames}
+        for ampName in ampNames:
+            if 'ALL_AMPS' in self.config.maxMeanSignal:
+                maxMeanSignalDict[ampName] = self.config.maxMeanSignal['ALL_AMPS']
+            elif ampName in self.config.maxMeanSignal:
+                maxMeanSignalDict[ampName] = self.config.maxMeanSignal[ampName]
 
-        for ampCutoff in maxMeanSignalSplit:
-            ampName = ampCutoff.split(":")[0]
-            value = float(ampCutoff.split(":")[1])
-            # Overwrite default cutoff
-            if ampName in maxMeanSignalDict and ampName != 'DEFAULT':
-                maxMeanSignalDict[ampName] = value
-            else:
-                self.log.warn(f"{ampName} from maxMeanSignal not in list of detector ampNames.")
-
-        for ampCutoff in minMeanSignalSplit:
-            ampName = ampCutoff.split(":")[0]
-            value = float(ampCutoff.split(":")[1])
-            # Overwrite default cutoff
-            if ampName in minMeanSignalDict and ampName != 'DEFAULT':
-                minMeanSignalDict[ampName] = value
-            else:
-                self.log.warn(f"{ampName} from minMeanSignal not in list of detector ampNames.")
+            if 'ALL_AMPS' in self.config.minMeanSignal:
+                minMeanSignalDict[ampName] = self.config.minMeanSignal['ALL_AMPS']
+            elif ampName in self.config.minMeanSignal:
+                minMeanSignalDict[ampName] = self.config.minMeanSignal[ampName]
 
         tupleRecords = []
         allTags = []
