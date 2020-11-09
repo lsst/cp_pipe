@@ -1,0 +1,33 @@
+description: cp_pipe DEFECT calibration construction.
+tasks:
+  isr:
+    class: lsst.ip.isr.isrTask.IsrTask
+    config:
+      connections.ccdExposure: 'raw'
+      connections.outputExposure: 'cpDefectsProc'
+      doWrite: True
+      doOverscan: True
+      doAssembleCcd: True
+      doBias: True
+      doVariance: False
+      doLinearize: False
+      doCrosstalk: False
+      doBrighterFatter: False
+      doDark: False
+      doStrayLight: False
+      doFlat: False
+      doFringe: False
+      doApplyGains: False
+      doDefect: False
+      doSaturationInterpolation: False
+      growSaturationFootprintSize: 0
+  measureDefects:
+    class: lsst.cp.pipe.defects.MeasureDefectsTask
+    config:
+      connections.inputExp: 'cpDefectsProc'
+      connections.outputDefects: 'cpPartialDefects'
+  mergeDefects:
+    class: lsst.cp.pipe.defects.MergeDefectsTask
+    config:
+      connections.inputDefects: 'cpPartialDefects'
+      connections.mergedDefects: 'defects'
