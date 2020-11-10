@@ -319,15 +319,13 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             expId2 = exp2.getInfo().getVisitInfo().getExposureId()
             tupleRows = []
             nAmpsNan = 0
+            tags = ['mu', 'i', 'j', 'var', 'cov', 'npix', 'ext', 'expTime', 'ampName']
             for ampNumber, amp in enumerate(detector):
                 ampName = amp.getName()
                 # covAstier: (i, j, var (cov[0,0]), cov, npix)
                 doRealSpace = self.config.covAstierRealSpace
                 muDiff, varDiff, covAstier = self.measureMeanVarCov(exp1, exp2, region=amp.getBBox(),
                                                                     covAstierRealSpace=doRealSpace)
-                datasetPtc.rawExpTimes[ampName].append(expTime)
-                datasetPtc.rawMeans[ampName].append(muDiff)
-                datasetPtc.rawVars[ampName].append(varDiff)
 
                 if np.isnan(muDiff) or np.isnan(varDiff) or (covAstier is None):
                     msg = (f"NaN mean or var, or None cov in amp {ampName} in exposure pair {expId1},"
@@ -335,9 +333,12 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                     self.log.warn(msg)
                     nAmpsNan += 1
                     continue
-                tags = ['mu', 'i', 'j', 'var', 'cov', 'npix', 'ext', 'expTime', 'ampName']
                 if (muDiff <= minMeanSignalDict[ampName]) or (muDiff >= maxMeanSignalDict[ampName]):
                     continue
+
+                datasetPtc.rawExpTimes[ampName].append(expTime)
+                datasetPtc.rawMeans[ampName].append(muDiff)
+                datasetPtc.rawVars[ampName].append(varDiff)
 
                 tupleRows += [(muDiff, ) + covRow + (ampNumber, expTime, ampName) for covRow in covAstier]
             if nAmpsNan == len(ampNames):
@@ -347,6 +348,12 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             allTags += tags
             tupleRecords += tupleRows
         covariancesWithTags = np.core.records.fromrecords(tupleRecords, names=allTags)
+        # Sort raw vectors by rawMeans index
+        for ampName in datasetPtc.ampNames:
+            index = np.argsort(datasetPtc.rawMeans[ampName])
+            datasetPtc.rawExpTimes[ampName] = np.array(datasetPtc.rawExpTimes[ampName])[index]
+            datasetPtc.rawMeans[ampName] = np.array(datasetPtc.rawMeans[ampName])[index]
+            datasetPtc.rawVars[ampName] = np.array(datasetPtc.rawVars[ampName])[index]
 
         if self.config.ptcFitType in ["FULLCOVARIANCE", ]:
             # Calculate covariances and fit them, including the PTC, to Astier+19 full model (Eq. 20)
@@ -442,7 +449,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 self.log.warn(f"Only one exposure found at expTime {key}. Dropping exposure "
                               f"{flatPairs[key][0].getInfo().getVisitInfo().getExposureId()}.")
                 flatPairs.pop(key)
-        return flatPairs
+        sortedFlatPairs = {k: flatPairs[k] for k in sorted(flatPairs)}
+        return sortedFlatPairs
 
     def fitCovariancesAstier(self, dataset, covariancesWithTagsArray):
         """Fit measured flat covariances to full model in Astier+19.
@@ -510,7 +518,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             dataset.ptcFitPars[amp] = np.nan
             dataset.ptcFitParsError[amp] = np.nan
             dataset.ptcFitChiSq[amp] = np.nan
-            if amp in covFits:
+            if (amp in covFits and (covFits[amp].covParams is not None) and
+                    (covFitsNoB[amp].covParams is not None)):
                 fit = covFits[amp]
                 fitNoB = covFitsNoB[amp]
                 # Save full covariances, covariances models, and their weights
@@ -527,6 +536,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 (meanVecFinal, varVecFinal, varVecModel,
                     wc, varMask) = fit.getFitData(0, 0, divideByMu=False, returnMasked=True)
                 gain = fit.getGain()
+                # adjust mask to original size of rawExpTimes
+                # so far, only the min/max signal cut is in dataset.expIdMask
                 dataset.expIdMask[amp] = varMask
                 dataset.gain[amp] = gain
                 dataset.gainErr[amp] = fit.getGainErr()
@@ -800,16 +811,20 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         return pars
 
     @staticmethod
-    def _boundsForPolynomial(initialPars):
-        lowers = [np.NINF for p in initialPars]
-        uppers = [np.inf for p in initialPars]
+    def _boundsForPolynomial(initialPars, lowers=[], uppers=[]):
+        if not len(lowers):
+            lowers = [np.NINF for p in initialPars]
+        if not len(uppers):
+            uppers = [np.inf for p in initialPars]
         lowers[1] = 0  # no negative gains
         return (lowers, uppers)
 
     @staticmethod
-    def _boundsForAstier(initialPars):
-        lowers = [np.NINF for p in initialPars]
-        uppers = [np.inf for p in initialPars]
+    def _boundsForAstier(initialPars, lowers=[], uppers=[]):
+        if not len(lowers):
+            lowers = [np.NINF for p in initialPars]
+        if not len(uppers):
+            uppers = [np.inf for p in initialPars]
         return (lowers, uppers)
 
     @staticmethod
@@ -971,7 +986,9 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             if ptcFitType == 'EXPAPPROXIMATION':
                 ptcFunc = funcAstier
                 parsIniPtc = [-1e-9, 1.0, 10.]  # a00, gain, noise
-                bounds = self._boundsForAstier(parsIniPtc)
+                # lowers and uppers obtained from studies by C. Lage (UC Davis, 11/2020).
+                bounds = self._boundsForAstier(parsIniPtc, lowers=[-1e-4, 0.5, -100],
+                                               uppers=[1e-4, 2.5, 100])
             if ptcFitType == 'POLYNOMIAL':
                 ptcFunc = funcPolynomial
                 parsIniPtc = self._initialParsForPolynomial(self.config.polynomialFitDegree + 1)

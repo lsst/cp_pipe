@@ -27,6 +27,7 @@ from scipy.signal import fftconvolve
 from scipy.optimize import leastsq
 from .astierCovFitParameters import FitParameters
 
+import lsst.log as lsstLog
 
 __all__ = ["CovFit"]
 
@@ -237,8 +238,10 @@ class CovFit:
 
     def __init__(self, inputTuple, maxRangeFromTuple=8):
         self.cov, self.vcov, self.mu = makeCovArray(inputTuple, maxRangeFromTuple)
-        self.sqrtW = 1./np.sqrt(self.vcov)
+        # make it nan safe, replacing nan's with 0 in weights
+        self.sqrtW = np.nan_to_num(1./np.sqrt(self.vcov))
         self.r = self.cov.shape[1]
+        self.logger = lsstLog.Log.getDefaultLogger()
 
     def subtractDistantOffset(self, maxLag=8, startLag=5, polDegree=1):
         """Subtract a background/offset to the measured covariances.
@@ -507,7 +510,7 @@ class CovFit:
         return
 
     def chi2(self):
-        """Calculate weighte chi2 of full-model fit."""
+        """Calculate weighted chi2 of full-model fit."""
         return(self.weightedRes()**2).sum()
 
     def wres(self, params=None):
@@ -570,6 +573,7 @@ class CovFit:
         nOutliers = 1
         counter = 0
         while nOutliers != 0:
+            # If fit fails, None values are returned and caught in getOutputPtcDataCovAstier of ptc.py
             params, paramsCov, _, mesg, ierr = leastsq(self.weightedRes, pInit, full_output=True)
             wres = self.weightedRes(params)
             # Do not count the outliers as significant
@@ -579,10 +583,9 @@ class CovFit:
             nOutliers = mask.sum()
             counter += 1
             if counter == maxFitIter:
+                self.logger.warn(f"Max number of iterations,{maxFitIter}, reached in fitFullModel")
                 break
 
-        if ierr not in [1, 2, 3, 4]:
-            raise RuntimeError("Minimization failed: " + mesg)
         self.covParams = paramsCov
         return params
 

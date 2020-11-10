@@ -293,7 +293,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                                                               axCov01.flatten(), axCov10.flatten())):
 
             muAmp, cov, model, weight = mu[amp], covs[amp], covsModel[amp], covsWeights[amp]
-            if not np.isnan(np.array(cov)).all():  # If all the entries ara np.nan, this is a bad amp.
+            if not np.isnan(np.array(cov)).all():  # If all the entries are np.nan, this is a bad amp.
                 aCoeffs, bCoeffs = np.array(aDict[amp]), np.array(bDict[amp])
                 gain, noise = gainDict[amp], noiseDict[amp]
                 (meanVecOriginal, varVecOriginal, varVecModelOriginal,
