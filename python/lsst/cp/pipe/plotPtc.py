@@ -256,7 +256,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             PDF file where the plots will be saved.
         """
 
-        legendFontSize = 7
+        legendFontSize = 6.5
         labelFontSize = 7
         titleFontSize = 9
         supTitleFontSize = 18
@@ -335,16 +335,17 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                 chi2FullModelNoBVar = calculateWeightedReducedChi2(varVecFinalNoB, varVecModelFinalNoB,
                                                                    varWeightsFinalNoB, len(meanVecFinalNoB),
                                                                    3)
-                stringLegend = (f"Gain: {gain:.4} e/DN \n" +
+                stringLegend = (f"Gain: {gain:.4} e/ADU \n" +
                                 f"Noise: {noise:.4} e \n" +
                                 r"$a_{00}$: %.3e 1/e"%aCoeffs[0, 0] +
-                                "\n" + r"$b_{00}$: %.3e 1/e"%bCoeffs[0, 0])
+                                "\n" + r"$b_{00}$: %.3e 1/e"%bCoeffs[0, 0] +
+                                f"\nLast in fit: {meanVecFinal[-1]:.7} ADU ")
                 minMeanVecFinal = np.nanmin(meanVecFinal)
                 maxMeanVecFinal = np.nanmax(meanVecFinal)
                 deltaXlim = maxMeanVecFinal - minMeanVecFinal
 
-                a.set_xlabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
-                a.set_ylabel(r'Variance (DN$^2$)', fontsize=labelFontSize)
+                a.set_xlabel(r'Mean signal ($\mu$, ADU)', fontsize=labelFontSize)
+                a.set_ylabel(r'Variance (ADU$^2$)', fontsize=labelFontSize)
                 a.tick_params(labelsize=11)
                 a.set_xscale('linear', fontsize=labelFontSize)
                 a.set_yscale('linear', fontsize=labelFontSize)
@@ -356,8 +357,8 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                 a.set_xlim([minMeanVecFinal - 0.2*deltaXlim, maxMeanVecFinal + 0.2*deltaXlim])
 
                 # Same as above, but in log-scale
-                a2.set_xlabel(r'Mean Signal ($\mu$, DN)', fontsize=labelFontSize)
-                a2.set_ylabel(r'Variance (DN$^2$)', fontsize=labelFontSize)
+                a2.set_xlabel(r'Mean Signal ($\mu$, ADU)', fontsize=labelFontSize)
+                a2.set_ylabel(r'Variance (ADU$^2$)', fontsize=labelFontSize)
                 a2.tick_params(labelsize=11)
                 a2.set_xscale('log')
                 a2.set_yscale('log')
@@ -369,8 +370,8 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                 a2.set_xlim([minMeanVecFinal, maxMeanVecFinal])
 
                 # Residuals var - model
-                aResVar.set_xlabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
-                aResVar.set_ylabel(r'Residuals (DN$^2$)', fontsize=labelFontSize)
+                aResVar.set_xlabel(r'Mean signal ($\mu$, ADU)', fontsize=labelFontSize)
+                aResVar.set_ylabel(r'Residuals (ADU$^2$)', fontsize=labelFontSize)
                 aResVar.tick_params(labelsize=11)
                 aResVar.set_xscale('linear', fontsize=labelFontSize)
                 aResVar.set_yscale('linear', fontsize=labelFontSize)
@@ -386,8 +387,8 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                 aResVar.set_xlim([minMeanVecFinal - 0.2*deltaXlim, maxMeanVecFinal + 0.2*deltaXlim])
                 aResVar.legend(fontsize=7)
 
-                a3.set_xlabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
-                a3.set_ylabel(r'Cov01 (DN$^2$)', fontsize=labelFontSize)
+                a3.set_xlabel(r'Mean signal ($\mu$, ADU)', fontsize=labelFontSize)
+                a3.set_ylabel(r'Cov01 (ADU$^2$)', fontsize=labelFontSize)
                 a3.tick_params(labelsize=11)
                 a3.set_xscale('linear', fontsize=labelFontSize)
                 a3.set_yscale('linear', fontsize=labelFontSize)
@@ -397,8 +398,8 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                 a3.set_title(amp, fontsize=titleFontSize)
                 a3.set_xlim([minMeanVecFinal - 0.2*deltaXlim, maxMeanVecFinal + 0.2*deltaXlim])
 
-                a4.set_xlabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
-                a4.set_ylabel(r'Cov10 (DN$^2$)', fontsize=labelFontSize)
+                a4.set_xlabel(r'Mean signal ($\mu$, ADU)', fontsize=labelFontSize)
+                a4.set_ylabel(r'Cov10 (ADU$^2$)', fontsize=labelFontSize)
                 a4.tick_params(labelsize=11)
                 a4.set_xscale('linear', fontsize=labelFontSize)
                 a4.set_yscale('linear', fontsize=labelFontSize)
@@ -864,7 +865,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             raise RuntimeError(f"The input dataset had an invalid dataset.ptcFitType: {ptcFitType}. \n" +
                                "Options: 'FULLCOVARIANCE', EXPAPPROXIMATION, or 'POLYNOMIAL'.")
 
-        legendFontSize = 8
+        legendFontSize = 6.5
         labelFontSize = 8
         titleFontSize = 9
         supTitleFontSize = 18
@@ -913,36 +914,38 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                     ptcNoiseAdu = ptcNoise*(1./ptcGain)
                     ptcNoiseError = 0.5*(parsErr[2]/np.fabs(pars[2]))*np.sqrt(np.fabs(pars[2]))
                     stringLegend = (f"a00: {ptcA00:.2e}+/-{ptcA00error:.2e} 1/e"
-                                    f"\nGain: {ptcGain:.4}+/-{ptcGainError:.2e} e/DN"
+                                    f"\nGain: {ptcGain:.4}+/-{ptcGainError:.2e} e/ADU"
                                     f"\nNoise: {ptcNoise:.4}+/-{ptcNoiseError:.2e} e\n"
-                                    r"$\chi^2_{\rm{red}}$: " + f"{ptcRedChi2:.4}")
+                                    r"$\chi^2_{\rm{red}}$: " + f"{ptcRedChi2:.4}"
+                                    f"\nLast in fit: {meanVecFinal[-1]:.7} ADU ")
 
             if ptcFitType == 'POLYNOMIAL':
                 if len(meanVecFinal):
                     ptcGain, ptcGainError = 1./pars[1], np.fabs(1./pars[1])*(parsErr[1]/pars[1])
-                    ptcNoiseAdu = np.sqrt((pars[0]))  # pars[0] is in ADU^2
+                    ptcNoiseAdu = np.sqrt((pars[0]))  # pars[0] is in DU^2
                     ptcNoise = ptcNoiseAdu*ptcGain
                     ptcNoiseError = (0.5*(parsErr[0]/np.fabs(pars[0]))*(np.sqrt(np.fabs(pars[0]))))*ptcGain
-                    stringLegend = (f"Gain: {ptcGain:.4}+/-{ptcGainError:.2e} e/DN\n"
+                    stringLegend = (f"Gain: {ptcGain:.4}+/-{ptcGainError:.2e} e/ADU\n"
                                     f"Noise: {ptcNoise:.4}+/-{ptcNoiseError:.2e} e\n"
-                                    r"$\chi^2_{\rm{red}}$: " + f"{ptcRedChi2:.4}")
+                                    r"$\chi^2_{\rm{red}}$: " + f"{ptcRedChi2:.4}"
+                                    f"\nLast in fit: {meanVecFinal[-1]:.7} ADU ")
 
-            a.set_xlabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
-            a.set_ylabel(r'Variance (DN$^2$)', fontsize=labelFontSize)
+            a.set_xlabel(r'Mean signal ($\mu$, ADU)', fontsize=labelFontSize)
+            a.set_ylabel(r'Variance (ADU$^2$)', fontsize=labelFontSize)
             a.tick_params(labelsize=11)
             a.set_xscale('linear', fontsize=labelFontSize)
             a.set_yscale('linear', fontsize=labelFontSize)
 
-            a2.set_xlabel(r'Mean Signal ($\mu$, DN)', fontsize=labelFontSize)
-            a2.set_ylabel(r'Variance (DN$^2$)', fontsize=labelFontSize)
+            a2.set_xlabel(r'Mean Signal ($\mu$, ADU)', fontsize=labelFontSize)
+            a2.set_ylabel(r'Variance (ADU$^2$)', fontsize=labelFontSize)
             a2.tick_params(labelsize=11)
             a2.set_xscale('log')
             a2.set_yscale('log')
 
-            a3.set_xlabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
-            a3.set_ylabel(r'Variance/$\mu$ (DN)', fontsize=labelFontSize)
+            a3.set_xlabel(r'Mean signal ($\mu$, ADU)', fontsize=labelFontSize)
+            a3.set_ylabel(r'Variance/$\mu$ (ADU)', fontsize=labelFontSize)
             a3.tick_params(labelsize=11)
-            a3.set_xscale('linear', fontsize=labelFontSize)
+            a3.set_xscale('log')
             a3.set_yscale('linear', fontsize=labelFontSize)
 
             minMeanVecFinal = np.nanmin(meanVecFinal)
@@ -956,7 +959,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                    linestyle='--')
             a.scatter(meanVecFinal, varVecFinal, c='blue', marker='o', s=markerSize)
             a.scatter(meanVecOutliers, varVecOutliers, c='magenta', marker='s', s=markerSize)
-            a.text(0.03, 0.7, stringLegend, transform=a.transAxes, fontsize=legendFontSize)
+            a.text(0.03, 0.66, stringLegend, transform=a.transAxes, fontsize=legendFontSize)
             a.set_title(amp, fontsize=titleFontSize)
             a.set_xlim([minMeanVecOriginal - 0.2*deltaXlim, maxMeanVecOriginal + 0.2*deltaXlim])
 
@@ -964,7 +967,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             a2.plot(meanVecFit, ptcFunc(pars, meanVecFit), color='red')
             a2.scatter(meanVecFinal, varVecFinal, c='blue', marker='o', s=markerSize)
             a2.scatter(meanVecOutliers, varVecOutliers, c='magenta', marker='s', s=markerSize)
-            a2.text(0.03, 0.7, stringLegend, transform=a2.transAxes, fontsize=legendFontSize)
+            a2.text(0.03, 0.66, stringLegend, transform=a2.transAxes, fontsize=legendFontSize)
             a2.set_title(amp, fontsize=titleFontSize)
             a2.set_xlim([minMeanVecOriginal, maxMeanVecOriginal])
 
@@ -973,7 +976,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             a3.scatter(meanVecFinal, varVecFinal/meanVecFinal, c='blue', marker='o', s=markerSize)
             a3.scatter(meanVecOutliers, varVecOutliers/meanVecOutliers, c='magenta', marker='s',
                        s=markerSize)
-            a3.text(0.2, 0.65, stringLegend, transform=a3.transAxes, fontsize=legendFontSize)
+            a3.text(0.05, 0.1, stringLegend, transform=a3.transAxes, fontsize=legendFontSize)
             a3.set_title(amp, fontsize=titleFontSize)
             a3.set_xlim([minMeanVecOriginal - 0.2*deltaXlim, maxMeanVecOriginal + 0.2*deltaXlim])
 
@@ -1030,14 +1033,14 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             timeVecFinal = np.array(dataset.rawExpTimes[amp])[mask]
 
             a.set_xlabel('Time (sec)', fontsize=labelFontSize)
-            a.set_ylabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
+            a.set_ylabel(r'Mean signal ($\mu$, ADU)', fontsize=labelFontSize)
             a.tick_params(labelsize=labelFontSize)
             a.set_xscale('linear', fontsize=labelFontSize)
             a.set_yscale('linear', fontsize=labelFontSize)
 
             a2.axhline(y=0, color='k')
             a2.axvline(x=0, color='k', linestyle='-')
-            a2.set_xlabel(r'Mean signal ($\mu$, DN)', fontsize=labelFontSize)
+            a2.set_xlabel(r'Mean signal ($\mu$, ADU)', fontsize=labelFontSize)
             a2.set_ylabel('Fractional nonlinearity (%)', fontsize=labelFontSize)
             a2.tick_params(labelsize=labelFontSize)
             a2.set_xscale('linear', fontsize=labelFontSize)
@@ -1048,8 +1051,8 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             k1, k1Error = pars[1], parsErr[1]
             k2, k2Error = pars[2], parsErr[2]
             linRedChi2 = linearizer.fitChiSq[amp]
-            stringLegend = (f"k0: {k0:.4}+/-{k0Error:.2e} DN\nk1: {k1:.4}+/-{k1Error:.2e} DN/t"
-                            f"\nk2: {k2:.2e}+/-{k2Error:.2e} DN/t^2\n"
+            stringLegend = (f"k0: {k0:.4}+/-{k0Error:.2e} ADU\nk1: {k1:.4}+/-{k1Error:.2e} ADU/t"
+                            f"\nk2: {k2:.2e}+/-{k2Error:.2e} ADU/t^2\n"
                             r"$\chi^2_{\rm{red}}$: " + f"{linRedChi2:.4}")
             a.scatter(timeVecFinal, meanVecFinal)
             a.plot(timeVecFinal, funcPolynomial(pars, timeVecFinal), color='red')
