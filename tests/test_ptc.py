@@ -131,7 +131,9 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             allTags += tags
             tupleRecords += tupleRows
         covariancesWithTags = np.core.records.fromrecords(tupleRecords, names=allTags)
-        covFits, covFitsNoB = fitData(covariancesWithTags)
+
+        expIdMask = {ampName: np.repeat(True, len(expTimes)) for ampName in self.ampNames}
+        covFits, covFitsNoB = fitData(covariancesWithTags, expIdMask)
         localDataset = task.getOutputPtcDataCovAstier(localDataset, covFits, covFitsNoB)
         # Chek the gain and that the ratio of the variance caclulated via cov Astier (FFT) and
         # that calculated with the standard PTC calculation (afw) is close to 1.
@@ -325,7 +327,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         for i, factor in enumerate([-0.5, -0.1, 0, 0.1, 0.5]):
             newYs[-1] = ys[-1] + (factor*ys[-1])
             points = self.defaultTask._getInitialGoodPoints(xs, newYs, 0.05, 0.25)
-            assert (np.all(points[0:-1]) == True)  # noqa: E712 - flake8 is wrong here because of numpy.bool
+            assert (np.all(points[0:-2]))  # noqa: E712 - flake8 is wrong here because of numpy.bool
             assert points[-1] == results[i]
 
     def test_getExpIdsUsed(self):

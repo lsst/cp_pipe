@@ -22,7 +22,6 @@
 import numpy as np
 import copy
 import itertools
-from scipy.stats import median_abs_deviation as mad
 from scipy.signal import fftconvolve
 from scipy.optimize import leastsq
 from .astierCovFitParameters import FitParameters
@@ -232,16 +231,23 @@ class CovFit:
         j: lag dimension
         npix: number of pixels used for covariance calculation.
 
-    maxRangeFromTuple: `int`
+    maxRangeFromTuple: `int`, optional
         Maximum range to select from tuple.
+
+    meanSignalMask: `list`[`bool`], optional
+        Mask of mean signal 1D array. Use all entries if empty.
     """
 
-    def __init__(self, inputTuple, maxRangeFromTuple=8):
+    def __init__(self, inputTuple, maxRangeFromTuple=8, meanSignalMask=[]):
         self.cov, self.vcov, self.mu = makeCovArray(inputTuple, maxRangeFromTuple)
         # make it nan safe, replacing nan's with 0 in weights
         self.sqrtW = np.nan_to_num(1./np.sqrt(self.vcov))
         self.r = self.cov.shape[1]
         self.logger = lsstLog.Log.getDefaultLogger()
+        if len(meanSignalMask):
+            self.maskMu = meanSignalMask
+        else:
+            self.maskMu = np.repeat(True, len(self.mu))
 
     def subtractDistantOffset(self, maxLag=8, startLag=5, polDegree=1):
         """Subtract a background/offset to the measured covariances.
@@ -518,7 +524,10 @@ class CovFit:
         if params is not None:
             self.setParamValues(params)
         covModel = self.evalCovModel()
-        return((covModel-self.cov)*self.sqrtW)
+        weightedRes = (covModel-self.cov)*self.sqrtW
+        maskedWeightedRes = weightedRes[self.maskMu]
+
+        return maskedWeightedRes
 
     def weightedRes(self, params=None):
         """Weighted residuas.
@@ -532,7 +541,7 @@ class CovFit:
         """
         return self.wres(params).flatten()
 
-    def fitFullModel(self, pInit=None, nSigma=5.0, maxFitIter=3):
+    def fitFullModel(self, pInit=None):
         """Fit measured covariances to full model in Astier+19 (Eq. 20)
 
         Parameters
@@ -543,12 +552,6 @@ class CovFit:
             len(pInit) = r^2 + r^2 + r^2 + 1, where "r" is the maximum lag considered for the
             covariances calculation, and the extra "1" is the gain.
             If "b" is 0, then "c" is 0, and len(pInit) will have r^2 fewer entries.
-
-        nSigma : `float`, optional
-            Sigma cut to get rid of outliers.
-
-        maxFitIter : `int`, optional
-            Number of iterations for full model fit.
 
         Returns
         -------
@@ -570,23 +573,10 @@ class CovFit:
 
         if pInit is None:
             pInit = self.getParamValues()
-        nOutliers = 1
-        counter = 0
-        while nOutliers != 0:
-            # If fit fails, None values are returned and caught in getOutputPtcDataCovAstier of ptc.py
-            params, paramsCov, _, mesg, ierr = leastsq(self.weightedRes, pInit, full_output=True)
-            wres = self.weightedRes(params)
-            # Do not count the outliers as significant
-            sig = mad(wres[wres != 0], scale='normal')
-            mask = (np.abs(wres) > (nSigma*sig))
-            self.sqrtW.flat[mask] = 0  # flatten makes a copy
-            nOutliers = mask.sum()
-            counter += 1
-            if counter == maxFitIter:
-                self.logger.warn(f"Max number of iterations,{maxFitIter}, reached in fitFullModel")
-                break
 
+        params, paramsCov, _, mesg, ierr = leastsq(self.weightedRes, pInit, full_output=True)
         self.covParams = paramsCov
+
         return params
 
     def ndof(self):

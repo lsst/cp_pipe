@@ -262,7 +262,7 @@ class LoadParams:
         self.offsetDegree = 1
 
 
-def loadData(tupleName, params):
+def loadData(tupleName, params, expIdMask):
     """ Returns a list of CovFit objects, indexed by amp number.
 
     Params
@@ -280,6 +280,9 @@ def loadData(tupleName, params):
     params: `covAstierptcUtil.LoadParams`
         Object with values to drive the bahaviour of fits.
 
+    expIdMask : `dict`, [`str`, `list`]
+        Dictionary keyed by amp names containing the masked exposure pairs.
+
     Returns
     -------
     covFitList: `dict`
@@ -290,11 +293,12 @@ def loadData(tupleName, params):
     covFitList = {}
     for ext in exts:
         ntext = tupleName[tupleName['ampName'] == ext]
+        maskExt = expIdMask[ext]
         if params.subtractDistantValue:
-            c = CovFit(ntext, params.r)
+            c = CovFit(ntext, params.r, maskExt)
             c.subtractDistantOffset(params.r, params.start, params.offsetDegree)
         else:
-            c = CovFit(ntext, params.r)
+            c = CovFit(ntext, params.r, maskExt)
 
         cc = c.copy()
         cc.initFit()  # allows to get a crude gain.
@@ -303,7 +307,7 @@ def loadData(tupleName, params):
     return covFitList
 
 
-def fitData(tupleName, r=8, nSigmaFullFit=5.5, maxIterFullFit=3):
+def fitData(tupleName, expIdMask, r=8):
     """Fit data to models in Astier+19.
 
     Parameters
@@ -318,14 +322,11 @@ def fitData(tupleName, r=8, nSigmaFullFit=5.5, maxIterFullFit=3):
             j: lag dimension
             npix: number of pixels used for covariance calculation.
 
+    expIdMask : `dict`, [`str`, `list`]
+        Dictionary keyed by amp names containing the masked exposure pairs.
+
     r: `int`, optional
         Maximum lag considered (e.g., to eliminate data beyond a separation "r": ignored in the fit).
-
-    nSigmaFullFit : `float`, optional
-        Sigma cut to get rid of outliers in full model fit.
-
-    maxIterFullFit : `int`, optional
-        Number of iterations for full model fit.
 
     Returns
     -------
@@ -351,13 +352,13 @@ def fitData(tupleName, r=8, nSigmaFullFit=5.5, maxIterFullFit=3):
     lparams = LoadParams()
     lparams.subtractDistantValue = False
     lparams.r = r
-    covFitList = loadData(tupleName, lparams)
+    covFitList = loadData(tupleName, lparams, expIdMask=expIdMask)
     covFitNoBList = {}  # [None]*(exts[-1]+1)
     for ext, c in covFitList.items():
-        c.fitFullModel(nSigma=nSigmaFullFit, maxFitIter=maxIterFullFit)
+        c.fitFullModel()
         covFitNoBList[ext] = c.copy()
         c.params['c'].release()
-        c.fitFullModel(nSigma=nSigmaFullFit, maxFitIter=maxIterFullFit)
+        c.fitFullModel()
     return covFitList, covFitNoBList
 
 
@@ -409,8 +410,8 @@ def getFitDataFromCovariances(i, j, mu, fullCov, fullCovModel, fullCovSqrtWeight
     weights : `numpy.array`
         Weights at (i, j).
 
-    mask : `numpy.array`, optional
-        Boolean mask of the covariance at (i,j).
+    maskFromWeights : `numpy.array`, optional
+        Boolean mask of the covariance at (i,j), where the weights differ from 0.
 
     Notes
     -----
@@ -424,16 +425,15 @@ def getFitDataFromCovariances(i, j, mu, fullCov, fullCovModel, fullCovSqrtWeight
     covarianceModel = fullCovModel[:, i, j]*(gain**2)
     weights = fullCovSqrtWeights[:, i, j]/(gain**2)
 
-    # select data used for the fit
-    mask = weights != 0
+    maskFromWeights = weights != 0
     if returnMasked:
-        weights = weights[mask]
-        covarianceModel = covarianceModel[mask]
-        mu = mu[mask]
-        covariance = covariance[mask]
+        weights = weights[maskFromWeights]
+        covarianceModel = covarianceModel[maskFromWeights]
+        mu = mu[maskFromWeights]
+        covariance = covariance[maskFromWeights]
 
     if divideByMu:
         covariance /= mu
         covarianceModel /= mu
         weights *= mu
-    return mu, covariance, covarianceModel, weights, mask
+    return mu, covariance, covarianceModel, weights, maskFromWeights
