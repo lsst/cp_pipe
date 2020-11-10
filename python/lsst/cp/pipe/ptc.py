@@ -61,7 +61,7 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
     )
     sigmaClipFullFitCovariancesAstier = pexConfig.Field(
         dtype=float,
-        doc="sigma clip for full model fit for FULLCOVARIANCE ptcFitType ",
+        doc="Sigma clip for full model fit for FULLCOVARIANCE ptcFitType ",
         default=5.0,
     )
     maxIterFullFitCovariancesAstier = pexConfig.Field(
@@ -100,15 +100,21 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
         doc="Bin the image by this factor in both dimensions.",
         default=1,
     )
-    minMeanSignal = pexConfig.Field(
-        dtype=float,
-        doc="Minimum value (inclusive) of mean signal (in DN) above which to consider.",
-        default=0,
+    minMeanSignal = pexConfig.DictField(
+        keytype=str,
+        itemtype=float,
+        doc="Minimum values (inclusive) of mean signal (in ADU) above which to consider, per amp."
+            " The same cut is applied to all amps if this dictionary is of the form"
+            " {'ALL_AMPS': value}",
+        default={'ALL_AMPS': 0.0},
     )
-    maxMeanSignal = pexConfig.Field(
-        dtype=float,
-        doc="Maximum value (inclusive) of mean signal (in DN) below which to consider.",
-        default=9e6,
+    maxMeanSignal = pexConfig.DictField(
+        keytype=str,
+        itemtype=float,
+        doc="Maximum values (inclusive) of mean signal (in ADU) below which to consider, per amp."
+            " The same cut is applied to all amps if this dictionary is of the form"
+            " {'ALL_AMPS': value}",
+        default={'ALL_AMPS': 1e6},
     )
     initialNonLinearityExclusionThresholdPositive = pexConfig.RangeField(
         dtype=float,
@@ -293,6 +299,19 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         for ampName in ampNames:
             datasetPtc.inputExpIdPairs[ampName] = expIds
 
+        maxMeanSignalDict = {ampName: 1e6 for ampName in ampNames}
+        minMeanSignalDict = {ampName: 0.0 for ampName in ampNames}
+        for ampName in ampNames:
+            if 'ALL_AMPS' in self.config.maxMeanSignal:
+                maxMeanSignalDict[ampName] = self.config.maxMeanSignal['ALL_AMPS']
+            elif ampName in self.config.maxMeanSignal:
+                maxMeanSignalDict[ampName] = self.config.maxMeanSignal[ampName]
+
+            if 'ALL_AMPS' in self.config.minMeanSignal:
+                minMeanSignalDict[ampName] = self.config.minMeanSignal['ALL_AMPS']
+            elif ampName in self.config.minMeanSignal:
+                minMeanSignalDict[ampName] = self.config.minMeanSignal[ampName]
+
         tupleRecords = []
         allTags = []
         for expTime, (exp1, exp2) in expPairs.items():
@@ -317,7 +336,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                     nAmpsNan += 1
                     continue
                 tags = ['mu', 'i', 'j', 'var', 'cov', 'npix', 'ext', 'expTime', 'ampName']
-                if (muDiff <= self.config.minMeanSignal) or (muDiff >= self.config.maxMeanSignal):
+                if (muDiff <= minMeanSignalDict[ampName]) or (muDiff >= maxMeanSignalDict[ampName]):
                     continue
 
                 tupleRows += [(muDiff, ) + covRow + (ampNumber, expTime, ampName) for covRow in covAstier]
@@ -452,7 +471,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             the class `PhotonTransferCurveDatase`.
         """
 
-        covFits, covFitsNoB = fitData(covariancesWithTagsArray, maxMu=self.config.maxMeanSignal,
+        covFits, covFitsNoB = fitData(covariancesWithTagsArray,
                                       r=self.config.maximumRangeCovariancesAstier,
                                       nSigmaFullFit=self.config.sigmaClipFullFitCovariancesAstier,
                                       maxIterFullFit=self.config.maxIterFullFitCovariancesAstier)
@@ -922,14 +941,11 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             varVecOriginal = np.array(dataset.rawVars[ampName])
             varVecOriginal = self._makeZeroSafe(varVecOriginal)
 
-            mask = ((meanVecOriginal >= self.config.minMeanSignal) &
-                    (meanVecOriginal <= self.config.maxMeanSignal))
-
             goodPoints = self._getInitialGoodPoints(meanVecOriginal, varVecOriginal,
                                                     self.config.initialNonLinearityExclusionThresholdPositive,
                                                     self.config.initialNonLinearityExclusionThresholdNegative)
-            if not (mask.any() and goodPoints.any()):
-                msg = (f"\nSERIOUS: All points in either mask: {mask} or goodPoints: {goodPoints} are bad."
+            if not (goodPoints.any()):
+                msg = (f"\nSERIOUS: All points in goodPoints: {goodPoints} are bad."
                        f"Setting {ampName} to BAD.")
                 self.log.warn(msg)
                 # The first and second parameters of initial fit are discarded (bias and gain)
@@ -950,7 +966,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 dataset.finalMeans[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
                 continue
 
-            mask = mask & goodPoints
+            mask = goodPoints
 
             if ptcFitType == 'EXPAPPROXIMATION':
                 ptcFunc = funcAstier

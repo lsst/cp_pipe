@@ -242,12 +242,6 @@ class LoadParams:
     r: `int`, optional
         Maximum lag considered (e.g., to eliminate data beyond a separation "r": ignored in the fit).
 
-    maxMu: `float`, optional
-        Maximum signal, in ADU (e.g., to eliminate data beyond saturation).
-
-    maxMuElectrons: `float`, optional
-        Maximum signal in electrons.
-
     subtractDistantValue: `bool`, optional
         Subtract a background to the measured covariances (mandatory for HSC flat pairs)?
 
@@ -263,8 +257,6 @@ class LoadParams:
     """
     def __init__(self):
         self.r = 8
-        self.maxMu = 1e9
-        self.maxMuElectrons = 1e9
         self.subtractDistantValue = False
         self.start = 5
         self.offsetDegree = 1
@@ -303,24 +295,15 @@ def loadData(tupleName, params):
             c.subtractDistantOffset(params.r, params.start, params.offsetDegree)
         else:
             c = CovFit(ntext, params.r)
-        thisMaxMu = params.maxMu
-        # Tune the maxMuElectrons cut
-        for iter in range(3):
-            cc = c.copy()
-            cc.setMaxMu(thisMaxMu)
-            cc.initFit()  # allows to get a crude gain.
-            gain = cc.getGain()
-            if (thisMaxMu*gain < params.maxMuElectrons):
-                thisMaxMu = params.maxMuElectrons/gain
-                continue
-            cc.setMaxMuElectrons(params.maxMuElectrons)
-            break
+
+        cc = c.copy()
+        cc.initFit()  # allows to get a crude gain.
         covFitList[ext] = cc
 
     return covFitList
 
 
-def fitData(tupleName, maxMu=1e9, r=8, nSigmaFullFit=5.5, maxIterFullFit=3):
+def fitData(tupleName, r=8, nSigmaFullFit=5.5, maxIterFullFit=3):
     """Fit data to models in Astier+19.
 
     Parameters
@@ -337,9 +320,6 @@ def fitData(tupleName, maxMu=1e9, r=8, nSigmaFullFit=5.5, maxIterFullFit=3):
 
     r: `int`, optional
         Maximum lag considered (e.g., to eliminate data beyond a separation "r": ignored in the fit).
-
-    maxMu: `float`, optional
-        Maximum signal, in ADU (e.g., to eliminate data beyond saturation).
 
     nSigmaFullFit : `float`, optional
         Sigma cut to get rid of outliers in full model fit.
@@ -370,9 +350,7 @@ def fitData(tupleName, maxMu=1e9, r=8, nSigmaFullFit=5.5, maxIterFullFit=3):
 
     lparams = LoadParams()
     lparams.subtractDistantValue = False
-    lparams.maxMu = maxMu
     lparams.r = r
-
     covFitList = loadData(tupleName, lparams)
     covFitNoBList = {}  # [None]*(exts[-1]+1)
     for ext, c in covFitList.items():
