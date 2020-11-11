@@ -340,7 +340,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             allTags += tags
             tupleRecords += tupleRows
         covariancesWithTags = np.core.records.fromrecords(tupleRecords, names=allTags)
-        
+
         for ampName in datasetPtc.ampNames:
             # Sort raw vectors by rawMeans index
             index = np.argsort(datasetPtc.rawMeans[ampName])
@@ -679,6 +679,9 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         w12 = w1*w2
         wDiff = np.where(diffIm.getMask().getArray() == 0, 1, 0)
         w = w12*wDiff
+
+        if np.sum(w) == 0:
+            return np.nan, np.nan, None
 
         maxRangeCov = self.config.maximumRangeCovariancesAstier
         if covAstierRealSpace:
