@@ -340,8 +340,9 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             allTags += tags
             tupleRecords += tupleRows
         covariancesWithTags = np.core.records.fromrecords(tupleRecords, names=allTags)
-        # Sort raw vectors by rawMeans index
+        
         for ampName in datasetPtc.ampNames:
+            # Sort raw vectors by rawMeans index
             index = np.argsort(datasetPtc.rawMeans[ampName])
             datasetPtc.rawExpTimes[ampName] = np.array(datasetPtc.rawExpTimes[ampName])[index]
             datasetPtc.rawMeans[ampName] = np.array(datasetPtc.rawMeans[ampName])[index]
@@ -876,7 +877,15 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         goodPoints = np.array([True if (r < maxDeviationPositive and r > maxDeviationNegative)
                               else False for r in ratioDeviations])
-        return goodPoints
+
+        # Discard points when variance starts decreasing
+        pivot = np.where(np.array(np.diff(variances)) < 0)[0]
+        if len(pivot) == 0:
+            return goodPoints
+        else:
+            pivot = np.min(pivot)
+            goodPoints[pivot:len(goodPoints)] = False
+            return goodPoints
 
     def _makeZeroSafe(self, array, warn=True, substituteValue=1e-9):
         """"""
