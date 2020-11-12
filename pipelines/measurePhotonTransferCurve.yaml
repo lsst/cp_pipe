@@ -35,5 +35,3 @@ tasks:
       connections.outputPtcDataset: 'ptcDataset'
 contracts: 
   - ptcSolve.maximumRangeCovariancesAstier == ptcExtract2.maximumRangeCovariancesAstier
-  - ptcSolve.minMeanSignal == ptcExtract2.minMeanSignal
-  - ptcSolve.maxMeanSignal == ptcExtract2.maxMeanSignal

@@ -93,15 +93,21 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
         doc="Bin the image by this factor in both dimensions.",
         default=1,
     )
-    minMeanSignal = pexConfig.Field(
-        dtype=float,
-        doc="Minimum value (inclusive) of mean signal (in DN) above which to consider.",
-        default=0,
+    minMeanSignal = pexConfig.DictField(
+        keytype=str,
+        itemtype=float,
+        doc="Minimum values (inclusive) of mean signal (in ADU) above which to consider, per amp."
+            " The same cut is applied to all amps if this dictionary is of the form"
+            " {'ALL_AMPS': value}",
+        default={'ALL_AMPS': 0.0},
     )
-    maxMeanSignal = pexConfig.Field(
-        dtype=float,
-        doc="Maximum value (inclusive) of mean signal (in DN) below which to consider.",
-        default=9e6,
+    maxMeanSignal = pexConfig.DictField(
+        keytype=str,
+        itemtype=float,
+        doc="Maximum values (inclusive) of mean signal (in ADU) below which to consider, per amp."
+            " The same cut is applied to all amps if this dictionary is of the form"
+            " {'ALL_AMPS': value}",
+        default={'ALL_AMPS': 1e6},
     )
     maskNameList = pexConfig.ListField(
         dtype=str,
@@ -185,9 +191,6 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         amps = detector.getAmplifiers()
         ampNames = [amp.getName() for amp in amps]
 
-        for ampName in datasetPtc.ampNames:
-            datasetPtc.inputExpIdPairs[ampName] = expIds
-
         maxMeanSignalDict = {ampName: 1e6 for ampName in ampNames}
         minMeanSignalDict = {ampName: 0.0 for ampName in ampNames}
         for ampName in ampNames:
@@ -223,7 +226,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                     tupleRecords.append(dict(test=1))
                     continue
 
-                if (muDiff <= self.config.minMeanSignal) or (muDiff >= self.config.maxMeanSignal):
+                if (muDiff <= minMeanSignalDict[ampName]) or (muDiff >= maxMeanSignalDict[ampName]):
                     tupleRecords.append(dict(test=1))
                     continue
 
@@ -514,16 +517,6 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
         doc="Maximum number of iterations for outlier rejection in PTC.",
         default=2,
     )
-    minMeanSignal = pexConfig.Field(
-        dtype=float,
-        doc="Minimum value (inclusive) of mean signal (in DN) above which to consider.",
-        default=0,
-    )
-    maxMeanSignal = pexConfig.Field(
-        dtype=float,
-        doc="Maximum value (inclusive) of mean signal (in DN) below which to consider.",
-        default=9e6,
-    )
     initialNonLinearityExclusionThresholdPositive = pexConfig.RangeField(
         dtype=float,
         doc="Initially exclude data points with a variance that are more than a factor of this from being"
@@ -675,7 +668,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             the class `PhotonTransferCurveDatase`.
         """
 
-        covFits, covFitsNoB = fitData(covariancesWithTagsArray, maxMu=self.config.maxMeanSignal,
+        covFits, covFitsNoB = fitData(covariancesWithTagsArray,
                                       r=self.config.maximumRangeCovariancesAstier,
                                       nSigmaFullFit=self.config.sigmaClipFullFitCovariancesAstier,
                                       maxIterFullFit=self.config.maxIterFullFitCovariancesAstier)
