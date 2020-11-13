@@ -38,6 +38,8 @@ from .photodiode import getBOTphotodiodeData
 from lsst.pipe.tasks.getRepositoryData import DataRefListRunner
 from lsst.ip.isr import PhotonTransferCurveDataset
 
+import copy
+
 __all__ = ['MeasurePhotonTransferCurveTask',
            'MeasurePhotonTransferCurveTaskConfig']
 
@@ -58,16 +60,6 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
             "EXPAPPROXIMATION": "Approximation in Astier+19 (Eq. 16).",
             "FULLCOVARIANCE": "Full covariances model in Astier+19 (Eq. 20)"
         }
-    )
-    sigmaClipFullFitCovariancesAstier = pexConfig.Field(
-        dtype=float,
-        doc="Sigma clip for full model fit for FULLCOVARIANCE ptcFitType ",
-        default=5.0,
-    )
-    maxIterFullFitCovariancesAstier = pexConfig.Field(
-        dtype=int,
-        doc="Maximum number of iterations in full model fit for FULLCOVARIANCE ptcFitType",
-        default=3,
     )
     maximumRangeCovariancesAstier = pexConfig.Field(
         dtype=int,
@@ -348,8 +340,9 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             allTags += tags
             tupleRecords += tupleRows
         covariancesWithTags = np.core.records.fromrecords(tupleRecords, names=allTags)
-        # Sort raw vectors by rawMeans index
+
         for ampName in datasetPtc.ampNames:
+            # Sort raw vectors by rawMeans index
             index = np.argsort(datasetPtc.rawMeans[ampName])
             datasetPtc.rawExpTimes[ampName] = np.array(datasetPtc.rawExpTimes[ampName])[index]
             datasetPtc.rawMeans[ampName] = np.array(datasetPtc.rawMeans[ampName])[index]
@@ -357,6 +350,14 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         if self.config.ptcFitType in ["FULLCOVARIANCE", ]:
             # Calculate covariances and fit them, including the PTC, to Astier+19 full model (Eq. 20)
+            # First, fit get the flat pairs that are masked, according to the regular PTC (C_00 vs mu)
+            # The points at these fluxes will also be masked when calculating the other covariances, C_ij)
+            newDatasetPtc = copy.copy(datasetPtc)
+            newDatasetPtc = self.fitPtc(newDatasetPtc, 'EXPAPPROXIMATION')
+            for ampName in datasetPtc.ampNames:
+                datasetPtc.expIdMask[ampName] = newDatasetPtc.expIdMask[ampName]
+
+            datasetPtc.fitType = "FULLCOVARIANCE"
             datasetPtc = self.fitCovariancesAstier(datasetPtc, covariancesWithTags)
         elif self.config.ptcFitType in ["EXPAPPROXIMATION", "POLYNOMIAL"]:
             # Fit the PTC to a polynomial or to Astier+19 exponential approximation (Eq. 16)
@@ -481,11 +482,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         covFits, covFitsNoB = fitData(covariancesWithTagsArray,
                                       r=self.config.maximumRangeCovariancesAstier,
-                                      nSigmaFullFit=self.config.sigmaClipFullFitCovariancesAstier,
-                                      maxIterFullFit=self.config.maxIterFullFitCovariancesAstier)
-
+                                      expIdMask=dataset.expIdMask)
         dataset = self.getOutputPtcDataCovAstier(dataset, covFits, covFitsNoB)
-
         return dataset
 
     def getOutputPtcDataCovAstier(self, dataset, covFits, covFitsNoB):
@@ -534,11 +532,9 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 dataset.aMatrixNoB[amp] = fitNoB.getA()
 
                 (meanVecFinal, varVecFinal, varVecModel,
-                    wc, varMask) = fit.getFitData(0, 0, divideByMu=False, returnMasked=True)
+                    wc, varMask) = fit.getFitData(0, 0, divideByMu=False)
                 gain = fit.getGain()
-                # adjust mask to original size of rawExpTimes
-                # so far, only the min/max signal cut is in dataset.expIdMask
-                dataset.expIdMask[amp] = varMask
+
                 dataset.gain[amp] = gain
                 dataset.gainErr[amp] = fit.getGainErr()
                 dataset.noise[amp] = np.sqrt(fit.getRon())
@@ -611,7 +607,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             Half of the clipped variance of the difference of the regions inthe two input
             exposures. If either mu1 or m2 are NaN's, the returned value is NaN.
 
-        covDiffAstier : `list` or `NaN`
+        covDiffAstier : `list` or `None`
             List with tuples of the form (dx, dy, var, cov, npix), where:
                 dx : `int`
                     Lag in x
@@ -623,7 +619,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                     Covariance at (dx, dy).
                 nPix : `int`
                     Number of pixel pairs used to evaluate var and cov.
-            If either mu1 or m2 are NaN's, the returned value is NaN.
+            If either mu1 or m2 are NaN's, the returned value is None.
         """
 
         if region is not None:
@@ -683,6 +679,9 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         w12 = w1*w2
         wDiff = np.where(diffIm.getMask().getArray() == 0, 1, 0)
         w = w12*wDiff
+
+        if np.sum(w) == 0:
+            return np.nan, np.nan, None
 
         maxRangeCov = self.config.maximumRangeCovariancesAstier
         if covAstierRealSpace:
@@ -865,7 +864,10 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         negative ones.
 
         Too high and points that are so bad that fit will fail will be included
-        Too low and the non-linear points will be excluded, biasing the NL fit."""
+        Too low and the non-linear points will be excluded, biasing the NL fit.
+
+        This function also masks points after the variance starts decreasing.
+        """
 
         assert(len(means) == len(variances))
         ratios = [b/a for (a, b) in zip(means, variances)]
@@ -878,7 +880,15 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         goodPoints = np.array([True if (r < maxDeviationPositive and r > maxDeviationNegative)
                               else False for r in ratioDeviations])
-        return goodPoints
+
+        # Discard points when variance starts decreasing
+        pivot = np.where(np.array(np.diff(variances)) < 0)[0]
+        if len(pivot) == 0:
+            return goodPoints
+        else:
+            pivot = np.min(pivot)
+            goodPoints[pivot:len(goodPoints)] = False
+            return goodPoints
 
     def _makeZeroSafe(self, array, warn=True, substituteValue=1e-9):
         """"""

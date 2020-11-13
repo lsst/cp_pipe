@@ -171,6 +171,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             Logger to handle messages
         """
         mu = dataset.rawMeans
+        expIdMask = dataset.expIdMask
         # dictionaries with ampNames as keys
         fullCovs = dataset.covariances
         fullCovsModel = dataset.covariancesModel
@@ -185,18 +186,18 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         noiseDict = dataset.noise
 
         self.plotCovariances(mu, fullCovs, fullCovsModel, fullCovWeights, fullCovsNoB, fullCovsModelNoB,
-                             fullCovWeightsNoB, gainDict, noiseDict, aDict, bDict, pdfPages)
+                             fullCovWeightsNoB, gainDict, noiseDict, aDict, bDict, expIdMask, pdfPages)
         self.plotNormalizedCovariances(0, 0, mu, fullCovs, fullCovsModel, fullCovWeights, fullCovsNoB,
-                                       fullCovsModelNoB, fullCovWeightsNoB, pdfPages, offset=0.01,
-                                       topPlot=True,
+                                       fullCovsModelNoB, fullCovWeightsNoB, expIdMask, pdfPages,
+                                       offset=0.01, topPlot=True,
                                        numberOfBins=self.config.plotNormalizedCovariancesNumberOfBins,
                                        log=log)
         self.plotNormalizedCovariances(0, 1, mu, fullCovs, fullCovsModel, fullCovWeights, fullCovsNoB,
-                                       fullCovsModelNoB, fullCovWeightsNoB, pdfPages,
+                                       fullCovsModelNoB, fullCovWeightsNoB, expIdMask, pdfPages,
                                        numberOfBins=self.config.plotNormalizedCovariancesNumberOfBins,
                                        log=log)
         self.plotNormalizedCovariances(1, 0, mu, fullCovs, fullCovsModel, fullCovWeights, fullCovsNoB,
-                                       fullCovsModelNoB, fullCovWeightsNoB, pdfPages,
+                                       fullCovsModelNoB, fullCovWeightsNoB, expIdMask, pdfPages,
                                        numberOfBins=self.config.plotNormalizedCovariancesNumberOfBins,
                                        log=log)
         self.plot_a_b(aDict, bDict, pdfPages)
@@ -209,7 +210,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
 
     @staticmethod
     def plotCovariances(mu, covs, covsModel, covsWeights, covsNoB, covsModelNoB, covsWeightsNoB,
-                        gainDict, noiseDict, aDict, bDict, pdfPages):
+                        gainDict, noiseDict, aDict, bDict, expIdMask, pdfPages):
         """Plot covariances and models: Cov00, Cov10, Cov01.
 
         Figs. 6 and 7 of Astier+19
@@ -251,6 +252,9 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         bDict : `dict`, [`str`, `numpy.array`]
             Dictionary keyed by amp names containing 'b' coefficients (Eq. 20 of Astier+19).
+
+        expIdMask : `dict`, [`str`, `list`]
+            Dictionary keyed by amp names containing the masked exposure pairs.
 
         pdfPages: `matplotlib.backends.backend_pdf.PdfPages`
             PDF file where the plots will be saved.
@@ -296,30 +300,32 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             if not np.isnan(np.array(cov)).all():  # If all the entries are np.nan, this is a bad amp.
                 aCoeffs, bCoeffs = np.array(aDict[amp]), np.array(bDict[amp])
                 gain, noise = gainDict[amp], noiseDict[amp]
+                mask = expIdMask[amp]
+
                 (meanVecOriginal, varVecOriginal, varVecModelOriginal,
-                    weightsOriginal, varMask) = getFitDataFromCovariances(0, 0, muAmp, cov, model, weight)
-                meanVecFinal, varVecFinal = meanVecOriginal[varMask], varVecOriginal[varMask]
-                varVecModelFinal = varVecModelOriginal[varMask]
-                meanVecOutliers = meanVecOriginal[np.invert(varMask)]
-                varVecOutliers = varVecOriginal[np.invert(varMask)]
-                varWeightsFinal = weightsOriginal[varMask]
+                    weightsOriginal, _) = getFitDataFromCovariances(0, 0, muAmp, cov, model, weight)
+                meanVecFinal, varVecFinal = meanVecOriginal[mask], varVecOriginal[mask]
+                varVecModelFinal = varVecModelOriginal[mask]
+                meanVecOutliers = meanVecOriginal[np.invert(mask)]
+                varVecOutliers = varVecOriginal[np.invert(mask)]
+                varWeightsFinal = weightsOriginal[mask]
                 # Get weighted reduced chi2
                 chi2FullModelVar = calculateWeightedReducedChi2(varVecFinal, varVecModelFinal,
                                                                 varWeightsFinal, len(meanVecFinal), 4)
 
                 (meanVecOrigCov01, varVecOrigCov01, varVecModelOrigCov01,
-                    _, maskCov01) = getFitDataFromCovariances(0, 0, muAmp, cov, model, weight)
-                meanVecFinalCov01, varVecFinalCov01 = meanVecOrigCov01[maskCov01], varVecOrigCov01[maskCov01]
-                varVecModelFinalCov01 = varVecModelOrigCov01[maskCov01]
-                meanVecOutliersCov01 = meanVecOrigCov01[np.invert(maskCov01)]
-                varVecOutliersCov01 = varVecOrigCov01[np.invert(maskCov01)]
+                    _, _) = getFitDataFromCovariances(0, 0, muAmp, cov, model, weight)
+                meanVecFinalCov01, varVecFinalCov01 = meanVecOrigCov01[mask], varVecOrigCov01[mask]
+                varVecModelFinalCov01 = varVecModelOrigCov01[mask]
+                meanVecOutliersCov01 = meanVecOrigCov01[np.invert(mask)]
+                varVecOutliersCov01 = varVecOrigCov01[np.invert(mask)]
 
                 (meanVecOrigCov10, varVecOrigCov10, varVecModelOrigCov10,
-                    _, maskCov10) = getFitDataFromCovariances(1, 0, muAmp, cov, model, weight)
-                meanVecFinalCov10, varVecFinalCov10 = meanVecOrigCov10[maskCov10], varVecOrigCov10[maskCov10]
-                varVecModelFinalCov10 = varVecModelOrigCov10[maskCov10]
-                meanVecOutliersCov10 = meanVecOrigCov10[np.invert(maskCov10)]
-                varVecOutliersCov10 = varVecOrigCov10[np.invert(maskCov10)]
+                    _, _) = getFitDataFromCovariances(1, 0, muAmp, cov, model, weight)
+                meanVecFinalCov10, varVecFinalCov10 = meanVecOrigCov10[mask], varVecOrigCov10[mask]
+                varVecModelFinalCov10 = varVecModelOrigCov10[mask]
+                meanVecOutliersCov10 = meanVecOrigCov10[np.invert(mask)]
+                varVecOutliersCov10 = varVecOrigCov10[np.invert(mask)]
 
                 # cuadratic fit for residuals below
                 par2 = np.polyfit(meanVecFinal, varVecFinal, 2, w=varWeightsFinal)
@@ -329,9 +335,14 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
 
                 # fit with no 'b' coefficient (c = a*b in Eq. 20 of Astier+19)
                 covNoB, modelNoB, weightNoB = covsNoB[amp], covsModelNoB[amp], covsWeightsNoB[amp]
-                (meanVecFinalNoB, varVecFinalNoB, varVecModelFinalNoB,
-                 varWeightsFinalNoB, maskNoB) = getFitDataFromCovariances(0, 0, muAmp, covNoB, modelNoB,
-                                                                          weightNoB, returnMasked=True)
+                (meanVecOriginalNoB, varVecOriginalNoB, varVecModelOriginalNoB,
+                 varWeightsOriginalNoB, _) = getFitDataFromCovariances(0, 0, muAmp, covNoB, modelNoB,
+                                                                       weightNoB)
+
+                meanVecFinalNoB, varVecFinalNoB, varVecModelFinalNoB, varWeightsFinalNoB = (
+                    meanVecOriginalNoB[mask], varVecOriginalNoB[mask], varVecModelOriginalNoB[mask],
+                    varWeightsOriginalNoB[mask])
+
                 chi2FullModelNoBVar = calculateWeightedReducedChi2(varVecFinalNoB, varVecModelFinalNoB,
                                                                    varWeightsFinalNoB, len(meanVecFinalNoB),
                                                                    3)
@@ -433,7 +444,7 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         return
 
     def plotNormalizedCovariances(self, i, j, inputMu, covs, covsModel, covsWeights, covsNoB, covsModelNoB,
-                                  covsWeightsNoB, pdfPages, offset=0.004,
+                                  covsWeightsNoB, expIdMask, pdfPages, offset=0.004,
                                   numberOfBins=10, plotData=True, topPlot=False, log=None):
         """Plot C_ij/mu vs mu.
 
@@ -471,6 +482,9 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
             Dictionary keyed by amp names containing sqrt. of covariances weights ('b' = 0 in Eq. 20 of
             Astier+19).
 
+        expIdMask : `dict`, [`str`, `list`]
+            Dictionary keyed by amp names containing the masked exposure pairs.
+
         pdfPages: `matplotlib.backends.backend_pdf.PdfPages`
             PDF file where the plots will be saved.
 
@@ -503,13 +517,17 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
         mue, rese, wce = [], [], []
         mueNoB, reseNoB, wceNoB = [], [], []
         for counter, amp in enumerate(covs):
+            mask = expIdMask[amp]
+
             muAmp, fullCov, fullCovModel, fullCovWeight = (inputMu[amp], covs[amp], covsModel[amp],
                                                            covsWeights[amp])
             if len(fullCov) == 0:
                 continue
             mu, cov, model, weightCov, _ = getFitDataFromCovariances(i, j, muAmp, fullCov, fullCovModel,
-                                                                     fullCovWeight, divideByMu=True,
-                                                                     returnMasked=True)
+                                                                     fullCovWeight, divideByMu=True)
+
+            mu, cov, model, weightCov = mu[mask], cov[mask], model[mask], weightCov[mask]
+
             mue += list(mu)
             rese += list(cov - model)
             wce += list(weightCov)
@@ -520,8 +538,11 @@ class PlotPhotonTransferCurveTask(pipeBase.CmdLineTask):
                 continue
             (muNoB, covNoB, modelNoB,
                 weightCovNoB, _) = getFitDataFromCovariances(i, j, muAmp, fullCovNoB, fullCovModelNoB,
-                                                             fullCovWeightNoB, divideByMu=True,
-                                                             returnMasked=True)
+                                                             fullCovWeightNoB, divideByMu=True)
+
+            muNoB, covNoB, modelNoB, weightCovNoB = (muNoB[mask], covNoB[mask], modelNoB[mask],
+                                                     weightCovNoB[mask])
+
             mueNoB += list(muNoB)
             reseNoB += list(covNoB - modelNoB)
             wceNoB += list(weightCovNoB)
