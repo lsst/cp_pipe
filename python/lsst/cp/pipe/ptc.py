@@ -1005,8 +1005,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 ptcFunc = funcAstier
                 parsIniPtc = [-1e-9, 1.0, 10.]  # a00, gain, noise
                 # lowers and uppers obtained from studies by C. Lage (UC Davis, 11/2020).
-                bounds = self._boundsForAstier(parsIniPtc, lowers=[-1e-4, 0.5, -100],
-                                               uppers=[1e-4, 2.5, 100])
+                bounds = self._boundsForAstier(parsIniPtc, lowers=[-1e-4, 0.5, -2000],
+                                               uppers=[1e-4, 2.5, 2000])
             if ptcFitType == 'POLYNOMIAL':
                 ptcFunc = funcPolynomial
                 parsIniPtc = self._initialParsForPolynomial(self.config.polynomialFitDegree + 1)
