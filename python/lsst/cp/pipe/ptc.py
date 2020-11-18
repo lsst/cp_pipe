@@ -107,31 +107,6 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
             " {'ALL_AMPS': value}",
         default={'ALL_AMPS': 1e6},
     )
-    initialNonLinearityExclusionThresholdPositive = pexConfig.RangeField(
-        dtype=float,
-        doc="Initially exclude data points with a variance that are more than a factor of this from being"
-            " linear in the positive direction, from the PTC fit. Note that these points will also be"
-            " excluded from the non-linearity fit. This is done before the iterative outlier rejection,"
-            " to allow an accurate determination of the sigmas for said iterative fit.",
-        default=0.12,
-        min=0.0,
-        max=1.0,
-    )
-    initialNonLinearityExclusionThresholdNegative = pexConfig.RangeField(
-        dtype=float,
-        doc="Initially exclude data points with a variance that are more than a factor of this from being"
-            " linear in the negative direction, from the PTC fit. Note that these points will also be"
-            " excluded from the non-linearity fit. This is done before the iterative outlier rejection,"
-            " to allow an accurate determination of the sigmas for said iterative fit.",
-        default=0.25,
-        min=0.0,
-        max=1.0,
-    )
-    sigmaCutPtcOutliers = pexConfig.Field(
-        dtype=float,
-        doc="Sigma cut for outlier rejection in PTC.",
-        default=5.0,
-    )
     minVarPivotSearch = pexConfig.Field(
         dtype=float,
         doc="The code looks for a pivot signal point after which the variance starts decreasing at high-flux"
@@ -160,16 +135,6 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
         doc="Minimum number of acceptable good pixels per amp to calculate the covariances via FFT.",
         default=10000,
     )
-    maxIterationsPtcOutliers = pexConfig.Field(
-        dtype=int,
-        doc="Maximum number of iterations for outlier rejection in PTC.",
-        default=2,
-    )
-    doFitBootstrap = pexConfig.Field(
-        dtype=bool,
-        doc="Use bootstrap for the PTC fit parameters and errors?.",
-        default=False,
-    )
     doPhotodiode = pexConfig.Field(
         dtype=bool,
         doc="Apply a correction based on the photodiode readings if available?",
@@ -179,11 +144,6 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
         dtype=str,
         doc="Gen2 only: path to locate the data photodiode data files.",
         default=""
-    )
-    instrumentName = pexConfig.Field(
-        dtype=str,
-        doc="Instrument name.",
-        default='',
     )
 
 
