@@ -26,8 +26,7 @@ from collections import Counter
 import lsst.afw.math as afwMath
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
-from .utils import (fitLeastSq, fitBootstrap, funcPolynomial, funcAstier)
-from scipy.optimize import least_squares
+from .utils import (irlsFit, funcPolynomial, funcAstier)
 
 import datetime
 
@@ -132,6 +131,14 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
         dtype=float,
         doc="Sigma cut for outlier rejection in PTC.",
         default=5.0,
+    )
+    minVarPivotSearch = pexConfig.Field(
+        dtype=float,
+        doc="The code looks for a pivot signal point after which the variance starts decreasing at high-flux"
+            " to exclude then form the PTC model fit. However, sometimes at low fluxes, the variance"
+            " decreases slightly. Set this variable for the variance value, in ADU^2, after which the pivot "
+            " should be sought.",
+        default=10000,
     )
     maskNameList = pexConfig.ListField(
         dtype=str,
@@ -901,8 +908,6 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         def errFunc(p, x, y):
             return ptcFunc(p, x) - y
 
-        sigmaCutPtcOutliers = self.config.sigmaCutPtcOutliers
-
         for i, ampName in enumerate(dataset.ampNames):
             timeVecOriginal = np.array(dataset.rawExpTimes[ampName])
             meanVecOriginal = np.array(dataset.rawMeans[ampName])
@@ -911,7 +916,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
             if ptcFitType == 'EXPAPPROXIMATION':
                 ptcFunc = funcAstier
-                parsIniPtc = [-1e-9, 1.0, 10.]  # a00, gain, noise
+                parsIniPtc = [-1e-9, 1.0, 10.]  # a00, gain, noise^2
                 # lowers and uppers obtained from studies by C. Lage (UC Davis, 11/2020).
                 bounds = self._boundsForAstier(parsIniPtc, lowers=[-1e-4, 0.5, -2000],
                                                uppers=[1e-4, 2.5, 2000])
@@ -920,97 +925,46 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 parsIniPtc = self._initialParsForPolynomial(self.config.polynomialFitDegree + 1)
                 bounds = self._boundsForPolynomial(parsIniPtc)
 
-            # Before bootstrap fit, do an iterative fit to get rid of outliers
-            count = 1
-            while count <= maxIterationsPtcOutliers:
-                # Note that application of the mask actually shrinks the array
-                # to size rather than setting elements to zero (as we want) so
-                # always update mask itself and re-apply to the original data
-                meanTempVec = meanVecOriginal[mask]
-                varTempVec = varVecOriginal[mask]
-                res = least_squares(errFunc, parsIniPtc, bounds=bounds, args=(meanTempVec, varTempVec))
-                pars = res.x
+            # Eliminate points beyond which the variance decreases
+            mask = np.array([True for m in meanVecOriginal])
+            pivot = np.where(np.array(np.diff(varVecOriginal)) < 0)[0]
+            if len(pivot) > 0:
+                # For small values, sometimes the variance decreases slightly
+                # Only look when var > self.config.minVarPivotSearch
+                pivot = [p for p in pivot if varVecOriginal[p] > self.config.minVarPivotSearch]
+                if len(pivot) > 0:
+                    pivot = np.min(pivot)
+                    mask[pivot+1:len(mask)] = False
 
-                # change this to the original from the temp because the masks are ANDed
-                # meaning once a point is masked it's always masked, and the masks must
-                # always be the same length for broadcasting
-                sigResids = (varVecOriginal - ptcFunc(pars, meanVecOriginal))/np.sqrt(varVecOriginal)
-                newMask = np.array([True if np.abs(r) < sigmaCutPtcOutliers else False for r in sigResids])
-                mask = mask & newMask
-                if not (mask.any() and newMask.any()):
-                    msg = (f"\nSERIOUS: All points in either mask: {mask} or newMask: {newMask} are bad. "
-                           f"Setting {ampName} to BAD.")
-                    self.log.warn(msg)
-                    # The first and second parameters of initial fit are discarded (bias and gain)
-                    # for the final NL coefficients
-                    dataset.badAmps.append(ampName)
-                    dataset.expIdMask[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
-                    dataset.gain[ampName] = np.nan
-                    dataset.gainErr[ampName] = np.nan
-                    dataset.noise[ampName] = np.nan
-                    dataset.noiseErr[ampName] = np.nan
-                    dataset.ptcFitPars[ampName] = (np.repeat(np.nan, self.config.polynomialFitDegree + 1)
-                                                   if ptcFitType in ["POLYNOMIAL", ] else
-                                                   np.repeat(np.nan, 3))
-                    dataset.ptcFitParsError[ampName] = (np.repeat(np.nan, self.config.polynomialFitDegree + 1)
-                                                        if ptcFitType in ["POLYNOMIAL", ] else
-                                                        np.repeat(np.nan, 3))
-                    dataset.ptcFitChiSq[ampName] = np.nan
-                    dataset.finalVars[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
-                    dataset.finalModelVars[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
-                    dataset.finalMeans[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
-                    break
-                nDroppedTotal = Counter(mask)[False]
-                self.log.debug(f"Iteration {count}: discarded {nDroppedTotal} points in total for {ampName}")
-                count += 1
-                # objects should never shrink
-                assert (len(mask) == len(timeVecOriginal) == len(meanVecOriginal) == len(varVecOriginal))
-
-            if not (mask.any() and newMask.any()):
-                continue
-            dataset.expIdMask[ampName] = mask  # store the final mask
-            parsIniPtc = pars
             meanVecFinal = meanVecOriginal[mask]
             varVecFinal = varVecOriginal[mask]
-
-            if Counter(mask)[False] > 0:
-                self.log.info((f"Number of points discarded in PTC of amplifier {ampName}:" +
-                               f" {Counter(mask)[False]} out of {len(meanVecOriginal)}"))
+            # Fit the PTC
+            parsFit, parsFitErr, reducedChiSqPtc, weightsY = irlsFit(parsIniPtc, meanVecFinal,
+                                                                     varVecFinal, ptcFunc,
+                                                                     weightsY=1./np.sqrt(varVecFinal))
+            if not (mask.any()):
+                msg = (f"\nSERIOUS: All points in mask: {mask} are bad."
+                       f"Setting {ampName} to BAD.")
+                self.log.warn(msg)
+                self.fillBadAmp(dataset, ptcFitType, ampName)
+                continue
 
             if (len(meanVecFinal) < len(parsIniPtc)):
                 msg = (f"\nSERIOUS: Not enough data points ({len(meanVecFinal)}) compared to the number of"
                        f"parameters of the PTC model({len(parsIniPtc)}). Setting {ampName} to BAD.")
                 self.log.warn(msg)
-                # The first and second parameters of initial fit are discarded (bias and gain)
-                # for the final NL coefficients
-                dataset.badAmps.append(ampName)
-                dataset.expIdMask[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
-                dataset.gain[ampName] = np.nan
-                dataset.gainErr[ampName] = np.nan
-                dataset.noise[ampName] = np.nan
-                dataset.noiseErr[ampName] = np.nan
-                dataset.ptcFitPars[ampName] = (np.repeat(np.nan, self.config.polynomialFitDegree + 1) if
-                                               ptcFitType in ["POLYNOMIAL", ] else np.repeat(np.nan, 3))
-                dataset.ptcFitParsError[ampName] = (np.repeat(np.nan, self.config.polynomialFitDegree + 1) if
-                                                    ptcFitType in ["POLYNOMIAL", ] else np.repeat(np.nan, 3))
-                dataset.ptcFitChiSq[ampName] = np.nan
-                dataset.finalVars[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
-                dataset.finalModelVars[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
-                dataset.finalMeans[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
+                self.fillBadAmp(dataset, ptcFitType, ampName)
                 continue
 
-            # Fit the PTC
-            if self.config.doFitBootstrap:
-                parsFit, parsFitErr, reducedChiSqPtc = fitBootstrap(parsIniPtc, meanVecFinal,
-                                                                    varVecFinal, ptcFunc,
-                                                                    weightsY=1./np.sqrt(varVecFinal))
-            else:
-                parsFit, parsFitErr, reducedChiSqPtc = fitLeastSq(parsIniPtc, meanVecFinal,
-                                                                  varVecFinal, ptcFunc,
-                                                                  weightsY=1./np.sqrt(varVecFinal))
+            nDroppedTotal = Counter(mask)[False]
+            self.log.debug(f"Discarded {nDroppedTotal} points in total for {ampName}")
+            # objects should never shrink
+            assert (len(mask) == len(timeVecOriginal) == len(meanVecOriginal) == len(varVecOriginal))
+            dataset.expIdMask[ampName] = mask  # store the final mask
             dataset.ptcFitPars[ampName] = parsFit
             dataset.ptcFitParsError[ampName] = parsFitErr
             dataset.ptcFitChiSq[ampName] = reducedChiSqPtc
+
             # Masked variances (measured and modeled) and means. Need to pad the array so astropy.Table does
             # not crash (the mask may vary per amp).
             padLength = len(dataset.rawExpTimes[ampName]) - len(varVecFinal)
@@ -1041,3 +995,35 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             dataset.badAmps = np.repeat(np.nan, len(list(dataset.rawExpTimes.values())[0]))
 
         return dataset
+
+    def fillBadAmp(self, dataset, ptcFitType, ampName):
+        """Fill the dataset with NaNs if there are not enough good points.
+
+        Parameters
+        ----------
+        dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
+            The dataset containing the means, variances and exposure times.
+
+        ptcFitType : `str`
+            Fit a 'POLYNOMIAL' (degree: 'polynomialFitDegree') or
+            'EXPAPPROXIMATION' (Eq. 16 of Astier+19) to the PTC.
+
+        ampName : `str`
+            Amplifier name.
+        """
+        dataset.badAmps.append(ampName)
+        dataset.expIdMask[ampName] = np.repeat(False, len(dataset.rawExpTimes[ampName]))
+        dataset.gain[ampName] = np.nan
+        dataset.gainErr[ampName] = np.nan
+        dataset.noise[ampName] = np.nan
+        dataset.noiseErr[ampName] = np.nan
+        dataset.ptcFitPars[ampName] = (np.repeat(np.nan, self.config.polynomialFitDegree + 1) if
+                                       ptcFitType in ["POLYNOMIAL", ] else np.repeat(np.nan, 3))
+        dataset.ptcFitParsError[ampName] = (np.repeat(np.nan, self.config.polynomialFitDegree + 1) if
+                                            ptcFitType in ["POLYNOMIAL", ] else np.repeat(np.nan, 3))
+        dataset.ptcFitChiSq[ampName] = np.nan
+        dataset.finalVars[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
+        dataset.finalModelVars[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
+        dataset.finalMeans[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
+
+        return
