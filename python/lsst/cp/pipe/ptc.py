@@ -148,6 +148,11 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
         doc="Number of sigma-clipping iterations for afwMath.StatisticsControl()",
         default=1,
     )
+    minNumberGoodPixelsForFft = pexConfig.Field(
+        dtype=int,
+        doc="Minimum number of acceptable good pixels per amp to calculate the covariances via FFT.",
+        default=10000,
+    )
     maxIterationsPtcOutliers = pexConfig.Field(
         dtype=int,
         doc="Maximum number of iterations for outlier rejection in PTC.",
@@ -651,6 +656,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         mu1 = afwMath.makeStatistics(im1Area, afwMath.MEANCLIP, im1StatsCtrl).getValue()
         mu2 = afwMath.makeStatistics(im2Area, afwMath.MEANCLIP, im2StatsCtrl).getValue()
         if np.isnan(mu1) or np.isnan(mu2):
+            self.log.warn(f"Mean of amp in image 1 or 2 is NaN: {mu1}, {mu2}.")
             return np.nan, np.nan, None
         mu = 0.5*(mu1 + mu2)
 
@@ -680,7 +686,9 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         wDiff = np.where(diffIm.getMask().getArray() == 0, 1, 0)
         w = w12*wDiff
 
-        if np.sum(w) == 0:
+        if np.sum(w) < self.config.minNumberGoodPixelsForFft:
+            self.log.warn(f"Number of good points for FFT ({np.sum(w)}) is less than threshold "
+                          f"({self.config.minNumberGoodPixelsForFft})")
             return np.nan, np.nan, None
 
         maxRangeCov = self.config.maximumRangeCovariancesAstier
@@ -997,8 +1005,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 ptcFunc = funcAstier
                 parsIniPtc = [-1e-9, 1.0, 10.]  # a00, gain, noise
                 # lowers and uppers obtained from studies by C. Lage (UC Davis, 11/2020).
-                bounds = self._boundsForAstier(parsIniPtc, lowers=[-1e-4, 0.5, -100],
-                                               uppers=[1e-4, 2.5, 100])
+                bounds = self._boundsForAstier(parsIniPtc, lowers=[-1e-4, 0.5, -2000],
+                                               uppers=[1e-4, 2.5, 2000])
             if ptcFitType == 'POLYNOMIAL':
                 ptcFunc = funcPolynomial
                 parsIniPtc = self._initialParsForPolynomial(self.config.polynomialFitDegree + 1)

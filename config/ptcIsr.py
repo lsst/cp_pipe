@@ -1,0 +1,22 @@
+# ISR for inputs of Photon Transfer Curve task
+config.isr.doWrite = True
+config.isr.doOverscan = True
+config.isr.doAssembleCcd = True
+config.isr.doBias = True
+config.isr.doVariance = True
+config.isr.doLinearize = True
+config.isr.doCrosstalk = True
+config.isr.doBrighterFatter = False
+config.isr.doDark = True
+config.isr.doStrayLight = False
+config.isr.doFlat = False
+config.isr.doFringe = False
+config.isr.doApplyGains = False
+config.isr.doDefect = True
+config.isr.edgeMaskLevel = 'AMP'
+config.isr.numEdgeSuspect = 10
+config.isr.doNanMasking = True
+config.isr.doInterpolate = True
+config.isr.doSaturation = False
+config.isr.doSaturationInterpolation = False
+config.isr.growSaturationFootprintSize = 0
