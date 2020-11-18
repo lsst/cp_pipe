@@ -282,7 +282,7 @@ class NonexistentDatasetTaskDataIdContainer(pipeBase.DataIdContainer):
             self.refList += refList
 
 
-def irlsFit(initialParams, dataX, dataY, function, weightsY=None):
+def irlsFit(initialParams, dataX, dataY, function, weightsY=None, weightsYiter='fair'):
     """Iteratively reweighted least squares fit.
 
     This uses the `lsst.cp.pipe.utils.fitLeastSq`, but applies
@@ -301,6 +301,10 @@ def irlsFit(initialParams, dataX, dataY, function, weightsY=None):
         Function to fit.
     weightsY : `numpy.array` [`float`]
         Weights to apply to the data.
+    weightsYiter : `str`, optional
+        Type of weight to use in the iterative fitting. Must be
+        either "cauchy" of "fair". TODO: Generalize to any
+        weight function (DM-27650)
 
     Returns
     -------
@@ -313,15 +317,24 @@ def irlsFit(initialParams, dataX, dataY, function, weightsY=None):
     weightsY : `list` [`float`]
         Final weights used for each point.
 
+    Raises
+    -------
+    RuntimeError
+        Raised if weightsYiter is not 'fair' or 'Cauchy'.
     """
     if weightsY is not None:
         weightsY = np.ones_like(dataX)
 
     polyFit, polyFitErr, chiSq = fitLeastSq(initialParams, dataX, dataY, function, weightsY=weightsY)
     for iteration in range(10):
-        # Use Cauchy weights
         resid = np.abs(dataY - function(polyFit, dataX)) / np.sqrt(dataY)
-        weightsY = 1.0 / (1.0 + np.sqrt(resid / 2.385))
+        # Select the weight function
+        if weightsYiter == 'fair':
+            weightsY = 1.0 / (1.0 + np.abs(resid / 1.4))
+        elif weightsYiter == 'cauchy':
+            weightsY = 1.0 / (1.0 + np.sqrt(resid / 2.385))
+        else:
+            raise RuntimeError("weightsYiter must be 'cauchy' or 'fair' ({weightsYiter} passed).")
         polyFit, polyFitErr, chiSq = fitLeastSq(initialParams, dataX, dataY, function, weightsY=weightsY)
 
     return polyFit, polyFitErr, chiSq, weightsY
@@ -434,7 +447,7 @@ def fitBootstrap(initialParams, dataX, dataY, function, weightsY=None, confidenc
     if weightsY is None:
         weightsY = np.ones(len(dataX))
 
-    def errFunc(p, x, y, weightsY):
+    def errFunc(p, x, y, weightsY=None):
         if weightsY is None:
             weightsY = np.ones(len(x))
         return (function(p, x) - y)*weightsY
