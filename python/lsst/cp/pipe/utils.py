@@ -314,7 +314,7 @@ def irlsFit(initialParams, dataX, dataY, function, weightsY=None):
         Final weights used for each point.
 
     """
-    if not weightsY:
+    if weightsY is not None:
         weightsY = np.ones_like(dataX)
 
     polyFit, polyFitErr, chiSq = fitLeastSq(initialParams, dataX, dataY, function, weightsY=weightsY)

@@ -824,23 +824,6 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         pars[2:] = 0.0001
         return pars
 
-    @staticmethod
-    def _boundsForPolynomial(initialPars, lowers=[], uppers=[]):
-        if not len(lowers):
-            lowers = [np.NINF for p in initialPars]
-        if not len(uppers):
-            uppers = [np.inf for p in initialPars]
-        lowers[1] = 0  # no negative gains
-        return (lowers, uppers)
-
-    @staticmethod
-    def _boundsForAstier(initialPars, lowers=[], uppers=[]):
-        if not len(lowers):
-            lowers = [np.NINF for p in initialPars]
-        if not len(uppers):
-            uppers = [np.inf for p in initialPars]
-        return (lowers, uppers)
-
     def _makeZeroSafe(self, array, warn=True, substituteValue=1e-9):
         """"""
         nBad = Counter(array)[0]
@@ -917,13 +900,9 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             if ptcFitType == 'EXPAPPROXIMATION':
                 ptcFunc = funcAstier
                 parsIniPtc = [-1e-9, 1.0, 10.]  # a00, gain, noise^2
-                # lowers and uppers obtained from studies by C. Lage (UC Davis, 11/2020).
-                bounds = self._boundsForAstier(parsIniPtc, lowers=[-1e-4, 0.5, -2000],
-                                               uppers=[1e-4, 2.5, 2000])
             if ptcFitType == 'POLYNOMIAL':
                 ptcFunc = funcPolynomial
                 parsIniPtc = self._initialParsForPolynomial(self.config.polynomialFitDegree + 1)
-                bounds = self._boundsForPolynomial(parsIniPtc)
 
             # Eliminate points beyond which the variance decreases
             mask = np.array([True for m in meanVecOriginal])
