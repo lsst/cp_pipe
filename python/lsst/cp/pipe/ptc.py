@@ -834,70 +834,6 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             uppers = [np.inf for p in initialPars]
         return (lowers, uppers)
 
-    @staticmethod
-    def _getInitialGoodPoints(means, variances, maxDeviationPositive, maxDeviationNegative):
-        """Return a boolean array to mask bad points.
-
-        Parameters
-        ----------
-        means : `numpy.array`
-            Input array with mean signal values.
-
-        variances : `numpy.array`
-            Input array with variances at each mean value.
-
-        maxDeviationPositive : `float`
-            Maximum deviation from being constant for the variance/mean
-            ratio, in the positive direction.
-
-        maxDeviationNegative : `float`
-            Maximum deviation from being constant for the variance/mean
-            ratio, in the negative direction.
-
-        Return
-        ------
-        goodPoints : `numpy.array` [`bool`]
-            Boolean array to select good (`True`) and bad (`False`)
-            points.
-
-        Notes
-        -----
-        A linear function has a constant ratio, so find the median
-        value of the ratios, and exclude the points that deviate
-        from that by more than a factor of maxDeviationPositive/negative.
-        Asymmetric deviations are supported as we expect the PTC to turn
-        down as the flux increases, but sometimes it anomalously turns
-        upwards just before turning over, which ruins the fits, so it
-        is wise to be stricter about restricting positive outliers than
-        negative ones.
-
-        Too high and points that are so bad that fit will fail will be included
-        Too low and the non-linear points will be excluded, biasing the NL fit.
-
-        This function also masks points after the variance starts decreasing.
-        """
-
-        assert(len(means) == len(variances))
-        ratios = [b/a for (a, b) in zip(means, variances)]
-        medianRatio = np.nanmedian(ratios)
-        ratioDeviations = [(r/medianRatio)-1 for r in ratios]
-
-        # so that it doesn't matter if the deviation is expressed as positive or negative
-        maxDeviationPositive = abs(maxDeviationPositive)
-        maxDeviationNegative = -1. * abs(maxDeviationNegative)
-
-        goodPoints = np.array([True if (r < maxDeviationPositive and r > maxDeviationNegative)
-                              else False for r in ratioDeviations])
-
-        # Discard points when variance starts decreasing
-        pivot = np.where(np.array(np.diff(variances)) < 0)[0]
-        if len(pivot) == 0:
-            return goodPoints
-        else:
-            pivot = np.min(pivot)
-            goodPoints[pivot:len(goodPoints)] = False
-            return goodPoints
-
     def _makeZeroSafe(self, array, warn=True, substituteValue=1e-9):
         """"""
         nBad = Counter(array)[0]
@@ -966,40 +902,12 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             return ptcFunc(p, x) - y
 
         sigmaCutPtcOutliers = self.config.sigmaCutPtcOutliers
-        maxIterationsPtcOutliers = self.config.maxIterationsPtcOutliers
 
         for i, ampName in enumerate(dataset.ampNames):
             timeVecOriginal = np.array(dataset.rawExpTimes[ampName])
             meanVecOriginal = np.array(dataset.rawMeans[ampName])
             varVecOriginal = np.array(dataset.rawVars[ampName])
             varVecOriginal = self._makeZeroSafe(varVecOriginal)
-
-            goodPoints = self._getInitialGoodPoints(meanVecOriginal, varVecOriginal,
-                                                    self.config.initialNonLinearityExclusionThresholdPositive,
-                                                    self.config.initialNonLinearityExclusionThresholdNegative)
-            if not (goodPoints.any()):
-                msg = (f"\nSERIOUS: All points in goodPoints: {goodPoints} are bad."
-                       f"Setting {ampName} to BAD.")
-                self.log.warn(msg)
-                # The first and second parameters of initial fit are discarded (bias and gain)
-                # for the final NL coefficients
-                dataset.badAmps.append(ampName)
-                dataset.expIdMask[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
-                dataset.gain[ampName] = np.nan
-                dataset.gainErr[ampName] = np.nan
-                dataset.noise[ampName] = np.nan
-                dataset.noiseErr[ampName] = np.nan
-                dataset.ptcFitPars[ampName] = (np.repeat(np.nan, self.config.polynomialFitDegree + 1) if
-                                               ptcFitType in ["POLYNOMIAL", ] else np.repeat(np.nan, 3))
-                dataset.ptcFitParsError[ampName] = (np.repeat(np.nan, self.config.polynomialFitDegree + 1) if
-                                                    ptcFitType in ["POLYNOMIAL", ] else np.repeat(np.nan, 3))
-                dataset.ptcFitChiSq[ampName] = np.nan
-                dataset.finalVars[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
-                dataset.finalModelVars[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
-                dataset.finalMeans[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
-                continue
-
-            mask = goodPoints
 
             if ptcFitType == 'EXPAPPROXIMATION':
                 ptcFunc = funcAstier
