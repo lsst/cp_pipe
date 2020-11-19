@@ -31,6 +31,7 @@ from scipy.optimize import least_squares
 import lsst.pipe.base.connectionTypes as cT
 
 from .astierCovPtcUtils import (fftSize, CovFft, computeCovDirect, fitData)
+from .astierCovPtcFit import makeCovArray
 from .photodiode import getBOTphotodiodeData
 
 from lsst.pipe.tasks.getRepositoryData import DataRefListRunner
@@ -153,22 +154,12 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                                for exp in np.array(list(inputs['inputExp'].values())).ravel()]
 
         outputs = self.run(**inputs)
-        outputExpIds = []
-        for dictionary in outputs.outputCovariances:
-            if 'test' in dictionary:
-                continue
-            # Keys: amp, expId1, expId2
-            # one entry per amp, same flat pairs: use first entry
-            _, expId1, expId2 = list(dictionary.keys())[0]
-            outputExpIds.append(expId1)
-            outputExpIds.append(expId2)
+        # Need to pad the output list so that it matches the length of the input references.
+        padLength = len(inputRefs.inputExp) - len(outputs.outputCovariances)
+        dummyDatasetPtc = PhotonTransferCurveDataset()
+        for i in range(padLength):
+            outputs.outputCovariances.append(dummyDatasetPtc)
 
-        # Need to update outputRefs because some exposures may have been discarded
-        temp = []
-        for ref in outputRefs.outputCovariances:
-            initialId = ref.dataId['exposure']
-            if initialId not in outputExpIds:
-                outputs.outputCovariances.append(dict())
         butlerQC.put(outputs, outputRefs)
 
     def run(self, inputExp, camera, inputDims=None):
@@ -176,7 +167,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
 
         Parameters
         ----------
-        exposurePairs : `dict` [`float`,
+        inputExp : `dict` [`float`,
                         (`lsst.afw.image.exposure.exposure.ExposureF`,
                         `lsst.afw.image.exposure.exposure.ExposureF`)]
         Dictionary that groups flat-field exposures that have the same
@@ -204,15 +195,18 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
             elif ampName in self.config.minMeanSignal:
                 minMeanSignalDict[ampName] = self.config.minMeanSignal[ampName]
 
-        tupleRecords = []
+        tags = ['mu', 'afwVar', 'i', 'j', 'var', 'cov', 'npix', 'ext', 'expTime', 'ampName']
+        partialDatasetPtcList = []
         for expTime, (exp1, exp2) in exposurePairs.items():
             expId1 = exp1.getInfo().getVisitInfo().getExposureId()
             expId2 = exp2.getInfo().getVisitInfo().getExposureId()
-            tupleRows = {}
+            tupleRows = []
             nAmpsNan = 0
+            partialDatasetPtc = PhotonTransferCurveDataset(ampNames, 'FULLCOVARIANCE')
+            # self.config.ptcFitType)
             for ampNumber, amp in enumerate(detector):
                 ampName = amp.getName()
-                # covAstier: (i, j, var (cov[0,0]), cov, npix)
+                # covAstier: [(i, j, var (cov[0,0]), cov, npix) for (i,j) in {maxLag, maxLag}^2]
                 doRealSpace = self.config.covAstierRealSpace
                 muDiff, varDiff, covAstier = self.measureMeanVarCov(exp1, exp2, region=amp.getBBox(),
                                                                     covAstierRealSpace=doRealSpace)
@@ -222,26 +216,28 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                            f" {expId2} of detector {detNum}.")
                     self.log.warn(msg)
                     nAmpsNan += 1
-                    # To to ensure that all input exposures/dataIds have corresponding outputs.
-                    tupleRecords.append(dict(test=1))
                     continue
 
                 if (muDiff <= minMeanSignalDict[ampName]) or (muDiff >= maxMeanSignalDict[ampName]):
-                    tupleRecords.append(dict(test=1))
                     continue
 
-                tupleRows[(ampName, expId1, expId2)] = [(muDiff, varDiff) + covRow + (ampNumber, expTime,
-                                                        ampName) for covRow in covAstier]
+                partialDatasetPtc.rawExpTimes[ampName].append(expTime)
+                partialDatasetPtc.rawMeans[ampName].append(muDiff)
+                partialDatasetPtc.rawVars[ampName].append(varDiff)
+
+                tupleRows += [(muDiff, varDiff) + covRow + (ampNumber, expTime,
+                                                            ampName) for covRow in covAstier]
+                tempRecArray = np.core.records.fromrecords(tupleRows, names=tags)
+                singleAmpTuple = tempRecArray[tempRecArray['ampName'] == ampName]
+                covArray, _, _ = makeCovArray(singleAmpTuple, self.config.maximumRangeCovariancesAstier)
+                partialDatasetPtc.covariances[ampName].append(covArray)
+            partialDatasetPtcList.append(partialDatasetPtc)
             if nAmpsNan == len(ampNames):
                 msg = f"NaN mean in all amps of exposure pair {expId1}, {expId2} of detector {detNum}."
                 self.log.warn(msg)
-                continue
-            tupleRecords.append(tupleRows)
-            # This empty dictionary is here to ensure that all input exposures/dataIds have corresponding
-            # outputs.
-            tupleRecords.append(dict(test=1))
+
         return pipeBase.Struct(
-            outputCovariances=tupleRecords,
+            outputCovariances=partialDatasetPtcList,
         )
 
     def measureMeanVarCov(self, exposure1, exposure2, region=None, covAstierRealSpace=False):
@@ -351,100 +347,6 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
             covDiffAstier = c.reportCovFft(maxRangeCov)
 
         return mu, varDiff, covDiffAstier
-
-    def computeCovDirect(self, diffImage, weightImage, maxRange):
-        """Compute covariances of diffImage in real space.
-        For lags larger than ~25, it is slower than the FFT way.
-        Taken from https://github.com/PierreAstier/bfptc/
-        Parameters
-        ----------
-        diffImage : `numpy.array`
-            Image to compute the covariance of.
-        weightImage : `numpy.array`
-            Weight image of diffImage (1's and 0's for good and bad pixels, respectively).
-        maxRange : `int`
-            Last index of the covariance to be computed.
-        Returns
-        -------
-        outList : `list`
-            List with tuples of the form (dx, dy, var, cov, npix), where:
-                dx : `int`
-                    Lag in x
-                dy : `int`
-                    Lag in y
-                var : `float`
-                    Variance at (dx, dy).
-                cov : `float`
-                    Covariance at (dx, dy).
-                nPix : `int`
-                    Number of pixel pairs used to evaluate var and cov.
-        """
-        outList = []
-        var = 0
-        # (dy,dx) = (0,0) has to be first
-        for dy in range(maxRange + 1):
-            for dx in range(0, maxRange + 1):
-                if (dx*dy > 0):
-                    cov1, nPix1 = self.covDirectValue(diffImage, weightImage, dx, dy)
-                    cov2, nPix2 = self.covDirectValue(diffImage, weightImage, dx, -dy)
-                    cov = 0.5*(cov1 + cov2)
-                    nPix = nPix1 + nPix2
-                else:
-                    cov, nPix = self.covDirectValue(diffImage, weightImage, dx, dy)
-                if (dx == 0 and dy == 0):
-                    var = cov
-                outList.append((dx, dy, var, cov, nPix))
-
-        return outList
-
-    def covDirectValue(self, diffImage, weightImage, dx, dy):
-        """Compute covariances of diffImage in real space at lag (dx, dy).
-        Taken from https://github.com/PierreAstier/bfptc/ (c.f., appendix of Astier+19).
-        Parameters
-        ----------
-        diffImage : `numpy.array`
-            Image to compute the covariance of.
-        weightImage : `numpy.array`
-            Weight image of diffImage (1's and 0's for good and bad pixels, respectively).
-        dx : `int`
-            Lag in x.
-        dy : `int`
-            Lag in y.
-        Returns
-        -------
-        cov : `float`
-            Covariance at (dx, dy)
-        nPix : `int`
-            Number of pixel pairs used to evaluate var and cov.
-        """
-        (nCols, nRows) = diffImage.shape
-        # switching both signs does not change anything:
-        # it just swaps im1 and im2 below
-        if (dx < 0):
-            (dx, dy) = (-dx, -dy)
-        # now, we have dx >0. We have to distinguish two cases
-        # depending on the sign of dy
-        if dy >= 0:
-            im1 = diffImage[dy:, dx:]
-            w1 = weightImage[dy:, dx:]
-            im2 = diffImage[:nCols - dy, :nRows - dx]
-            w2 = weightImage[:nCols - dy, :nRows - dx]
-        else:
-            im1 = diffImage[:nCols + dy, dx:]
-            w1 = weightImage[:nCols + dy, dx:]
-            im2 = diffImage[-dy:, :nRows - dx]
-            w2 = weightImage[-dy:, :nRows - dx]
-        # use the same mask for all 3 calculations
-        wAll = w1*w2
-        # do not use mean() because weightImage=0 pixels would then count
-        nPix = wAll.sum()
-        im1TimesW = im1*wAll
-        s1 = im1TimesW.sum()/nPix
-        s2 = (im2*wAll).sum()/nPix
-        p = (im1TimesW*im2).sum()/nPix
-        cov = p - s1*s2
-
-        return cov, nPix
 
 
 class PhotonTransferCurveSolveConnections(pipeBase.PipelineTaskConnections,
