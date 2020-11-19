@@ -857,6 +857,15 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             varVecOriginal = np.array(dataset.rawVars[ampName])
             varVecOriginal = self._makeZeroSafe(varVecOriginal)
 
+            if len(meanVecOriginal) == 0:
+                msg = (f"\nSERIOUS: No good datapoints in {ampName}."
+                       f"Setting {ampName} to BAD.")
+                self.log.warn(msg)
+                dataset.rawMeans[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
+                dataset.rawVars[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
+                self.fillBadAmp(dataset, ptcFitType, ampName)
+                continue
+
             if ptcFitType == 'EXPAPPROXIMATION':
                 ptcFunc = funcAstier
                 parsIniPtc = [-1e-9, 1.0, 10.]  # a00, gain, noise^2
@@ -877,6 +886,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
             meanVecFinal = meanVecOriginal[mask]
             varVecFinal = varVecOriginal[mask]
+
             # Fit the PTC
             parsFit, parsFitErr, reducedChiSqPtc, weightsY = irlsFit(parsIniPtc, meanVecFinal,
                                                                      varVecFinal, ptcFunc,
