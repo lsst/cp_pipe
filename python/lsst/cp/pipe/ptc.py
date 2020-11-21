@@ -107,6 +107,33 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
             " {'ALL_AMPS': value}",
         default={'ALL_AMPS': 1e6},
     )
+    initialNonLinearityExclusionThresholdPositive = pexConfig.RangeField(
+        dtype=float,
+        doc="Initially exclude data points with a variance that are more than a factor of this from being"
+            " linear in the positive direction, from the PTC fit. Note that these points will also be"
+            " excluded from the non-linearity fit. This is done before the iterative outlier rejection,"
+            " to allow an accurate determination of the sigmas for said iterative fit.",
+        default=0.12,
+        min=0.0,
+        max=1.0,
+    )
+    initialNonLinearityExclusionThresholdNegative = pexConfig.RangeField(
+        dtype=float,
+        doc="Initially exclude data points with a variance that are more than a factor of this from being"
+            " linear in the negative direction, from the PTC fit. Note that these points will also be"
+            " excluded from the non-linearity fit. This is done before the iterative outlier rejection,"
+            " to allow an accurate determination of the sigmas for said iterative fit.",
+        default=0.12,
+        min=0.0,
+        max=1.0,
+    )
+    minMeanRatioTest = pexConfig.Field(
+        dtype=float,
+        doc="In the initial test to screen out bad points with a ratio test, points with low"
+            " flux can get inadvertantly screened.  This test only screens out points with flux"
+            " above this value (in ADU).",
+        default=10000,
+    )
     minVarPivotSearch = pexConfig.Field(
         dtype=float,
         doc="The code looks for a pivot signal point after which the variance starts decreasing at high-flux"
@@ -784,6 +811,74 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         pars[2:] = 0.0001
         return pars
 
+    @staticmethod
+    def _getInitialGoodPoints(means, variances, maxDeviationPositive, maxDeviationNegative,
+                              minMeanRatioTest, minVarPivotSearch):
+        """Return a boolean array to mask bad points.
+        Parameters
+        ----------
+        means : `numpy.array`
+            Input array with mean signal values.
+        variances : `numpy.array`
+            Input array with variances at each mean value.
+        maxDeviationPositive : `float`
+            Maximum deviation from being constant for the variance/mean
+            ratio, in the positive direction.
+        maxDeviationNegative : `float`
+            Maximum deviation from being constant for the variance/mean
+            ratio, in the negative direction.
+        minMeanRatioTest : `float`
+            Minimum signal value (in ADU) after which to start examining
+            the ratios.
+        minVarPivotSearch : `float`
+            Minimum variance point (in ADU^2) after which the pivot point
+            wher the variance starts decreasing should be sought.
+
+        Return
+        ------
+        goodPoints : `numpy.array` [`bool`]
+            Boolean array to select good (`True`) and bad (`False`)
+            points.
+        Notes
+        -----
+        A linear function has a constant ratio, so find the median
+        value of the ratios, and exclude the points that deviate
+        from that by more than a factor of maxDeviationPositive/negative.
+        Asymmetric deviations are supported as we expect the PTC to turn
+        down as the flux increases, but sometimes it anomalously turns
+        upwards just before turning over, which ruins the fits, so it
+        is wise to be stricter about restricting positive outliers than
+        negative ones.
+        Too high and points that are so bad that fit will fail will be included
+        Too low and the non-linear points will be excluded, biasing the NL fit.
+        This function also masks points after the variance starts decreasing.
+        """
+
+        assert(len(means) == len(variances))
+        ratios = [b/a for (a, b) in zip(means, variances)]
+        medianRatio = np.nanmedian(ratios)
+        ratioDeviations = [0.0 if a < minMeanRatioTest else (r/medianRatio)-1
+                           for (a, r) in zip(means, ratios)]
+
+        # so that it doesn't matter if the deviation is expressed as positive or negative
+        maxDeviationPositive = abs(maxDeviationPositive)
+        maxDeviationNegative = -1. * abs(maxDeviationNegative)
+
+        goodPoints = np.array([True if (r < maxDeviationPositive and r > maxDeviationNegative)
+                              else False for r in ratioDeviations])
+
+        # Eliminate points beyond which the variance decreases
+        pivot = np.where(np.array(np.diff(variances)) < 0)[0]
+        if len(pivot) > 0:
+            # For small values, sometimes the variance decreases slightly
+            # Only look when var > self.config.minVarPivotSearch
+            pivot = [p for p in pivot if variances[p] > minVarPivotSearch]
+            if len(pivot) > 0:
+                pivot = np.min(pivot)
+                goodPoints[pivot+1:len(goodPoints)] = False
+
+        return goodPoints
+
     def _makeZeroSafe(self, array, warn=True, substituteValue=1e-9):
         """"""
         nBad = Counter(array)[0]
@@ -873,16 +968,11 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 ptcFunc = funcPolynomial
                 parsIniPtc = self._initialParsForPolynomial(self.config.polynomialFitDegree + 1)
 
-            # Eliminate points beyond which the variance decreases
-            mask = np.array([True for m in meanVecOriginal])
-            pivot = np.where(np.array(np.diff(varVecOriginal)) < 0)[0]
-            if len(pivot) > 0:
-                # For small values, sometimes the variance decreases slightly
-                # Only look when var > self.config.minVarPivotSearch
-                pivot = [p for p in pivot if varVecOriginal[p] > self.config.minVarPivotSearch]
-                if len(pivot) > 0:
-                    pivot = np.min(pivot)
-                    mask[pivot+1:len(mask)] = False
+            mask = self._getInitialGoodPoints(meanVecOriginal, varVecOriginal,
+                                              self.config.initialNonLinearityExclusionThresholdPositive,
+                                              self.config.initialNonLinearityExclusionThresholdNegative,
+                                              self.config.minMeanRatioTest,
+                                              self.config.minVarPivotSearch)
 
             meanVecFinal = meanVecOriginal[mask]
             varVecFinal = varVecOriginal[mask]
