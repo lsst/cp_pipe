@@ -113,7 +113,7 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
             " linear in the positive direction, from the PTC fit. Note that these points will also be"
             " excluded from the non-linearity fit. This is done before the iterative outlier rejection,"
             " to allow an accurate determination of the sigmas for said iterative fit.",
-        default=0.12,
+        default=0.50,
         min=0.0,
         max=1.0,
     )
@@ -123,7 +123,7 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
             " linear in the negative direction, from the PTC fit. Note that these points will also be"
             " excluded from the non-linearity fit. This is done before the iterative outlier rejection,"
             " to allow an accurate determination of the sigmas for said iterative fit.",
-        default=0.12,
+        default=0.50,
         min=0.0,
         max=1.0,
     )
@@ -854,16 +854,16 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         # so that it doesn't matter if the deviation is expressed as positive or negative
         maxDeviationPositive = abs(maxDeviationPositive)
         maxDeviationNegative = -1. * abs(maxDeviationNegative)
-
         goodPoints = np.array([True if (r < maxDeviationPositive and r > maxDeviationNegative)
                               else False for r in ratioDeviations])
 
         # Eliminate points beyond which the variance decreases
-        pivot = np.where(np.array(np.diff(variances)) < 0)[0]
+        goodVariances = variances[goodPoints]
+        pivot = np.where(np.array(np.diff(goodVariances)) < 0)[0]
         if len(pivot) > 0:
             # For small values, sometimes the variance decreases slightly
             # Only look when var > self.config.minVarPivotSearch
-            pivot = [p for p in pivot if variances[p] > minVarPivotSearch]
+            pivot = [p for p in pivot if goodVariances[p] > minVarPivotSearch]
             if len(pivot) > 0:
                 pivot = np.min(pivot)
                 print("pivot", pivot)
