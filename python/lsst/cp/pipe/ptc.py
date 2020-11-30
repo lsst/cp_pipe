@@ -114,7 +114,7 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
             " linear in the positive direction, from the PTC fit. Note that these points will also be"
             " excluded from the non-linearity fit. This is done before the iterative outlier rejection,"
             " to allow an accurate determination of the sigmas for said iterative fit.",
-        default=0.12,
+        default=0.05,
         min=0.0,
         max=1.0,
     )
