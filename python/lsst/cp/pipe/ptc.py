@@ -128,6 +128,21 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
         min=0.0,
         max=1.0,
     )
+    minMeanRatioTest = pexConfig.Field(
+        dtype=float,
+        doc="In the initial test to screen out bad points with a ratio test, points with low"
+            " flux can get inadvertantly screened.  This test only screens out points with flux"
+            " above this value.",
+        default=10000,
+    )
+    minVarPivotSearch = pexConfig.Field(
+        dtype=float,
+        doc="The code looks for a pivot signal point after which the variance starts decreasing at high-flux"
+            " to exclude then form the PTC model fit. However, sometimes at low fluxes, the variance"
+            " decreases slightly. Set this variable for the variance value, in ADU^2, after which the pivot "
+            " should be sought.",
+        default=10000,
+    )
     sigmaCutPtcOutliers = pexConfig.Field(
         dtype=float,
         doc="Sigma cut for outlier rejection in PTC.",
@@ -835,7 +850,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         return (lowers, uppers)
 
     @staticmethod
-    def _getInitialGoodPoints(means, variances, maxDeviationPositive, maxDeviationNegative):
+    def _getInitialGoodPoints(means, variances, maxDeviationPositive, maxDeviationNegative,
+                              minMeanRatioTest, minVarPivotSearch):
         """Return a boolean array to mask bad points.
 
         Parameters
@@ -853,6 +869,14 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         maxDeviationNegative : `float`
             Maximum deviation from being constant for the variance/mean
             ratio, in the negative direction.
+
+        minMeanRatioTest : `float`
+            Minimum signal value (in ADU) after which to start examining
+            the ratios var/mean.
+
+       minVarPivotSearch : `float`
+            Minimum variance point (in ADU^2) after which the pivot point
+            wher the variance starts decreasing should be sought.
 
         Return
         ------
@@ -880,7 +904,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         assert(len(means) == len(variances))
         ratios = [b/a for (a, b) in zip(means, variances)]
         medianRatio = np.nanmedian(ratios)
-        ratioDeviations = [(r/medianRatio)-1 for r in ratios]
+        ratioDeviations = [0.0 if a < minMeanRatioTest else (r/medianRatio)-1
+                           for (a, r) in zip(means, ratios)]
 
         # so that it doesn't matter if the deviation is expressed as positive or negative
         maxDeviationPositive = abs(maxDeviationPositive)
@@ -889,14 +914,17 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         goodPoints = np.array([True if (r < maxDeviationPositive and r > maxDeviationNegative)
                               else False for r in ratioDeviations])
 
-        # Discard points when variance starts decreasing
+        # Eliminate points beyond which the variance decreases
         pivot = np.where(np.array(np.diff(variances)) < 0)[0]
-        if len(pivot) == 0:
-            return goodPoints
-        else:
-            pivot = np.min(pivot)
-            goodPoints[pivot:len(goodPoints)] = False
-            return goodPoints
+        if len(pivot) > 0:
+            # For small values, sometimes the variance decreases slightly
+            # Only look when var > self.config.minVarPivotSearch
+            pivot = [p for p in pivot if variances[p] > minVarPivotSearch]
+            if len(pivot) > 0:
+                pivot = np.min(pivot)
+                goodPoints[pivot+1:len(goodPoints)] = False
+
+        return goodPoints
 
     def _makeZeroSafe(self, array, warn=True, substituteValue=1e-9):
         """"""
@@ -976,7 +1004,9 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
             goodPoints = self._getInitialGoodPoints(meanVecOriginal, varVecOriginal,
                                                     self.config.initialNonLinearityExclusionThresholdPositive,
-                                                    self.config.initialNonLinearityExclusionThresholdNegative)
+                                                    self.config.initialNonLinearityExclusionThresholdNegative,
+                                                    self.config.minMeanRatioTest,
+                                                    self.config.minVarPivotSearch)
             if not (goodPoints.any()):
                 msg = (f"\nSERIOUS: All points in goodPoints: {goodPoints} are bad."
                        f"Setting {ampName} to BAD.")
@@ -1003,7 +1033,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
             if ptcFitType == 'EXPAPPROXIMATION':
                 ptcFunc = funcAstier
-                parsIniPtc = [-1e-9, 1.0, 10.]  # a00, gain, noise
+                parsIniPtc = [-1e-9, 1.0, 10.]  # a00, gain, noise^2
                 # lowers and uppers obtained from studies by C. Lage (UC Davis, 11/2020).
                 bounds = self._boundsForAstier(parsIniPtc, lowers=[-1e-4, 0.5, -2000],
                                                uppers=[1e-4, 2.5, 2000])
