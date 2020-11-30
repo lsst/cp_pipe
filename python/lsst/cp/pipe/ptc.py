@@ -1013,20 +1013,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 self.log.warn(msg)
                 # The first and second parameters of initial fit are discarded (bias and gain)
                 # for the final NL coefficients
-                dataset.badAmps.append(ampName)
-                dataset.expIdMask[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
-                dataset.gain[ampName] = np.nan
-                dataset.gainErr[ampName] = np.nan
-                dataset.noise[ampName] = np.nan
-                dataset.noiseErr[ampName] = np.nan
-                dataset.ptcFitPars[ampName] = (np.repeat(np.nan, self.config.polynomialFitDegree + 1) if
-                                               ptcFitType in ["POLYNOMIAL", ] else np.repeat(np.nan, 3))
-                dataset.ptcFitParsError[ampName] = (np.repeat(np.nan, self.config.polynomialFitDegree + 1) if
-                                                    ptcFitType in ["POLYNOMIAL", ] else np.repeat(np.nan, 3))
-                dataset.ptcFitChiSq[ampName] = np.nan
-                dataset.finalVars[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
-                dataset.finalModelVars[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
-                dataset.finalMeans[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
+                self.fillBadAmp(dataset, ptcFitType, ampName)
                 continue
 
             mask = goodPoints
@@ -1065,22 +1052,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                     self.log.warn(msg)
                     # The first and second parameters of initial fit are discarded (bias and gain)
                     # for the final NL coefficients
-                    dataset.badAmps.append(ampName)
-                    dataset.expIdMask[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
-                    dataset.gain[ampName] = np.nan
-                    dataset.gainErr[ampName] = np.nan
-                    dataset.noise[ampName] = np.nan
-                    dataset.noiseErr[ampName] = np.nan
-                    dataset.ptcFitPars[ampName] = (np.repeat(np.nan, self.config.polynomialFitDegree + 1)
-                                                   if ptcFitType in ["POLYNOMIAL", ] else
-                                                   np.repeat(np.nan, 3))
-                    dataset.ptcFitParsError[ampName] = (np.repeat(np.nan, self.config.polynomialFitDegree + 1)
-                                                        if ptcFitType in ["POLYNOMIAL", ] else
-                                                        np.repeat(np.nan, 3))
-                    dataset.ptcFitChiSq[ampName] = np.nan
-                    dataset.finalVars[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
-                    dataset.finalModelVars[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
-                    dataset.finalMeans[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
+                    self.fillBadAmp(dataset, ptcFitType, ampName)
                     break
                 nDroppedTotal = Counter(mask)[False]
                 self.log.debug(f"Iteration {count}: discarded {nDroppedTotal} points in total for {ampName}")
@@ -1105,20 +1077,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 self.log.warn(msg)
                 # The first and second parameters of initial fit are discarded (bias and gain)
                 # for the final NL coefficients
-                dataset.badAmps.append(ampName)
-                dataset.expIdMask[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
-                dataset.gain[ampName] = np.nan
-                dataset.gainErr[ampName] = np.nan
-                dataset.noise[ampName] = np.nan
-                dataset.noiseErr[ampName] = np.nan
-                dataset.ptcFitPars[ampName] = (np.repeat(np.nan, self.config.polynomialFitDegree + 1) if
-                                               ptcFitType in ["POLYNOMIAL", ] else np.repeat(np.nan, 3))
-                dataset.ptcFitParsError[ampName] = (np.repeat(np.nan, self.config.polynomialFitDegree + 1) if
-                                                    ptcFitType in ["POLYNOMIAL", ] else np.repeat(np.nan, 3))
-                dataset.ptcFitChiSq[ampName] = np.nan
-                dataset.finalVars[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
-                dataset.finalModelVars[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
-                dataset.finalMeans[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
+                self.fillBadAmp(dataset, ptcFitType, ampName)
                 continue
 
             # Fit the PTC
@@ -1163,3 +1122,35 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             dataset.badAmps = np.repeat(np.nan, len(list(dataset.rawExpTimes.values())[0]))
 
         return dataset
+
+    def fillBadAmp(self, dataset, ptcFitType, ampName):
+        """Fill the dataset with NaNs if there are not enough good points.
+
+        Parameters
+        ----------
+        dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
+            The dataset containing the means, variances and exposure times.
+
+        ptcFitType : `str`
+            Fit a 'POLYNOMIAL' (degree: 'polynomialFitDegree') or
+            'EXPAPPROXIMATION' (Eq. 16 of Astier+19) to the PTC.
+
+        ampName : `str`
+            Amplifier name.
+        """
+        dataset.badAmps.append(ampName)
+        dataset.expIdMask[ampName] = np.repeat(False, len(dataset.rawExpTimes[ampName]))
+        dataset.gain[ampName] = np.nan
+        dataset.gainErr[ampName] = np.nan
+        dataset.noise[ampName] = np.nan
+        dataset.noiseErr[ampName] = np.nan
+        dataset.ptcFitPars[ampName] = (np.repeat(np.nan, self.config.polynomialFitDegree + 1) if
+                                       ptcFitType in ["POLYNOMIAL", ] else np.repeat(np.nan, 3))
+        dataset.ptcFitParsError[ampName] = (np.repeat(np.nan, self.config.polynomialFitDegree + 1) if
+                                            ptcFitType in ["POLYNOMIAL", ] else np.repeat(np.nan, 3))
+        dataset.ptcFitChiSq[ampName] = np.nan
+        dataset.finalVars[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
+        dataset.finalModelVars[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
+        dataset.finalMeans[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
+
+        return
