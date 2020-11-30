@@ -27,11 +27,11 @@ tasks:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
     config:
       connections.inputExp: 'cpPtcProc'
-      connections.outputCovariances: 'cpCovariances'
+      connections.outputCovariances: 'cpCovariancesX'
   ptcSolve:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
     config:
-      connections.inputCovariances: 'cpCovariances'
+      connections.inputCovariances: 'cpCovariancesX'
       connections.outputPtcDataset: 'ptcDataset'
 contracts: 
   - ptcSolve.maximumRangeCovariancesAstier == ptcExtract2.maximumRangeCovariancesAstier

@@ -69,7 +69,7 @@ class PhotonTransferCurveExtractConnections(pipeBase.PipelineTaskConnections,
     outputCovariances = cT.Output(
         name="ptcCovariances",
         doc="Extracted flat (co)variances.",
-        storageClass="StructuredDataDict",
+        storageClass="PhotonTransferCurveDataset",
         dimensions=("instrument", "exposure", "detector"),
         multiple=True,
     )
@@ -354,7 +354,7 @@ class PhotonTransferCurveSolveConnections(pipeBase.PipelineTaskConnections,
     inputCovariances = cT.Input(
         name="ptcCovariances",
         doc="Tuple with measured covariances from flats.",
-        storageClass="StructuredDataDict",
+        storageClass="PhotonTransferCurveDataset",
         dimensions=("instrument", "exposure", "detector"),
         multiple=True,
     )
