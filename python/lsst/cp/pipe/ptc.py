@@ -133,7 +133,7 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
         doc="In the initial test to screen out bad points with a ratio test, points with low"
             " flux can get inadvertantly screened.  This test only screens out points with flux"
             " above this value.",
-        default=10000,
+        default=20000,
     )
     minVarPivotSearch = pexConfig.Field(
         dtype=float,
@@ -1045,7 +1045,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 # always be the same length for broadcasting
                 sigResids = (varVecOriginal - ptcFunc(pars, meanVecOriginal))/np.sqrt(varVecOriginal)
                 newMask = np.array([True if np.abs(r) < sigmaCutPtcOutliers else False for r in sigResids])
-                mask = mask & newMask
+                mask = goodPoints & newMask
                 if not (mask.any() and newMask.any()):
                     msg = (f"\nSERIOUS: All points in either mask: {mask} or newMask: {newMask} are bad. "
                            f"Setting {ampName} to BAD.")
