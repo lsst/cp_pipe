@@ -239,7 +239,7 @@ class CpFlatNormalizationTask(pipeBase.PipelineTask,
             bgMatrix = np.zeros((nDet, nExp))
             bgCounts = np.ones((nDet, nExp))
         elif self.config.level == 'AMP':
-            nAmp = len(camera[0])
+            nAmp = len(camera[detSet[0]])
             bgMatrix = np.zeros((nDet * nAmp, nExp))
             bgCounts = np.ones((nDet * nAmp, nExp))
 
@@ -294,15 +294,17 @@ class CpFlatNormalizationTask(pipeBase.PipelineTask,
 
         outputScales = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(float))))
 
+        # Note that the enumerated "detId"/"expId" here index the
+        # "detScales" and "expScales" arrays.
         if self.config.level == 'DETECTOR':
             for detId, det in enumerate(detSet):
-                for amp in camera[detId]:
+                for amp in camera[det]:
                     for expId, exp in enumerate(expSet):
                         outputScales['expScale'][det][amp.getName()][exp] = expScales[expId].tolist()
                 outputScales['detScale'][det] = detScales[detId].tolist()
         elif self.config.level == 'AMP':
             for detId, det in enumerate(detSet):
-                for ampIdx, amp in enumerate(camera[detId]):
+                for ampIdx, amp in enumerate(camera[det]):
                     for expId, exp in enumerate(expSet):
                         outputScales['expScale'][det][amp.getName()][exp] = expScales[expId].tolist()
                     detAmpId = detId + ampIdx
