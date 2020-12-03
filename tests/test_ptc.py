@@ -314,11 +314,18 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
     def test_getInitialGoodPoints(self):
         xs = [1, 2, 3, 4, 5, 6]
         ys = [2*x for x in xs]
-        points = self.defaultTask._getInitialGoodPoints(xs, ys, 0.1, 0.25)
+        points = self.defaultTask._getInitialGoodPoints(xs, ys, maxDeviationPositive=0.1,
+                                                        maxDeviationNegative=0.25,
+                                                        minMeanRatioTest=0.,
+                                                        minVarPivotSearch=0.)
         assert np.all(points) == np.all(np.array([True for x in xs]))
 
         ys[-1] = 30
-        points = self.defaultTask._getInitialGoodPoints(xs, ys, 0.1, 0.25)
+        points = self.defaultTask._getInitialGoodPoints(xs, ys,
+                                                        maxDeviationPositive=0.1,
+                                                        maxDeviationNegative=0.25,
+                                                        minMeanRatioTest=0.,
+                                                        minVarPivotSearch=0.)
         assert np.all(points) == np.all(np.array([True, True, True, True, False]))
 
         ys = [2*x for x in xs]
@@ -326,7 +333,10 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         results = [False, True, True, False, False]
         for i, factor in enumerate([-0.5, -0.1, 0, 0.1, 0.5]):
             newYs[-1] = ys[-1] + (factor*ys[-1])
-            points = self.defaultTask._getInitialGoodPoints(xs, newYs, 0.05, 0.25)
+            points = self.defaultTask._getInitialGoodPoints(xs, newYs, maxDeviationPositive=0.05,
+                                                            maxDeviationNegative=0.25,
+                                                            minMeanRatioTest=0.0,
+                                                            minVarPivotSearch=0.0)
             assert (np.all(points[0:-2]))  # noqa: E712 - flake8 is wrong here because of numpy.bool
             assert points[-1] == results[i]
 
