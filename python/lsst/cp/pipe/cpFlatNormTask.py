@@ -239,7 +239,7 @@ class CpFlatNormalizationTask(pipeBase.PipelineTask,
             bgMatrix = np.zeros((nDet, nExp))
             bgCounts = np.ones((nDet, nExp))
         elif self.config.level == 'AMP':
-            nAmp = len(camera[0])
+            nAmp = len(camera[detSet[0]])
             bgMatrix = np.zeros((nDet * nAmp, nExp))
             bgCounts = np.ones((nDet * nAmp, nExp))
 
@@ -251,8 +251,8 @@ class CpFlatNormalizationTask(pipeBase.PipelineTask,
                 raise KeyError("Cannot find expected dimensions in %s" % (inDimensions, )) from e
 
             if self.config.level == 'DETECTOR':
-                detId = detMap[detectorId]
-                expId = expMap[exposureId]
+                detIdx = detMap[detectorId]
+                expIdx = expMap[exposureId]
                 try:
                     value = inMetadata.get('DETECTOR_MEDIAN')
                     count = inMetadata.get('DETECTOR_N')
@@ -260,18 +260,18 @@ class CpFlatNormalizationTask(pipeBase.PipelineTask,
                     raise KeyError("Cannot read expected metadata string.") from e
 
                 if np.isfinite(value):
-                    bgMatrix[detId][expId] = value
-                    bgCounts[detId][expId] = count
+                    bgMatrix[detIdx][expIdx] = value
+                    bgCounts[detIdx][expIdx] = count
                 else:
-                    bgMatrix[detId][expId] = np.nan
-                    bgCounts[detId][expId] = 1
+                    bgMatrix[detIdx][expIdx] = np.nan
+                    bgCounts[detIdx][expIdx] = 1
 
             elif self.config.level == 'AMP':
                 detector = camera[detectorId]
                 nAmp = len(detector)
 
-                detId = detMap[detectorId] * nAmp
-                expId = expMap[exposureId]
+                detIdx = detMap[detectorId] * nAmp
+                expIdx = expMap[exposureId]
 
                 for ampIdx, amp in enumerate(detector):
                     try:
@@ -280,13 +280,13 @@ class CpFlatNormalizationTask(pipeBase.PipelineTask,
                     except Exception as e:
                         raise KeyError("cannot read expected metadata string.") from e
 
-                    detAmpId = detId + ampIdx
+                    detAmpIdx = detIdx + ampIdx
                     if np.isfinite(value):
-                        bgMatrix[detAmpId][expId] = value
-                        bgCounts[detAmpId][expId] = count
+                        bgMatrix[detAmpIdx][expIdx] = value
+                        bgCounts[detAmpIdx][expIdx] = count
                     else:
-                        bgMatrix[detAmpId][expId] = np.nan
-                        bgMatrix[detAmpId][expId] = 1
+                        bgMatrix[detAmpIdx][expIdx] = np.nan
+                        bgMatrix[detAmpIdx][expIdx] = 1
 
         scaleResult = self.measureScales(bgMatrix, bgCounts, iterations=self.config.scaleMaxIter)
         expScales = scaleResult.expScales
@@ -294,19 +294,21 @@ class CpFlatNormalizationTask(pipeBase.PipelineTask,
 
         outputScales = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(float))))
 
+        # Note that the enumerated "detId"/"expId" here index the
+        # "detScales" and "expScales" arrays.
         if self.config.level == 'DETECTOR':
-            for detId, det in enumerate(detSet):
-                for amp in camera[detId]:
-                    for expId, exp in enumerate(expSet):
-                        outputScales['expScale'][det][amp.getName()][exp] = expScales[expId].tolist()
-                outputScales['detScale'][det] = detScales[detId].tolist()
+            for detIdx, det in enumerate(detSet):
+                for amp in camera[det]:
+                    for expIdx, exp in enumerate(expSet):
+                        outputScales['expScale'][det][amp.getName()][exp] = expScales[expIdx].tolist()
+                outputScales['detScale'][det] = detScales[detIdx].tolist()
         elif self.config.level == 'AMP':
-            for detId, det in enumerate(detSet):
-                for ampIdx, amp in enumerate(camera[detId]):
-                    for expId, exp in enumerate(expSet):
-                        outputScales['expScale'][det][amp.getName()][exp] = expScales[expId].tolist()
-                    detAmpId = detId + ampIdx
-                    outputScales['detScale'][det][amp.getName()] = detScales[detAmpId].tolist()
+            for detIdx, det in enumerate(detSet):
+                for ampIdx, amp in enumerate(camera[det]):
+                    for expIdx, exp in enumerate(expSet):
+                        outputScales['expScale'][det][amp.getName()][exp] = expScales[expIdx].tolist()
+                    detAmpIdx = detIdx + ampIdx
+                    outputScales['detScale'][det][amp.getName()] = detScales[detAmpIdx].tolist()
 
         return pipeBase.Struct(
             outputScales=ddict2dict(outputScales),
