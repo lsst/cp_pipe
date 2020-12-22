@@ -238,16 +238,14 @@ class CovFit:
     """
 
     def __init__(self, meanSignals, covariances, covsSqrtWeights, maxRangeFromTuple=8, meanSignalsMask=[]):
-        self.mu = meanSignals
-        self.cov = covariances
+        if len(meanSignalsMask) == 0:
+            meanSignalsMask = np.repeat(True, len(meanSignals))
+        self.mu = meanSignals[meanSignalsMask]
+        self.cov = np.nan_to_num(covariances)[meanSignalsMask]
         # make it nan safe, replacing nan's with 0 in weights
-        self.sqrtW = covsSqrtWeights
-        self.r = self.cov.shape[1]
+        self.sqrtW = np.nan_to_num(covsSqrtWeights)[meanSignalsMask]
+        self.r = maxRangeFromTuple
         self.logger = lsstLog.Log.getDefaultLogger()
-        if len(meanSignalsMask):
-            self.maskMu = meanSignalsMask
-        else:
-            self.maskMu = np.repeat(True, len(self.mu))
 
     def subtractDistantOffset(self, maxLag=8, startLag=5, polDegree=1):
         """Subtract a background/offset to the measured covariances.
@@ -309,7 +307,7 @@ class CovFit:
         # stop when it increases
         oldChi2 = 1e30
         for _ in range(5):
-            model = self.evalCovModel()  # this computes the full model.
+            model = np.nan_to_num(self.evalCovModel())  # this computes the full model.
             # loop on lags
             for i in range(self.r):
                 for j in range(self.r):
@@ -522,9 +520,9 @@ class CovFit:
         """To be used in weightedRes"""
         if params is not None:
             self.setParamValues(params)
-        covModel = self.evalCovModel()
+        covModel = np.nan_to_num(self.evalCovModel())
         weightedRes = (covModel-self.cov)*self.sqrtW
-        maskedWeightedRes = weightedRes[self.maskMu]
+        maskedWeightedRes = weightedRes
 
         return maskedWeightedRes
 
@@ -572,7 +570,6 @@ class CovFit:
 
         if pInit is None:
             pInit = self.getParamValues()
-
         params, paramsCov, _, mesg, ierr = leastsq(self.weightedRes, pInit, full_output=True)
         self.covParams = paramsCov
 

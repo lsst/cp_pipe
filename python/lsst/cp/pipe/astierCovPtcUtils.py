@@ -282,6 +282,9 @@ def loadData(dataset, params):
 
     covFitList = {}
     for ampName in dataset.ampNames:
+        # If there is a bad amp, don't fit it
+        if ampName in dataset.badAmps:
+            continue
         maskAtAmp = dataset.expIdMask[ampName]
         muAtAmp = dataset.rawMeans[ampName]
         covAtAmp = dataset.covariances[ampName]

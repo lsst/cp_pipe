@@ -129,6 +129,20 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
         doc="Number of sigma-clipping iterations for afwMath.StatisticsControl()",
         default=1,
     )
+    minNumberGoodPixelsForFft = pexConfig.Field(
+        dtype=int,
+        doc="Minimum number of acceptable good pixels per amp to calculate the covariances via FFT.",
+        default=10000,
+    )
+    detectorMeasurementRegion = pexConfig.ChoiceField(
+        dtype=str,
+        doc="Region of each exposure where to perform the calculations (amplifier or full image).",
+        default='AMP',
+        allowed={
+            "AMP": "Amplifier of the detector.",
+            "FULL": "Full image."
+        }
+    )
 
 
 class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
@@ -154,23 +168,20 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         inputs['inputExp'] = arrangeFlatsByExpTime(inputs['inputExp'])
         # Ids of input list of exposures
         inputs['inputDims'] = [expId.dataId['exposure'] for expId in inputRefs.inputExp]
-        outputs = self.run(inputExp=inputs['inputExp'], camera=inputs['camera'],
-                           inputDims=inputs['inputDims'])
+        outputs = self.run(inputExp=inputs['inputExp'], inputDims=inputs['inputDims'])
         butlerQC.put(outputs, outputRefs)
 
-    def run(self, inputExp, camera, inputDims):
+    def run(self, inputExp, inputDims):
         """Measure covariances from difference of flat pairs
 
         Parameters
         ----------
         inputExp : `dict` [`float`,
                         (`lsst.afw.image.exposure.exposure.ExposureF`,
+                        `lsst.afw.image.exposure.exposure.ExposureF`, ...,
                         `lsst.afw.image.exposure.exposure.ExposureF`)]
-        Dictionary that groups flat-field exposures that have the same
-        exposure time (seconds).
-
-        camera : `lsst.afw.cameraGeom.Camera`
-            Input camera.
+            Dictionary that groups flat-field exposures that have the same
+            exposure time (seconds).
 
         inputDims : `list`
             List of exposure IDs.
@@ -191,7 +202,6 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                 minMeanSignalDict[ampName] = self.config.minMeanSignal['ALL_AMPS']
             elif ampName in self.config.minMeanSignal:
                 minMeanSignalDict[ampName] = self.config.minMeanSignal[ampName]
-
         tags = ['mu', 'afwVar', 'i', 'j', 'var', 'cov', 'npix', 'ext', 'expTime', 'ampName']
         dummyPtcDataset = PhotonTransferCurveDataset(ampNames, 'DUMMY')
         covArray = [np.full((self.config.maximumRangeCovariancesAstier,
@@ -201,13 +211,11 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
             dummyPtcDataset.rawMeans[ampName] = [np.nan]
             dummyPtcDataset.rawVars[ampName] = [np.nan]
             dummyPtcDataset.inputExpIdPairs[ampName] = [(np.nan, np.nan)]
-            dummyPtcDataset.expIdMask[ampName] = [True]
+            dummyPtcDataset.expIdMask[ampName] = [np.nan]
             dummyPtcDataset.covariances[ampName] = covArray
             dummyPtcDataset.covariancesModel[ampName] = np.full_like(covArray, np.nan)
             dummyPtcDataset.covariancesSqrtWeights[ampName] = np.full_like(covArray, np.nan)
-            dummyPtcDataset.covariancesNoB[ampName] = np.full_like(covArray, np.nan)
             dummyPtcDataset.covariancesModelNoB[ampName] = np.full_like(covArray, np.nan)
-            dummyPtcDataset.covariancesSqrtWeightsNoB[ampName] = np.full_like(covArray, np.nan)
             dummyPtcDataset.aMatrix[ampName] = np.full_like(covArray[0], np.nan)
             dummyPtcDataset.bMatrix[ampName] = np.full_like(covArray[0], np.nan)
             dummyPtcDataset.aMatrixNoB[ampName] = np.full_like(covArray[0], np.nan)
@@ -246,36 +254,44 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                 ampName = amp.getName()
                 # covAstier: [(i, j, var (cov[0,0]), cov, npix) for (i,j) in {maxLag, maxLag}^2]
                 doRealSpace = self.config.covAstierRealSpace
-                muDiff, varDiff, covAstier = self.measureMeanVarCov(exp1, exp2, region=amp.getBBox(),
+                if self.config.detectorMeasurementRegion == 'AMP':
+                    region = amp.getBBox()
+                elif self.config.detectorMeasurementRegion == 'FULL':
+                    region = None
+                muDiff, varDiff, covAstier = self.measureMeanVarCov(exp1, exp2, region=region,
                                                                     covAstierRealSpace=doRealSpace)
-
+                expIdMask = True
                 if np.isnan(muDiff) or np.isnan(varDiff) or (covAstier is None):
                     msg = (f"NaN mean or var, or None cov in amp {ampName} in exposure pair {expId1},"
                            f" {expId2} of detector {detNum}.")
                     self.log.warn(msg)
                     nAmpsNan += 1
-                    continue
+                    expIdMask = False
+                    covArray = np.full((1, self.config.maximumRangeCovariancesAstier,
+                                        self.config.maximumRangeCovariancesAstier), np.nan)
+                    covSqrtWeights = np.full_like(covArray, np.nan)
 
                 if (muDiff <= minMeanSignalDict[ampName]) or (muDiff >= maxMeanSignalDict[ampName]):
-                    continue
+                    expIdMask = False
 
                 partialDatasetPtc.rawExpTimes[ampName] = [expTime]
                 partialDatasetPtc.rawMeans[ampName] = [muDiff]
                 partialDatasetPtc.rawVars[ampName] = [varDiff]
 
-                tupleRows += [(muDiff, varDiff) + covRow + (ampNumber, expTime,
-                                                            ampName) for covRow in covAstier]
-                tempRecArray = np.core.records.fromrecords(tupleRows, names=tags)
-                singleAmpTuple = tempRecArray[tempRecArray['ampName'] == ampName]
-                covArray, vcov, _ = makeCovArray(singleAmpTuple, self.config.maximumRangeCovariancesAstier)
+                if covAstier is not None:
+                    tupleRows += [(muDiff, varDiff) + covRow + (ampNumber, expTime,
+                                                                ampName) for covRow in covAstier]
+                    tempRecArray = np.core.records.fromrecords(tupleRows, names=tags)
+                    singleAmpTuple = tempRecArray[tempRecArray['ampName'] == ampName]
+                    covArray, vcov, _ = makeCovArray(singleAmpTuple,
+                                                     self.config.maximumRangeCovariancesAstier)
+                    covSqrtWeights = np.nan_to_num(1./np.sqrt(vcov))
                 partialDatasetPtc.inputExpIdPairs[ampName] = [(expId1, expId2)]
-                partialDatasetPtc.expIdMask[ampName] = [True]
+                partialDatasetPtc.expIdMask[ampName] = [expIdMask]
                 partialDatasetPtc.covariances[ampName] = covArray
-                partialDatasetPtc.covariancesSqrtWeights[ampName] = np.nan_to_num(1./np.sqrt(vcov))
+                partialDatasetPtc.covariancesSqrtWeights[ampName] = covSqrtWeights
                 partialDatasetPtc.covariancesModel[ampName] = np.full_like(covArray, np.nan)
-                partialDatasetPtc.covariancesNoB[ampName] = np.full_like(covArray, np.nan)
                 partialDatasetPtc.covariancesModelNoB[ampName] = np.full_like(covArray, np.nan)
-                partialDatasetPtc.covariancesSqrtWeightsNoB[ampName] = np.full_like(covArray, np.nan)
                 partialDatasetPtc.aMatrix[ampName] = np.full_like(covArray[0], np.nan)
                 partialDatasetPtc.bMatrix[ampName] = np.full_like(covArray[0], np.nan)
                 partialDatasetPtc.aMatrixNoB[ampName] = np.full_like(covArray[0], np.nan)
@@ -288,15 +304,9 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
             # Use location of exp1 to save PTC dataset from (exp1, exp2) pair.
             datasetIndex = np.where(expId1 == np.array(inputDims))[0][0]
             partialDatasetPtcList[datasetIndex] = partialDatasetPtc
-            # if c == 0:
-            #    temp = partialDatasetPtc
-            print("nAmpsNan, len(ampNames)", nAmpsNan, len(ampNames))
             if nAmpsNan == len(ampNames):
                 msg = f"NaN mean in all amps of exposure pair {expId1}, {expId2} of detector {detNum}."
                 self.log.warn(msg)
-        # partialDatasetPtcList = []
-        # for i in range(len(inputDims)):
-        #    partialDatasetPtcList.append(temp)
         return pipeBase.Struct(
             outputCovariances=partialDatasetPtcList,
         )
@@ -369,6 +379,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         mu1 = afwMath.makeStatistics(im1Area, afwMath.MEANCLIP, im1StatsCtrl).getValue()
         mu2 = afwMath.makeStatistics(im2Area, afwMath.MEANCLIP, im2StatsCtrl).getValue()
         if np.isnan(mu1) or np.isnan(mu2):
+            self.log.warn(f"Mean of amp in image 1 or 2 is NaN: {mu1}, {mu2}.")
             return np.nan, np.nan, None
         mu = 0.5*(mu1 + mu2)
 
@@ -397,6 +408,11 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         w12 = w1*w2
         wDiff = np.where(diffIm.getMask().getArray() == 0, 1, 0)
         w = w12*wDiff
+
+        if np.sum(w) < self.config.minNumberGoodPixelsForFft:
+            self.log.warn(f"Number of good points for FFT ({np.sum(w)}) is less than threshold "
+                          f"({self.config.minNumberGoodPixelsForFft})")
+            return np.nan, np.nan, None
 
         maxRangeCov = self.config.maximumRangeCovariancesAstier
         if covAstierRealSpace:
@@ -486,7 +502,7 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
             " linear in the positive direction, from the PTC fit. Note that these points will also be"
             " excluded from the non-linearity fit. This is done before the iterative outlier rejection,"
             " to allow an accurate determination of the sigmas for said iterative fit.",
-        default=0.12,
+        default=0.05,
         min=0.0,
         max=1.0,
     )
@@ -499,6 +515,21 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
         default=0.25,
         min=0.0,
         max=1.0,
+    )
+    minMeanRatioTest = pexConfig.Field(
+        dtype=float,
+        doc="In the initial test to screen out bad points with a ratio test, points with low"
+            " flux can get inadvertantly screened.  This test only screens out points with flux"
+            " above this value.",
+        default=20000,
+    )
+    minVarPivotSearch = pexConfig.Field(
+        dtype=float,
+        doc="The code looks for a pivot signal point after which the variance starts decreasing at high-flux"
+            " to exclude then form the PTC model fit. However, sometimes at low fluxes, the variance"
+            " decreases slightly. Set this variable for the variance value, in ADU^2, after which the pivot "
+            " should be sought.",
+        default=10000,
     )
     doFitBootstrap = pexConfig.Field(
         dtype=bool,
@@ -526,7 +557,6 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             Output data refs to persist.
         """
         inputs = butlerQC.get(inputRefs)
-
         # Use the dimensions to set calib information.
         inputs['inputDims'] = [exp.dataId.byName() for exp in inputRefs.inputCovariances]
         outputs = self.run(inputCovariances=inputs['inputCovariances'], camera=inputs['camera'],
@@ -541,13 +571,13 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         inputCovariances : `list` [`lsst.ip.isr.PhotonTransferCurveDataset`]
             List of lsst.ip.isr.PhotonTransferCurveDataset datasets.
 
-        camera : `lsst.afw.cameraGeom.Camera`
+        camera : `lsst.afw.cameraGeom.Camera`, optional
             Input camera.
 
-        inputDims : `list` [`lsst.daf.butler.DataCoordinate`]
+        inputDims : `list` [`lsst.daf.butler.DataCoordinate`], optional
             DataIds to use.
 
-        outputDims : `list` [`lsst.daf.butler.DataCoordinate`]
+        outputDims : `list` [`lsst.daf.butler.DataCoordinate`], optional
             DataIds to use to populate the output calibration.
 
         Returns
@@ -565,15 +595,26 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             if partialPtcDataset.ptcFitType == 'DUMMY':
                 continue
             for ampName in ampNames:
-                datasetPtc.rawExpTimes[ampName].append(partialPtcDataset.rawExpTimes[ampName])
-                datasetPtc.rawMeans[ampName].append(partialPtcDataset.rawMeans[ampName])
-                datasetPtc.rawVars[ampName].append(partialPtcDataset.rawVars[ampName])
+                datasetPtc.inputExpIdPairs[ampName].append(partialPtcDataset.inputExpIdPairs[ampName])
+                if type(partialPtcDataset.rawExpTimes[ampName]) is list:
+                    datasetPtc.rawExpTimes[ampName].append(partialPtcDataset.rawExpTimes[ampName][0])
+                else:
+                    datasetPtc.rawExpTimes[ampName].append(partialPtcDataset.rawExpTimes[ampName])
+                if type(partialPtcDataset.rawMeans[ampName]) is list:
+                    datasetPtc.rawMeans[ampName].append(partialPtcDataset.rawMeans[ampName][0])
+                else:
+                    datasetPtc.rawMeans[ampName].append(partialPtcDataset.rawMeans[ampName])
+                if type(partialPtcDataset.rawVars[ampName]) is list:
+                    datasetPtc.rawVars[ampName].append(partialPtcDataset.rawVars[ampName][0])
+                else:
+                    datasetPtc.rawVars[ampName].append(partialPtcDataset.rawVars[ampName])
                 datasetPtc.covariances[ampName].append(np.array(partialPtcDataset.covariances[ampName][0]))
                 datasetPtc.covariancesSqrtWeights[ampName].append(
                     np.array(partialPtcDataset.covariancesSqrtWeights[ampName][0]))
         # Sort arrays that are filled so far in the final dataset by rawMeans index
-        for ampName in datasetPtc.ampNames:
-            index = np.argsort(datasetPtc.rawMeans[ampName])
+        for ampName in ampNames:
+            index = np.argsort(np.ravel(np.array(datasetPtc.rawMeans[ampName])))
+            datasetPtc.inputExpIdPairs[ampName] = np.array(datasetPtc.inputExpIdPairs[ampName])[index]
             datasetPtc.rawExpTimes[ampName] = np.array(datasetPtc.rawExpTimes[ampName])[index]
             datasetPtc.rawMeans[ampName] = np.array(datasetPtc.rawMeans[ampName])[index]
             datasetPtc.rawVars[ampName] = np.array(datasetPtc.rawVars[ampName])[index]
@@ -583,21 +624,24 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
 
         if self.config.ptcFitType in ["FULLCOVARIANCE", ]:
             # Calculate covariances and fit them, including the PTC, to Astier+19 full model (Eq. 20)
-            # First, fit get the flat pairs that are masked, according to the regular PTC (C_00 vs mu)
+            # First, fit get the flat pairs that are masked, fitting C_00 vs mu to
+            # the EXPAPPROXIMATION model (Eq. 16 in Astier+19).
             # The points at these fluxes will also be masked when calculating the other covariances, C_ij)
             tempDatasetPtc = copy.copy(datasetPtc)
             tempDatasetPtc.ptcFitType = "EXPAPPROXIMATION"
             tempDatasetPtc = self.fitPtc(tempDatasetPtc)
             for ampName in datasetPtc.ampNames:
                 datasetPtc.expIdMask[ampName] = tempDatasetPtc.expIdMask[ampName]
-
             datasetPtc.fitType = "FULLCOVARIANCE"
             datasetPtc = self.fitCovariancesAstier(datasetPtc)
         elif self.config.ptcFitType in ["EXPAPPROXIMATION", "POLYNOMIAL"]:
             # Fit the PTC to a polynomial or to Astier+19 exponential approximation (Eq. 16)
             # Fill up PhotonTransferCurveDataset object.
             datasetPtc = self.fitPtc(datasetPtc)
-        detector = inputDims[0]['detector']
+        if inputDims is not None:
+            detector = inputDims[0]['detector']
+        else:
+            detector = None
         datasetPtc.updateMetadata(setDate=True, camera=camera, detector=detector)
 
         return pipeBase.Struct(
@@ -650,39 +694,34 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         for i, amp in enumerate(dataset.ampNames):
             lenInputTimes = len(dataset.rawExpTimes[amp])
             # Not used when ptcFitType is 'FULLCOVARIANCE'
-            dataset.ptcFitPars[amp] = np.nan
-            dataset.ptcFitParsError[amp] = np.nan
+            dataset.ptcFitPars[amp] = [np.nan]
+            dataset.ptcFitParsError[amp] = [np.nan]
             dataset.ptcFitChiSq[amp] = np.nan
             if amp in covFits:
                 fit = covFits[amp]
                 fitNoB = covFitsNoB[amp]
                 # Save full covariances, covariances models, and their weights
+                # dataset.expIdMask is already full
                 dataset.covariances[amp] = fit.cov
                 dataset.covariancesModel[amp] = fit.evalCovModel()
                 dataset.covariancesSqrtWeights[amp] = fit.sqrtW
                 dataset.aMatrix[amp] = fit.getA()
                 dataset.bMatrix[amp] = fit.getB()
-                dataset.covariancesNoB[amp] = fitNoB.cov
                 dataset.covariancesModelNoB[amp] = fitNoB.evalCovModel()
-                dataset.covariancesSqrtWeightsNoB[amp] = fitNoB.sqrtW
                 dataset.aMatrixNoB[amp] = fitNoB.getA()
 
                 (meanVecFinal, varVecFinal, varVecModel,
-                    wc, varMask) = fit.getFitData(0, 0, divideByMu=False, returnMasked=True)
+                    wc, varMask) = fit.getFitData(0, 0, divideByMu=False)
                 gain = fit.getGain()
-                dataset.expIdMask[amp] = varMask
+
                 dataset.gain[amp] = gain
                 dataset.gainErr[amp] = fit.getGainErr()
                 dataset.noise[amp] = np.sqrt(fit.getRon())
                 dataset.noiseErr[amp] = fit.getRonErr()
+                dataset.finalVars[amp] = varVecFinal
+                dataset.finalModelVars[amp] = varVecModel
+                dataset.finalMeans[amp] = meanVecFinal
 
-                padLength = lenInputTimes - len(varVecFinal)
-                dataset.finalVars[amp] = np.pad(varVecFinal/(gain**2), (0, padLength), 'constant',
-                                                constant_values=np.nan)
-                dataset.finalModelVars[amp] = np.pad(varVecModel/(gain**2), (0, padLength), 'constant',
-                                                     constant_values=np.nan)
-                dataset.finalMeans[amp] = np.pad(meanVecFinal/gain, (0, padLength), 'constant',
-                                                 constant_values=np.nan)
             else:
                 # Bad amp
                 # Entries need to have proper dimensions so read/write with astropy.Table works.
@@ -695,9 +734,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
                 dataset.covariancesSqrtWeights[amp] = listNanMatrix
                 dataset.aMatrix[amp] = nanMatrix
                 dataset.bMatrix[amp] = nanMatrix
-                dataset.covariancesNoB[amp] = listNanMatrix
                 dataset.covariancesModelNoB[amp] = listNanMatrix
-                dataset.covariancesSqrtWeightsNoB[amp] = listNanMatrix
                 dataset.aMatrixNoB[amp] = nanMatrix
 
                 dataset.expIdMask[amp] = np.repeat(np.nan, lenInputTimes)
@@ -721,21 +758,51 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         return pars
 
     @staticmethod
-    def _boundsForPolynomial(initialPars):
-        lowers = [np.NINF for p in initialPars]
-        uppers = [np.inf for p in initialPars]
+    def _boundsForPolynomial(initialPars, lowers=[], uppers=[]):
+        if not len(lowers):
+            lowers = [np.NINF for p in initialPars]
+        if not len(uppers):
+            uppers = [np.inf for p in initialPars]
         lowers[1] = 0  # no negative gains
         return (lowers, uppers)
 
     @staticmethod
-    def _boundsForAstier(initialPars):
-        lowers = [np.NINF for p in initialPars]
-        uppers = [np.inf for p in initialPars]
+    def _boundsForAstier(initialPars, lowers=[], uppers=[]):
+        if not len(lowers):
+            lowers = [np.NINF for p in initialPars]
+        if not len(uppers):
+            uppers = [np.inf for p in initialPars]
         return (lowers, uppers)
 
     @staticmethod
-    def _getInitialGoodPoints(means, variances, maxDeviationPositive, maxDeviationNegative):
+    def _getInitialGoodPoints(means, variances, maxDeviationPositive, maxDeviationNegative,
+                              minMeanRatioTest, minVarPivotSearch):
         """Return a boolean array to mask bad points.
+        Parameters
+        ----------
+        means : `numpy.array`
+            Input array with mean signal values.
+        variances : `numpy.array`
+            Input array with variances at each mean value.
+        maxDeviationPositive : `float`
+            Maximum deviation from being constant for the variance/mean
+            ratio, in the positive direction.
+        maxDeviationNegative : `float`
+            Maximum deviation from being constant for the variance/mean
+            ratio, in the negative direction.
+        minMeanRatioTest : `float`
+            Minimum signal value (in ADU) after which to start examining
+            the ratios var/mean.
+       minVarPivotSearch : `float`
+            Minimum variance point (in ADU^2) after which the pivot point
+            wher the variance starts decreasing should be sought.
+        Return
+        ------
+        goodPoints : `numpy.array` [`bool`]
+            Boolean array to select good (`True`) and bad (`False`)
+            points.
+        Notes
+        -----
         A linear function has a constant ratio, so find the median
         value of the ratios, and exclude the points that deviate
         from that by more than a factor of maxDeviationPositive/negative.
@@ -745,10 +812,15 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         is wise to be stricter about restricting positive outliers than
         negative ones.
         Too high and points that are so bad that fit will fail will be included
-        Too low and the non-linear points will be excluded, biasing the NL fit."""
+        Too low and the non-linear points will be excluded, biasing the NL fit.
+        This function also masks points after the variance starts decreasing.
+        """
+
+        assert(len(means) == len(variances))
         ratios = [b/a for (a, b) in zip(means, variances)]
         medianRatio = np.nanmedian(ratios)
-        ratioDeviations = [(r/medianRatio)-1 for r in ratios]
+        ratioDeviations = [0.0 if a < minMeanRatioTest else (r/medianRatio)-1
+                           for (a, r) in zip(means, ratios)]
 
         # so that it doesn't matter if the deviation is expressed as positive or negative
         maxDeviationPositive = abs(maxDeviationPositive)
@@ -756,11 +828,22 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
 
         goodPoints = np.array([True if (r < maxDeviationPositive and r > maxDeviationNegative)
                               else False for r in ratioDeviations])
+
+        # Eliminate points beyond which the variance decreases
+        pivot = np.where(np.array(np.diff(variances)) < 0)[0]
+        if len(pivot) > 0:
+            # For small values, sometimes the variance decreases slightly
+            # Only look when var > self.config.minVarPivotSearch
+            pivot = [p for p in pivot if variances[p] > minVarPivotSearch]
+            if len(pivot) > 0:
+                pivot = np.min(pivot)
+                goodPoints[pivot+1:len(goodPoints)] = False
+
         return goodPoints
 
     def _makeZeroSafe(self, array, warn=True, substituteValue=1e-9):
         """"""
-        nBad = Counter(array)[0]
+        nBad = Counter(np.ravel(np.array(array)))[0]
         if nBad == 0:
             return array
 
@@ -772,10 +855,12 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         return array
 
     def fitPtc(self, dataset):
-        """Fit the photon transfer curve to a polynimial or to Astier+19 approximation.
+        """Fit the photon transfer curve to a polynomial or to Astier+19 approximation.
+
         Fit the photon transfer curve with either a polynomial of the order
         specified in the task config, or using the exponential approximation
         in Astier+19 (Eq. 16).
+
         Sigma clipping is performed iteratively for the fit, as well as an
         initial clipping of data points that are more than
         config.initialNonLinearityExclusionThreshold away from lying on a
@@ -784,10 +869,12 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         drops the variance to ~0) and these far outliers cause the initial fit
         to fail, meaning the sigma cannot be calculated to perform the
         sigma-clipping.
+
         Parameters
         ----------
         dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
             The dataset containing the means, variances and exposure times.
+
         Returns
         -------
         dataset: `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
@@ -813,14 +900,10 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             listNanMatrix = np.empty((lenInputTimes, matrixSide, matrixSide))
             listNanMatrix[:] = np.nan
 
-            dataset.covariances[amp] = listNanMatrix
             dataset.covariancesModel[amp] = listNanMatrix
-            dataset.covariancesSqrtWeights[amp] = listNanMatrix
             dataset.aMatrix[amp] = nanMatrix
             dataset.bMatrix[amp] = nanMatrix
-            dataset.covariancesNoB[amp] = listNanMatrix
             dataset.covariancesModelNoB[amp] = listNanMatrix
-            dataset.covariancesSqrtWeightsNoB[amp] = listNanMatrix
             dataset.aMatrixNoB[amp] = nanMatrix
 
         def errFunc(p, x, y):
@@ -830,42 +913,32 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         maxIterationsPtcOutliers = self.config.maxIterationsPtcOutliers
 
         for i, ampName in enumerate(dataset.ampNames):
-            timeVecOriginal = np.array(dataset.rawExpTimes[ampName])
-            meanVecOriginal = np.array(dataset.rawMeans[ampName])
-            varVecOriginal = np.array(dataset.rawVars[ampName])
+            timeVecOriginal = np.ravel(np.array(dataset.rawExpTimes[ampName]))
+            meanVecOriginal = np.ravel(np.array(dataset.rawMeans[ampName]))
+            varVecOriginal = np.ravel(np.array(dataset.rawVars[ampName]))
             varVecOriginal = self._makeZeroSafe(varVecOriginal)
 
             goodPoints = self._getInitialGoodPoints(meanVecOriginal, varVecOriginal,
                                                     self.config.initialNonLinearityExclusionThresholdPositive,
-                                                    self.config.initialNonLinearityExclusionThresholdNegative)
+                                                    self.config.initialNonLinearityExclusionThresholdNegative,
+                                                    self.config.minMeanRatioTest,
+                                                    self.config.minVarPivotSearch)
             if not (goodPoints.any()):
                 msg = (f"\nSERIOUS: All points in goodPoints: {goodPoints} are bad."
                        f"Setting {ampName} to BAD.")
                 self.log.warn(msg)
-                # The first and second parameters of initial fit are discarded (bias and gain)
-                # for the final NL coefficients
-                dataset.badAmps.append(ampName)
-                dataset.expIdMask[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
-                dataset.gain[ampName] = np.nan
-                dataset.gainErr[ampName] = np.nan
-                dataset.noise[ampName] = np.nan
-                dataset.noiseErr[ampName] = np.nan
-                dataset.ptcFitPars[ampName] = (np.repeat(np.nan, self.config.polynomialFitDegree + 1) if
-                                               ptcFitType in ["POLYNOMIAL", ] else np.repeat(np.nan, 3))
-                dataset.ptcFitParsError[ampName] = (np.repeat(np.nan, self.config.polynomialFitDegree + 1) if
-                                                    ptcFitType in ["POLYNOMIAL", ] else np.repeat(np.nan, 3))
-                dataset.ptcFitChiSq[ampName] = np.nan
-                dataset.finalVars[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
-                dataset.finalModelVars[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
-                dataset.finalMeans[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
+                # Fill entries with NaNs
+                self.fillBadAmp(dataset, ptcFitType, ampName)
                 continue
 
             mask = goodPoints
 
             if ptcFitType == 'EXPAPPROXIMATION':
                 ptcFunc = funcAstier
-                parsIniPtc = [-1e-9, 1.0, 10.]  # a00, gain, noise
-                bounds = self._boundsForAstier(parsIniPtc)
+                parsIniPtc = [-1e-9, 1.0, 10.]  # a00, gain, noisei^2
+                # lowers and uppers obtained from BOT data studies by C. Lage (UC Davis, 11/2020).
+                bounds = self._boundsForAstier(parsIniPtc, lowers=[-1e-4, 0.5, -2000],
+                                               uppers=[1e-4, 2.5, 2000])
             if ptcFitType == 'POLYNOMIAL':
                 ptcFunc = funcPolynomial
                 parsIniPtc = self._initialParsForPolynomial(self.config.polynomialFitDegree + 1)
@@ -892,31 +965,14 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
                     msg = (f"\nSERIOUS: All points in either mask: {mask} or newMask: {newMask} are bad. "
                            f"Setting {ampName} to BAD.")
                     self.log.warn(msg)
-                    # The first and second parameters of initial fit are discarded (bias and gain)
-                    # for the final NL coefficients
-                    dataset.badAmps.append(ampName)
-                    dataset.expIdMask[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
-                    dataset.gain[ampName] = np.nan
-                    dataset.gainErr[ampName] = np.nan
-                    dataset.noise[ampName] = np.nan
-                    dataset.noiseErr[ampName] = np.nan
-                    dataset.ptcFitPars[ampName] = (np.repeat(np.nan, self.config.polynomialFitDegree + 1)
-                                                   if ptcFitType in ["POLYNOMIAL", ] else
-                                                   np.repeat(np.nan, 3))
-                    dataset.ptcFitParsError[ampName] = (np.repeat(np.nan, self.config.polynomialFitDegree + 1)
-                                                        if ptcFitType in ["POLYNOMIAL", ] else
-                                                        np.repeat(np.nan, 3))
-                    dataset.ptcFitChiSq[ampName] = np.nan
-                    dataset.finalVars[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
-                    dataset.finalModelVars[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
-                    dataset.finalMeans[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
+                    # Fill entries with NaNs
+                    self.fillBadAmp(dataset, ptcFitType, ampName)
                     break
                 nDroppedTotal = Counter(mask)[False]
                 self.log.debug(f"Iteration {count}: discarded {nDroppedTotal} points in total for {ampName}")
                 count += 1
                 # objects should never shrink
                 assert (len(mask) == len(timeVecOriginal) == len(meanVecOriginal) == len(varVecOriginal))
-
             if not (mask.any() and newMask.any()):
                 continue
             dataset.expIdMask[ampName] = mask  # store the final mask
@@ -932,24 +988,9 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
                 msg = (f"\nSERIOUS: Not enough data points ({len(meanVecFinal)}) compared to the number of"
                        f"parameters of the PTC model({len(parsIniPtc)}). Setting {ampName} to BAD.")
                 self.log.warn(msg)
-                # The first and second parameters of initial fit are discarded (bias and gain)
-                # for the final NL coefficients
-                dataset.badAmps.append(ampName)
-                dataset.expIdMask[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
-                dataset.gain[ampName] = np.nan
-                dataset.gainErr[ampName] = np.nan
-                dataset.noise[ampName] = np.nan
-                dataset.noiseErr[ampName] = np.nan
-                dataset.ptcFitPars[ampName] = (np.repeat(np.nan, self.config.polynomialFitDegree + 1) if
-                                               ptcFitType in ["POLYNOMIAL", ] else np.repeat(np.nan, 3))
-                dataset.ptcFitParsError[ampName] = (np.repeat(np.nan, self.config.polynomialFitDegree + 1) if
-                                                    ptcFitType in ["POLYNOMIAL", ] else np.repeat(np.nan, 3))
-                dataset.ptcFitChiSq[ampName] = np.nan
-                dataset.finalVars[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
-                dataset.finalModelVars[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
-                dataset.finalMeans[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
+                # Fill entries with NaNs
+                self.fillBadAmp(dataset, ptcFitType, ampName)
                 continue
-
             # Fit the PTC
             if self.config.doFitBootstrap:
                 parsFit, parsFitErr, reducedChiSqPtc = fitBootstrap(parsIniPtc, meanVecFinal,
@@ -971,7 +1012,6 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
                                                      'constant', constant_values=np.nan)
             dataset.finalMeans[ampName] = np.pad(meanVecFinal, (0, padLength), 'constant',
                                                  constant_values=np.nan)
-
             if ptcFitType == 'EXPAPPROXIMATION':
                 ptcGain = parsFit[1]
                 ptcGainErr = parsFitErr[1]
@@ -986,12 +1026,42 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             dataset.gainErr[ampName] = ptcGainErr
             dataset.noise[ampName] = ptcNoise
             dataset.noiseErr[ampName] = ptcNoiseErr
+
         if not len(dataset.ptcFitType) == 0:
             dataset.ptcFitType = ptcFitType
         if len(dataset.badAmps) == 0:
             dataset.badAmps = np.repeat(np.nan, len(list(dataset.rawExpTimes.values())[0]))
 
         return dataset
+
+    def fillBadAmp(self, dataset, ptcFitType, ampName):
+        """Fill the dataset with NaNs if there are not enough good points.
+        Parameters
+        ----------
+        dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
+            The dataset containing the means, variances and exposure times.
+        ptcFitType : `str`
+            Fit a 'POLYNOMIAL' (degree: 'polynomialFitDegree') or
+            'EXPAPPROXIMATION' (Eq. 16 of Astier+19) to the PTC.
+        ampName : `str`
+            Amplifier name.
+        """
+        dataset.badAmps.append(ampName)
+        dataset.expIdMask[ampName] = np.repeat(False, len(dataset.rawExpTimes[ampName]))
+        dataset.gain[ampName] = np.nan
+        dataset.gainErr[ampName] = np.nan
+        dataset.noise[ampName] = np.nan
+        dataset.noiseErr[ampName] = np.nan
+        dataset.ptcFitPars[ampName] = (np.repeat(np.nan, self.config.polynomialFitDegree + 1) if
+                                       ptcFitType in ["POLYNOMIAL", ] else np.repeat(np.nan, 3))
+        dataset.ptcFitParsError[ampName] = (np.repeat(np.nan, self.config.polynomialFitDegree + 1) if
+                                            ptcFitType in ["POLYNOMIAL", ] else np.repeat(np.nan, 3))
+        dataset.ptcFitChiSq[ampName] = np.nan
+        dataset.finalVars[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
+        dataset.finalModelVars[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
+        dataset.finalMeans[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
+
+        return
 
 
 class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
@@ -1011,7 +1081,7 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
     doPhotodiode = pexConfig.Field(
         dtype=bool,
         doc="Apply a correction based on the photodiode readings if available?",
-        default=True,
+        default=False,
     )
     photodiodeDataPath = pexConfig.Field(
         dtype=str,
@@ -1081,44 +1151,40 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         if len(set([dataRef.dataId[self.config.ccdKey] for dataRef in dataRefList])) > 1:
             raise RuntimeError("Too many detectors supplied")
-
-        # Organize exposures by observation date.
-        expDict = {}
+        # Get exposure list.
+        expList = []
         for dataRef in dataRefList:
             try:
                 tempFlat = dataRef.get("postISRCCD")
             except RuntimeError:
                 self.log.warn("postISR exposure could not be retrieved. Ignoring flat.")
                 continue
-            expDate = tempFlat.getInfo().getVisitInfo().getDate().get()
-            expDict.setdefault(expDate, tempFlat)
-        sortedExps = list({k: expDict[k] for k in sorted(expDict)}.values())
-        # Get the pairs of flats indexed by expTime
-        expPairsDict = makeExpPairs(sortedExps)
-        expPairsList = list(expPairsDict.values())
-        detector = expPairsList[0][0].getDetector()
-        # Make a list of the Id's of the exp pairs
-        expIds = []
-        for (exp1, exp2) in expPairsList:
-            id1 = exp1.getInfo().getVisitInfo().getExposureId()
-            id2 = exp2.getInfo().getVisitInfo().getExposureId()
-            expIds.append((id1, id2))
-        self.log.info(f"Measuring PTC using {expIds} exposures for detector {detector.getId()}")
+            expList.append(tempFlat)
+        expIds = [exp.getInfo().getVisitInfo().getExposureId() for exp in expList]
 
-        # Get first exposure
-        inputDims = expPairsList[0][0]
-        result = self.extract.run(expPairsDict, camera)
-        finalResults = self.solve.run(result.outputCovariances, camera=camera, inputDims=inputDims)
-
-        for ampName in finalResults.outputPtcDataset.ampNames:
-            finalResults.outputPtcDataset.inputExpIdPairs[ampName] = expIds
+        # Create dictionary of exposures, keyed by exposure time
+        expDict = arrangeFlatsByExpTime(expList)
+        # Call the "extract" (measure flat covariances) and "solve" (fit covariances) subtasks
+        resultsExtract = self.extract.run(inputExp=expDict, inputDims=expIds)
+        dataIdList = [dataRef.dataId for dataRef in dataRefList]
+        resultsSolve = self.solve.run(resultsExtract.outputCovariances, camera=camera, inputDims=dataIdList)
 
         # Fill up the photodiode data, if found, that will be used by linearity task.
-        finalResults.outputPtcDataset = self._setBOTPhotocharge(dataRef, finalResults.outputPtcDataset,
-                                                                expIds)
+        # Get expIdPairs from one of the amps
+        expIdsPairsList = []
+        ampNames = resultsSolve.outputPtcDataset.ampNames
+        for ampName in ampNames:
+            tempAmpName = ampName
+            if ampName not in resultsSolve.outputPtcDataset.badAmps:
+                break
+        for pair in resultsSolve.outputPtcDataset.inputExpIdPairs[tempAmpName]:
+            first, second = pair[0]
+            expIdsPairsList.append((first, second))
 
+        resultsSolve.outputPtcDataset = self._setBOTPhotocharge(dataRef, resultsSolve.outputPtcDataset,
+                                                                expIdsPairsList)
         self.log.info("Writing PTC data.")
-        dataRef.put(finalResults.outputPtcDataset, datasetType="photonTransferCurveDataset")
+        dataRef.put(resultsSolve.outputPtcDataset, datasetType="photonTransferCurveDataset")
 
         return
 
