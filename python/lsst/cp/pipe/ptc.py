@@ -302,7 +302,11 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                 partialDatasetPtc.finalModelVars[ampName] = [np.nan]
                 partialDatasetPtc.finalMeans[ampName] = [np.nan]
             # Use location of exp1 to save PTC dataset from (exp1, exp2) pair.
-            datasetIndex = np.where(expId1 == np.array(inputDims))[0][0]
+            # import ipdb; ipdb.set_trace()
+            try:
+                datasetIndex = np.where(expId1//1000 == np.array(inputDims))[0][0]
+            except IndexError:
+                datasetIndex = np.where(expId1//1000 == np.array(inputDims)//1000)[0][0]
             partialDatasetPtcList[datasetIndex] = partialDatasetPtc
             if nAmpsNan == len(ampNames):
                 msg = f"NaN mean in all amps of exposure pair {expId1}, {expId2} of detector {detNum}."
@@ -557,10 +561,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             Output data refs to persist.
         """
         inputs = butlerQC.get(inputRefs)
-        # Use the dimensions to set calib information.
-        inputs['inputDims'] = [exp.dataId.byName() for exp in inputRefs.inputCovariances]
-        outputs = self.run(inputCovariances=inputs['inputCovariances'], camera=inputs['camera'],
-                           inputDims=inputs['inputDims'])
+        outputs = self.run(inputCovariances=inputs['inputCovariances'], camera=inputs['camera'])
         butlerQC.put(outputs, outputRefs)
 
     def run(self, inputCovariances, camera=None, inputDims=None, outputDims=None):
@@ -639,7 +640,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             # Fill up PhotonTransferCurveDataset object.
             datasetPtc = self.fitPtc(datasetPtc)
         if inputDims is not None:
-            detector = inputDims[0]['detector']
+            # It should be a list of exposures, to get the detector.
+            detector = inputDims[0].getDetector()
         else:
             detector = None
         datasetPtc.updateMetadata(setDate=True, camera=camera, detector=detector)
@@ -1166,8 +1168,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         expDict = arrangeFlatsByExpTime(expList)
         # Call the "extract" (measure flat covariances) and "solve" (fit covariances) subtasks
         resultsExtract = self.extract.run(inputExp=expDict, inputDims=expIds)
-        dataIdList = [dataRef.dataId for dataRef in dataRefList]
-        resultsSolve = self.solve.run(resultsExtract.outputCovariances, camera=camera, inputDims=dataIdList)
+        resultsSolve = self.solve.run(resultsExtract.outputCovariances, camera=camera)
 
         # Fill up the photodiode data, if found, that will be used by linearity task.
         # Get expIdPairs from one of the amps
