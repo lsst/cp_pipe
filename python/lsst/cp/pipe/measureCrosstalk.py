@@ -829,7 +829,14 @@ class MeasureCrosstalkTask(pipeBase.CmdLineTask):
             result = self.extract.run(exposure)
             ratios.append(result.outputRatios)
 
-        finalResults = self.solver.run(ratios, camera=camera)
+        for detIter, detector in enumerate(camera):
+            if detector.getName() == activeChip:
+                detectorId = detIter
+        outputDims = {'instrument': camera.getName(),
+                      'detector': detectorId,
+                      }
+
+        finalResults = self.solver.run(ratios, camera=camera, outputDims=outputDims)
         dataRef.put(finalResults.outputCrosstalk, "crosstalk")
 
         return finalResults
