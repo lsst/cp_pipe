@@ -516,13 +516,15 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
         # Populate the remainder of the calibration information.
         calib.hasCrosstalk = True
         calib.interChip = {}
-        calib._detectorName = calibChip
+
+        # calibChip is the detector dimension, which is the detector Id
+        calib._detectorId = calibChip
         if camera:
-            for chip in camera:
-                if chip.getName() == calibChip:
-                    calib._detectorSerial = chip.getSerial()
+            calib._detectorName = camera[calibChip].getName()
+            calib._detectorSerial = camera[calibChip].getSerial()
+
         calib._instrument = instrument
-        calib.updateMetadata()
+        calib.updateMetadata(setCalibId=True, setDate=True)
 
         # Make an IsrProvenance().
         provenance = IsrProvenance(calibType="CROSSTALK")
@@ -827,7 +829,14 @@ class MeasureCrosstalkTask(pipeBase.CmdLineTask):
             result = self.extract.run(exposure)
             ratios.append(result.outputRatios)
 
-        finalResults = self.solver.run(ratios, camera=camera)
+        for detIter, detector in enumerate(camera):
+            if detector.getName() == activeChip:
+                detectorId = detIter
+        outputDims = {'instrument': camera.getName(),
+                      'detector': detectorId,
+                      }
+
+        finalResults = self.solver.run(ratios, camera=camera, outputDims=outputDims)
         dataRef.put(finalResults.outputCrosstalk, "crosstalk")
 
         return finalResults
