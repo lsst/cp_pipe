@@ -20,7 +20,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 
-__all__ = ['PlotPhotonTransferCurveTask']
+__all__ = ['PlotPhotonTransferCurveTaskGen2']
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -30,8 +30,10 @@ import os
 from matplotlib.backends.backend_pdf import PdfPages
 
 import lsst.ip.isr as isr
+import lsst.pex.config as pexConfig
+import lsst.pipe.base as pipeBase
 
-from .utils import (funcAstier, funcPolynomial,
+from .utils import (funcAstier, funcPolynomial, NonexistentDatasetTaskDataIdContainer,
                     calculateWeightedReducedChi2)
 from matplotlib.ticker import MaxNLocator
 
@@ -40,71 +42,99 @@ from .astierCovPtcUtils import getFitDataFromCovariances
 
 from lsst.ip.isr import PhotonTransferCurveDataset
 
-import lsst.log as lsstLog
+
+class PlotPhotonTransferCurveTaskConfigGen2(pexConfig.Config):
+    """Config class for photon transfer curve measurement task"""
+    datasetFileName = pexConfig.Field(
+        dtype=str,
+        doc="datasetPtc file name (fits)",
+        default="",
+    )
+    linearizerFileName = pexConfig.Field(
+        dtype=str,
+        doc="linearizer file name (fits)",
+        default="",
+    )
+    ccdKey = pexConfig.Field(
+        dtype=str,
+        doc="The key by which to pull a detector from a dataId, e.g. 'ccd' or 'detector'.",
+        default='detector',
+    )
+    signalElectronsRelativeA = pexConfig.Field(
+        dtype=float,
+        doc="Signal value for relative systematic bias between different methods of estimating a_ij "
+            "(Fig. 15 of Astier+19).",
+        default=75000,
+    )
+    plotNormalizedCovariancesNumberOfBins = pexConfig.Field(
+        dtype=int,
+        doc="Number of bins in `plotNormalizedCovariancesNumber` function "
+            "(Fig. 8, 10., of Astier+19).",
+        default=10,
+    )
 
 
-class PlotPhotonTransferCurveTask():
+class PlotPhotonTransferCurveTaskGen2(pipeBase.CmdLineTask):
     """A class to plot the dataset from MeasurePhotonTransferCurveTask.
 
     Parameters
     ----------
 
-    datasetFileName : `str`
-        datasetPtc (lsst.ip.isr.PhotonTransferCurveDataset) file
-        name (fits).
+    *args: `list`
+        Positional arguments passed to the Task constructor. None used at this
+        time.
+    **kwargs: `dict`
+        Keyword arguments passed on to the Task constructor. None used at this
+        time.
 
-    linearizerFileName : `str`, optional
-        linearizer (isr.linearize.Linearizer) file
-        name (fits).
-
-    outDir : `str`, optional
-        Path to the output directory where the final PDF will
-        be placed.
-
-    detNum : `int`, optional
-        Detector number.
-
-    signalElectronsRelativeA : `float`, optional
-        Signal value for relative systematic bias between different
-        methods of estimating a_ij (Fig. 15 of Astier+19).
-
-    plotNormalizedCovariancesNumberOfBins : `float`, optional
-        Number of bins in `plotNormalizedCovariancesNumber` function
-        (Fig. 8, 10., of Astier+19).
     """
 
-    def __init__(self, datasetFilename, linearizerFileName=None,
-                 outDir='.', detNum=999, signalElectronsRelativeA=75000,
-                 plotNormalizedCovariancesNumberOfBins=10):
-        self.datasetFilename = datasetFilename
-        self.linearizerFileName = linearizerFileName
-        self.detNum = detNum
-        self.signalElectronsRelativeA = signalElectronsRelativeA
-        self.plotNormalizedCovariancesNumberOfBins = plotNormalizedCovariancesNumberOfBins
-        self.outDir = outDir
+    ConfigClass = PlotPhotonTransferCurveTaskConfigGen2
+    _DefaultName = "plotPhotonTransferCurve"
 
-    def runDataRef(self):
+    def __init__(self, *args, **kwargs):
+        pipeBase.CmdLineTask.__init__(self, *args, **kwargs)
+        plt.interactive(False)  # stop windows popping up when plotting. When headless, use 'agg' backend too
+        self.config.validate()
+        self.config.freeze()
+
+    @classmethod
+    def _makeArgumentParser(cls):
+        """Augment argument parser for the MeasurePhotonTransferCurveTask."""
+        parser = pipeBase.ArgumentParser(name=cls._DefaultName)
+        parser.add_id_argument("--id", datasetType="photonTransferCurveDataset",
+                               ContainerClass=NonexistentDatasetTaskDataIdContainer,
+                               help="The ccds to use, e.g. --id ccd=0..100")
+        return parser
+
+    @pipeBase.timeMethod
+    def runDataRef(self, dataRef):
         """Run the Photon Transfer Curve (PTC) plotting measurement task.
+
+        Parameters
+        ----------
+        dataRef : list of lsst.daf.persistence.ButlerDataRef
+            dataRef for the detector for the expIds to be fit.
         """
 
-        datasetFile = self.datasetFilename
+        datasetFile = self.config.datasetFileName
         datasetPtc = PhotonTransferCurveDataset.readFits(datasetFile)
 
-        dirname = self.outDir
+        dirname = dataRef.getUri(datasetType='cpPipePlotRoot', write=True)
         if not os.path.exists(dirname):
             os.makedirs(dirname)
 
-        detNum = self.detNum
+        detNum = dataRef.dataId[self.config.ccdKey]
         filename = f"PTC_det{detNum}.pdf"
         filenameFull = os.path.join(dirname, filename)
 
-        if self.linearizerFileName:
-            linearizer = isr.linearize.Linearizer.readFits(self.linearizerFileName)
+        if self.config.linearizerFileName:
+            linearizer = isr.linearize.Linearizer.readFits(self.config.linearizerFileName)
         else:
             linearizer = None
-        self.run(filenameFull, datasetPtc, linearizer=linearizer, log=lsstLog)
+        self.run(filenameFull, datasetPtc, linearizer=linearizer, log=self.log)
 
-        return
+        return pipeBase.Struct(exitStatus=0)
 
     def run(self, filenameFull, datasetPtc, linearizer=None, log=None):
         """Make the plots for the PTC task"""
@@ -159,21 +189,21 @@ class PlotPhotonTransferCurveTask():
         self.plotNormalizedCovariances(0, 0, mu, fullCovs, fullCovsModel, fullCovWeights, fullCovsNoB,
                                        fullCovsModelNoB, fullCovWeightsNoB, pdfPages,
                                        offset=0.01, topPlot=True,
-                                       numberOfBins=self.plotNormalizedCovariancesNumberOfBins,
+                                       numberOfBins=self.config.plotNormalizedCovariancesNumberOfBins,
                                        log=log)
         self.plotNormalizedCovariances(0, 1, mu, fullCovs, fullCovsModel, fullCovWeights, fullCovsNoB,
                                        fullCovsModelNoB, fullCovWeightsNoB, pdfPages,
-                                       numberOfBins=self.plotNormalizedCovariancesNumberOfBins,
+                                       numberOfBins=self.config.plotNormalizedCovariancesNumberOfBins,
                                        log=log)
         self.plotNormalizedCovariances(1, 0, mu, fullCovs, fullCovsModel, fullCovWeights, fullCovsNoB,
                                        fullCovsModelNoB, fullCovWeightsNoB, pdfPages,
-                                       numberOfBins=self.plotNormalizedCovariancesNumberOfBins,
+                                       numberOfBins=self.config.plotNormalizedCovariancesNumberOfBins,
                                        log=log)
         self.plot_a_b(aDict, bDict, pdfPages)
         self.ab_vs_dist(aDict, bDict, pdfPages, bRange=4)
         self.plotAcoeffsSum(aDict, bDict, pdfPages)
         self.plotRelativeBiasACoeffs(aDict, aDictNoB, fullCovsModel, fullCovsModelNoB,
-                                     self.signalElectronsRelativeA, gainDict, pdfPages, maxr=4)
+                                     self.config.signalElectronsRelativeA, gainDict, pdfPages, maxr=4)
 
         return
 

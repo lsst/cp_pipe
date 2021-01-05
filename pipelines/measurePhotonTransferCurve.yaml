@@ -1,28 +1,29 @@
 description: cp_pipe PTC calibration construction.
 tasks:
-#  isr:
-#    class: lsst.ip.isr.isrTask.IsrTask
-#    config:
-#      connections.ccdExposure: 'raw'
-#      connections.outputExposure: 'cpPtcProc'
-#      doWrite: True
-#      doOverscan: True
-#      doAssembleCcd: True
-#      doBias: True
-#      doVariance: True
-#      doLinearize: True
-#      doCrosstalk: False
-#      doBrighterFatter: False
-#      doDark: True
-#      doStrayLight: False
-#      doFlat: False
-#      doFringe: False
-#      doApplyGains: False
-#      doDefect: True
-#      doNanMasking: True
-#      doInterpolate: True
-#      doSaturationInterpolation: False
-#      growSaturationFootprintSize: 0
+  isr:
+    class: lsst.ip.isr.isrTask.IsrTask
+    config:
+      connections.ccdExposure: 'raw'
+      connections.outputExposure: 'cpPtcProc'
+      doWrite: True
+      doOverscan: True
+      doAssembleCcd: True
+      doBias: True
+      doVariance: True
+      doLinearize: False
+      doCrosstalk: True
+      doBrighterFatter: False
+      doDark: True
+      doStrayLight: False
+      doFlat: True
+      doFringe: False
+      doApplyGains: False
+      doDefect: True
+      doNanMasking: True
+      doInterpolate: False
+      doSaturation: False
+      doSaturationInterpolation: False
+      growSaturationFootprintSize: 0
   ptcExtract2:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
     config:

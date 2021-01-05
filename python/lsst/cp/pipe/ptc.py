@@ -302,11 +302,13 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                 partialDatasetPtc.finalModelVars[ampName] = [np.nan]
                 partialDatasetPtc.finalMeans[ampName] = [np.nan]
             # Use location of exp1 to save PTC dataset from (exp1, exp2) pair.
-            # import ipdb; ipdb.set_trace()
             try:
-                datasetIndex = np.where(expId1//1000 == np.array(inputDims))[0][0]
+                datasetIndex = np.where(expId1 == np.array(inputDims))[0][0]
             except IndexError:
-                datasetIndex = np.where(expId1//1000 == np.array(inputDims)//1000)[0][0]
+                try:
+                    datasetIndex = np.where(expId1//1000 == np.array(inputDims))[0][0]
+                except IndexError:
+                    datasetIndex = np.where(expId1//1000 == np.array(inputDims)//1000)[0][0]
             partialDatasetPtcList[datasetIndex] = partialDatasetPtc
             if nAmpsNan == len(ampNames):
                 msg = f"NaN mean in all amps of exposure pair {expId1}, {expId2} of detector {detNum}."
@@ -987,7 +989,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
                                f" {Counter(mask)[False]} out of {len(meanVecOriginal)}"))
 
             if (len(meanVecFinal) < len(parsIniPtc)):
-                msg = (f"\nSERIOUS: Not enough data points ({len(meanVecFinal)}) compared to the number of"
+                msg = (f"\nSERIOUS: Not enough data points ({len(meanVecFinal)}) compared to the number of "
                        f"parameters of the PTC model({len(parsIniPtc)}). Setting {ampName} to BAD.")
                 self.log.warn(msg)
                 # Fill entries with NaNs
