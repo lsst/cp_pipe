@@ -24,15 +24,15 @@ tasks:
       doSaturation: False
       doSaturationInterpolation: False
       growSaturationFootprintSize: 0
-  ptcExtract2:
+  ptcExtract:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
     config:
       connections.inputExp: 'cpPtcProc'
-      connections.outputCovariances: 'cpCovariancesX'
+      connections.outputCovariances: 'cpCovariances'
   ptcSolve:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
     config:
-      connections.inputCovariances: 'cpCovariancesX'
-      connections.outputPtcDataset: 'ptcDataset'
+      connections.inputCovariances: 'cpCovariances'
+      connections.outputPtcDataset: 'ptc'
 contracts: 
-  - ptcSolve.maximumRangeCovariancesAstier == ptcExtract2.maximumRangeCovariancesAstier
+  - ptcSolve.maximumRangeCovariancesAstier == ptcExtract.maximumRangeCovariancesAstier

@@ -455,6 +455,7 @@ class PhotonTransferCurveSolveConnections(pipeBase.PipelineTaskConnections,
         storageClass="PhotonTransferCurveDataset",
         dimensions=("instrument", "detector"),
         multiple=False,
+        isCalibration=True,
     )
 
 
