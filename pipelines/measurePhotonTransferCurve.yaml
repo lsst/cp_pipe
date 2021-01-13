@@ -34,5 +34,6 @@ tasks:
     config:
       connections.inputCovariances: 'cpCovariances'
       connections.outputPtcDataset: 'ptc'
+      ptcFitType: 'FULLCOVARIANCE'
 contracts: 
   - ptcSolve.maximumRangeCovariancesAstier == ptcExtract.maximumRangeCovariancesAstier
