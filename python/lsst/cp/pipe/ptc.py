@@ -202,7 +202,8 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                 minMeanSignalDict[ampName] = self.config.minMeanSignal['ALL_AMPS']
             elif ampName in self.config.minMeanSignal:
                 minMeanSignalDict[ampName] = self.config.minMeanSignal[ampName]
-        tags = ['mu', 'afwVar', 'i', 'j', 'var', 'cov', 'npix', 'ext', 'expTime', 'ampName']
+        tags = [('mu', '<f8'), ('afwVar', '<f8'), ('i', '<i8'), ('j', '<i8'), ('var', '<f8'),
+                ('cov', '<f8'), ('npix', '<i8'), ('ext', '<i8'), ('expTime', '<f8'), ('ampName', '<U3')]
         dummyPtcDataset = PhotonTransferCurveDataset(ampNames, 'DUMMY')
         covArray = [np.full((self.config.maximumRangeCovariancesAstier,
                     self.config.maximumRangeCovariancesAstier), np.nan)]
@@ -247,7 +248,6 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                                       f"Ignoring exposure {i.getInfo().getVisitInfo().getExposureId()}")
             expId1 = exp1.getInfo().getVisitInfo().getExposureId()
             expId2 = exp2.getInfo().getVisitInfo().getExposureId()
-            tupleRows = []
             nAmpsNan = 0
             partialDatasetPtc = PhotonTransferCurveDataset(ampNames, '')
             for ampNumber, amp in enumerate(detector):
@@ -279,11 +279,10 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                 partialDatasetPtc.rawVars[ampName] = [varDiff]
 
                 if covAstier is not None:
-                    tupleRows += [(muDiff, varDiff) + covRow + (ampNumber, expTime,
-                                                                ampName) for covRow in covAstier]
-                    tempRecArray = np.core.records.fromrecords(tupleRows, names=tags)
-                    singleAmpTuple = tempRecArray[tempRecArray['ampName'] == ampName]
-                    covArray, vcov, _ = makeCovArray(singleAmpTuple,
+                    tupleRows = [(muDiff, varDiff) + covRow + (ampNumber, expTime,
+                                                               ampName) for covRow in covAstier]
+                    tempStructArray = np.array(tupleRows, dtype=tags)
+                    covArray, vcov, _ = makeCovArray(tempStructArray,
                                                      self.config.maximumRangeCovariancesAstier)
                     covSqrtWeights = np.nan_to_num(1./np.sqrt(vcov))
                 partialDatasetPtc.inputExpIdPairs[ampName] = [(expId1, expId2)]

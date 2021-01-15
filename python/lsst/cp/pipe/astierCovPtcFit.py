@@ -69,8 +69,10 @@ def makeCovArray(inputTuple, maxRangeFromTuple=8):
 
     Parameters
     ----------
-    inputTuple: `numpy.recarray`
-        Recarray with rows with at least (mu, afwVar, cov, var, i, j, npix), where:
+    inputTuple: `numpy.ndarray`
+        Structured array with rows with at least
+        (mu, afwVar, cov, var, i, j, npix), where:
+
         mu : 0.5*(m1 + m2), where:
             mu1: mean value of flat1
             mu2: mean value of flat2
