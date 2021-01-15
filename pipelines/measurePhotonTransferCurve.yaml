@@ -6,26 +6,26 @@ tasks:
   isr:
     class: lsst.ip.isr.isrTask.IsrTask
     config:
-      connections.ccdExposure: 'raw'
+      connections.ccdExposure: raw
       connections.outputExposure: parameters.exposureName
-      doWrite: True
-      doOverscan: True
-      doAssembleCcd: True
-      doBias: True
-      doVariance: True
-      doLinearize: False
-      doCrosstalk: True
-      doBrighterFatter: False
-      doDark: True
-      doStrayLight: False
-      doFlat: True
-      doFringe: False
-      doApplyGains: False
-      doDefect: True
-      doNanMasking: True
-      doInterpolate: False
-      doSaturation: False
-      doSaturationInterpolation: False
+      doWrite: true
+      doOverscan: true
+      doAssembleCcd: true
+      doBias: true
+      doVariance: true
+      doLinearize: false
+      doCrosstalk: true
+      doBrighterFatter: false
+      doDark: true
+      doStrayLight: false
+      doFlat: true
+      doFringe: false
+      doApplyGains: false
+      doDefect: true
+      doNanMasking: true
+      doInterpolate: false
+      doSaturation: false
+      doSaturationInterpolation: false
       growSaturationFootprintSize: 0
   ptcExtract:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
@@ -36,7 +36,7 @@ tasks:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
     config:
       connections.inputCovariances: parameters.measuredCovariances
-      connections.outputPtcDataset: 'ptc'
-      ptcFitType: 'FULLCOVARIANCE'
+      connections.outputPtcDataset: ptc
+      ptcFitType: FULLCOVARIANCE
 contracts: 
   - ptcSolve.maximumRangeCovariancesAstier == ptcExtract.maximumRangeCovariancesAstier
