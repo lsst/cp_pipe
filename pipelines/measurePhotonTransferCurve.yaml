@@ -1,10 +1,13 @@
 description: cp_pipe PTC calibration construction.
+parameters:
+    exposureName: cpPtcProc
+    measuredCovariances: cpCovariances
 tasks:
   isr:
     class: lsst.ip.isr.isrTask.IsrTask
     config:
       connections.ccdExposure: 'raw'
-      connections.outputExposure: 'cpPtcProc'
+      connections.outputExposure: parameters.exposureName
       doWrite: True
       doOverscan: True
       doAssembleCcd: True
@@ -27,12 +30,12 @@ tasks:
   ptcExtract:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
     config:
-      connections.inputExp: 'cpPtcProc'
-      connections.outputCovariances: 'cpCovariances'
+      connections.inputExp: parameters.exposureName
+      connections.outputCovariances: parameters.measuredCovariances
   ptcSolve:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
     config:
-      connections.inputCovariances: 'cpCovariances'
+      connections.inputCovariances: parameters.measuredCovariances
       connections.outputPtcDataset: 'ptc'
       ptcFitType: 'FULLCOVARIANCE'
 contracts: 
