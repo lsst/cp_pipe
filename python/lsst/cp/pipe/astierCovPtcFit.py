@@ -240,6 +240,8 @@ class CovFit:
     """
 
     def __init__(self, meanSignals, covariances, covsSqrtWeights, maxRangeFromTuple=8, meanSignalsMask=[]):
+        assert (len(meanSignals) == len(covariances))
+        assert (len(covariances) == len(covsSqrtWeights))
         if len(meanSignalsMask) == 0:
             meanSignalsMask = np.repeat(True, len(meanSignals))
         self.mu = meanSignals[meanSignalsMask]
@@ -529,12 +531,12 @@ class CovFit:
         return maskedWeightedRes
 
     def weightedRes(self, params=None):
-        """Weighted residuas.
+        """Weighted residuals.
 
         Notes
         -----
         To be used via:
-        c = CovFit(**kwargs)
+        c = CovFit(meanSignals, covariances, covsSqrtWeights)
         c.initFit()
         coeffs, cov, _, mesg, ierr = leastsq(c.weightedRes, c.getParamValues(), full_output=True)
         """
