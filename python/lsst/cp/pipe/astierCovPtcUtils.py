@@ -262,7 +262,7 @@ class LoadParams:
         self.offsetDegree = 1
 
 
-def loadData(dataset, params):
+def parseData(dataset, params):
     """ Returns a list of CovFit objects, indexed by amp number.
 
     Params
@@ -338,7 +338,7 @@ def fitData(dataset, r=8):
     lparams = LoadParams()
     lparams.subtractDistantValue = False
     lparams.r = r
-    covFitList = loadData(dataset, lparams)
+    covFitList = parseData(dataset, lparams)
     covFitNoBList = {}  # [None]*(exts[-1]+1)
     for ext, c in covFitList.items():
         c.fitFullModel()
