@@ -43,8 +43,8 @@ def build_argparser():
     """
 
     parser = argparse.ArgumentParser(description="Rewrite stack generated calibs for ingestCuratedCalibs.py")
-    parser.add_argument('filename', type=str, help="Filename of existing calibration.")
     parser.add_argument('repo', type=str, help="Gen2 repository root.")
+    parser.add_argument('filename', nargs='+', help="Filename of existing calibration.")
     parser.add_argument('--date', type=str, help="Date to assign to this calibration.",
                         default=None)
 
@@ -154,7 +154,8 @@ def main():
     args = build_argparser().parse_args()
 
     try:
-        ingestAssistant(args.filename, args.repo, date=args.date)
+        for ingestFile in args.filename:
+            ingestAssistant(ingestFile, args.repo, date=args.date)
     except Exception as e:
         print(f"{e}", file=sys.stderr)
         return 1
