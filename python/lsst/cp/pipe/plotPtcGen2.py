@@ -95,8 +95,6 @@ class PlotPhotonTransferCurveTaskGen2(pipeBase.CmdLineTask):
     def __init__(self, *args, **kwargs):
         pipeBase.CmdLineTask.__init__(self, *args, **kwargs)
         plt.interactive(False)  # stop windows popping up when plotting. When headless, use 'agg' backend too
-        self.config.validate()
-        self.config.freeze()
 
     @classmethod
     def _makeArgumentParser(cls):
