@@ -307,8 +307,8 @@ class PlotPhotonTransferCurveTask():
                 a.set_xlabel(r'Mean signal ($\mu$, ADU)', fontsize=labelFontSize)
                 a.set_ylabel(r'Variance (ADU$^2$)', fontsize=labelFontSize)
                 a.tick_params(labelsize=11)
-                a.set_xscale('linear', fontsize=labelFontSize)
-                a.set_yscale('linear', fontsize=labelFontSize)
+                a.set_xscale('linear')
+                a.set_yscale('linear')
                 a.scatter(meanVecFinal, varVecFinal, c='blue', marker='o', s=markerSize)
                 a.plot(meanVecFinal, varVecModelFinal, color='red', lineStyle='-')
                 a.text(0.03, 0.7, stringLegend, transform=a.transAxes, fontsize=legendFontSize)
@@ -331,8 +331,8 @@ class PlotPhotonTransferCurveTask():
                 aResVar.set_xlabel(r'Mean signal ($\mu$, ADU)', fontsize=labelFontSize)
                 aResVar.set_ylabel(r'Residuals (ADU$^2$)', fontsize=labelFontSize)
                 aResVar.tick_params(labelsize=11)
-                aResVar.set_xscale('linear', fontsize=labelFontSize)
-                aResVar.set_yscale('linear', fontsize=labelFontSize)
+                aResVar.set_xscale('linear')
+                aResVar.set_yscale('linear')
                 aResVar.plot(meanVecFinal, varVecFinal - varVecModelFinal, color='blue', lineStyle='-',
                              label=r'Full fit ($\chi_{\rm{red}}^2$: %g)'%chi2FullModelVar)
                 aResVar.plot(meanVecFinal, varVecFinal - varModelFinalQuadratic, color='red', lineStyle='-',
@@ -348,8 +348,8 @@ class PlotPhotonTransferCurveTask():
                 a3.set_xlabel(r'Mean signal ($\mu$, ADU)', fontsize=labelFontSize)
                 a3.set_ylabel(r'Cov01 (ADU$^2$)', fontsize=labelFontSize)
                 a3.tick_params(labelsize=11)
-                a3.set_xscale('linear', fontsize=labelFontSize)
-                a3.set_yscale('linear', fontsize=labelFontSize)
+                a3.set_xscale('linear')
+                a3.set_yscale('linear')
                 a3.scatter(meanVecFinalCov01, varVecFinalCov01, c='blue', marker='o', s=markerSize)
                 a3.plot(meanVecFinalCov01, varVecModelFinalCov01, color='red', lineStyle='-')
                 a3.set_title(amp, fontsize=titleFontSize)
@@ -358,8 +358,8 @@ class PlotPhotonTransferCurveTask():
                 a4.set_xlabel(r'Mean signal ($\mu$, ADU)', fontsize=labelFontSize)
                 a4.set_ylabel(r'Cov10 (ADU$^2$)', fontsize=labelFontSize)
                 a4.tick_params(labelsize=11)
-                a4.set_xscale('linear', fontsize=labelFontSize)
-                a4.set_yscale('linear', fontsize=labelFontSize)
+                a4.set_xscale('linear')
+                a4.set_yscale('linear')
                 a4.scatter(meanVecFinalCov10, varVecFinalCov10, c='blue', marker='o', s=markerSize)
                 a4.plot(meanVecFinalCov10, varVecModelFinalCov10, color='red', lineStyle='-')
                 a4.set_title(amp, fontsize=titleFontSize)
@@ -448,7 +448,7 @@ class PlotPhotonTransferCurveTask():
         log : `lsst.log.Log`, optional
             Logger to handle messages.
         """
-        if (not topPlot):
+        if not topPlot:
             fig = plt.figure(figsize=(8, 10))
             gs = gridspec.GridSpec(2, 1, height_ratios=[3, 1])
             gs.update(hspace=0)
@@ -823,7 +823,7 @@ class PlotPhotonTransferCurveTask():
                 break
             stringTitle = r"Polynomial (degree: %g)" % (deg)
         else:
-            raise RuntimeError(f"The input dataset had an invalid dataset.ptcFitType: {ptcFitType}. \n" +
+            raise RuntimeError(f"The input dataset had an invalid dataset.ptcFitType: {ptcFitType}. \n"
                                "Options: 'FULLCOVARIANCE', EXPAPPROXIMATION, or 'POLYNOMIAL'.")
 
         legendFontSize = 6.5
@@ -894,8 +894,8 @@ class PlotPhotonTransferCurveTask():
             a.set_xlabel(r'Mean signal ($\mu$, ADU)', fontsize=labelFontSize)
             a.set_ylabel(r'Variance (ADU$^2$)', fontsize=labelFontSize)
             a.tick_params(labelsize=11)
-            a.set_xscale('linear', fontsize=labelFontSize)
-            a.set_yscale('linear', fontsize=labelFontSize)
+            a.set_xscale('linear')
+            a.set_yscale('linear')
 
             a2.set_xlabel(r'Mean Signal ($\mu$, ADU)', fontsize=labelFontSize)
             a2.set_ylabel(r'Variance (ADU$^2$)', fontsize=labelFontSize)
@@ -907,7 +907,7 @@ class PlotPhotonTransferCurveTask():
             a3.set_ylabel(r'Variance/$\mu$ (ADU)', fontsize=labelFontSize)
             a3.tick_params(labelsize=11)
             a3.set_xscale('log')
-            a3.set_yscale('linear', fontsize=labelFontSize)
+            a3.set_yscale('linear')
 
             minMeanVecFinal = np.nanmin(meanVecFinal)
             maxMeanVecFinal = np.nanmax(meanVecFinal)
@@ -996,16 +996,16 @@ class PlotPhotonTransferCurveTask():
             a.set_xlabel('Time (sec)', fontsize=labelFontSize)
             a.set_ylabel(r'Mean signal ($\mu$, ADU)', fontsize=labelFontSize)
             a.tick_params(labelsize=labelFontSize)
-            a.set_xscale('linear', fontsize=labelFontSize)
-            a.set_yscale('linear', fontsize=labelFontSize)
+            a.set_xscale('linear')
+            a.set_yscale('linear')
 
             a2.axhline(y=0, color='k')
             a2.axvline(x=0, color='k', linestyle='-')
             a2.set_xlabel(r'Mean signal ($\mu$, ADU)', fontsize=labelFontSize)
             a2.set_ylabel('Fractional nonlinearity (%)', fontsize=labelFontSize)
             a2.tick_params(labelsize=labelFontSize)
-            a2.set_xscale('linear', fontsize=labelFontSize)
-            a2.set_yscale('linear', fontsize=labelFontSize)
+            a2.set_xscale('linear')
+            a2.set_yscale('linear')
 
             pars, parsErr = linearizer.fitParams[amp], linearizer.fitParamsErr[amp]
             k0, k0Error = pars[0], parsErr[0]

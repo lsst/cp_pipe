@@ -148,6 +148,34 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
 class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                                      pipeBase.CmdLineTask):
     """Task to measure covariances from flat fields.
+    This task receives as input a list of flat-field images
+    (flats), and sorts these flats in pairs taken at the
+    same time (if there's a different number of flats,
+    those flats are discarded). The mean, variance, and
+    covariances are measured from the difference of the flat
+    pairs at a given time. The variance is calculated
+    via afwMath, and the covariance via the methods in Astier+19
+    (appendix A). In theory, var = covariance[0,0]. This should
+    be validated, and in the future, we may decide to just keep
+    one (covariance).
+
+    The measured covariances at a particular time (along with
+    other quantities such as the mean) are stored in a PTC dataset
+    object (`PhotonTransferCurveDataset`), which gets partially
+    filled. The number of partially-filled PTC dataset objects
+    will be less than the number of input exposures, but gen3
+    requires/assumes that the number of input dimensions matches
+    bijectively the number of output dimensions. Therefore, a
+    number of "dummy" PTC dataset are inserted in the output list
+    that has the partially-filled PTC datasets with the covariances.
+    This output list will be used as input of
+    `PhotonTransferCurveSolveTask`, which will assemble the multiple
+    `PhotonTransferCurveDataset`s into a single one in order to fit
+    the measured covariances as a function of flux to a particular
+    model.
+
+    Astier+19: "The Shape of the Photon Transfer Curve of CCD
+    sensors", arXiv:1905.08677.
     """
     ConfigClass = PhotonTransferCurveExtractConfig
     _DefaultName = 'cpPtcExtract'
@@ -317,10 +345,13 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         )
 
     def measureMeanVarCov(self, exposure1, exposure2, region=None, covAstierRealSpace=False):
-        """Calculate the mean of each of two exposures and the variance and covariance of their difference.
-        The variance is calculated via afwMath, and the covariance via the methods in Astier+19 (appendix A).
-        In theory, var = covariance[0,0]. This should be validated, and in the future, we may decide to just
-        keep one (covariance).
+        """Calculate the mean of each of two exposures and the variance
+        and covariance of their difference. The variance is calculated
+        via afwMath, and the covariance via the methods in Astier+19
+        (appendix A). In theory, var = covariance[0,0]. This should
+        be validated, and in the future, we may decide to just keep
+        one (covariance).
+
         Parameters
         ----------
         exposure1 : `lsst.afw.image.exposure.exposure.ExposureF`
@@ -547,6 +578,16 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
 class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
                                    pipeBase.CmdLineTask):
     """Task to fit the PTC from flat covariances.
+    This task assembles the list of individual PTC datasets produced
+    by `PhotonTransferCurveSolveTask` into one single final PTC dataset.
+    The task fits the measured (co)variances to a polynomial model or to
+    the models described in equations 16 and 20 of Astier+19
+    (referred to as `POLYNOMIAL`, `EXPAPPROXIMATION`, and `FULLCOVARIANCE`
+    in the configuration options of the task, respectively). Parameters
+    of interest such as tghe gain and noise are derived from the fits.
+
+    Astier+19: "The Shape of the Photon Transfer Curve
+    of CCD sensors", arXiv:1905.08677
     """
     ConfigClass = PhotonTransferCurveSolveConfig
     _DefaultName = 'cpPhotonTransferCurveSolve'
