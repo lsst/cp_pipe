@@ -61,15 +61,6 @@ class PhotonTransferCurveExtractConnections(pipeBase.PipelineTaskConnections,
         deferLoad=False,
     )
 
-    camera = cT.PrerequisiteInput(
-        name="camera",
-        doc="Camera the input data comes from.",
-        storageClass="Camera",
-        dimensions=("instrument",),
-        isCalibration=True,
-        lookupFunction=lookupStaticCalibration,
-    )
-
     outputCovariances = cT.Output(
         name="ptcCovariances",
         doc="Extracted flat (co)variances.",
@@ -182,13 +173,14 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
 
     def runQuantum(self, butlerQC, inputRefs, outputRefs):
         """Ensure that the input and output dimensions are passed along.
+
         Parameters
         ----------
-        butlerQC : `lsst.daf.butler.butlerQuantumContext.ButlerQuantumContext`
+        butlerQC : `~lsst.daf.butler.butlerQuantumContext.ButlerQuantumContext`
             Butler to operate on.
-        inputRefs : `lsst.pipe.base.connections.InputQuantizedConnection`
+        inputRefs : `~lsst.pipe.base.connections.InputQuantizedConnection`
             Input data refs to load.
-        ouptutRefs : `lsst.pipe.base.connections.OutputQuantizedConnection`
+        ouptutRefs : `~lsst.pipe.base.connections.OutputQuantizedConnection`
             Output data refs to persist.
         """
         inputs = butlerQC.get(inputRefs)
@@ -196,7 +188,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         inputs['inputExp'] = arrangeFlatsByExpTime(inputs['inputExp'])
         # Ids of input list of exposures
         inputs['inputDims'] = [expId.dataId['exposure'] for expId in inputRefs.inputExp]
-        outputs = self.run(inputExp=inputs['inputExp'], inputDims=inputs['inputDims'])
+        outputs = self.run(**inputs)
         butlerQC.put(outputs, outputRefs)
 
     def run(self, inputExp, inputDims):
@@ -205,15 +197,17 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         Parameters
         ----------
         inputExp : `dict` [`float`,
-                        (`lsst.afw.image.exposure.exposure.ExposureF`,
-                        `lsst.afw.image.exposure.exposure.ExposureF`, ...,
-                        `lsst.afw.image.exposure.exposure.ExposureF`)]
+                        (`~lsst.afw.image.exposure.exposure.ExposureF`,
+                        `~lsst.afw.image.exposure.exposure.ExposureF`, ...,
+                        `~lsst.afw.image.exposure.exposure.ExposureF`)]
             Dictionary that groups flat-field exposures that have the same
             exposure time (seconds).
 
         inputDims : `list`
             List of exposure IDs.
         """
+        # inputExp.values() returns a view, which we turn into a list. We then
+        # access the first exposure to get teh detector.
         detector = list(inputExp.values())[0][0].getDetector()
         detNum = detector.getId()
         amps = detector.getAmplifiers()
@@ -232,7 +226,8 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                 minMeanSignalDict[ampName] = self.config.minMeanSignal[ampName]
         tags = [('mu', '<f8'), ('afwVar', '<f8'), ('i', '<i8'), ('j', '<i8'), ('var', '<f8'),
                 ('cov', '<f8'), ('npix', '<i8'), ('ext', '<i8'), ('expTime', '<f8'), ('ampName', '<U3')]
-        dummyPtcDataset = PhotonTransferCurveDataset(ampNames, 'DUMMY')
+        dummyPtcDataset = PhotonTransferCurveDataset(ampNames, 'DUMMY',
+                                                     self.config.maximumRangeCovariancesAstier)
         covArray = [np.full((self.config.maximumRangeCovariancesAstier,
                     self.config.maximumRangeCovariancesAstier), np.nan)]
         for ampName in ampNames:
@@ -256,8 +251,8 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
             dummyPtcDataset.finalMeans[ampName] = [np.nan]
         # Output list with PTC datasets.
         partialDatasetPtcList = []
-        # The number of output references needs to match that of input references
-        # Initialize outputlist with dummy PTC datasets
+        # The number of output references needs to match that of input references:
+        # initialize outputlist with dummy PTC datasets.
         for i in range(len(inputDims)):
             partialDatasetPtcList.append(dummyPtcDataset)
 
@@ -267,17 +262,18 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                 self.log.warn(f"Only one exposure found at expTime {expTime}. Dropping exposure "
                               f"{exposures[0].getInfo().getVisitInfo().getExposureId()}.")
                 continue
-            if len(exposures) >= 2:
+            else:
                 # Only use the first two exposures at expTime
                 exp1, exp2 = exposures[0], exposures[1]
                 if len(exposures) > 2:
-                    for i in exposures[2:]:
-                        self.log.warn(f"Already found 2 exposures at expTime {expTime}. "
-                                      f"Ignoring exposure {i.getInfo().getVisitInfo().getExposureId()}")
+                    self.log.warn(f"Already found 2 exposures at expTime {expTime}. "
+                                  "Ignoring exposures: "
+                                  f"{i.getInfo().getVisitInfo().getExposureId() for i in exposures[2:]}")
             expId1 = exp1.getInfo().getVisitInfo().getExposureId()
             expId2 = exp2.getInfo().getVisitInfo().getExposureId()
             nAmpsNan = 0
-            partialDatasetPtc = PhotonTransferCurveDataset(ampNames, '')
+            partialDatasetPtc = PhotonTransferCurveDataset(ampNames, '',
+                                                           self.config.maximumRangeCovariancesAstier)
             for ampNumber, amp in enumerate(detector):
                 ampName = amp.getName()
                 # covAstier: [(i, j, var (cov[0,0]), cov, npix) for (i,j) in {maxLag, maxLag}^2]
@@ -286,6 +282,8 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                     region = amp.getBBox()
                 elif self.config.detectorMeasurementRegion == 'FULL':
                     region = None
+                # The variable `covAstier` is of the form: [(i, j, var (cov[0,0]), cov, npix) for (i,j)
+                # in {maxLag, maxLag}^2]
                 muDiff, varDiff, covAstier = self.measureMeanVarCov(exp1, exp2, region=region,
                                                                     covAstierRealSpace=doRealSpace)
                 expIdMask = True
@@ -363,6 +361,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         covAstierRealSpace : `bool`, optional
             Should the covariannces in Astier+19 be calculated in real space or via FFT?
             See Appendix A of Astier+19.
+
         Returns
         -------
         mu : `float` or `NaN`
@@ -452,11 +451,11 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
 
         maxRangeCov = self.config.maximumRangeCovariancesAstier
         if covAstierRealSpace:
-            covDiffAstier = computeCovDirect(diffIm.getImage().getArray(), w, maxRangeCov)
+            covDiffAstier = computeCovDirect(diffIm.image.array, w, maxRangeCov)
         else:
-            shapeDiff = diffIm.getImage().getArray().shape
+            shapeDiff = diffIm.image.array.shape
             fftShape = (fftSize(shapeDiff[0] + maxRangeCov), fftSize(shapeDiff[1]+maxRangeCov))
-            c = CovFft(diffIm.getImage().getArray(), w, fftShape, maxRangeCov)
+            c = CovFft(diffIm.image.array, w, fftShape, maxRangeCov)
             covDiffAstier = c.reportCovFft(maxRangeCov)
 
         return mu, varDiff, covDiffAstier
@@ -594,20 +593,21 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
 
     def runQuantum(self, butlerQC, inputRefs, outputRefs):
         """Ensure that the input and output dimensions are passed along.
+
         Parameters
         ----------
-        butlerQC : `lsst.daf.butler.butlerQuantumContext.ButlerQuantumContext`
+        butlerQC : `~lsst.daf.butler.butlerQuantumContext.ButlerQuantumContext`
             Butler to operate on.
-        inputRefs : `lsst.pipe.base.connections.InputQuantizedConnection`
+        inputRefs : `~lsst.pipe.base.connections.InputQuantizedConnection`
             Input data refs to load.
-        ouptutRefs : `lsst.pipe.base.connections.OutputQuantizedConnection`
+        ouptutRefs : `~lsst.pipe.base.connections.OutputQuantizedConnection`
             Output data refs to persist.
         """
         inputs = butlerQC.get(inputRefs)
         outputs = self.run(inputCovariances=inputs['inputCovariances'], camera=inputs['camera'])
         butlerQC.put(outputs, outputRefs)
 
-    def run(self, inputCovariances, camera=None, inputDims=None, outputDims=None):
+    def run(self, inputCovariances, camera=None, inputExpList=None):
         """Fit measure covariances to different models.
 
         Parameters
@@ -618,11 +618,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         camera : `lsst.afw.cameraGeom.Camera`, optional
             Input camera.
 
-        inputDims : `list` [`lsst.daf.butler.DataCoordinate`], optional
-            DataIds to use.
-
-        outputDims : `list` [`lsst.daf.butler.DataCoordinate`], optional
-            DataIds to use to populate the output calibration.
+        inputExpList : `list` [`~lsst.afw.image.exposure.exposure.ExposureF`], optional
+            List of exposures.
 
         Returns
         -------
@@ -634,7 +631,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         """
         # Assemble partial PTC datasets into a single dataset.
         ampNames = np.unique(inputCovariances[0].ampNames)
-        datasetPtc = PhotonTransferCurveDataset(ampNames, self.config.ptcFitType)
+        datasetPtc = PhotonTransferCurveDataset(ampNames, self.config.ptcFitType,
+                                                self.config.maximumRangeCovariancesAstier)
         for partialPtcDataset in inputCovariances:
             if partialPtcDataset.ptcFitType == 'DUMMY':
                 continue
@@ -666,7 +664,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             datasetPtc.covariancesSqrtWeights[ampName] = np.array(
                 datasetPtc.covariancesSqrtWeights[ampName])[index]
 
-        if self.config.ptcFitType in ["FULLCOVARIANCE", ]:
+        if self.config.ptcFitType == "FULLCOVARIANCE":
             # Calculate covariances and fit them, including the PTC, to Astier+19 full model (Eq. 20)
             # First, fit get the flat pairs that are masked, fitting C_00 vs mu to
             # the EXPAPPROXIMATION model (Eq. 16 in Astier+19).
@@ -678,13 +676,14 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
                 datasetPtc.expIdMask[ampName] = tempDatasetPtc.expIdMask[ampName]
             datasetPtc.fitType = "FULLCOVARIANCE"
             datasetPtc = self.fitCovariancesAstier(datasetPtc)
-        elif self.config.ptcFitType in ["EXPAPPROXIMATION", "POLYNOMIAL"]:
-            # Fit the PTC to a polynomial or to Astier+19 exponential approximation (Eq. 16)
+        # The other options are: self.config.ptcFitType in ("EXPAPPROXIMATION", "POLYNOMIAL")
+        else:
+            # Fit the PTC to a polynomial or to Astier+19 exponential approximation (Eq. 16).
             # Fill up PhotonTransferCurveDataset object.
             datasetPtc = self.fitPtc(datasetPtc)
-        if inputDims is not None:
+        if inputExpList is not None:
             # It should be a list of exposures, to get the detector.
-            detector = inputDims[0].getDetector()
+            detector = inputExpList[0].getDetector()
         else:
             detector = None
         datasetPtc.updateMetadata(setDate=True, camera=camera, detector=detector)
@@ -695,6 +694,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
 
     def fitCovariancesAstier(self, dataset):
         """Fit measured flat covariances to full model in Astier+19.
+
         Parameters
         ----------
         dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
@@ -718,6 +718,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
 
     def getOutputPtcDataCovAstier(self, dataset, covFits, covFitsNoB):
         """Get output data for PhotonTransferCurveCovAstierDataset from CovFit objects.
+
         Parameters
         ----------
         dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
@@ -726,6 +727,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             Dictionary of CovFit objects, with amp names as keys.
         covFitsNoB : `dict`
              Dictionary of CovFit objects, with amp names as keys, and 'b=0' in Eq. 20 of Astier+19.
+
         Returns
         -------
         dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
@@ -823,6 +825,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
     def _getInitialGoodPoints(means, variances, maxDeviationPositive, maxDeviationNegative,
                               minMeanRatioTest, minVarPivotSearch):
         """Return a boolean array to mask bad points.
+
         Parameters
         ----------
         means : `numpy.array`
@@ -841,11 +844,13 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
        minVarPivotSearch : `float`
             Minimum variance point (in ADU^2) after which the pivot point
             wher the variance starts decreasing should be sought.
-        Return
+
+        Returns
         ------
         goodPoints : `numpy.array` [`bool`]
             Boolean array to select good (`True`) and bad (`False`)
             points.
+
         Notes
         -----
         A linear function has a constant ratio, so find the median
@@ -930,12 +935,12 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         Raises
         ------
         RuntimeError:
-            Raises if dataset.ptcFitType is None.
+            Raises if dataset.ptcFitType is None or empty.
         """
         if dataset.ptcFitType:
             ptcFitType = dataset.ptcFitType
         else:
-            raise RuntimeError(f"None ptcFitType in PTC dataset.")
+            raise RuntimeError(f"ptcFitType is None of empty in PTC dataset.")
         matrixSide = self.config.maximumRangeCovariancesAstier
         nanMatrix = np.empty((matrixSide, matrixSide))
         nanMatrix[:] = np.nan
@@ -969,7 +974,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
                                                     self.config.minMeanRatioTest,
                                                     self.config.minVarPivotSearch)
             if not (goodPoints.any()):
-                msg = (f"\nSERIOUS: All points in goodPoints: {goodPoints} are bad."
+                msg = (f"SERIOUS: All points in goodPoints: {goodPoints} are bad."
                        f"Setting {ampName} to BAD.")
                 self.log.warn(msg)
                 # Fill entries with NaNs
@@ -1007,7 +1012,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
                 newMask = np.array([True if np.abs(r) < sigmaCutPtcOutliers else False for r in sigResids])
                 mask = mask & newMask
                 if not (mask.any() and newMask.any()):
-                    msg = (f"\nSERIOUS: All points in either mask: {mask} or newMask: {newMask} are bad. "
+                    msg = (f"SERIOUS: All points in either mask: {mask} or newMask: {newMask} are bad. "
                            f"Setting {ampName} to BAD.")
                     self.log.warn(msg)
                     # Fill entries with NaNs
@@ -1030,7 +1035,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
                                f" {Counter(mask)[False]} out of {len(meanVecOriginal)}"))
 
             if (len(meanVecFinal) < len(parsIniPtc)):
-                msg = (f"\nSERIOUS: Not enough data points ({len(meanVecFinal)}) compared to the number of "
+                msg = (f"SERIOUS: Not enough data points ({len(meanVecFinal)}) compared to the number of "
                        f"parameters of the PTC model({len(parsIniPtc)}). Setting {ampName} to BAD.")
                 self.log.warn(msg)
                 # Fill entries with NaNs
@@ -1081,6 +1086,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
 
     def fillBadAmp(self, dataset, ptcFitType, ampName):
         """Fill the dataset with NaNs if there are not enough good points.
+
         Parameters
         ----------
         dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
@@ -1182,6 +1188,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         For a dataRef (which is each detector here),
         and given a list of exposure pairs (postISR) at different exposure times,
         measure the PTC.
+
         Parameters
         ----------
         dataRefList : `list` [`lsst.daf.peristence.ButlerDataRef`]
