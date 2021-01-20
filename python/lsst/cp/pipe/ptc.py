@@ -891,17 +891,20 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
 
         return goodPoints
 
-    def _makeZeroSafe(self, array, warn=True, substituteValue=1e-9):
+    def _makeZeroSafe(self, array, substituteValue=1e-9):
         """"""
-        nBad = Counter(np.ravel(np.array(array)))[0]
+        array = np.array(array)
+        nBad = Counter(np.ravel(array))[0]
         if nBad == 0:
             return array
 
-        if warn:
-            msg = f"Found {nBad} zeros in array at elements {[x for x in np.where(array==0)[0]]}"
+        index, = np.where(array == 0)
+        if len(index):
+            msg = f"Found {nBad} zeros in array at elements {index}"
             self.log.warn(msg)
 
-        array[array == 0] = substituteValue
+        array[index] = substituteValue
+
         return array
 
     def fitPtc(self, dataset):

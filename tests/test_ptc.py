@@ -322,6 +322,30 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         self.assertTrue(np.isnan(varDiff))
         self.assertTrue(covDiff is None)
 
+    def test_makeZeroSafe(self):
+        noZerosArray = [1., 20, -35, 45578.98, 90.0, 897, 659.8]
+        someZerosArray = [1., 20, 0, 0, 90, 879, 0]
+        allZerosArray = [0., 0.0, 0, 0, 0.0, 0, 0]
+
+        substituteValue = 1e-10
+
+        expectedSomeZerosArray = [1., 20, substituteValue, substituteValue, 90, 879, substituteValue]
+        expectedAllZerosArray = np.repeat(substituteValue, len(allZerosArray))
+
+        measuredSomeZerosArray = self.defaultTaskSolve._makeZeroSafe(someZerosArray,
+                                                                     substituteValue=substituteValue)
+        measuredAllZerosArray = self.defaultTaskSolve._makeZeroSafe(allZerosArray,
+                                                                    substituteValue=substituteValue)
+        measuredNoZerosArray = self.defaultTaskSolve._makeZeroSafe(noZerosArray,
+                                                                   substituteValue=substituteValue)
+
+        for exp, meas in zip(expectedSomeZerosArray, measuredSomeZerosArray):
+            self.assertEqual(exp, meas)
+        for exp, meas in zip(expectedAllZerosArray, measuredAllZerosArray):
+            self.assertEqual(exp, meas)
+        for exp, meas in zip(noZerosArray, measuredNoZerosArray):
+            self.assertEqual(exp, meas)
+
     def test_getInitialGoodPoints(self):
         xs = [1, 2, 3, 4, 5, 6]
         ys = [2*x for x in xs]
