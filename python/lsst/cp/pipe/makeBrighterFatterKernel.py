@@ -45,8 +45,9 @@ import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 from .utils import PairedVisitListTaskRunner, checkExpLengthEqual
 import lsst.daf.persistence.butlerExceptions as butlerExceptions
-from lsst.cp.pipe.ptc import (MeasurePhotonTransferCurveTaskConfig, MeasurePhotonTransferCurveTask,
-                              PhotonTransferCurveDataset)
+from lsst.cp.pipe.ptc.measurePtcGen2Task import (MeasurePhotonTransferCurveTaskConfig,
+                                                 MeasurePhotonTransferCurveTask)
+from lsst.ip.isr import PhotonTransferCurveDataset
 
 
 class MakeBrighterFatterKernelTaskConfig(pexConfig.Config):

@@ -22,6 +22,6 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 
-from lsst.cp.pipe.plotPtcGen2 import PlotPhotonTransferCurveTaskGen2
+from lsst.cp.pipe.ptc.plotPtcGen2 import PlotPhotonTransferCurveTaskGen2
 
 PlotPhotonTransferCurveTaskGen2.parseAndRun()

@@ -31,12 +31,12 @@ from matplotlib.backends.backend_pdf import PdfPages
 
 import lsst.ip.isr as isr
 
-from .utils import (funcAstier, funcPolynomial,
+from lsst.cp.pipe.utils import (funcAstier, funcPolynomial,
                     calculateWeightedReducedChi2)
 from matplotlib.ticker import MaxNLocator
 
-from .astierCovPtcFit import computeApproximateAcoeffs
-from .astierCovPtcUtils import getFitDataFromCovariances
+from lsst.cp.pipe.ptc.astierCovPtcFit import computeApproximateAcoeffs
+from lsst.cp.pipe.ptc.astierCovPtcUtils import getFitDataFromCovariances
 
 from lsst.ip.isr import PhotonTransferCurveDataset
 

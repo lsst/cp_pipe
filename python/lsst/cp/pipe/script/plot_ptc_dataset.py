@@ -23,7 +23,7 @@ __all__ = ("main", )
 
 import argparse
 import sys
-from lsst.cp.pipe.plotPtc import PlotPhotonTransferCurveTask
+from lsst.cp.pipe.ptc.plotPtc import PlotPhotonTransferCurveTask
 
 
 def build_argparser():

@@ -33,8 +33,8 @@ import lsst.ip.isr as isr
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 
-from .utils import (funcAstier, funcPolynomial, NonexistentDatasetTaskDataIdContainer,
-                    calculateWeightedReducedChi2)
+from lsst.cp.pipe.utils import (funcAstier, funcPolynomial, NonexistentDatasetTaskDataIdContainer,
+                                calculateWeightedReducedChi2)
 from matplotlib.ticker import MaxNLocator
 
 from lsst.cp.pipe.ptc.astierCovPtcFit import computeApproximateAcoeffs

@@ -22,6 +22,6 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 
-from lsst.cp.pipe.ptc import MeasurePhotonTransferCurveTask
+from lsst.cp.pipe.ptc.measurePtcGen2Task import MeasurePhotonTransferCurveTask
 
 MeasurePhotonTransferCurveTask.parseAndRun()
