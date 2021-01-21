@@ -87,6 +87,16 @@ class PlotPhotonTransferCurveTaskGen2(pipeBase.CmdLineTask):
         Keyword arguments passed on to the Task constructor. None used at this
         time.
 
+    Notes
+    -----
+    The plotting code in this file is almost identical to the code in
+    `plotPtc.py`. If further changes are implemented in this file,
+    `plotPtc.py` needs to be updated accordingly, and vice versa.
+    This file (`plotPtcGen2.py`) helps with maintaining backwards
+    compatibility with gen2 as we transition to gen3; the code
+    duplication is meant to only last for few month from now
+    (Jan, 2021). At that point only the `plotPtc.py` file will
+    remain.
     """
 
     ConfigClass = PlotPhotonTransferCurveTaskConfigGen2
