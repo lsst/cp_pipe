@@ -32,7 +32,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 import lsst.ip.isr as isr
 
 from lsst.cp.pipe.utils import (funcAstier, funcPolynomial,
-                    calculateWeightedReducedChi2)
+                                calculateWeightedReducedChi2)
 from matplotlib.ticker import MaxNLocator
 
 from lsst.cp.pipe.ptc.astierCovPtcFit import computeApproximateAcoeffs

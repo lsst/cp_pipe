@@ -316,6 +316,14 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                 partialDatasetPtc.finalModelVars[ampName] = [np.nan]
                 partialDatasetPtc.finalMeans[ampName] = [np.nan]
             # Use location of exp1 to save PTC dataset from (exp1, exp2) pair.
+            # expId1 and expId2, as returned by getInfo().getVisitInfo().getExposureId(),
+            # and the exposure IDs stured in inoutDims,
+            # may have the zero-padded detector number appended at
+            # the end (in gen3). A temporary fix is to consider expId//1000 and/or
+            # inputDims//1000.
+            # Below, np.where(expId1 == np.array(inputDims)) (and the other analogous
+            # comparisons) returns a tuple with a single-element array, so [0][0]
+            # is necessary to extract the required index.
             try:
                 datasetIndex = np.where(expId1 == np.array(inputDims))[0][0]
             except IndexError:
