@@ -38,9 +38,9 @@ class CalibStatsConfig(pexConfig.Config):
     """Parameters controlling the measurement of background statistics.
     """
     stat = pexConfig.Field(
-        dtype=int,
-        default=int(afwMath.MEANCLIP),
-        doc="Statistic to use to estimate background (from lsst.afw.math)",
+        dtype=str,
+        default='MEANCLIP',
+        doc="Statistic name to use to estimate background (from lsst.afw.math)",
     )
     clip = pexConfig.Field(
         dtype=float,
@@ -88,8 +88,8 @@ class CalibStatsTask(pipeBase.Task):
                 image = exposureOrImage.getImage()
             except Exception:
                 image = exposureOrImage
-
-        return afwMath.makeStatistics(image, self.config.stat, stats).getValue()
+        statType = afwMath.stringToStatisticsProperty(self.config.stat)
+        return afwMath.makeStatistics(image, statType, stats).getValue()
 
 
 class CalibCombineConnections(pipeBase.PipelineTaskConnections,
@@ -201,9 +201,9 @@ class CalibCombineConfig(pipeBase.PipelineTaskConfig,
         doc="Mask planes to respect",
     )
     combine = pexConfig.Field(
-        dtype=int,
-        default=int(afwMath.MEANCLIP),
-        doc="Statistic to use for combination (from lsst.afw.math)",
+        dtype=str,
+        default='MEANCLIP',
+        doc="Statistic name to use for combination (from lsst.afw.math)",
     )
     clip = pexConfig.Field(
         dtype=float,
@@ -422,7 +422,8 @@ class CalibCombineTask(pipeBase.PipelineTask,
             Control explaining how to combine the input images.
         """
         images = [img.getMaskedImage() for img in expList if img is not None]
-        afwMath.statisticsStack(target, images, afwMath.Property(self.config.combine), stats)
+        combineType = afwMath.stringToStatisticsProperty(self.config.combine)
+        afwMath.statisticsStack(target, images, combineType, stats)
 
     def combineHeaders(self, expList, calib, calibType="CALIB", scales=None):
         """Combine input headers to determine the set of common headers,
