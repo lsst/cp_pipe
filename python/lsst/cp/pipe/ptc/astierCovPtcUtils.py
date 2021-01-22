@@ -262,26 +262,17 @@ class LoadParams:
         self.offsetDegree = 1
 
 
-def loadData(tupleName, params, expIdMask):
+def parseData(dataset, params):
     """ Returns a list of CovFit objects, indexed by amp number.
 
     Params
     ------
-    tupleName: `numpy.recarray`
-        Recarray with rows with at least ( mu1, mu2, cov ,var, i, j, npix), where:
-            mu1: mean value of flat1
-            mu2: mean value of flat2
-            cov: covariance value at lag (i, j)
-            var: variance (covariance value at lag (0, 0))
-            i: lag dimension
-            j: lag dimension
-            npix: number of pixels used for covariance calculation.
+    dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
+        The PTC dataset containing the means, variances, and
+        exposure times.
 
     params: `covAstierptcUtil.LoadParams`
         Object with values to drive the bahaviour of fits.
-
-    expIdMask : `dict`, [`str`, `list`]
-        Dictionary keyed by amp names containing the masked exposure pairs.
 
     Returns
     -------
@@ -289,43 +280,38 @@ def loadData(tupleName, params, expIdMask):
         Dictionary with amps as keys, and CovFit objects as values.
     """
 
-    exts = np.array(np.unique(tupleName['ampName']), dtype=str)
     covFitList = {}
-    for ext in exts:
-        ntext = tupleName[tupleName['ampName'] == ext]
-        maskExt = expIdMask[ext]
+    for ampName in dataset.ampNames:
+        # If there is a bad amp, don't fit it
+        if ampName in dataset.badAmps:
+            continue
+        maskAtAmp = dataset.expIdMask[ampName]
+        muAtAmp = dataset.rawMeans[ampName]
+        covAtAmp = dataset.covariances[ampName]
+        covSqrtWeightsAtAmp = dataset.covariancesSqrtWeights[ampName]
+
         if params.subtractDistantValue:
-            c = CovFit(ntext, params.r, maskExt)
+            c = CovFit(muAtAmp, covAtAmp, covSqrtWeightsAtAmp, params.r, maskAtAmp)
             c.subtractDistantOffset(params.r, params.start, params.offsetDegree)
         else:
-            c = CovFit(ntext, params.r, maskExt)
+            c = CovFit(muAtAmp, covAtAmp, covSqrtWeightsAtAmp, params.r, maskAtAmp)
 
         cc = c.copy()
         cc.initFit()  # allows to get a crude gain.
-        covFitList[ext] = cc
+        covFitList[ampName] = cc
 
     return covFitList
 
 
-def fitData(tupleName, expIdMask, r=8):
+def fitData(dataset, r=8):
     """Fit data to models in Astier+19.
 
     Parameters
     ----------
-    tupleName: `numpy.recarray`
-        Recarray with rows with at least ( mu1, mu2, cov ,var, i, j, npix), where:
-            mu1: mean value of flat1
-            mu2: mean value of flat2
-            cov: covariance value at lag (i, j)
-            var: variance (covariance value at lag (0, 0))
-            i: lag dimension
-            j: lag dimension
-            npix: number of pixels used for covariance calculation.
+    dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
+        The dataset containing the means, variances, and exposure times.
 
-    expIdMask : `dict`, [`str`, `list`]
-        Dictionary keyed by amp names containing the masked exposure pairs.
-
-    r: `int`, optional
+    r : `int`, optional
         Maximum lag considered (e.g., to eliminate data beyond a separation "r": ignored in the fit).
 
     Returns
@@ -352,7 +338,7 @@ def fitData(tupleName, expIdMask, r=8):
     lparams = LoadParams()
     lparams.subtractDistantValue = False
     lparams.r = r
-    covFitList = loadData(tupleName, lparams, expIdMask=expIdMask)
+    covFitList = parseData(dataset, lparams)
     covFitNoBList = {}  # [None]*(exts[-1]+1)
     for ext, c in covFitList.items():
         c.fitFullModel()

@@ -69,11 +69,14 @@ def makeCovArray(inputTuple, maxRangeFromTuple=8):
 
     Parameters
     ----------
-    inputTuple: `numpy.recarray`
-        Recarray with rows with at least (mu, cov, var, i, j, npix), where:
+    inputTuple: `numpy.ndarray`
+        Structured array with rows with at least
+        (mu, afwVar, cov, var, i, j, npix), where:
+
         mu : 0.5*(m1 + m2), where:
             mu1: mean value of flat1
             mu2: mean value of flat2
+        afwVar: variance of difference flat, calculated with afw
         cov: covariance value at lag(i, j)
         var: variance(covariance value at lag(0, 0))
         i: lag dimension
@@ -215,21 +218,19 @@ class CovFit:
 
     This code implements the model(and the fit thereof) described in
     Astier+19: https://arxiv.org/pdf/1905.08677.pdf
-    For the time being it uses as input a numpy recarray (tuple with named tags) which
-    contains one row per covariance and per pair: see the routine makeCovArray.
 
     Parameters
     ----------
-    inputTuple: `numpy.recarray`
-        Tuple with at least (mu, cov, var, i, j, npix), where:
-        mu : 0.5*(m1 + m2), where:
-            mu1: mean value of flat1
-            mu2: mean value of flat2
-        cov: covariance value at lag(i, j)
-        var: variance(covariance value at lag(0, 0))
-        i: lag dimension
-        j: lag dimension
-        npix: number of pixels used for covariance calculation.
+    meanSignals : `list`[`float`]
+        List with means of the difference image of two flats,
+        for a particular amplifier in the detector.
+
+    covariances : `list`[`numpy.array`]
+        List with 2D covariance arrays at a given mean signal.
+
+    covsSqrtWeights : `list`[`numpy.array`]
+        List with 2D arrays with weights from `vcov as defined in
+        `makeCovArray`: weight = 1/sqrt(vcov).
 
     maxRangeFromTuple: `int`, optional
         Maximum range to select from tuple.
@@ -238,16 +239,17 @@ class CovFit:
         Mask of mean signal 1D array. Use all entries if empty.
     """
 
-    def __init__(self, inputTuple, maxRangeFromTuple=8, meanSignalMask=[]):
-        self.cov, self.vcov, self.mu = makeCovArray(inputTuple, maxRangeFromTuple)
+    def __init__(self, meanSignals, covariances, covsSqrtWeights, maxRangeFromTuple=8, meanSignalsMask=[]):
+        assert (len(meanSignals) == len(covariances))
+        assert (len(covariances) == len(covsSqrtWeights))
+        if len(meanSignalsMask) == 0:
+            meanSignalsMask = np.repeat(True, len(meanSignals))
+        self.mu = meanSignals[meanSignalsMask]
+        self.cov = np.nan_to_num(covariances)[meanSignalsMask]
         # make it nan safe, replacing nan's with 0 in weights
-        self.sqrtW = np.nan_to_num(1./np.sqrt(self.vcov))
-        self.r = self.cov.shape[1]
+        self.sqrtW = np.nan_to_num(covsSqrtWeights)[meanSignalsMask]
+        self.r = maxRangeFromTuple
         self.logger = lsstLog.Log.getDefaultLogger()
-        if len(meanSignalMask):
-            self.maskMu = meanSignalMask
-        else:
-            self.maskMu = np.repeat(True, len(self.mu))
 
     def subtractDistantOffset(self, maxLag=8, startLag=5, polDegree=1):
         """Subtract a background/offset to the measured covariances.
@@ -276,7 +278,6 @@ class CovFit:
             self.cov[k, ...] -= back
         self.r = maxLag
         self.cov = self.cov[:, :maxLag, :maxLag]
-        self.vcov = self.vcov[:, :maxLag, :maxLag]
         self.sqrtW = self.sqrtW[:, :maxLag, :maxLag]
 
         return
@@ -310,7 +311,7 @@ class CovFit:
         # stop when it increases
         oldChi2 = 1e30
         for _ in range(5):
-            model = self.evalCovModel()  # this computes the full model.
+            model = np.nan_to_num(self.evalCovModel())  # this computes the full model.
             # loop on lags
             for i in range(self.r):
                 for j in range(self.r):
@@ -523,19 +524,19 @@ class CovFit:
         """To be used in weightedRes"""
         if params is not None:
             self.setParamValues(params)
-        covModel = self.evalCovModel()
+        covModel = np.nan_to_num(self.evalCovModel())
         weightedRes = (covModel-self.cov)*self.sqrtW
-        maskedWeightedRes = weightedRes[self.maskMu]
+        maskedWeightedRes = weightedRes
 
         return maskedWeightedRes
 
     def weightedRes(self, params=None):
-        """Weighted residuas.
+        """Weighted residuals.
 
         Notes
         -----
         To be used via:
-        c = CovFit(nt)
+        c = CovFit(meanSignals, covariances, covsSqrtWeights)
         c.initFit()
         coeffs, cov, _, mesg, ierr = leastsq(c.weightedRes, c.getParamValues(), full_output=True)
         """
@@ -573,7 +574,6 @@ class CovFit:
 
         if pInit is None:
             pInit = self.getParamValues()
-
         params, paramsCov, _, mesg, ierr = leastsq(self.weightedRes, pInit, full_output=True)
         self.covParams = paramsCov
 

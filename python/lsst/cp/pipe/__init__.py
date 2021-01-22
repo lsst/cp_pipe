@@ -31,6 +31,5 @@ from .makeBrighterFatterKernel import *
 from .defects import *
 from .ptc import *
 from .cpCombine import *
-from .plotPtc import *
 from .measureCrosstalk import *
 from .linearity import *

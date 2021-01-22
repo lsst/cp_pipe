@@ -22,10 +22,6 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 
-import sys
+from lsst.cp.pipe.ptc.plotPtcGen2 import PlotPhotonTransferCurveTaskGen2
 
-from lsst.cp.pipe.script.plot_ptc_dataset import main
-
-if __name__ == '__main__':
-
-    sys.exit(main())
+PlotPhotonTransferCurveTaskGen2.parseAndRun()

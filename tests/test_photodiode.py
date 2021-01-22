@@ -28,7 +28,7 @@ import tempfile
 import lsst.utils
 import lsst.utils.tests
 
-from lsst.cp.pipe.photodiode import PhotodiodeData
+from lsst.cp.pipe.ptc.photodiode import PhotodiodeData
 
 
 class PhotodiodeDataTestCase(lsst.utils.tests.TestCase):

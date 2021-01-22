@@ -35,7 +35,6 @@ import lsst.utils.tests
 import lsst.cp.pipe as cpPipe
 import lsst.ip.isr.isrMock as isrMock
 from lsst.ip.isr import PhotonTransferCurveDataset
-from lsst.cp.pipe.astierCovPtcUtils import fitData
 from lsst.cp.pipe.utils import (funcPolynomial, makeMockFlats)
 
 
@@ -50,6 +49,12 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
     def setUp(self):
         self.defaultConfig = cpPipe.ptc.MeasurePhotonTransferCurveTask.ConfigClass()
         self.defaultTask = cpPipe.ptc.MeasurePhotonTransferCurveTask(config=self.defaultConfig)
+
+        self.defaultConfigExtract = cpPipe.ptc.PhotonTransferCurveExtractTask.ConfigClass()
+        self.defaultTaskExtract = cpPipe.ptc.PhotonTransferCurveExtractTask(config=self.defaultConfigExtract)
+
+        self.defaultConfigSolve = cpPipe.ptc.PhotonTransferCurveSolveTask.ConfigClass()
+        self.defaultTaskSolve = cpPipe.ptc.PhotonTransferCurveSolveTask(config=self.defaultConfigSolve)
 
         self.flatMean = 2000
         self.readNoiseAdu = 10
@@ -76,9 +81,10 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
         # create fake PTC data to see if fit works, for one amp ('amp')
         self.flux = 1000.  # ADU/sec
-        timeVec = np.arange(1., 201.)
+        self.timeVec = np.arange(1., 101.)
         self.k2NonLinearity = -5e-6
-        muVec = self.flux*timeVec + self.k2NonLinearity*timeVec**2   # quadratic signal-chain non-linearity
+        # quadratic signal-chain non-linearity
+        muVec = self.flux*self.timeVec + self.k2NonLinearity*self.timeVec**2
         self.gain = 1.5  # e-/ADU
         self.c1 = 1./self.gain
         self.noiseSq = 5*self.gain  # 7.5 (e-)^2
@@ -90,7 +96,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         self.dataset = PhotonTransferCurveDataset(self.ampNames, " ")  # pack raw data for fitting
 
         for ampName in self.ampNames:  # just the expTimes and means here - vars vary per function
-            self.dataset.rawExpTimes[ampName] = timeVec
+            self.dataset.rawExpTimes[ampName] = self.timeVec
             self.dataset.rawMeans[ampName] = muVec
 
     def test_covAstier(self):
@@ -102,53 +108,58 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         Cov[0, 0] (i.e., the variances) are similar to the variances calculated with the standard
         method (when doCovariancesAstier=false),
         """
-        localDataset = copy.copy(self.dataset)
-        config = copy.copy(self.defaultConfig)
-        task = cpPipe.ptc.MeasurePhotonTransferCurveTask(config=config)
+        task = self.defaultTask
+        extractConfig = self.defaultConfigExtract
+        extractConfig.minNumberGoodPixelsForFft = 5000
+        extractConfig.detectorMeasurementRegion = 'FULL'
+        extractTask = cpPipe.ptc.PhotonTransferCurveExtractTask(config=extractConfig)
 
-        expTimes = np.arange(5, 170, 5)
-        tupleRecords = []
-        allTags = []
+        solveConfig = self.defaultConfigSolve
+        solveConfig.ptcFitType = 'FULLCOVARIANCE'
+        solveTask = cpPipe.ptc.PhotonTransferCurveSolveTask(config=solveConfig)
+
+        inputGain = 0.75
+
         muStandard, varStandard = {}, {}
-        for expTime in expTimes:
-            mockExp1, mockExp2 = makeMockFlats(expTime, gain=0.75)
-            tupleRows = []
-
-            for ampNumber, amp in enumerate(self.ampNames):
+        expDict = {}
+        expIds = []
+        idCounter = 0
+        for expTime in self.timeVec:
+            mockExp1, mockExp2 = makeMockFlats(expTime, gain=inputGain,
+                                               readNoiseElectrons=3, expId1=idCounter,
+                                               expId2=idCounter+1)
+            expDict[expTime] = (mockExp1, mockExp2)
+            expIds.append(idCounter)
+            expIds.append(idCounter+1)
+            for ampNumber, ampName in enumerate(self.ampNames):
                 # cov has (i, j, var, cov, npix)
-                muDiff, varDiff, covAstier = task.measureMeanVarCov(mockExp1, mockExp2)
-                muStandard.setdefault(amp, []).append(muDiff)
-                varStandard.setdefault(amp, []).append(varDiff)
+                muDiff, varDiff, covAstier = task.extract.measureMeanVarCov(mockExp1, mockExp2)
+                muStandard.setdefault(ampName, []).append(muDiff)
+                varStandard.setdefault(ampName, []).append(varDiff)
                 # Calculate covariances in an independent way: direct space
-                _, _, covsDirect = task.measureMeanVarCov(mockExp1, mockExp2, covAstierRealSpace=True)
+                _, _, covsDirect = task.extract.measureMeanVarCov(mockExp1, mockExp2, covAstierRealSpace=True)
 
                 # Test that the arrays "covs" (FFT) and "covDirect" (direct space) are the same
                 for row1, row2 in zip(covAstier, covsDirect):
                     for a, b in zip(row1, row2):
                         self.assertAlmostEqual(a, b)
-                tupleRows += [(muDiff, ) + covRow + (ampNumber, expTime, amp) for covRow in covAstier]
-                tags = ['mu', 'i', 'j', 'var', 'cov', 'npix', 'ext', 'expTime', 'ampName']
-            allTags += tags
-            tupleRecords += tupleRows
-        covariancesWithTags = np.core.records.fromrecords(tupleRecords, names=allTags)
+            idCounter += 2
+        resultsExtract = extractTask.run(inputExp=expDict, inputDims=expIds)
+        resultsSolve = solveTask.run(resultsExtract.outputCovariances)
 
-        expIdMask = {ampName: np.repeat(True, len(expTimes)) for ampName in self.ampNames}
-        covFits, covFitsNoB = fitData(covariancesWithTags, expIdMask)
-        localDataset = task.getOutputPtcDataCovAstier(localDataset, covFits, covFitsNoB)
-        # Chek the gain and that the ratio of the variance caclulated via cov Astier (FFT) and
-        # that calculated with the standard PTC calculation (afw) is close to 1.
         for amp in self.ampNames:
-            self.assertAlmostEqual(localDataset.gain[amp], 0.75, places=2)
-            for v1, v2 in zip(varStandard[amp], localDataset.finalVars[amp]):
-                v2 *= (0.75**2)  # convert to electrons
+            self.assertAlmostEqual(resultsSolve.outputPtcDataset.gain[amp], inputGain, places=2)
+            for v1, v2 in zip(varStandard[amp], resultsSolve.outputPtcDataset.finalVars[amp]):
                 self.assertAlmostEqual(v1/v2, 1.0, places=1)
 
-    def ptcFitAndCheckPtc(self, order=None, fitType='', doTableArray=False, doFitBootstrap=False):
+    def ptcFitAndCheckPtc(self, order=None, fitType=None, doTableArray=False, doFitBootstrap=False):
         localDataset = copy.copy(self.dataset)
-        config = copy.copy(self.defaultConfig)
+        localDataset.ptcFitType = fitType
+        configSolve = copy.copy(self.defaultConfigSolve)
+        configLin = cpPipe.linearity.LinearitySolveTask.ConfigClass()
         placesTests = 6
         if doFitBootstrap:
-            config.doFitBootstrap = True
+            configSolve.doFitBootstrap = True
             # Bootstrap method in cp_pipe/utils.py does multiple fits in the precense of noise.
             # Allow for more margin of error.
             placesTests = 3
@@ -160,12 +171,12 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                 for ampName in self.ampNames:
                     localDataset.rawVars[ampName] = [self.noiseSq + self.c1*mu + self.c2*mu**2 for
                                                      mu in localDataset.rawMeans[ampName]]
-                config.polynomialFitDegree = 2
+                configSolve.polynomialFitDegree = 2
             if order == 3:
                 for ampName in self.ampNames:
                     localDataset.rawVars[ampName] = [self.noiseSq + self.c1*mu + self.c2*mu**2 + self.c3*mu**3
                                                      for mu in localDataset.rawMeans[ampName]]
-                config.polynomialFitDegree = 3
+                configSolve.polynomialFitDegree = 3
         elif fitType == 'EXPAPPROXIMATION':
             g = self.gain
             for ampName in self.ampNames:
@@ -174,37 +185,37 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         else:
             RuntimeError("Enter a fit function type: 'POLYNOMIAL' or 'EXPAPPROXIMATION'")
 
-        config.linearity.maxLookupTableAdu = 200000  # Max ADU in input mock flats
-        config.linearity.maxLinearAdu = 100000
-        config.linearity.minLinearAdu = 50000
+        configLin.maxLookupTableAdu = 200000  # Max ADU in input mock flats
+        configLin.maxLinearAdu = 100000
+        configLin.minLinearAdu = 50000
         if doTableArray:
-            config.linearity.linearityType = "LookupTable"
+            configLin.linearityType = "LookupTable"
         else:
-            config.linearity.linearityType = "Polynomial"
-        task = cpPipe.ptc.MeasurePhotonTransferCurveTask(config=config)
+            configLin.linearityType = "Polynomial"
+        solveTask = cpPipe.ptc.PhotonTransferCurveSolveTask(config=configSolve)
+        linearityTask = cpPipe.linearity.LinearitySolveTask(config=configLin)
 
         if doTableArray:
             # Non-linearity
             numberAmps = len(self.ampNames)
-            # localDataset: PTC dataset (lsst.cp.pipe.ptc.PhotonTransferCurveDataset)
-            localDataset = task.fitPtc(localDataset, ptcFitType=fitType)
-            # linDataset: Dictionary of `lsst.cp.pipe.ptc.LinearityResidualsAndLinearizersDataset`
-            linDataset = task.linearity.run(localDataset,
-                                            camera=FakeCamera([self.flatExp1.getDetector()]),
-                                            inputDims={'detector': 0})
+            # localDataset: PTC dataset (`lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`)
+            localDataset = solveTask.fitPtc(localDataset)
+            # linDataset here is a lsst.pipe.base.Struct
+            linDataset = linearityTask.run(localDataset,
+                                           camera=FakeCamera([self.flatExp1.getDetector()]),
+                                           inputDims={'detector': 0})
             linDataset = linDataset.outputLinearizer
         else:
-            localDataset = task.fitPtc(localDataset, ptcFitType=fitType)
-            linDataset = task.linearity.run(localDataset,
-                                            camera=FakeCamera([self.flatExp1.getDetector()]),
-                                            inputDims={'detector': 0})
+            localDataset = solveTask.fitPtc(localDataset)
+            linDataset = linearityTask.run(localDataset,
+                                           camera=FakeCamera([self.flatExp1.getDetector()]),
+                                           inputDims={'detector': 0})
             linDataset = linDataset.outputLinearizer
-
         if doTableArray:
             # check that the linearizer table has been filled out properly
             for i in np.arange(numberAmps):
-                tMax = (config.linearity.maxLookupTableAdu)/self.flux
-                timeRange = np.linspace(0., tMax, config.linearity.maxLookupTableAdu)
+                tMax = (configLin.maxLookupTableAdu)/self.flux
+                timeRange = np.linspace(0., tMax, configLin.maxLookupTableAdu)
                 signalIdeal = timeRange*self.flux
                 signalUncorrected = funcPolynomial(np.array([0.0, self.flux, self.k2NonLinearity]),
                                                    timeRange)
@@ -265,14 +276,14 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                 self.ptcFitAndCheckPtc(fitType=fitType, order=order, doTableArray=createArray)
 
     def test_meanVarMeasurement(self):
-        task = self.defaultTask
+        task = self.defaultTaskExtract
         mu, varDiff, _ = task.measureMeanVarCov(self.flatExp1, self.flatExp2)
 
         self.assertLess(self.flatWidth - np.sqrt(varDiff), 1)
         self.assertLess(self.flatMean - mu, 1)
 
     def test_meanVarMeasurementWithNans(self):
-        task = self.defaultTask
+        task = self.defaultTaskExtract
         self.flatExp1.image.array[20:30, :] = np.nan
         self.flatExp2.image.array[20:30, :] = np.nan
 
@@ -301,7 +312,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         self.assertLess(expectedMu - mu, 1)
 
     def test_meanVarMeasurementAllNan(self):
-        task = self.defaultTask
+        task = self.defaultTaskExtract
         self.flatExp1.image.array[:, :] = np.nan
         self.flatExp2.image.array[:, :] = np.nan
 
@@ -311,21 +322,45 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         self.assertTrue(np.isnan(varDiff))
         self.assertTrue(covDiff is None)
 
+    def test_makeZeroSafe(self):
+        noZerosArray = [1., 20, -35, 45578.98, 90.0, 897, 659.8]
+        someZerosArray = [1., 20, 0, 0, 90, 879, 0]
+        allZerosArray = [0., 0.0, 0, 0, 0.0, 0, 0]
+
+        substituteValue = 1e-10
+
+        expectedSomeZerosArray = [1., 20, substituteValue, substituteValue, 90, 879, substituteValue]
+        expectedAllZerosArray = np.repeat(substituteValue, len(allZerosArray))
+
+        measuredSomeZerosArray = self.defaultTaskSolve._makeZeroSafe(someZerosArray,
+                                                                     substituteValue=substituteValue)
+        measuredAllZerosArray = self.defaultTaskSolve._makeZeroSafe(allZerosArray,
+                                                                    substituteValue=substituteValue)
+        measuredNoZerosArray = self.defaultTaskSolve._makeZeroSafe(noZerosArray,
+                                                                   substituteValue=substituteValue)
+
+        for exp, meas in zip(expectedSomeZerosArray, measuredSomeZerosArray):
+            self.assertEqual(exp, meas)
+        for exp, meas in zip(expectedAllZerosArray, measuredAllZerosArray):
+            self.assertEqual(exp, meas)
+        for exp, meas in zip(noZerosArray, measuredNoZerosArray):
+            self.assertEqual(exp, meas)
+
     def test_getInitialGoodPoints(self):
         xs = [1, 2, 3, 4, 5, 6]
         ys = [2*x for x in xs]
-        points = self.defaultTask._getInitialGoodPoints(xs, ys, maxDeviationPositive=0.1,
-                                                        maxDeviationNegative=0.25,
-                                                        minMeanRatioTest=0.,
-                                                        minVarPivotSearch=0.)
+        points = self.defaultTaskSolve._getInitialGoodPoints(xs, ys, maxDeviationPositive=0.1,
+                                                             maxDeviationNegative=0.25,
+                                                             minMeanRatioTest=0.,
+                                                             minVarPivotSearch=0.)
         assert np.all(points) == np.all(np.array([True for x in xs]))
 
         ys[-1] = 30
-        points = self.defaultTask._getInitialGoodPoints(xs, ys,
-                                                        maxDeviationPositive=0.1,
-                                                        maxDeviationNegative=0.25,
-                                                        minMeanRatioTest=0.,
-                                                        minVarPivotSearch=0.)
+        points = self.defaultTaskSolve._getInitialGoodPoints(xs, ys,
+                                                             maxDeviationPositive=0.1,
+                                                             maxDeviationNegative=0.25,
+                                                             minMeanRatioTest=0.,
+                                                             minVarPivotSearch=0.)
         assert np.all(points) == np.all(np.array([True, True, True, True, False]))
 
         ys = [2*x for x in xs]
@@ -333,10 +368,10 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         results = [False, True, True, False, False]
         for i, factor in enumerate([-0.5, -0.1, 0, 0.1, 0.5]):
             newYs[-1] = ys[-1] + (factor*ys[-1])
-            points = self.defaultTask._getInitialGoodPoints(xs, newYs, maxDeviationPositive=0.05,
-                                                            maxDeviationNegative=0.25,
-                                                            minMeanRatioTest=0.0,
-                                                            minVarPivotSearch=0.0)
+            points = self.defaultTaskSolve._getInitialGoodPoints(xs, newYs, maxDeviationPositive=0.05,
+                                                                 maxDeviationNegative=0.25,
+                                                                 minMeanRatioTest=0.0,
+                                                                 minVarPivotSearch=0.0)
             assert (np.all(points[0:-2]))  # noqa: E712 - flake8 is wrong here because of numpy.bool
             assert points[-1] == results[i]
 

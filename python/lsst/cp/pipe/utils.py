@@ -33,6 +33,7 @@ import lsst.pipe.base as pipeBase
 import lsst.ip.isr as ipIsr
 from lsst.ip.isr import isrMock
 import lsst.log
+import lsst.afw.image
 
 import galsim
 
@@ -70,7 +71,8 @@ def calculateWeightedReducedChi2(measured, model, weightsMeasured, nData, nParsM
 
 
 def makeMockFlats(expTime, gain=1.0, readNoiseElectrons=5, fluxElectrons=1000,
-                  randomSeedFlat1=1984, randomSeedFlat2=666, powerLawBfParams=[]):
+                  randomSeedFlat1=1984, randomSeedFlat2=666, powerLawBfParams=[],
+                  expId1=0, expId2=1):
     """Create a pair or mock flats with isrMock.
 
     Parameters
@@ -95,6 +97,12 @@ def makeMockFlats(expTime, gain=1.0, readNoiseElectrons=5, fluxElectrons=1000,
 
     powerLawBfParams : `list`, optional
         Parameters for `galsim.cdmodel.PowerLawCD` to simulate the brightter-fatter effect.
+
+    expId1 : `int`, optional
+        Exposure ID for first flat.
+
+    expId2 : `int`, optional
+        Exposure ID for second flat.
 
     Returns
     -------
@@ -151,6 +159,12 @@ def makeMockFlats(expTime, gain=1.0, readNoiseElectrons=5, fluxElectrons=1000,
     else:
         flatExp1.image.array[:] = flatData1/gain   # ADU
         flatExp2.image.array[:] = flatData2/gain   # ADU
+
+    visitInfoExp1 = lsst.afw.image.VisitInfo(exposureId=expId1, exposureTime=expTime)
+    visitInfoExp2 = lsst.afw.image.VisitInfo(exposureId=expId2, exposureTime=expTime)
+
+    flatExp1.getInfo().setVisitInfo(visitInfoExp1)
+    flatExp2.getInfo().setVisitInfo(visitInfoExp2)
 
     return flatExp1, flatExp2
 
@@ -499,6 +513,31 @@ def funcAstier(pars, x):
     """
     a00, gain, noise = pars
     return 0.5/(a00*gain*gain)*(np.exp(2*a00*x*gain)-1) + noise/(gain*gain)  # C_00
+
+
+def arrangeFlatsByExpTime(exposureList):
+    """Arrange exposures by exposure time.
+
+    Parameters
+    ----------
+    exposureList : `list`[`lsst.afw.image.exposure.exposure.ExposureF`]
+        Input list of exposures.
+
+    Returns
+    ------
+    flatsAtExpTime : `dict` [`float`,
+                      `list`[`lsst.afw.image.exposure.exposure.ExposureF`]]
+        Dictionary that groups flat-field exposures that have the same
+        exposure time (seconds).
+    """
+    flatsAtExpTime = {}
+    for exp in exposureList:
+        tempFlat = exp
+        expTime = tempFlat.getInfo().getVisitInfo().getExposureTime()
+        listAtExpTime = flatsAtExpTime.setdefault(expTime, [])
+        listAtExpTime.append(tempFlat)
+
+    return flatsAtExpTime
 
 
 def checkExpLengthEqual(exp1, exp2, v1=None, v2=None, raiseWithMessage=False):
