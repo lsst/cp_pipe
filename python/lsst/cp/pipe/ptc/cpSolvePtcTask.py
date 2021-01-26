@@ -524,7 +524,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         if dataset.ptcFitType:
             ptcFitType = dataset.ptcFitType
         else:
-            raise RuntimeError(f"ptcFitType is None of empty in PTC dataset.")
+            raise RuntimeError("ptcFitType is None of empty in PTC dataset.")
         matrixSide = self.config.maximumRangeCovariancesAstier
         nanMatrix = np.empty((matrixSide, matrixSide))
         nanMatrix[:] = np.nan
