@@ -123,6 +123,9 @@ def construct_filename(calib, repo, date=None):
         date = calib.getMetadata().get('CALIBDATE', None)
         if date is None:
             raise RuntimeError("Could not determine a date.")
+    else:
+        calib.getMetadata().set('CALIBDATE', date)
+        calib.updateMetadata(setCalibId=True)
     dateTime = datetime.datetime.fromisoformat(date)
     date = dateTime.strftime("%Y%m%dT%H%M%S")
 
