@@ -70,7 +70,7 @@ class MakeBrighterFatterKernelTaskConfig(pexConfig.Config):
     )
     isrDesirableSteps = pexConfig.ListField(
         dtype=str,
-        doc="isr operations that it is advisable to perform, but are not mission-critical." +
+        doc="isr operations that it is advisable to perform, but are not mission-critical."
         " WARNs are logged for any of these found to be False.",
         default=['doBias', 'doDark', 'doCrosstalk', 'doDefect', 'doLinearize']
     )
@@ -142,7 +142,7 @@ class MakeBrighterFatterKernelTaskConfig(pexConfig.Config):
     )
     xcorrCheckRejectLevel = pexConfig.Field(
         dtype=float,
-        doc="Sanity check level for the sum of the input cross-correlations. Arrays which " +
+        doc="Sanity check level for the sum of the input cross-correlations. Arrays which "
         "sum to greater than this are discarded before the clipped mean is calculated.",
         default=2.0
     )
@@ -158,7 +158,7 @@ class MakeBrighterFatterKernelTaskConfig(pexConfig.Config):
     )
     nSigmaClipKernelGen = pexConfig.Field(
         dtype=float,
-        doc="Number of sigma to clip to during pixel-wise clipping when generating the kernel. See " +
+        doc="Number of sigma to clip to during pixel-wise clipping when generating the kernel. See "
         "the generateKernel docstring for more info.",
         default=4
     )
@@ -184,7 +184,7 @@ class MakeBrighterFatterKernelTaskConfig(pexConfig.Config):
     )
     biasCorr = pexConfig.Field(
         dtype=float,
-        doc="An empirically determined correction factor, used to correct for the sigma-clipping of" +
+        doc="An empirically determined correction factor, used to correct for the sigma-clipping of"
         " a non-Gaussian distribution. Post DM-15277, code will exist here to calculate appropriate values",
         default=0.9241
     )
@@ -195,7 +195,7 @@ class MakeBrighterFatterKernelTaskConfig(pexConfig.Config):
     )
     fixPtcThroughOrigin = pexConfig.Field(
         dtype=bool,
-        doc="Constrain the fit of the photon transfer curve to go through the origin when measuring" +
+        doc="Constrain the fit of the photon transfer curve to go through the origin when measuring"
         "the gain?",
         default=True
     )
@@ -210,13 +210,13 @@ class MakeBrighterFatterKernelTaskConfig(pexConfig.Config):
     )
     ignoreAmpsForAveraging = pexConfig.ListField(
         dtype=str,
-        doc="List of amp names to ignore when averaging the amplifier kernels into the detector" +
+        doc="List of amp names to ignore when averaging the amplifier kernels into the detector"
         " kernel. Only relevant for level = AMP",
         default=[]
     )
     backgroundWarnLevel = pexConfig.Field(
         dtype=float,
-        doc="Log warnings if the mean of the fitted background is found to be above this level after " +
+        doc="Log warnings if the mean of the fitted background is found to be above this level after "
         "differencing image pair.",
         default=0.1
     )
@@ -435,22 +435,22 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
 
         for configParam in self.config.isrMandatorySteps:
             if configDict[configParam] is False:
-                raise RuntimeError('Must set config.isr.%s to True '
-                                   'for brighter-fatter kernel calculation' % configParam)
+                raise RuntimeError(f'Must set config.isr.{configParam} to True '
+                                   'for brighter-fatter kernel calculation')
 
         for configParam in self.config.isrForbiddenSteps:
             if configDict[configParam] is True:
-                raise RuntimeError('Must set config.isr.%s to False '
-                                   'for brighter-fatter kernel calculation' % configParam)
+                raise RuntimeError(f'Must set config.isr.{configParam} to False '
+                                   'for brighter-fatter kernel calculation')
 
         for configParam in self.config.isrDesirableSteps:
             if configParam not in configDict:
-                self.log.info('Failed to find key %s in the isr config dict. You probably want ' +
-                              'to set the equivalent for your obs_package to True.' % configParam)
+                self.log.info('Failed to find key %s in the isr config dict. You probably want '
+                              'to set the equivalent for your obs_package to True.', configParam)
                 continue
             if configDict[configParam] is False:
                 self.log.warn('Found config.isr.%s set to False for brighter-fatter kernel calculation. '
-                              'It is probably desirable to have this set to True' % configParam)
+                              'It is probably desirable to have this set to True', configParam)
 
         # subtask settings
         if not self.config.isr.assembleCcd.doTrim:
@@ -1239,8 +1239,8 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
                 res = (y - slope * x) / x
                 resMean = afwMath.makeStatistics(res, afwMath.MEANCLIP, sctrl).getValue()
                 resStd = np.sqrt(afwMath.makeStatistics(res, afwMath.VARIANCECLIP, sctrl).getValue())
-                index = np.where((res > (resMean + nSigmaClip*resStd)) |
-                                 (res < (resMean - nSigmaClip*resStd)))
+                index = np.where((res > (resMean + nSigmaClip*resStd))
+                                 | (res < (resMean - nSigmaClip*resStd)))
                 self.log.debug("%.3f %.3f %.3f %.3f" % (resMean, resStd, np.max(res), nSigmaClip))
                 if np.shape(np.where(index))[1] == 0 or (nIter >= maxIter):  # run out of points or iters
                     break
@@ -1439,8 +1439,8 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
         # Calculate the initial error
         for i in range(1, func.shape[0] - 1):
             for j in range(1, func.shape[1] - 1):
-                resid[i, j] = (func[i, j - 1] + func[i, j + 1] + func[i - 1, j] +
-                               func[i + 1, j] - 4*func[i, j] - source[i - 1, j - 1])
+                resid[i, j] = (func[i, j - 1] + func[i, j + 1] + func[i - 1, j]
+                               + func[i + 1, j] - 4*func[i, j] - source[i - 1, j - 1])
         inError = np.sum(np.abs(resid))
 
         # Iterate until convergence
@@ -1454,24 +1454,24 @@ class MakeBrighterFatterKernelTask(pipeBase.CmdLineTask):
             if nIter%2 == 0:
                 for i in range(1, func.shape[0] - 1, 2):
                     for j in range(1, func.shape[1] - 1, 2):
-                        resid[i, j] = float(func[i, j-1] + func[i, j + 1] + func[i - 1, j] +
-                                            func[i + 1, j] - 4.0*func[i, j] - dx*dx*source[i - 1, j - 1])
+                        resid[i, j] = float(func[i, j-1] + func[i, j + 1] + func[i - 1, j]
+                                            + func[i + 1, j] - 4.0*func[i, j] - dx*dx*source[i - 1, j - 1])
                         func[i, j] += omega*resid[i, j]*.25
                 for i in range(2, func.shape[0] - 1, 2):
                     for j in range(2, func.shape[1] - 1, 2):
-                        resid[i, j] = float(func[i, j - 1] + func[i, j + 1] + func[i - 1, j] +
-                                            func[i + 1, j] - 4.0*func[i, j] - dx*dx*source[i - 1, j - 1])
+                        resid[i, j] = float(func[i, j - 1] + func[i, j + 1] + func[i - 1, j]
+                                            + func[i + 1, j] - 4.0*func[i, j] - dx*dx*source[i - 1, j - 1])
                         func[i, j] += omega*resid[i, j]*.25
             else:
                 for i in range(1, func.shape[0] - 1, 2):
                     for j in range(2, func.shape[1] - 1, 2):
-                        resid[i, j] = float(func[i, j - 1] + func[i, j + 1] + func[i - 1, j] +
-                                            func[i + 1, j] - 4.0*func[i, j] - dx*dx*source[i - 1, j - 1])
+                        resid[i, j] = float(func[i, j - 1] + func[i, j + 1] + func[i - 1, j]
+                                            + func[i + 1, j] - 4.0*func[i, j] - dx*dx*source[i - 1, j - 1])
                         func[i, j] += omega*resid[i, j]*.25
                 for i in range(2, func.shape[0] - 1, 2):
                     for j in range(1, func.shape[1] - 1, 2):
-                        resid[i, j] = float(func[i, j - 1] + func[i, j + 1] + func[i - 1, j] +
-                                            func[i + 1, j] - 4.0*func[i, j] - dx*dx*source[i - 1, j - 1])
+                        resid[i, j] = float(func[i, j - 1] + func[i, j + 1] + func[i - 1, j]
+                                            + func[i + 1, j] - 4.0*func[i, j] - dx*dx*source[i - 1, j - 1])
                         func[i, j] += omega*resid[i, j]*.25
             outError = np.sum(np.abs(resid))
             if outError < inError*eLevel:

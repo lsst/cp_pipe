@@ -546,8 +546,8 @@ class RunEotestTask(pipeBase.CmdLineTask):
                 # TODO: adding a translator to obs_comCam and ingesting this would allow this to be done
                 # by the butler instead of here. DM-12939
                 flatPairFilenames = [os.path.realpath(f) for f in flatPairFilenames if
-                                     os.path.realpath(f).find('flat1') != -1 or
-                                     os.path.realpath(f).find('flat2') != -1]
+                                     os.path.realpath(f).find('flat1') != -1
+                                     or os.path.realpath(f).find('flat2') != -1]
                 if not flatPairFilenames:
                     raise RuntimeError("No flatPair files found.")
                 self.log.trace("FlatPairTask: Processing %s with %s files" % (ccd, len(flatPairFilenames)))
@@ -583,8 +583,8 @@ class RunEotestTask(pipeBase.CmdLineTask):
                 # TODO: adding a translator to obs_comCam and ingesting this would allow this to be done
                 # by the butler instead of here. DM-12939
                 ptcFilenames = [os.path.realpath(f) for f in ptcFilenames if
-                                os.path.realpath(f).find('flat1') != -1 or
-                                os.path.realpath(f).find('flat2') != -1]
+                                os.path.realpath(f).find('flat1') != -1
+                                or os.path.realpath(f).find('flat2') != -1]
                 if not ptcFilenames:
                     raise RuntimeError("No flatPair files found")
                 self.log.trace("PTCTask: Processing %s with %s files" % (ccd, len(ptcFilenames)))

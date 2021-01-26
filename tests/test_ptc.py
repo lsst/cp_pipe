@@ -180,8 +180,9 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         elif fitType == 'EXPAPPROXIMATION':
             g = self.gain
             for ampName in self.ampNames:
-                localDataset.rawVars[ampName] = [(0.5/(self.a00*g**2)*(np.exp(2*self.a00*mu*g)-1) +
-                                                 self.noiseSq/(g*g)) for mu in localDataset.rawMeans[ampName]]
+                localDataset.rawVars[ampName] = [(0.5/(self.a00*g**2)*(np.exp(2*self.a00*mu*g)-1)
+                                                 + self.noiseSq/(g*g))
+                                                 for mu in localDataset.rawMeans[ampName]]
         else:
             RuntimeError("Enter a fit function type: 'POLYNOMIAL' or 'EXPAPPROXIMATION'")
 
