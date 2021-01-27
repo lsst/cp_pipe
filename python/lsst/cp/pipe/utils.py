@@ -145,7 +145,7 @@ def makeMockFlats(expTime, gain=1.0, readNoiseElectrons=5, fluxElectrons=1000,
     # Simulate BF with power law model in galsim
     if len(powerLawBfParams):
         if not len(powerLawBfParams) == 8:
-            raise RuntimeError("Wrong number of parameters for `galsim.cdmodel.PowerLawCD`. " +
+            raise RuntimeError("Wrong number of parameters for `galsim.cdmodel.PowerLawCD`. "
                                f"Expected 8; passed {len(powerLawBfParams)}.")
         cd = galsim.cdmodel.PowerLawCD(*powerLawBfParams)
         tempFlatData1 = galsim.Image(flatData1)
@@ -652,20 +652,20 @@ def validateIsrConfig(isrTask, mandatory=None, forbidden=None, desirable=None, u
     if desirable:
         for configParam in desirable:
             if configParam not in configDict:
-                log.info(f"Failed to find key {configParam} in the isr config. You probably want" +
+                log.info(f"Failed to find key {configParam} in the isr config. You probably want"
                          " to set the equivalent for your obs_package to True.")
                 continue
             if configDict[configParam] is False:
-                log.warn(f"Found config.isr.{configParam} set to False for this task." +
+                log.warn(f"Found config.isr.{configParam} set to False for this task."
                          " The cp_pipe Config recommends setting this to True.")
     if undesirable:
         for configParam in undesirable:
             if configParam not in configDict:
-                log.info(f"Failed to find key {configParam} in the isr config. You probably want" +
+                log.info(f"Failed to find key {configParam} in the isr config. You probably want"
                          " to set the equivalent for your obs_package to False.")
                 continue
             if configDict[configParam] is True:
-                log.warn(f"Found config.isr.{configParam} set to True for this task." +
+                log.warn(f"Found config.isr.{configParam} set to True for this task."
                          " The cp_pipe Config recommends setting this to False.")
 
     if checkTrim:  # subtask setting, seems non-trivial to combine with above lists

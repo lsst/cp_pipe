@@ -153,7 +153,7 @@ class PlotPhotonTransferCurveTaskGen2(pipeBase.CmdLineTask):
             elif ptcFitType in ["EXPAPPROXIMATION", "POLYNOMIAL"]:
                 self._plotStandardPtc(datasetPtc, ptcFitType, pdfPages)
             else:
-                raise RuntimeError(f"The input dataset had an invalid dataset.ptcFitType: {ptcFitType}. \n" +
+                raise RuntimeError(f"The input dataset had an invalid dataset.ptcFitType: {ptcFitType}. \n"
                                    "Options: 'FULLCOVARIANCE', EXPAPPROXIMATION, or 'POLYNOMIAL'.")
             if linearizer:
                 self._plotLinearizer(datasetPtc, linearizer, pdfPages)
@@ -333,11 +333,11 @@ class PlotPhotonTransferCurveTaskGen2(pipeBase.CmdLineTask):
                 chi2FullModelNoBVar = calculateWeightedReducedChi2(varVecFinalNoB, varVecModelFinalNoB,
                                                                    varWeightsFinalNoB, len(meanVecFinalNoB),
                                                                    3)
-                stringLegend = (f"Gain: {gain:.4} e/ADU \n" +
-                                f"Noise: {noise:.4} e \n" +
-                                r"$a_{00}$: %.3e 1/e"%aCoeffs[0, 0] +
-                                "\n" + r"$b_{00}$: %.3e 1/e"%bCoeffs[0, 0] +
-                                f"\nLast in fit: {meanVecFinal[-1]:.7} ADU ")
+                stringLegend = (f"Gain: {gain:.4} e/ADU \n"
+                                f"Noise: {noise:.4} e \n"
+                                + r"$a_{00}$: %.3e 1/e"%aCoeffs[0, 0] + "\n"
+                                + r"$b_{00}$: %.3e 1/e"%bCoeffs[0, 0]
+                                + f"\nLast in fit: {meanVecFinal[-1]:.7} ADU ")
                 minMeanVecFinal = np.nanmin(meanVecFinal)
                 maxMeanVecFinal = np.nanmax(meanVecFinal)
                 deltaXlim = maxMeanVecFinal - minMeanVecFinal
@@ -417,10 +417,10 @@ class PlotPhotonTransferCurveTaskGen2(pipeBase.CmdLineTask):
         pdfPages.savefig(f2)
         fResCov00.suptitle("Residuals (data-model) for Cov00 (Var)", fontsize=supTitleFontSize)
         pdfPages.savefig(fResCov00)
-        fCov01.suptitle("Cov01 as in Astier+19 (nearest parallel neighbor covariance) \n" +
+        fCov01.suptitle("Cov01 as in Astier+19 (nearest parallel neighbor covariance) \n"
                         " Fit: Eq. 20, Astier+19", fontsize=supTitleFontSize)
         pdfPages.savefig(fCov01)
-        fCov10.suptitle("Cov10 as in Astier+19 (nearest serial neighbor covariance) \n" +
+        fCov10.suptitle("Cov10 as in Astier+19 (nearest serial neighbor covariance) \n"
                         "Fit: Eq. 20, Astier+19", fontsize=supTitleFontSize)
         pdfPages.savefig(fCov10)
 
@@ -1066,7 +1066,7 @@ class PlotPhotonTransferCurveTaskGen2(pipeBase.CmdLineTask):
         f.suptitle("Linearity \n Fit: Polynomial (degree: %g)"
                    % (len(pars)-1),
                    fontsize=supTitleFontSize)
-        f2.suptitle(r"Fractional NL residual" + "\n" +
+        f2.suptitle(r"Fractional NL residual" "\n"
                     r"$100\times \frac{(k_0 + k_1*Time-\mu)}{k_0+k_1*Time}$",
                     fontsize=supTitleFontSize)
         pdfPages.savefig(f)

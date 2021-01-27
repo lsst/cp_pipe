@@ -524,7 +524,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         if dataset.ptcFitType:
             ptcFitType = dataset.ptcFitType
         else:
-            raise RuntimeError(f"ptcFitType is None of empty in PTC dataset.")
+            raise RuntimeError("ptcFitType is None of empty in PTC dataset.")
         matrixSide = self.config.maximumRangeCovariancesAstier
         nanMatrix = np.empty((matrixSide, matrixSide))
         nanMatrix[:] = np.nan
@@ -615,7 +615,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             varVecFinal = varVecOriginal[mask]
 
             if Counter(mask)[False] > 0:
-                self.log.info((f"Number of points discarded in PTC of amplifier {ampName}:" +
+                self.log.info((f"Number of points discarded in PTC of amplifier {ampName}:"
                                f" {Counter(mask)[False]} out of {len(meanVecOriginal)}"))
 
             if (len(meanVecFinal) < len(parsIniPtc)):

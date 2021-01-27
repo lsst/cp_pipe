@@ -220,9 +220,9 @@ class CrosstalkExtractTask(pipeBase.PipelineTask,
                 sourceAmpName = sourceAmp.getName()
                 sourceAmpImage = sourceIm[sourceAmp.getBBox()]
                 sourceMask = sourceAmpImage.mask.array
-                select = ((sourceMask & detected > 0) &
-                          (sourceMask & bad == 0) &
-                          np.isfinite(sourceAmpImage.image.array))
+                select = ((sourceMask & detected > 0)
+                          & (sourceMask & bad == 0)
+                          & np.isfinite(sourceAmpImage.image.array))
                 count = np.sum(select)
                 self.log.debug("  Source amplifier: %s", sourceAmpName)
 
@@ -606,8 +606,8 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
                 else:
                     correctionFactor = self.sigmaClipCorrection(rejSigma)
                     calib.coeffErr[ii][jj] = np.std(values) * correctionFactor
-                calib.coeffValid[ii][jj] = (np.abs(calib.coeffs[ii][jj]) >
-                                            calib.coeffErr[ii][jj] / np.sqrt(calib.coeffNum[ii][jj]))
+                calib.coeffValid[ii][jj] = (np.abs(calib.coeffs[ii][jj])
+                                            > calib.coeffErr[ii][jj] / np.sqrt(calib.coeffNum[ii][jj]))
 
             if calib.coeffNum[ii][jj] > 1:
                 self.debugRatios('measure', ratios, ordering[ii], ordering[jj],

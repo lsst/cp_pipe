@@ -399,8 +399,8 @@ class CovFit:
         # assumes that mu is 1d
         bigMu = mu[:, np.newaxis, np.newaxis]*gain
         # c(=a*b in Astier+19) also has a contribution to the last term, that is absent for now.
-        covModel = (bigMu/(gain*gain)*(a1*bigMu+2./3.*(bigMu*bigMu)*(a2 + c1) +
-                    (1./3.*a3 + 5./6.*ac)*(bigMu*bigMu*bigMu)) + noise[np.newaxis, :, :]/gain**2)
+        covModel = (bigMu/(gain*gain)*(a1*bigMu+2./3.*(bigMu*bigMu)*(a2 + c1)
+                    + (1./3.*a3 + 5./6.*ac)*(bigMu*bigMu*bigMu)) + noise[np.newaxis, :, :]/gain**2)
         # add the Poisson term, and the read out noise (variance)
         covModel[:, 0, 0] += mu/gain
 
