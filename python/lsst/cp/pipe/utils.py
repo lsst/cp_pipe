@@ -540,6 +540,37 @@ def arrangeFlatsByExpTime(exposureList):
     return flatsAtExpTime
 
 
+def arrangeFlatsByExpId(exposureList):
+    """Arrange exposures by exposure ID.
+
+    Parameters
+    ----------
+    exposureList : `list`[`lsst.afw.image.exposure.exposure.ExposureF`]
+        Input list of exposures.
+
+    Returns
+    ------
+    flatsAtExpTime : `dict` [`float`,
+                      `list`[`lsst.afw.image.exposure.exposure.ExposureF`]]
+        Dictionary that groups flat-field exposures that have the same
+        exposure time (seconds).
+    """
+    flatsAtExpId = {}
+    sortedExposures = sorted(exposureList, key=lambda exp: exp.getInfo().getVisitInfo().getExposureId())
+
+    for jPair, exp in enumerate(sortedExposures):
+        if (jPair + 1) % 2:
+            kPair = jPair // 2
+            listAtExpId = flatsAtExpId.setdefault(kPair, [])
+            listAtExpId.append(exp)
+            try:
+                listAtExpId.append(sortedExposures[jPair + 1])
+            except IndexError:
+                pass
+
+    return flatsAtExpId
+
+
 def checkExpLengthEqual(exp1, exp2, v1=None, v2=None, raiseWithMessage=False):
     """Check the exposure lengths of two exposures are equal.
 

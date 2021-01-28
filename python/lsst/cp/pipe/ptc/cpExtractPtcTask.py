@@ -24,7 +24,7 @@ import numpy as np
 import lsst.afw.math as afwMath
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
-from lsst.cp.pipe.utils import arrangeFlatsByExpTime
+from lsst.cp.pipe.utils import arrangeFlatsByExpTime, arrangeFlatsByExpId
 
 import lsst.pipe.base.connectionTypes as cT
 
@@ -63,6 +63,11 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
                                        pipelineConnections=PhotonTransferCurveExtractConnections):
     """Configuration for the measurement of covariances from flats.
     """
+    matchByExposureId = pexConfig.Field(
+        dtype=bool,
+        doc="Should exposures by matched by ID rather than exp_time?",
+        default=False,
+    )
     maximumRangeCovariancesAstier = pexConfig.Field(
         dtype=int,
         doc="Maximum range of covariances as in Astier+19",
@@ -174,7 +179,10 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         """
         inputs = butlerQC.get(inputRefs)
         # Dictionary, keyed by expTime, with flat exposures
-        inputs['inputExp'] = arrangeFlatsByExpTime(inputs['inputExp'])
+        if self.config.matchByExposureId:
+            inputs['inputExp'] = arrangeFlatsByExpId(inputs['inputExp'])
+        else:
+            inputs['inputExp'] = arrangeFlatsByExpTime(inputs['inputExp'])
         # Ids of input list of exposures
         inputs['inputDims'] = [expId.dataId['exposure'] for expId in inputRefs.inputExp]
         outputs = self.run(**inputs)
