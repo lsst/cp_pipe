@@ -65,7 +65,7 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
     """
     matchByExposureId = pexConfig.Field(
         dtype=bool,
-        doc="Should exposures by matched by ID rather than exp_time?",
+        doc="Should exposures by matched by ID rather than exposure time?",
         default=False,
     )
     maximumRangeCovariancesAstier = pexConfig.Field(
