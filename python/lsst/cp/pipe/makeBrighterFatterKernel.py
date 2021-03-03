@@ -32,6 +32,7 @@ import lsst.pipe.base as pipeBase
 import lsst.pipe.base.connectionTypes as cT
 
 from lsst.ip.isr import (BrighterFatterKernel)
+from .utils import (funcPolynomial, irlsFit)
 from ._lookupStaticCalibration import lookupStaticCalibration
 
 
@@ -261,11 +262,28 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
             if self.config.useAmatrix:
                 # This is mildly wasteful
                 preKernel = np.pad(self._tileArray(np.array(inputPtc.aMatrix[ampName])), ((1, 1)))
+            elif self.config.correlationQuadraticFit:
+                # Use a quadratic fit to the correlations as a function of flux.
+                preKernel = self.quadraticCorrelations(scaledCorrList, fluxes, f"Amp: {ampName}")
             else:
+                # Use a simple average of the measured correlations.
                 preKernel = self.averageCorrelations(scaledCorrList, f"Amp: {ampName}")
 
-            finalSum = np.sum(preKernel)
             center = int((preKernel.shape[0] - 1) / 2)
+
+            if self.config.forceZeroSum:
+                totalSum = np.sum(preKernel)
+
+                if self.config.correlationModelRadius < (preKernel.shape[0] - 1) / 2:
+                    # Assume a correlation model of Corr(r) = -preFactor * r^(2 * slope)
+                    preFactor = np.sqrt(preKernel[center, center + 1] * preKernel[center + 1, center])
+                    slopeFactor = 2.0 * np.abs(self.config.correlationModelSlope)
+                    totalSum += 2.0*np.pi*(preFactor / (slopeFactor*(center + 0.5))**slopeFactor)
+
+                preKernel[center, center] -= totalSum
+                self.log.info("%s Zero-Sum Scale: %g", ampName, totalSum)
+
+            finalSum = np.sum(preKernel)
             bfk.meanXCorrs[ampName] = preKernel
 
             postKernel = self.successiveOverRelax(preKernel)
@@ -313,6 +331,41 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
             for j in range(np.shape(meanXcorr)[1]):
                 meanXcorr[i, j] = afwMath.makeStatistics(xCorrList[i, j],
                                                          afwMath.MEANCLIP, sctrl).getValue()
+
+        # To match previous definitions, pad by one element.
+        meanXcorr = np.pad(meanXcorr, ((1, 1)))
+
+        return meanXcorr
+
+    def quadraticCorrelations(self, xCorrList, fluxList, name):
+        """Measure a quadratic correlation model.
+
+        Parameters
+        ----------
+        xCorrList : `list` [`numpy.array`]
+            List of cross-correlations.
+        fluxList : `numpy.array`
+            Associated list of fluxes.
+        name : `str`
+            Name for log messages.
+
+        Returns
+        -------
+        meanXcorr : `numpy.array`
+            The averaged cross-correlation.
+        """
+        meanXcorr = np.zeros_like(xCorrList[0])
+        fluxList = np.square(fluxList)
+
+        for i in range(np.shape(meanXcorr)[0]):
+            for j in range(np.shape(meanXcorr)[1]):
+                # Fit corrlation_i(x, y) = a0 + a1 * (flux_i)^2 The
+                # i,j indices are inverted to apply the transposition,
+                # as is done in the averaging case.
+                linearFit, linearFitErr, chiSq, weights = irlsFit([0.0, 100.0], fluxList,
+                                                                  xCorrList[:, j, i], funcPolynomial)
+                meanXcorr[i, j] = linearFit[1]  # Discard the intercept.
+                self.log.debug("Quad fit meanXcorr[%d,%d] = %g", i, j, linearFit[1])
 
         # To match previous definitions, pad by one element.
         meanXcorr = np.pad(meanXcorr, ((1, 1)))
