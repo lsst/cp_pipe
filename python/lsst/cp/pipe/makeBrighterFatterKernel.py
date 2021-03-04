@@ -67,6 +67,7 @@ class BrighterFatterKernelSolveConnections(pipeBase.PipelineTaskConnections,
         doc="Output measured brighter-fatter kernel.",
         storageClass="BrighterFatterKernel",
         dimensions=("instrument", "detector"),
+        isCalibration=True,
     )
 
 
@@ -198,24 +199,33 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
 
         bfk = BrighterFatterKernel(camera=camera, detectorId=detector.getId(), level=self.config.level)
         bfk.means = inputPtc.finalMeans  # ADU
-        bfk.rawMeans = inputPtc.rawMeans  # ADU
-
         bfk.variances = inputPtc.finalVars  # ADU^2
         bfk.rawXcorrs = inputPtc.covariances  # ADU^2
-
+        bfk.badAmps = inputPtc.badAmps
+        bfk.shape = (inputPtc.covMatrixSide*2 + 1, inputPtc.covMatrixSide*2 + 1)
         bfk.gain = inputPtc.gain
         bfk.noise = inputPtc.noise
-        bfk.meanXCorrs = dict()
+        bfk.meanXcorrs = dict()
+        bfk.valid = dict()
 
         for amp in detector:
             ampName = amp.getName()
-            mask = inputPtc.expIdMask[ampName]
+            mask = np.array(inputPtc.expIdMask[ampName], dtype=bool)
 
             gain = bfk.gain[ampName]
             fluxes = np.array(bfk.means[ampName])[mask]
             variances = np.array(bfk.variances[ampName])[mask]
             xCorrList = [np.array(xcorr) for xcorr in bfk.rawXcorrs[ampName]]
             xCorrList = np.array(xCorrList)[mask]
+
+            if gain <= 0:
+                # We've received very bad data.
+                self.log.warn("Impossible gain recieved from PTC for %s: %f.  Skipping amplifier.",
+                              ampName, gain)
+                bfk.meanXcorrs[ampName] = np.zeros(bfk.shape)
+                bfk.ampKernels[ampName] = np.zeros(bfk.shape)
+                bfk.valid[ampName] = False
+                continue
 
             fluxes = np.array([flux*gain for flux in fluxes])  # Now in e^-
             variances = np.array([variance*gain*gain for variance in variances])  # Now in e^2-
@@ -242,7 +252,7 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
                 scaled = self._tileArray(q)
 
                 xcorrCheck = np.abs(np.sum(scaled))/np.sum(np.abs(scaled))
-                if xcorrCheck > self.config.xcorrCheckRejectLevel:
+                if (xcorrCheck > self.config.xcorrCheckRejectLevel) or not (np.isfinite(xcorrCheck)):
                     self.log.warn("Amp: %s %d skipped due to value of triangle-inequality sum %f",
                                   ampName, xcorrNum, xcorrCheck)
                     continue
@@ -253,11 +263,10 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
 
             if len(scaledCorrList) == 0:
                 self.log.warn("Amp: %s All inputs rejected for amp!", ampName)
-                bfk.ampKernels[ampName] = np.zeros_like(np.pad(scaledCorrList[0], ((1, 1))))
+                bfk.meanXcorrs[ampName] = np.zeros(bfk.shape)
+                bfk.ampKernels[ampName] = np.zeros(bfk.shape)
+                bfk.valid[ampName] = False
                 continue
-
-            if self.config.level == 'DETECTOR':
-                detectorCorrList.extend(scaledCorrList)
 
             if self.config.useAmatrix:
                 # This is mildly wasteful
@@ -269,7 +278,7 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
                 # Use a simple average of the measured correlations.
                 preKernel = self.averageCorrelations(scaledCorrList, f"Amp: {ampName}")
 
-            center = int((preKernel.shape[0] - 1) / 2)
+            center = int((bfk.shape[0] - 1) / 2)
 
             if self.config.forceZeroSum:
                 totalSum = np.sum(preKernel)
@@ -284,10 +293,13 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
                 self.log.info("%s Zero-Sum Scale: %g", ampName, totalSum)
 
             finalSum = np.sum(preKernel)
-            bfk.meanXCorrs[ampName] = preKernel
+            bfk.meanXcorrs[ampName] = preKernel
 
             postKernel = self.successiveOverRelax(preKernel)
             bfk.ampKernels[ampName] = postKernel
+            if self.config.level == 'DETECTOR':
+                detectorCorrList.extend(scaledCorrList)
+            bfk.valid[ampName] = True
             self.log.info("Amp: %s Sum: %g  Center Info Pre: %g  Post: %g",
                           ampName, finalSum, preKernel[center, center], postKernel[center, center])
 
@@ -295,14 +307,12 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
         if self.config.level == 'DETECTOR':
             preKernel = self.averageCorrelations(detectorCorrList, f"Det: {detName}")
             finalSum = np.sum(preKernel)
-            center = int((preKernel.shape[0] - 1) / 2)
+            center = int((bfk.shape[0] - 1) / 2)
 
             postKernel = self.successiveOverRelax(preKernel)
             bfk.detKernels[detName] = postKernel
             self.log.info("Det: %s Sum: %g  Center Info Pre: %g  Post: %g",
                           detName, finalSum, preKernel[center, center], postKernel[center, center])
-
-        bfk.shape = postKernel.shape
 
         return pipeBase.Struct(
             outputBFK=bfk,
