@@ -253,7 +253,7 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
 
             if len(scaledCorrList) == 0:
                 self.log.warn("Amp: %s All inputs rejected for amp!", ampName)
-                bfk.ampKernels[ampName] = np.zeros_like(np.pad(scaled, ((1, 1))))
+                bfk.ampKernels[ampName] = np.zeros_like(np.pad(scaledCorrList[0], ((1, 1))))
                 continue
 
             if self.config.level == 'DETECTOR':
@@ -356,24 +356,20 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
         """
         meanXcorr = np.zeros_like(xCorrList[0])
         fluxList = np.square(fluxList)
+        xCorrList = np.array(xCorrList)
 
         for i in range(np.shape(meanXcorr)[0]):
             for j in range(np.shape(meanXcorr)[1]):
                 # Fit corrlation_i(x, y) = a0 + a1 * (flux_i)^2 The
                 # i,j indices are inverted to apply the transposition,
                 # as is done in the averaging case.
-                linearFit, linearFitErr, chiSq, weights = irlsFit([0.0, 100.0], fluxList,
+                linearFit, linearFitErr, chiSq, weights = irlsFit([0.0, 1e-4], fluxList,
                                                                   xCorrList[:, j, i], funcPolynomial)
                 meanXcorr[i, j] = linearFit[1]  # Discard the intercept.
                 self.log.debug("Quad fit meanXcorr[%d,%d] = %g", i, j, linearFit[1])
 
         # To match previous definitions, pad by one element.
         meanXcorr = np.pad(meanXcorr, ((1, 1)))
-        center = int((meanXcorr.shape[0] - 1) / 2)
-        if self.config.forceZeroSum or True:
-            totalSum = np.sum(meanXcorr)
-            meanXcorr[center, center] -= totalSum
-            self.log.info("%s Zero-Sum Scale: %g", name, totalSum)
 
         return meanXcorr
 
