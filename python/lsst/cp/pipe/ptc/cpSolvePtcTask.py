@@ -290,9 +290,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             the class `PhotonTransferCurveDatase`.
         """
 
-        covFits, covFitsNoB = fitData(dataset,
-                                      r=self.config.maximumRangeCovariancesAstier)
-
+        covFits, covFitsNoB = fitData(dataset)
         dataset = self.getOutputPtcDataCovAstier(dataset, covFits, covFitsNoB)
 
         return dataset

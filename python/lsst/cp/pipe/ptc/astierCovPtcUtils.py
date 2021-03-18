@@ -227,36 +227,7 @@ def covDirectValue(diffImage, weightImage, dx, dy):
     return cov, nPix
 
 
-class LoadParams:
-    """
-    A class to prepare covariances for the PTC fit.
-
-    Parameters
-    ----------
-    r: `int`, optional
-        Maximum lag considered (e.g., to eliminate data beyond a separation "r": ignored in the fit).
-
-    subtractDistantValue: `bool`, optional
-        Subtract a background to the measured covariances (mandatory for HSC flat pairs)?
-
-    start: `int`, optional
-        Distance beyond which the subtractDistant model is fitted.
-
-    offsetDegree: `int`
-        Polynomial degree for the subtraction model.
-
-    Notes
-    -----
-    params = LoadParams(). "params" drives what happens in he fit. LoadParams provides default values.
-    """
-    def __init__(self):
-        self.r = 8
-        self.subtractDistantValue = False
-        self.start = 5
-        self.offsetDegree = 1
-
-
-def parseData(dataset, params):
+def parseData(dataset):
     """ Returns a list of CovFit objects, indexed by amp number.
 
     Params
@@ -264,9 +235,6 @@ def parseData(dataset, params):
     dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
         The PTC dataset containing the means, variances, and
         exposure times.
-
-    params: `covAstierptcUtil.LoadParams`
-        Object with values to drive the bahaviour of fits.
 
     Returns
     -------
@@ -284,12 +252,7 @@ def parseData(dataset, params):
         covAtAmp = dataset.covariances[ampName]
         covSqrtWeightsAtAmp = dataset.covariancesSqrtWeights[ampName]
 
-        if params.subtractDistantValue:
-            c = CovFit(muAtAmp, covAtAmp, covSqrtWeightsAtAmp, params.r, maskAtAmp)
-            c.subtractDistantOffset(params.r, params.start, params.offsetDegree)
-        else:
-            c = CovFit(muAtAmp, covAtAmp, covSqrtWeightsAtAmp, params.r, maskAtAmp)
-
+        c = CovFit(muAtAmp, covAtAmp, covSqrtWeightsAtAmp, dataset.covMatrixSide, maskAtAmp)
         cc = c.copy()
         cc.initFit()  # allows to get a crude gain.
         covFitList[ampName] = cc
@@ -297,16 +260,13 @@ def parseData(dataset, params):
     return covFitList
 
 
-def fitData(dataset, r=8):
+def fitData(dataset):
     """Fit data to models in Astier+19.
 
     Parameters
     ----------
     dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
         The dataset containing the means, variances, and exposure times.
-
-    r : `int`, optional
-        Maximum lag considered (e.g., to eliminate data beyond a separation "r": ignored in the fit).
 
     Returns
     -------
@@ -329,10 +289,7 @@ def fitData(dataset, r=8):
     "b" appears in Eq. 20 only through the "ab" combination, which is defined in this code as "c=ab".
     """
 
-    lparams = LoadParams()
-    lparams.subtractDistantValue = False
-    lparams.r = r
-    covFitList = parseData(dataset, lparams)
+    covFitList = parseData(dataset)
     covFitNoBList = {}  # [None]*(exts[-1]+1)
     for ext, c in covFitList.items():
         c.fitFullModel()

@@ -21,7 +21,6 @@
 
 import numpy as np
 import copy
-import itertools
 from scipy.signal import fftconvolve
 from scipy.optimize import leastsq
 from .astierCovFitParameters import FitParameters
@@ -186,33 +185,6 @@ def symmetrize(inputArray):
     return aSym
 
 
-class Pol2d:
-    """A class to calculate 2D polynomials"""
-
-    def __init__(self, x, y, z, order, w=None):
-        self.orderx = min(order, x.shape[0]-1)
-        self.ordery = min(order, x.shape[1]-1)
-        G = self.monomials(x.ravel(), y.ravel())
-        if w is None:
-            self.coeff, _, rank, _ = np.linalg.lstsq(G, z.ravel())
-        else:
-            self.coeff, _, rank, _ = np.linalg.lstsq((w.ravel()*G.T).T, z.ravel()*w.ravel())
-
-    def monomials(self, x, y):
-        ncols = (self.orderx+1)*(self.ordery+1)
-        G = np.zeros(x.shape + (ncols,))
-        ij = itertools.product(range(self.orderx+1), range(self.ordery+1))
-        for k, (i, j) in enumerate(ij):
-            G[..., k] = x**i * y**j
-
-        return G
-
-    def eval(self, x, y):
-        G = self.monomials(x, y)
-
-        return np.dot(G, self.coeff)
-
-
 class CovFit:
     """A class to fit the models in Astier+19 to flat covariances.
 
@@ -250,37 +222,6 @@ class CovFit:
         self.sqrtW = np.nan_to_num(covsSqrtWeights)[meanSignalsMask]
         self.r = maxRangeFromTuple
         self.logger = lsstLog.Log.getDefaultLogger()
-
-    def subtractDistantOffset(self, maxLag=8, startLag=5, polDegree=1):
-        """Subtract a background/offset to the measured covariances.
-
-        Parameters
-        ---------
-        maxLag: `int`
-            Maximum lag considered
-
-        startLag: `int`
-            First lag from where to start the offset subtraction.
-
-        polDegree: `int`
-            Degree of 2D polynomial to fit to covariance to define offse to be subtracted.
-        """
-        assert(startLag < self.r)
-        for k in range(len(self.mu)):
-            # Make a copy because it is going to be altered
-            w = self.sqrtW[k, ...] + 0.
-            sh = w.shape
-            i, j = np.meshgrid(range(sh[0]), range(sh[1]), indexing='ij')
-            # kill the core for the fit
-            w[:startLag, :startLag] = 0
-            poly = Pol2d(i, j, self.cov[k, ...], polDegree+1, w=w)
-            back = poly.eval(i, j)
-            self.cov[k, ...] -= back
-        self.r = maxLag
-        self.cov = self.cov[:, :maxLag, :maxLag]
-        self.sqrtW = self.sqrtW[:, :maxLag, :maxLag]
-
-        return
 
     def copy(self):
         """Make a copy of params"""
