@@ -28,7 +28,7 @@ from lsst.cp.pipe.utils import arrangeFlatsByExpTime, arrangeFlatsByExpId
 
 import lsst.pipe.base.connectionTypes as cT
 
-from .astierCovPtcUtils import (fftSize, CovFft, computeCovDirect)
+from .astierCovPtcUtils import (CovFft, computeCovDirect)
 from .astierCovPtcFit import makeCovArray
 
 from lsst.ip.isr import PhotonTransferCurveDataset
@@ -458,8 +458,13 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         if covAstierRealSpace:
             covDiffAstier = computeCovDirect(diffIm.image.array, w, maxRangeCov)
         else:
-            shapeDiff = diffIm.image.array.shape
-            fftShape = (fftSize(shapeDiff[0] + maxRangeCov), fftSize(shapeDiff[1]+maxRangeCov))
+            shapeDiff = np.array(diffIm.image.array.shape)
+            # Calculate sizes of FFT dimensions
+            s = shapeDiff + maxRangeCov
+            tempSize = np.array(np.log(s)/np.log(2.)).astype(int)
+            fftSize = np.array(2**(tempSize+1)).astype(int)
+            fftShape = (fftSize[0], fftSize[1])
+
             c = CovFft(diffIm.image.array, w, fftShape, maxRangeCov)
             covDiffAstier = c.reportCovFft(maxRangeCov)
 

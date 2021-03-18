@@ -119,12 +119,6 @@ class CovFft:
         return tupleVec
 
 
-def fftSize(s):
-    """Calculate the size fof one dimension for the FFT"""
-    x = int(np.log(s)/np.log(2.))
-    return int(2**(x+1))
-
-
 def computeCovDirect(diffImage, weightImage, maxRange):
     """Compute covariances of diffImage in real space.
 
