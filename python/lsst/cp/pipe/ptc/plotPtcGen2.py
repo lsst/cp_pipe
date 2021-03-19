@@ -37,7 +37,6 @@ from lsst.cp.pipe.utils import (funcAstier, funcPolynomial, NonexistentDatasetTa
                                 calculateWeightedReducedChi2)
 from matplotlib.ticker import MaxNLocator
 
-from lsst.cp.pipe.ptc.astierCovPtcFit import computeApproximateAcoeffs
 from lsst.cp.pipe.ptc.astierCovPtcUtils import getFitDataFromCovariances
 
 from lsst.ip.isr import PhotonTransferCurveDataset
@@ -807,10 +806,16 @@ class PlotPhotonTransferCurveTaskGen2(pipeBase.CmdLineTask):
             diffs = []
             amean = []
             for amp in pair[0]:
-                covModel = pair[1][amp]
+                covModel = np.array(pair[1][amp])
                 if np.isnan(covModel).all():
                     continue
-                aOld = computeApproximateAcoeffs(covModel, signalElectrons, gainDict[amp])
+                # Compute the "a" coefficients of the Antilogus+14 (1402.0725) model as in
+                # Guyonnet+15 (1501.01577, eq. 16, the slope of cov/var at a given flux mu in
+                # electrons). Eq. 16 of 1501.01577 is an approximation to the more complete
+                # model in Astier+19 (1905.08677).
+                var = covModel[0, 0, 0]  # ADU^2
+                # For a result in electrons^-1, we have to use mu in electrons
+                aOld = covModel[0, :, :]/(var*signalElectrons)
                 a = pair[0][amp]
                 amean.append(a)
                 diffs.append((aOld-a))

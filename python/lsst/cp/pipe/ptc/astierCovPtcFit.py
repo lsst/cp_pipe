@@ -30,39 +30,6 @@ import lsst.log as lsstLog
 __all__ = ["CovFit"]
 
 
-def computeApproximateAcoeffs(covModel, muEl, gain):
-    """Compute the "a" coefficients of the Antilogus+14 (1402.0725) model as in
-    Guyonnet+15 (1501.01577, eq. 16, the slope of cov/var at a given flux mu in electrons).
-
-    Eq. 16 of 1501.01577 is an approximation to the more complete model in Astier+19 (1905.08677).
-
-    Parameters
-    ---------
-    covModel : `list`
-        Covariance model from Eq. 20 in Astier+19.
-
-    muEl : `np.array`
-        Mean signal in electrons
-
-    gain : `float`
-        Gain in e-/ADU.
-
-    Returns
-    -------
-    aCoeffsOld: `numpy.array`
-        Slope of cov/var at a given flux mu in electrons.
-
-    Notes
-    -----
-    Returns the "a" array, computed this way, to be compared to the actual a_array from the full model
-    (fit.geA()).
-    """
-    covModel = np.array(covModel)
-    var = covModel[0, 0, 0]  # ADU^2
-    # For a result in electrons^-1, we have to use mu in electrons.
-    return covModel[0, :, :]/(var*muEl)
-
-
 def makeCovArray(inputTuple, maxRangeFromTuple=8):
     """Make covariances array from tuple.
 
