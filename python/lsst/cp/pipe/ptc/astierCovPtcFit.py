@@ -428,16 +428,6 @@ class CovFit:
         """Calculate weighted chi2 of full-model fit."""
         return(self.weightedRes()**2).sum()
 
-    def wres(self, params=None):
-        """To be used in weightedRes"""
-        if params is not None:
-            self.setParamValues(params)
-        covModel = np.nan_to_num(self.evalCovModel())
-        weightedRes = (covModel-self.cov)*self.sqrtW
-        maskedWeightedRes = weightedRes
-
-        return maskedWeightedRes
-
     def weightedRes(self, params=None):
         """Weighted residuals.
 
@@ -448,7 +438,12 @@ class CovFit:
         c.initFit()
         coeffs, cov, _, mesg, ierr = leastsq(c.weightedRes, c.getParamValues(), full_output=True)
         """
-        return self.wres(params).flatten()
+        if params is not None:
+            self.setParamValues(params)
+        covModel = np.nan_to_num(self.evalCovModel())
+        weightedRes = (covModel-self.cov)*self.sqrtW
+
+        return weightedRes.flatten()
 
     def fitFullModel(self, pInit=None):
         """Fit measured covariances to full model in Astier+19 (Eq. 20)
@@ -486,18 +481,6 @@ class CovFit:
         self.covParams = paramsCov
 
         return params
-
-    def ndof(self):
-        """Number of degrees of freedom
-
-        Returns
-        -------
-        mask.sum() - len(self.params.free): `int`
-            Number of usable pixels - number of parameters of fit.
-        """
-        mask = self.sqrtW != 0
-
-        return mask.sum() - len(self.params.free)
 
     def getFitData(self, i, j, divideByMu=False, unitsElectrons=False, returnMasked=False):
         """Get measured signal and covariance, cov model, weigths, and mask at covariance lag (i, j).
@@ -568,9 +551,3 @@ class CovFit:
             weights *= mu
 
         return mu, covariance, covarianceModel, weights, mask
-
-    def __call__(self, params):
-        self.setParamValues(params)
-        chi2 = self.chi2()
-
-        return chi2
