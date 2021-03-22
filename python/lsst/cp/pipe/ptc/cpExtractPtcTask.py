@@ -28,7 +28,7 @@ from lsst.cp.pipe.utils import arrangeFlatsByExpTime, arrangeFlatsByExpId
 
 import lsst.pipe.base.connectionTypes as cT
 
-from .astierCovPtcUtils import (CovFft, computeCovDirect)
+from .astierCovPtcUtils import (CovFastFourierTransform, computeCovDirect)
 from .astierCovPtcFit import makeCovArray
 
 from lsst.ip.isr import PhotonTransferCurveDataset
@@ -114,7 +114,7 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
         doc="Number of sigma-clipping iterations for afwMath.StatisticsControl()",
         default=1,
     )
-    minNumberGoodPixelsForFft = pexConfig.Field(
+    minNumberGoodPixelsForFastFourierTransform = pexConfig.Field(
         dtype=int,
         doc="Minimum number of acceptable good pixels per amp to calculate the covariances via FFT.",
         default=10000,
@@ -449,9 +449,9 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         wDiff = np.where(diffIm.getMask().getArray() == 0, 1, 0)
         w = w12*wDiff
 
-        if np.sum(w) < self.config.minNumberGoodPixelsForFft:
+        if np.sum(w) < self.config.minNumberGoodPixelsForFastFourierTransform:
             self.log.warn(f"Number of good points for FFT ({np.sum(w)}) is less than threshold "
-                          f"({self.config.minNumberGoodPixelsForFft})")
+                          f"({self.config.minNumberGoodPixelsForFastFourierTransform})")
             return np.nan, np.nan, None
 
         maxRangeCov = self.config.maximumRangeCovariancesAstier
@@ -465,7 +465,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
             fftSize = np.array(2**(tempSize+1)).astype(int)
             fftShape = (fftSize[0], fftSize[1])
 
-            c = CovFft(diffIm.image.array, w, fftShape, maxRangeCov)
-            covDiffAstier = c.reportCovFft(maxRangeCov)
+            c = CovFastFourierTransform(diffIm.image.array, w, fftShape, maxRangeCov)
+            covDiffAstier = c.reportCovFastFourierTransform(maxRangeCov)
 
         return mu, varDiff, covDiffAstier

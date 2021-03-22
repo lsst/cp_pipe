@@ -22,10 +22,10 @@
 import numpy as np
 from .astierCovPtcFit import CovFit
 
-__all__ = ['CovFft']
+__all__ = ['CovFastFourierTransform']
 
 
-class CovFft:
+class CovFastFourierTransform:
     """A class to compute (via FFT) the nearby pixels correlation function.
 
     Implements appendix of Astier+19.
@@ -93,7 +93,7 @@ class CovFft:
         cov2 = self.pCov[-dy, dx]/nPix2-self.pMean[-dy, dx]*self.pMean[dy, -dx]/(nPix2*nPix2)
         return 0.5*(cov1+cov2), nPix1+nPix2
 
-    def reportCovFft(self, maxRange):
+    def reportCovFastFourierTransform(self, maxRange):
         """Produce a list of tuples with covariances.
 
         Implements appendix of Astier+19.
