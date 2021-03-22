@@ -556,7 +556,7 @@ class CalibCombineByFilterTask(CalibCombineTask):
 
 
 def VignetteExposure(exposure, polygon=None,
-                     doUpdateMask=True, maskPlane='BAD',
+                     doUpdateMask=True, maskPlane="NO_DATA",
                      doSetValue=False, vignetteValue=0.0,
                      log=None):
     """Apply vignetted polygon to image pixels.
@@ -567,7 +567,7 @@ def VignetteExposure(exposure, polygon=None,
         Image to be updated.
     doUpdateMask : `bool`, optional
         Update the exposure mask for vignetted area?
-    maskPlane : `str`, optional,
+    maskPlane : `str`, optional
         Mask plane to assign.
     doSetValue : `bool`, optional
         Set image value for vignetted area?
