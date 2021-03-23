@@ -110,7 +110,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         """
         task = self.defaultTask
         extractConfig = self.defaultConfigExtract
-        extractConfig.minNumberGoodPixelsForFft = 5000
+        extractConfig.minNumberGoodPixelsForFastFourierTransform = 5000
         extractConfig.detectorMeasurementRegion = 'FULL'
         extractTask = cpPipe.ptc.PhotonTransferCurveExtractTask(config=extractConfig)
 
