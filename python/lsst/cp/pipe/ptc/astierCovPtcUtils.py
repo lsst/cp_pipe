@@ -260,13 +260,13 @@ def parseData(dataset):
     return covFitList
 
 
-def fitData(dataset):
-    """Fit data to models in Astier+19.
+def fitDataFullCovariance(dataset):
+    """Fit data to model in Astier+19 (Eq. 20).
 
     Parameters
     ----------
     dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
-        The dataset containing the means, variances, and exposure times.
+        The dataset containing the means, (co)variances, and exposure times.
 
     Returns
     -------
