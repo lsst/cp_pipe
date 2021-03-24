@@ -165,13 +165,13 @@ class CalibCombineConfig(pipeBase.PipelineTaskConfig,
     exposureScaling = pexConfig.ChoiceField(
         dtype=str,
         allowed={
-            "None": "No scaling used.",
+            "Unity": "Do not scale inputs.  Scale factor is 1.0.",
             "ExposureTime": "Scale inputs by their exposure time.",
             "DarkTime": "Scale inputs by their dark time.",
             "MeanStats": "Scale inputs based on their mean values.",
             "InputList": "Scale inputs based on a list of values.",
         },
-        default=None,
+        default="Unity",
         doc="Scaling to be applied to each input exposure.",
     )
     scalingLevel = pexConfig.ChoiceField(
@@ -321,7 +321,7 @@ class CalibCombineTask(pipeBase.PipelineTask,
                              for amp in exp.getDetector()]
                 else:
                     raise RuntimeError(f"Unknown scaling level: {self.config.scalingLevel}")
-            elif self.config.exposureScaling == 'None':
+            elif self.config.exposureScaling == 'Unity':
                 scale = 1.0
             else:
                 raise RuntimeError(f"Unknown scaling type: {self.config.exposureScaling}.")

@@ -24,7 +24,6 @@ tasks:
       connections.outputData: 'flat'
       calibrationType: 'flat'
       calibrationDimensions: ['physical_filter']
-      exposureScaling: None
       exposureScaling: MeanStats
 contracts:
   - isr.doFlat == False
