@@ -447,4 +447,13 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
             c = CovFastFourierTransform(diffIm.image.array, w, fftShape, maxRangeCov)
             covDiffAstier = c.reportCovFastFourierTransform(maxRangeCov)
 
+        # Compare Cov[0,0] and afwMath.VARIANCECLIP
+        # covDiffAstier[0] is the Cov[0,0] element, [3] is the variance, and there's a factor of 0.5
+        # difference with afwMath.VARIANCECLIP.
+        thresholdPercentage = 1e-2  # 0.01%
+        fractionalDiff = 100*np.fabs(1 - varDiff/(covDiffAstier[0][3]*0.5))
+        if fractionalDiff >= thresholdPercentage:
+            self.log.warn("Fractional difference between afwMatch.VARIANCECLIP and Cov[0,0] "
+                          f"is more than {thresholdPercentage}%: {fractionalDiff}")
+
         return mu, varDiff, covDiffAstier
