@@ -114,9 +114,10 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
         doc="Number of sigma-clipping iterations for afwMath.StatisticsControl()",
         default=1,
     )
-    minNumberGoodPixelsForFastFourierTransform = pexConfig.Field(
+    minNumberGoodPixelsForCovariance = pexConfig.Field(
         dtype=int,
-        doc="Minimum number of acceptable good pixels per amp to calculate the covariances via FFT.",
+        doc="Minimum number of acceptable good pixels per amp to calculate the covariances (via FFT or"
+            " direclty).",
         default=10000,
     )
     detectorMeasurementRegion = pexConfig.ChoiceField(
@@ -425,9 +426,9 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         wDiff = np.where(diffIm.getMask().getArray() == 0, 1, 0)
         w = w12*wDiff
 
-        if np.sum(w) < self.config.minNumberGoodPixelsForFastFourierTransform:
-            self.log.warn(f"Number of good points for FFT ({np.sum(w)}) is less than threshold "
-                          f"({self.config.minNumberGoodPixelsForFastFourierTransform})")
+        if np.sum(w) < self.config.minNumberGoodPixelsForCovariance:
+            self.log.warn(f"Number of good points for covariance calculation ({np.sum(w)}) is less "
+                          f"(than threshold {self.config.minNumberGoodPixelsForCovariance})")
             return np.nan, np.nan, None
 
         maxRangeCov = self.config.maximumRangeCovariancesAstier
