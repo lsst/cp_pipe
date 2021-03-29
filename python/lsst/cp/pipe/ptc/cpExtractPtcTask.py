@@ -510,4 +510,3 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         ptcDataset.finalModelVars[ampName] = [np.nan]
         ptcDataset.finalMeans[ampName] = [np.nan]
 
-        return

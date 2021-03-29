@@ -238,11 +238,11 @@ def parseData(dataset):
 
     Returns
     -------
-    covFitList: `dict`
+    covFitDict: `dict`
         Dictionary with amps as keys, and CovFit objects as values.
     """
 
-    covFitList = {}
+    covFitDict = {}
     for ampName in dataset.ampNames:
         # If there is a bad amp, don't fit it
         if ampName in dataset.badAmps:
@@ -255,9 +255,9 @@ def parseData(dataset):
         c = CovFit(muAtAmp, covAtAmp, covSqrtWeightsAtAmp, dataset.covMatrixSide, maskAtAmp)
         cc = c.copy()
         cc.initFit()  # allows to get a crude gain.
-        covFitList[ampName] = cc
+        covFitDict[ampName] = cc
 
-    return covFitList
+    return covFitDict
 
 
 def fitDataFullCovariance(dataset):
@@ -270,10 +270,10 @@ def fitDataFullCovariance(dataset):
 
     Returns
     -------
-    covFitList: `dict`
+    covFitDict: `dict`
         Dictionary of CovFit objects, with amp names as keys.
 
-    covFitNoBList: `dict`
+    covFitNoBDict: `dict`
        Dictionary of CovFit objects, with amp names as keys (b=0 in Eq. 20 of Astier+19).
 
     Notes
@@ -289,14 +289,14 @@ def fitDataFullCovariance(dataset):
     "b" appears in Eq. 20 only through the "ab" combination, which is defined in this code as "c=ab".
     """
 
-    covFitList = parseData(dataset)
-    covFitNoBList = {}  # [None]*(exts[-1]+1)
-    for ext, c in covFitList.items():
+    covFitDict = parseData(dataset)
+    covFitNoBDict = {}
+    for ext, c in covFitDict.items():
         c.fitFullModel()
-        covFitNoBList[ext] = c.copy()
+        covFitNoBDict[ext] = c.copy()
         c.params['c'].release()
         c.fitFullModel()
-    return covFitList, covFitNoBList
+    return covFitDict, covFitNoBDict
 
 
 def getFitDataFromCovariances(i, j, mu, fullCov, fullCovModel, fullCovSqrtWeights, gain=1.0,
