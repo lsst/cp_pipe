@@ -1,4 +1,4 @@
-description: cp_pipe PTC calibration construction.
+description: cp_pipe brighter-fatter kernel calibration construction.
 tasks:
   bfkSolve:
     class: lsst.cp.pipe.BrighterFatterKernelSolveTask

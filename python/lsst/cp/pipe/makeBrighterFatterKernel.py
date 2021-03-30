@@ -106,7 +106,8 @@ class BrighterFatterKernelSolveConfig(pipeBase.PipelineTaskConfig,
     )
     useAmatrix = pexConfig.Field(
         dtype=bool,
-        doc="Use the PTC 'a' matrix instead of the average of measured covariances?",
+        doc="Use the PTC 'a' matrix (Astier et al. 2019 equation 20) "
+        "instead of the average of measured covariances?",
         default=False,
     )
 
@@ -121,7 +122,6 @@ class BrighterFatterKernelSolveConfig(pipeBase.PipelineTaskConfig,
         default=5.0e-14
     )
 
-    # These are unused.  Are they worth implementing?
     correlationQuadraticFit = pexConfig.Field(
         dtype=bool,
         doc="Use a quadratic fit to find the correlations instead of simple averaging?",
@@ -200,6 +200,9 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
         bfk = BrighterFatterKernel(camera=camera, detectorId=detector.getId(), level=self.config.level)
         bfk.means = inputPtc.finalMeans  # ADU
         bfk.variances = inputPtc.finalVars  # ADU^2
+        # Use the PTC covariances as the cross-correlations.  These
+        # are scaled before the kernel is generated, which performs
+        # the conversion.
         bfk.rawXcorrs = inputPtc.covariances  # ADU^2
         bfk.badAmps = inputPtc.badAmps
         bfk.shape = (inputPtc.covMatrixSide*2 + 1, inputPtc.covMatrixSide*2 + 1)
@@ -230,8 +233,7 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
             fluxes = np.array([flux*gain for flux in fluxes])  # Now in e^-
             variances = np.array([variance*gain*gain for variance in variances])  # Now in e^2-
 
-            # This should duplicate the else block in generateKernel@L1358,
-            # which in turn is based on Coulton et al Equation 22.
+            # This should duplicate Coulton et al. 2017 Equation 22-29 (arxiv:1711.06273)
             scaledCorrList = list()
             for xcorrNum, (xcorr, flux, var) in enumerate(zip(xCorrList, fluxes, variances), 1):
                 q = np.array(xcorr) * gain * gain  # xcorr now in e^-
@@ -240,7 +242,8 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
                               ampName, xcorrNum, len(xCorrList), flux, var, q[0][0], q[1][0], q[0][1])
 
                 # Normalize by the flux, which removes the (0,0)
-                # component attributable to Poisson noise.
+                # component attributable to Poisson noise.  This
+                # contains the two "t I delta(x - x')" terms in Coulton et al. 2017 equation 29
                 q[0][0] -= 2.0*(flux)
 
                 if q[0][0] > 0.0:
@@ -248,6 +251,7 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
                                   ampName, xcorrNum, q[0][0])
                     continue
 
+                # This removes the "t (I_a^2 + I_b^2)" factor in Coulton et al. 2017 equation 29.
                 q /= -2.0*(flux**2)
                 scaled = self._tileArray(q)
 
@@ -269,7 +273,7 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
                 continue
 
             if self.config.useAmatrix:
-                # This is mildly wasteful
+                # Use the aMatrix, ignoring the meanXcorr generated above.
                 preKernel = np.pad(self._tileArray(np.array(inputPtc.aMatrix[ampName])), ((1, 1)))
             elif self.config.correlationQuadraticFit:
                 # Use a quadratic fit to the correlations as a function of flux.

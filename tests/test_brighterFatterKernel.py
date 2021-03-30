@@ -42,6 +42,11 @@ class BfkSolveTaskTestCase(lsst.utils.tests.TestCase):
         """Set up a plausible PTC dataset, with 1% of the expected variance
         shifted into covariance terms.
         """
+        cameraBuilder = cameraGeom.Camera.Builder('fake camera')
+        detectorWrapper = cameraGeom.testUtils.DetectorWrapper(numAmps=1, cameraBuilder=cameraBuilder)
+        self.detector = detectorWrapper.detector
+        self.camera = cameraBuilder.finish()
+
         self.defaultConfig = cpPipe.BrighterFatterKernelSolveConfig()
         self.ptc = ipIsr.PhotonTransferCurveDataset(ampNames=['amp 1'], ptcFitType='FULLCOVARIANCE',
                                                     covMatrixSide=3)
@@ -60,34 +65,44 @@ class BfkSolveTaskTestCase(lsst.utils.tests.TestCase):
         self.ptc.gain['amp 1'] = 1.0
         self.ptc.noise['amp 1'] = 5.0
 
-        cameraBuilder = cameraGeom.Camera.Builder('fake camera')
-        detectorWrapper = cameraGeom.testUtils.DetectorWrapper(numAmps=1, cameraBuilder=cameraBuilder)
-        self.detector = detectorWrapper.detector
-        self.camera = cameraBuilder.finish()
+        # This is empirically determined from the above parameters.
+        self.ptc.aMatrix['amp 1'] = np.array([[2.14329806e-06, -4.28659612e-07, -5.35824515e-08],
+                                              [-1.07164903e-06, -2.14329806e-07, -3.21494709e-08],
+                                              [-2.14329806e-07, -1.07164903e-07, -2.14329806e-08]])
+
+        # This is empirically determined from the above parameters.
+        self.expectation = np.array([[4.88348887e-08, 1.01136877e-07, 1.51784114e-07,
+                                      1.77570668e-07, 1.51784114e-07, 1.01136877e-07, 4.88348887e-08],
+                                     [9.42026776e-08, 2.03928507e-07, 3.28428909e-07,
+                                      4.06714446e-07, 3.28428909e-07, 2.03928507e-07, 9.42026776e-08],
+                                     [1.24047315e-07, 2.70512582e-07, 4.44123665e-07,
+                                      5.78099493e-07, 4.44123665e-07, 2.70512582e-07, 1.24047315e-07],
+                                     [1.31474000e-07, 2.77801372e-07, 3.85123870e-07,
+                                      -5.42128333e-08, 3.85123870e-07, 2.77801372e-07, 1.31474000e-07],
+                                     [1.24047315e-07, 2.70512582e-07, 4.44123665e-07,
+                                      5.78099493e-07, 4.44123665e-07, 2.70512582e-07, 1.24047315e-07],
+                                     [9.42026776e-08, 2.03928507e-07, 3.28428909e-07,
+                                      4.06714446e-07, 3.28428909e-07, 2.03928507e-07, 9.42026776e-08],
+                                     [4.88348887e-08, 1.01136877e-07, 1.51784114e-07,
+                                      1.77570668e-07, 1.51784114e-07, 1.01136877e-07, 4.88348887e-08]])
 
     def test_averaged(self):
-
         """Test "averaged" brighter-fatter kernel.
         """
         task = cpPipe.BrighterFatterKernelSolveTask()
 
         results = task.run(self.ptc, ['this is a dummy exposure'], self.camera, {'detector': 1})
-        expectation = np.array([[4.88348887e-08, 1.01136877e-07, 1.51784114e-07,
-                                 1.77570668e-07, 1.51784114e-07, 1.01136877e-07, 4.88348887e-08],
-                                [9.42026776e-08, 2.03928507e-07, 3.28428909e-07,
-                                 4.06714446e-07, 3.28428909e-07, 2.03928507e-07, 9.42026776e-08],
-                                [1.24047315e-07, 2.70512582e-07, 4.44123665e-07,
-                                 5.78099493e-07, 4.44123665e-07, 2.70512582e-07, 1.24047315e-07],
-                                [1.31474000e-07, 2.77801372e-07, 3.85123870e-07,
-                                 -5.42128333e-08, 3.85123870e-07, 2.77801372e-07, 1.31474000e-07],
-                                [1.24047315e-07, 2.70512582e-07, 4.44123665e-07,
-                                 5.78099493e-07, 4.44123665e-07, 2.70512582e-07, 1.24047315e-07],
-                                [9.42026776e-08, 2.03928507e-07, 3.28428909e-07,
-                                 4.06714446e-07, 3.28428909e-07, 2.03928507e-07, 9.42026776e-08],
-                                [4.88348887e-08, 1.01136877e-07, 1.51784114e-07,
-                                 1.77570668e-07, 1.51784114e-07, 1.01136877e-07, 4.88348887e-08]])
+        self.assertFloatsAlmostEqual(results.outputBFK.ampKernels['amp 1'], self.expectation, atol=1e-5)
 
-        self.assertFloatsAlmostEqual(results.outputBFK.ampKernels['amp 1'], expectation, atol=1e-5)
+    def test_aMatrix(self):
+        """Test solution from Astier et al. 2019 "A" matrix
+        """
+        config = cpPipe.BrighterFatterKernelSolveConfig()
+        config.useAmatrix = True
+        task = cpPipe.BrighterFatterKernelSolveTask(config=config)
+
+        results = task.run(self.ptc, ['this is a dummy exposure'], self.camera, {'detector': 1})
+        self.assertFloatsAlmostEqual(results.outputBFK.ampKernels['amp 1'], self.expectation, atol=1e-5)
 
     def test_quadratic(self):
         """Test quadratic correlation solver.
