@@ -230,9 +230,9 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         # Create a dummy ptcDataset
         dummyPtcDataset = PhotonTransferCurveDataset(ampNames, 'DUMMY',
                                                      self.config.maximumRangeCovariancesAstier)
-        # Initialize amps of `dummyPtcDatset` with NaNs. See `fillPtcDatasetAmp` function.
+        # Initialize amps of `dummyPtcDatset`.
         for ampName in ampNames:
-            self.fillPtcDatasetAmp(dummyPtcDataset, ampName)
+            dummyPtcDataset.setAmpValues(ampName)
         # Output list with PTC datasets.
         partialPtcDatasetList = []
         # The number of output references needs to match that of input references:
@@ -294,10 +294,10 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                                                      self.config.maximumRangeCovariancesAstier)
                     covSqrtWeights = np.nan_to_num(1./np.sqrt(vcov))
 
-                self.fillPtcDatasetAmp(partialPtcDataset, ampName, rawExpTime=[expTime], rawMean=[muDiff],
-                                       rawVar=[varDiff], inputExpIdPair=[(expId1, expId2)],
-                                       expIdMask=[expIdMask], covArray=covArray,
-                                       covSqrtWeights=covSqrtWeights)
+                partialPtcDataset.setAmpValues(ampName, rawExpTime=[expTime], rawMean=[muDiff],
+                                               rawVar=[varDiff], inputExpIdPair=[(expId1, expId2)],
+                                               expIdMask=[expIdMask], covArray=covArray,
+                                               covSqrtWeights=covSqrtWeights)
             # Use location of exp1 to save PTC dataset from (exp1, exp2) pair.
             # expId1 and expId2, as returned by getInfo().getVisitInfo().getExposureId(),
             # and the exposure IDs stured in inoutDims,
@@ -448,65 +448,3 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
             covDiffAstier = c.reportCovFastFourierTransform(maxRangeCov)
 
         return mu, varDiff, covDiffAstier
-
-    def fillPtcDatasetAmp(self, ptcDataset, ampName, rawExpTime=[np.nan], rawMean=[np.nan], rawVar=[np.nan],
-                          inputExpIdPair=[(np.nan, np.nan)], expIdMask=[np.nan],
-                          covArray=[], covSqrtWeights=[]):
-        """Helper function to initialize an amplifier of a ptcDataset.
-
-        Parameters
-        ----------
-        ptcDataset : `lsst.cp.pipe.ptc.PhotonTransferCurveDataset`
-            Dataset from MeasurePhotonTransferCurveTask.
-
-        rawExpTime :  `list`[`float`]
-            Exposure time for the amplifier.
-
-        rawMean : [`list`][`float`]
-            Mean signal (average of two images at same expTime)
-            for this amplifier.
-
-        rawVar : `dict`, [`str`, `list`]
-            Variance of the difference image of two images at the
-            same expTime for this amplifier.
-
-        inputExpIdPair : `list` [(`float`, `float`)]
-            List wiht a tuple containing the two exposures IDs.
-
-        expIdMask : `list`[`bool`]
-            Mask for this amplifier (`True` or `False`).
-
-        covArray : `list`[`np.array`]
-            Measured covariance matrix for this amplifier.
-
-        covSqrtWeights : `list`[`np.array`]
-            Sqrt. of covariances weights for this amplifier.
-
-        Notes
-        -----
-        Modifies input ptcDataset in place.
-        """
-        if len(covArray) == 0:
-            covArray = [np.full((ptcDataset.covMatrixSide, ptcDataset.covMatrixSide), np.nan)]
-        if len(covSqrtWeights) == 0:
-            covSqrtWeights = np.full_like(covArray, np.nan)
-
-        ptcDataset.rawExpTimes[ampName] = rawExpTime
-        ptcDataset.rawMeans[ampName] = rawMean
-        ptcDataset.rawVars[ampName] = rawVar
-        ptcDataset.inputExpIdPairs[ampName] = inputExpIdPair
-        ptcDataset.expIdMask[ampName] = expIdMask
-        ptcDataset.covariances[ampName] = covArray
-        ptcDataset.covariancesSqrtWeights[ampName] = covSqrtWeights
-        ptcDataset.covariancesModel[ampName] = np.full_like(covArray, np.nan)
-        ptcDataset.covariancesModelNoB[ampName] = np.full_like(covArray, np.nan)
-        ptcDataset.aMatrix[ampName] = np.full_like(covArray[0], np.nan)
-        ptcDataset.bMatrix[ampName] = np.full_like(covArray[0], np.nan)
-        ptcDataset.aMatrixNoB[ampName] = np.full_like(covArray[0], np.nan)
-        ptcDataset.ptcFitPars[ampName] = [np.nan]
-        ptcDataset.ptcFitParsError[ampName] = [np.nan]
-        ptcDataset.ptcFitChiSq[ampName] = np.nan
-        ptcDataset.finalVars[ampName] = [np.nan]
-        ptcDataset.finalModelVars[ampName] = [np.nan]
-        ptcDataset.finalMeans[ampName] = [np.nan]
-
