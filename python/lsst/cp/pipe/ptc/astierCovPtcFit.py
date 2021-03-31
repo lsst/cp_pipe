@@ -21,7 +21,6 @@
 
 import numpy as np
 import copy
-import itertools
 from scipy.signal import fftconvolve
 from scipy.optimize import leastsq
 from .astierCovFitParameters import FitParameters
@@ -29,39 +28,6 @@ from .astierCovFitParameters import FitParameters
 import lsst.log as lsstLog
 
 __all__ = ["CovFit"]
-
-
-def computeApproximateAcoeffs(covModel, muEl, gain):
-    """Compute the "a" coefficients of the Antilogus+14 (1402.0725) model as in
-    Guyonnet+15 (1501.01577, eq. 16, the slope of cov/var at a given flux mu in electrons).
-
-    Eq. 16 of 1501.01577 is an approximation to the more complete model in Astier+19 (1905.08677).
-
-    Parameters
-    ---------
-    covModel : `list`
-        Covariance model from Eq. 20 in Astier+19.
-
-    muEl : `np.array`
-        Mean signal in electrons
-
-    gain : `float`
-        Gain in e-/ADU.
-
-    Returns
-    -------
-    aCoeffsOld: `numpy.array`
-        Slope of cov/var at a given flux mu in electrons.
-
-    Notes
-    -----
-    Returns the "a" array, computed this way, to be compared to the actual a_array from the full model
-    (fit.geA()).
-    """
-    covModel = np.array(covModel)
-    var = covModel[0, 0, 0]  # ADU^2
-    # For a result in electrons^-1, we have to use mu in electrons.
-    return covModel[0, :, :]/(var*muEl)
 
 
 def makeCovArray(inputTuple, maxRangeFromTuple=8):
@@ -186,33 +152,6 @@ def symmetrize(inputArray):
     return aSym
 
 
-class Pol2d:
-    """A class to calculate 2D polynomials"""
-
-    def __init__(self, x, y, z, order, w=None):
-        self.orderx = min(order, x.shape[0]-1)
-        self.ordery = min(order, x.shape[1]-1)
-        G = self.monomials(x.ravel(), y.ravel())
-        if w is None:
-            self.coeff, _, rank, _ = np.linalg.lstsq(G, z.ravel())
-        else:
-            self.coeff, _, rank, _ = np.linalg.lstsq((w.ravel()*G.T).T, z.ravel()*w.ravel())
-
-    def monomials(self, x, y):
-        ncols = (self.orderx+1)*(self.ordery+1)
-        G = np.zeros(x.shape + (ncols,))
-        ij = itertools.product(range(self.orderx+1), range(self.ordery+1))
-        for k, (i, j) in enumerate(ij):
-            G[..., k] = x**i * y**j
-
-        return G
-
-    def eval(self, x, y):
-        G = self.monomials(x, y)
-
-        return np.dot(G, self.coeff)
-
-
 class CovFit:
     """A class to fit the models in Astier+19 to flat covariances.
 
@@ -250,37 +189,6 @@ class CovFit:
         self.sqrtW = np.nan_to_num(covsSqrtWeights)[meanSignalsMask]
         self.r = maxRangeFromTuple
         self.logger = lsstLog.Log.getDefaultLogger()
-
-    def subtractDistantOffset(self, maxLag=8, startLag=5, polDegree=1):
-        """Subtract a background/offset to the measured covariances.
-
-        Parameters
-        ---------
-        maxLag: `int`
-            Maximum lag considered
-
-        startLag: `int`
-            First lag from where to start the offset subtraction.
-
-        polDegree: `int`
-            Degree of 2D polynomial to fit to covariance to define offse to be subtracted.
-        """
-        assert(startLag < self.r)
-        for k in range(len(self.mu)):
-            # Make a copy because it is going to be altered
-            w = self.sqrtW[k, ...] + 0.
-            sh = w.shape
-            i, j = np.meshgrid(range(sh[0]), range(sh[1]), indexing='ij')
-            # kill the core for the fit
-            w[:startLag, :startLag] = 0
-            poly = Pol2d(i, j, self.cov[k, ...], polDegree+1, w=w)
-            back = poly.eval(i, j)
-            self.cov[k, ...] -= back
-        self.r = maxLag
-        self.cov = self.cov[:, :maxLag, :maxLag]
-        self.sqrtW = self.sqrtW[:, :maxLag, :maxLag]
-
-        return
 
     def copy(self):
         """Make a copy of params"""
@@ -520,16 +428,6 @@ class CovFit:
         """Calculate weighted chi2 of full-model fit."""
         return(self.weightedRes()**2).sum()
 
-    def wres(self, params=None):
-        """To be used in weightedRes"""
-        if params is not None:
-            self.setParamValues(params)
-        covModel = np.nan_to_num(self.evalCovModel())
-        weightedRes = (covModel-self.cov)*self.sqrtW
-        maskedWeightedRes = weightedRes
-
-        return maskedWeightedRes
-
     def weightedRes(self, params=None):
         """Weighted residuals.
 
@@ -540,7 +438,12 @@ class CovFit:
         c.initFit()
         coeffs, cov, _, mesg, ierr = leastsq(c.weightedRes, c.getParamValues(), full_output=True)
         """
-        return self.wres(params).flatten()
+        if params is not None:
+            self.setParamValues(params)
+        covModel = np.nan_to_num(self.evalCovModel())
+        weightedRes = (covModel-self.cov)*self.sqrtW
+
+        return weightedRes.flatten()
 
     def fitFullModel(self, pInit=None):
         """Fit measured covariances to full model in Astier+19 (Eq. 20)
@@ -578,18 +481,6 @@ class CovFit:
         self.covParams = paramsCov
 
         return params
-
-    def ndof(self):
-        """Number of degrees of freedom
-
-        Returns
-        -------
-        mask.sum() - len(self.params.free): `int`
-            Number of usable pixels - number of parameters of fit.
-        """
-        mask = self.sqrtW != 0
-
-        return mask.sum() - len(self.params.free)
 
     def getFitData(self, i, j, divideByMu=False, unitsElectrons=False, returnMasked=False):
         """Get measured signal and covariance, cov model, weigths, and mask at covariance lag (i, j).
@@ -660,9 +551,3 @@ class CovFit:
             weights *= mu
 
         return mu, covariance, covarianceModel, weights, mask
-
-    def __call__(self, params):
-        self.setParamValues(params)
-        chi2 = self.chi2()
-
-        return chi2

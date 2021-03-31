@@ -22,10 +22,10 @@
 import numpy as np
 from .astierCovPtcFit import CovFit
 
-__all__ = ['CovFft']
+__all__ = ['CovFastFourierTransform']
 
 
-class CovFft:
+class CovFastFourierTransform:
     """A class to compute (via FFT) the nearby pixels correlation function.
 
     Implements appendix of Astier+19.
@@ -93,7 +93,7 @@ class CovFft:
         cov2 = self.pCov[-dy, dx]/nPix2-self.pMean[-dy, dx]*self.pMean[dy, -dx]/(nPix2*nPix2)
         return 0.5*(cov1+cov2), nPix1+nPix2
 
-    def reportCovFft(self, maxRange):
+    def reportCovFastFourierTransform(self, maxRange):
         """Produce a list of tuples with covariances.
 
         Implements appendix of Astier+19.
@@ -117,12 +117,6 @@ class CovFft:
                     var = cov
                 tupleVec.append((dx, dy, var, cov, npix))
         return tupleVec
-
-
-def fftSize(s):
-    """Calculate the size fof one dimension for the FFT"""
-    x = int(np.log(s)/np.log(2.))
-    return int(2**(x+1))
 
 
 def computeCovDirect(diffImage, weightImage, maxRange):
@@ -233,36 +227,7 @@ def covDirectValue(diffImage, weightImage, dx, dy):
     return cov, nPix
 
 
-class LoadParams:
-    """
-    A class to prepare covariances for the PTC fit.
-
-    Parameters
-    ----------
-    r: `int`, optional
-        Maximum lag considered (e.g., to eliminate data beyond a separation "r": ignored in the fit).
-
-    subtractDistantValue: `bool`, optional
-        Subtract a background to the measured covariances (mandatory for HSC flat pairs)?
-
-    start: `int`, optional
-        Distance beyond which the subtractDistant model is fitted.
-
-    offsetDegree: `int`
-        Polynomial degree for the subtraction model.
-
-    Notes
-    -----
-    params = LoadParams(). "params" drives what happens in he fit. LoadParams provides default values.
-    """
-    def __init__(self):
-        self.r = 8
-        self.subtractDistantValue = False
-        self.start = 5
-        self.offsetDegree = 1
-
-
-def parseData(dataset, params):
+def parseData(dataset):
     """ Returns a list of CovFit objects, indexed by amp number.
 
     Params
@@ -271,16 +236,13 @@ def parseData(dataset, params):
         The PTC dataset containing the means, variances, and
         exposure times.
 
-    params: `covAstierptcUtil.LoadParams`
-        Object with values to drive the bahaviour of fits.
-
     Returns
     -------
-    covFitList: `dict`
+    covFitDict: `dict`
         Dictionary with amps as keys, and CovFit objects as values.
     """
 
-    covFitList = {}
+    covFitDict = {}
     for ampName in dataset.ampNames:
         # If there is a bad amp, don't fit it
         if ampName in dataset.badAmps:
@@ -290,36 +252,28 @@ def parseData(dataset, params):
         covAtAmp = dataset.covariances[ampName]
         covSqrtWeightsAtAmp = dataset.covariancesSqrtWeights[ampName]
 
-        if params.subtractDistantValue:
-            c = CovFit(muAtAmp, covAtAmp, covSqrtWeightsAtAmp, params.r, maskAtAmp)
-            c.subtractDistantOffset(params.r, params.start, params.offsetDegree)
-        else:
-            c = CovFit(muAtAmp, covAtAmp, covSqrtWeightsAtAmp, params.r, maskAtAmp)
-
+        c = CovFit(muAtAmp, covAtAmp, covSqrtWeightsAtAmp, dataset.covMatrixSide, maskAtAmp)
         cc = c.copy()
         cc.initFit()  # allows to get a crude gain.
-        covFitList[ampName] = cc
+        covFitDict[ampName] = cc
 
-    return covFitList
+    return covFitDict
 
 
-def fitData(dataset, r=8):
-    """Fit data to models in Astier+19.
+def fitDataFullCovariance(dataset):
+    """Fit data to model in Astier+19 (Eq. 20).
 
     Parameters
     ----------
     dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
-        The dataset containing the means, variances, and exposure times.
-
-    r : `int`, optional
-        Maximum lag considered (e.g., to eliminate data beyond a separation "r": ignored in the fit).
+        The dataset containing the means, (co)variances, and exposure times.
 
     Returns
     -------
-    covFitList: `dict`
+    covFitDict: `dict`
         Dictionary of CovFit objects, with amp names as keys.
 
-    covFitNoBList: `dict`
+    covFitNoBDict: `dict`
        Dictionary of CovFit objects, with amp names as keys (b=0 in Eq. 20 of Astier+19).
 
     Notes
@@ -335,17 +289,14 @@ def fitData(dataset, r=8):
     "b" appears in Eq. 20 only through the "ab" combination, which is defined in this code as "c=ab".
     """
 
-    lparams = LoadParams()
-    lparams.subtractDistantValue = False
-    lparams.r = r
-    covFitList = parseData(dataset, lparams)
-    covFitNoBList = {}  # [None]*(exts[-1]+1)
-    for ext, c in covFitList.items():
+    covFitDict = parseData(dataset)
+    covFitNoBDict = {}
+    for ext, c in covFitDict.items():
         c.fitFullModel()
-        covFitNoBList[ext] = c.copy()
+        covFitNoBDict[ext] = c.copy()
         c.params['c'].release()
         c.fitFullModel()
-    return covFitList, covFitNoBList
+    return covFitDict, covFitNoBDict
 
 
 def getFitDataFromCovariances(i, j, mu, fullCov, fullCovModel, fullCovSqrtWeights, gain=1.0,

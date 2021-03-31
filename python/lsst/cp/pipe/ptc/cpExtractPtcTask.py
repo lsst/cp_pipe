@@ -28,7 +28,7 @@ from lsst.cp.pipe.utils import arrangeFlatsByExpTime, arrangeFlatsByExpId
 
 import lsst.pipe.base.connectionTypes as cT
 
-from .astierCovPtcUtils import (fftSize, CovFft, computeCovDirect)
+from .astierCovPtcUtils import (CovFastFourierTransform, computeCovDirect)
 from .astierCovPtcFit import makeCovArray
 
 from lsst.ip.isr import PhotonTransferCurveDataset
@@ -114,9 +114,10 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
         doc="Number of sigma-clipping iterations for afwMath.StatisticsControl()",
         default=1,
     )
-    minNumberGoodPixelsForFft = pexConfig.Field(
+    minNumberGoodPixelsForCovariance = pexConfig.Field(
         dtype=int,
-        doc="Minimum number of acceptable good pixels per amp to calculate the covariances via FFT.",
+        doc="Minimum number of acceptable good pixels per amp to calculate the covariances (via FFT or"
+            " direclty).",
         default=10000,
     )
     detectorMeasurementRegion = pexConfig.ChoiceField(
@@ -209,6 +210,8 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         detNum = detector.getId()
         amps = detector.getAmplifiers()
         ampNames = [amp.getName() for amp in amps]
+
+        # Each amp may have a different  min and max ADU signal specified in the config.
         maxMeanSignalDict = {ampName: 1e6 for ampName in ampNames}
         minMeanSignalDict = {ampName: 0.0 for ampName in ampNames}
         for ampName in ampNames:
@@ -221,37 +224,21 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                 minMeanSignalDict[ampName] = self.config.minMeanSignal['ALL_AMPS']
             elif ampName in self.config.minMeanSignal:
                 minMeanSignalDict[ampName] = self.config.minMeanSignal[ampName]
+        # These are the column names for `tupleRows` below.
         tags = [('mu', '<f8'), ('afwVar', '<f8'), ('i', '<i8'), ('j', '<i8'), ('var', '<f8'),
                 ('cov', '<f8'), ('npix', '<i8'), ('ext', '<i8'), ('expTime', '<f8'), ('ampName', '<U3')]
+        # Create a dummy ptcDataset
         dummyPtcDataset = PhotonTransferCurveDataset(ampNames, 'DUMMY',
                                                      self.config.maximumRangeCovariancesAstier)
-        covArray = [np.full((self.config.maximumRangeCovariancesAstier,
-                    self.config.maximumRangeCovariancesAstier), np.nan)]
+        # Initialize amps of `dummyPtcDatset`.
         for ampName in ampNames:
-            dummyPtcDataset.rawExpTimes[ampName] = [np.nan]
-            dummyPtcDataset.rawMeans[ampName] = [np.nan]
-            dummyPtcDataset.rawVars[ampName] = [np.nan]
-            dummyPtcDataset.inputExpIdPairs[ampName] = [(np.nan, np.nan)]
-            dummyPtcDataset.expIdMask[ampName] = [np.nan]
-            dummyPtcDataset.covariances[ampName] = covArray
-            dummyPtcDataset.covariancesModel[ampName] = np.full_like(covArray, np.nan)
-            dummyPtcDataset.covariancesSqrtWeights[ampName] = np.full_like(covArray, np.nan)
-            dummyPtcDataset.covariancesModelNoB[ampName] = np.full_like(covArray, np.nan)
-            dummyPtcDataset.aMatrix[ampName] = np.full_like(covArray[0], np.nan)
-            dummyPtcDataset.bMatrix[ampName] = np.full_like(covArray[0], np.nan)
-            dummyPtcDataset.aMatrixNoB[ampName] = np.full_like(covArray[0], np.nan)
-            dummyPtcDataset.ptcFitPars[ampName] = [np.nan]
-            dummyPtcDataset.ptcFitParsError[ampName] = [np.nan]
-            dummyPtcDataset.ptcFitChiSq[ampName] = np.nan
-            dummyPtcDataset.finalVars[ampName] = [np.nan]
-            dummyPtcDataset.finalModelVars[ampName] = [np.nan]
-            dummyPtcDataset.finalMeans[ampName] = [np.nan]
+            dummyPtcDataset.setAmpValues(ampName)
         # Output list with PTC datasets.
-        partialDatasetPtcList = []
+        partialPtcDatasetList = []
         # The number of output references needs to match that of input references:
         # initialize outputlist with dummy PTC datasets.
         for i in range(len(inputDims)):
-            partialDatasetPtcList.append(dummyPtcDataset)
+            partialPtcDatasetList.append(dummyPtcDataset)
 
         for expTime in inputExp:
             exposures = inputExp[expTime]
@@ -269,7 +256,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
             expId1 = exp1.getInfo().getVisitInfo().getExposureId()
             expId2 = exp2.getInfo().getVisitInfo().getExposureId()
             nAmpsNan = 0
-            partialDatasetPtc = PhotonTransferCurveDataset(ampNames, '',
+            partialPtcDataset = PhotonTransferCurveDataset(ampNames, '',
                                                            self.config.maximumRangeCovariancesAstier)
             for ampNumber, amp in enumerate(detector):
                 ampName = amp.getName()
@@ -279,6 +266,8 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                     region = amp.getBBox()
                 elif self.config.detectorMeasurementRegion == 'FULL':
                     region = None
+                # `measureMeanVarCov` is the function that measures the variance and  covariances from
+                # the difference image of two flats at the same exposure time.
                 # The variable `covAstier` is of the form: [(i, j, var (cov[0,0]), cov, npix) for (i,j)
                 # in {maxLag, maxLag}^2]
                 muDiff, varDiff, covAstier = self.measureMeanVarCov(exp1, exp2, region=region,
@@ -297,10 +286,6 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                 if (muDiff <= minMeanSignalDict[ampName]) or (muDiff >= maxMeanSignalDict[ampName]):
                     expIdMask = False
 
-                partialDatasetPtc.rawExpTimes[ampName] = [expTime]
-                partialDatasetPtc.rawMeans[ampName] = [muDiff]
-                partialDatasetPtc.rawVars[ampName] = [varDiff]
-
                 if covAstier is not None:
                     tupleRows = [(muDiff, varDiff) + covRow + (ampNumber, expTime,
                                                                ampName) for covRow in covAstier]
@@ -308,21 +293,11 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                     covArray, vcov, _ = makeCovArray(tempStructArray,
                                                      self.config.maximumRangeCovariancesAstier)
                     covSqrtWeights = np.nan_to_num(1./np.sqrt(vcov))
-                partialDatasetPtc.inputExpIdPairs[ampName] = [(expId1, expId2)]
-                partialDatasetPtc.expIdMask[ampName] = [expIdMask]
-                partialDatasetPtc.covariances[ampName] = covArray
-                partialDatasetPtc.covariancesSqrtWeights[ampName] = covSqrtWeights
-                partialDatasetPtc.covariancesModel[ampName] = np.full_like(covArray, np.nan)
-                partialDatasetPtc.covariancesModelNoB[ampName] = np.full_like(covArray, np.nan)
-                partialDatasetPtc.aMatrix[ampName] = np.full_like(covArray[0], np.nan)
-                partialDatasetPtc.bMatrix[ampName] = np.full_like(covArray[0], np.nan)
-                partialDatasetPtc.aMatrixNoB[ampName] = np.full_like(covArray[0], np.nan)
-                partialDatasetPtc.ptcFitPars[ampName] = [np.nan]
-                partialDatasetPtc.ptcFitParsError[ampName] = [np.nan]
-                partialDatasetPtc.ptcFitChiSq[ampName] = np.nan
-                partialDatasetPtc.finalVars[ampName] = [np.nan]
-                partialDatasetPtc.finalModelVars[ampName] = [np.nan]
-                partialDatasetPtc.finalMeans[ampName] = [np.nan]
+
+                partialPtcDataset.setAmpValues(ampName, rawExpTime=[expTime], rawMean=[muDiff],
+                                               rawVar=[varDiff], inputExpIdPair=[(expId1, expId2)],
+                                               expIdMask=[expIdMask], covArray=covArray,
+                                               covSqrtWeights=covSqrtWeights)
             # Use location of exp1 to save PTC dataset from (exp1, exp2) pair.
             # expId1 and expId2, as returned by getInfo().getVisitInfo().getExposureId(),
             # and the exposure IDs stured in inoutDims,
@@ -339,12 +314,12 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                     datasetIndex = np.where(expId1//1000 == np.array(inputDims))[0][0]
                 except IndexError:
                     datasetIndex = np.where(expId1//1000 == np.array(inputDims)//1000)[0][0]
-            partialDatasetPtcList[datasetIndex] = partialDatasetPtc
+            partialPtcDatasetList[datasetIndex] = partialPtcDataset
             if nAmpsNan == len(ampNames):
                 msg = f"NaN mean in all amps of exposure pair {expId1}, {expId2} of detector {detNum}."
                 self.log.warn(msg)
         return pipeBase.Struct(
-            outputCovariances=partialDatasetPtcList,
+            outputCovariances=partialPtcDatasetList,
         )
 
     def measureMeanVarCov(self, exposure1, exposure2, region=None, covAstierRealSpace=False):
@@ -439,8 +414,10 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         diffImStatsCtrl.setNanSafe(True)
         diffImStatsCtrl.setAndMask(diffImMaskVal)
 
+        # Variance calculation via afwMath
         varDiff = 0.5*(afwMath.makeStatistics(diffIm, afwMath.VARIANCECLIP, diffImStatsCtrl).getValue())
 
+        # Covariances calculations
         # Get the mask and identify good pixels as '1', and the rest as '0'.
         w1 = np.where(im1Area.getMask().getArray() == 0, 1, 0)
         w2 = np.where(im2Area.getMask().getArray() == 0, 1, 0)
@@ -449,18 +426,25 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         wDiff = np.where(diffIm.getMask().getArray() == 0, 1, 0)
         w = w12*wDiff
 
-        if np.sum(w) < self.config.minNumberGoodPixelsForFft:
-            self.log.warn(f"Number of good points for FFT ({np.sum(w)}) is less than threshold "
-                          f"({self.config.minNumberGoodPixelsForFft})")
+        if np.sum(w) < self.config.minNumberGoodPixelsForCovariance:
+            self.log.warn(f"Number of good points for covariance calculation ({np.sum(w)}) is less "
+                          f"(than threshold {self.config.minNumberGoodPixelsForCovariance})")
             return np.nan, np.nan, None
 
         maxRangeCov = self.config.maximumRangeCovariancesAstier
         if covAstierRealSpace:
+            # Calculate  covariances in real space.
             covDiffAstier = computeCovDirect(diffIm.image.array, w, maxRangeCov)
         else:
-            shapeDiff = diffIm.image.array.shape
-            fftShape = (fftSize(shapeDiff[0] + maxRangeCov), fftSize(shapeDiff[1]+maxRangeCov))
-            c = CovFft(diffIm.image.array, w, fftShape, maxRangeCov)
-            covDiffAstier = c.reportCovFft(maxRangeCov)
+            # Calculate covariances via FFT (default).
+            shapeDiff = np.array(diffIm.image.array.shape)
+            # Calculate the sizes of FFT dimensions.
+            s = shapeDiff + maxRangeCov
+            tempSize = np.array(np.log(s)/np.log(2.)).astype(int)
+            fftSize = np.array(2**(tempSize+1)).astype(int)
+            fftShape = (fftSize[0], fftSize[1])
+
+            c = CovFastFourierTransform(diffIm.image.array, w, fftShape, maxRangeCov)
+            covDiffAstier = c.reportCovFastFourierTransform(maxRangeCov)
 
         return mu, varDiff, covDiffAstier

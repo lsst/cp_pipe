@@ -30,7 +30,7 @@ from scipy.optimize import least_squares
 
 import lsst.pipe.base.connectionTypes as cT
 
-from .astierCovPtcUtils import fitData
+from .astierCovPtcUtils import fitDataFullCovariance
 
 from lsst.ip.isr import PhotonTransferCurveDataset
 
@@ -290,9 +290,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             the class `PhotonTransferCurveDatase`.
         """
 
-        covFits, covFitsNoB = fitData(dataset,
-                                      r=self.config.maximumRangeCovariancesAstier)
-
+        covFits, covFitsNoB = fitDataFullCovariance(dataset)
         dataset = self.getOutputPtcDataCovAstier(dataset, covFits, covFitsNoB)
 
         return dataset
