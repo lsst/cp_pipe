@@ -381,7 +381,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
     @staticmethod
     def _initialParsForPolynomial(order):
         assert(order >= 2)
-        pars = np.zeros(order, dtype=np.float)
+        pars = np.zeros(order, dtype=float)
         pars[0] = 10
         pars[1] = 1
         pars[2:] = 0.0001
