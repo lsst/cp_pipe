@@ -115,12 +115,6 @@ def makeCovArray(inputTuple, maxRangeFromTuple=8):
     cov[ind, i, j] = c
     var[ind, i, j] = v**2/n
     var[:, 0, 0] *= 2  # var(v) = 2*v**2/N
-    # compensate for loss of variance and covariance due to outlier elimination(sigma clipping)
-    # when computing variances(cut to 4 sigma): 1 per mill for variances and twice as
-    # much for covariances:
-    fact = 1.0  # 1.00107
-    cov *= fact*fact
-    cov[:, 0, 0] /= fact
 
     return cov, var, muVals
 
