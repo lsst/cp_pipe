@@ -62,7 +62,7 @@ def sigmaClipCorrection(nSigClip):
         Scale factor to increase the measured sigma by.
 
     """
-    varFactor = 1.0 + (2 * nSigClip * norm.pdf(nSigClip)) / (norm.cdf(nSigClip) - norm.cdf(-nSigClip))
+    varFactor = 1.0 - (2 * nSigClip * norm.pdf(nSigClip)) / (norm.cdf(nSigClip) - norm.cdf(-nSigClip))
     return 1.0 / np.sqrt(varFactor)
 
 
