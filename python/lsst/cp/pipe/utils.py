@@ -28,6 +28,7 @@ import re
 import numpy as np
 from scipy.optimize import leastsq
 import numpy.polynomial.polynomial as poly
+from scipy.stats import norm
 
 import lsst.pipe.base as pipeBase
 import lsst.ip.isr as ipIsr
@@ -36,6 +37,33 @@ import lsst.log
 import lsst.afw.image
 
 import galsim
+
+
+def sigmaClipCorrection(nSigClip):
+    """Correct measured sigma to account for clipping.
+
+    If we clip our input data and then measure sigma, then the
+    measured sigma is smaller than the true value because real
+    points beyond the clip threshold have been removed.  This is a
+    small (1.5% at nSigClip=3) effect when nSigClip >~ 3, but the
+    default parameters for measure crosstalk use nSigClip=2.0.
+    This causes the measured sigma to be about 15% smaller than
+    real.  This formula corrects the issue, for the symmetric case
+    (upper clip threshold equal to lower clip threshold).
+
+    Parameters
+    ----------
+    nSigClip : `float`
+        Number of sigma the measurement was clipped by.
+
+    Returns
+    -------
+    scaleFactor : `float`
+        Scale factor to increase the measured sigma by.
+
+    """
+    varFactor = 1.0 + (2 * nSigClip * norm.pdf(nSigClip)) / (norm.cdf(nSigClip) - norm.cdf(-nSigClip))
+    return 1.0 / np.sqrt(varFactor)
 
 
 def calculateWeightedReducedChi2(measured, model, weightsMeasured, nData, nParsModel):
