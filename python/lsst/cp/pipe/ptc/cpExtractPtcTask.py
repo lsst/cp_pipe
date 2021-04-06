@@ -102,7 +102,7 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
     maskNameList = pexConfig.ListField(
         dtype=str,
         doc="Mask list to exclude from statistics calculations.",
-        default=['SUSPECT', 'BAD', 'NO_DATA'],
+        default=['SUSPECT', 'BAD', 'NO_DATA', 'SAT'],
     )
     nSigmaClipPtc = pexConfig.Field(
         dtype=float,
