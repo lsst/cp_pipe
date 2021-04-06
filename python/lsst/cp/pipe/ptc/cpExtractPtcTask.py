@@ -102,7 +102,7 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
     maskNameList = pexConfig.ListField(
         dtype=str,
         doc="Mask list to exclude from statistics calculations.",
-        default=['SUSPECT', 'BAD', 'NO_DATA', 'SAT'],
+        default=['SUSPECT', 'BAD', 'NO_DATA'],
     )
     nSigmaClipPtc = pexConfig.Field(
         dtype=float,
@@ -112,7 +112,7 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
     nIterSigmaClipPtc = pexConfig.Field(
         dtype=int,
         doc="Number of sigma-clipping iterations for afwMath.StatisticsControl()",
-        default=1,
+        default=3,
     )
     minNumberGoodPixelsForCovariance = pexConfig.Field(
         dtype=int,
@@ -120,7 +120,7 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
             " direclty).",
         default=10000,
     )
-    thresholdDiffAfwVarVsCov0 = pexConfig.Field(
+    thresholdDiffAfwVarVsCov00 = pexConfig.Field(
         dtype=float,
         doc="If the absolute fractional differece between afwMath.VARIANCECLIP and Cov00 "
             "for a region of a difference image is greater than this threshold (percentage), "
