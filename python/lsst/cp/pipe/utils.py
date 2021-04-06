@@ -324,7 +324,7 @@ class NonexistentDatasetTaskDataIdContainer(pipeBase.DataIdContainer):
             self.refList += refList
 
 
-def irlsFit(initialParams, dataX, dataY, function, weightsY=None):
+def irlsFit(initialParams, dataX, dataY, function, weightsY=None, weightType='Cauchy'):
     """Iteratively reweighted least squares fit.
 
     This uses the `lsst.cp.pipe.utils.fitLeastSq`, but applies
@@ -343,6 +343,8 @@ def irlsFit(initialParams, dataX, dataY, function, weightsY=None):
         Function to fit.
     weightsY : `numpy.array` [`float`]
         Weights to apply to the data.
+    weightType : `str`, optional
+        Type of weighting to use.
 
     Returns
     -------
@@ -361,9 +363,47 @@ def irlsFit(initialParams, dataX, dataY, function, weightsY=None):
 
     polyFit, polyFitErr, chiSq = fitLeastSq(initialParams, dataX, dataY, function, weightsY=weightsY)
     for iteration in range(10):
-        # Use Cauchy weights
         resid = np.abs(dataY - function(polyFit, dataX)) / np.sqrt(dataY)
-        weightsY = 1.0 / (1.0 + np.sqrt(resid / 2.385))
+        if weightType == 'Cauchy':
+            # Use Cauchy weighting.  This is a soft weight.
+            # At [2, 3, 5, 10] sigma, weights are [.59, .39, .19, .05].
+            Z = resid / 2.385
+            weightsY = 1.0 / (1.0 + np.square(Z))
+        elif weightType == 'Anderson':
+            # Anderson+1972 weighting.  This is a hard weight.
+            # At [2, 3, 5, 10] sigma, weights are [.67, .35, 0.0, 0.0].
+            Z = resid / (1.339 * np.pi)
+            weightsY = np.where(Z < 1.0, np.sinc(Z), 0.0)
+        elif weightType == 'bisquare':
+            # Beaton and Tukey (1974) biweight.  This is a hard weight.
+            # At [2, 3, 5, 10] sigma, weights are [.81, .59, 0.0, 0.0].
+            Z = resid / 4.685
+            weightsY = np.where(Z < 1.0, 1.0 - np.square(Z), 0.0)
+        elif weightType == 'box':
+            # Hinich and Talwar (1975).  This is a hard weight.
+            # At [2, 3, 5, 10] sigma, weights are [1.0, 0.0, 0.0, 0.0].
+            weightsY = np.where(resid < 2.795, 1.0, 0.0)
+        elif weightType == 'Welch':
+            # Dennis and Welsch (1976).  This is a hard weight.
+            # At [2, 3, 5, 10] sigma, weights are [.64, .36, .06, 1e-5].
+            Z = resid / 2.985
+            weightsY = np.exp(-1.0 * np.square(Z))
+        elif weightType == 'Huber':
+            # Huber (1964) weighting.  This is a soft weight.
+            # At [2, 3, 5, 10] sigma, weights are [.67, .45, .27, .13].
+            Z = resid / 1.345
+            weightsY = np.where(Z < 1.0, 1.0, 1 / Z)
+        elif weightType == 'logistic':
+            # Logistic weighting.  This is a soft weight.
+            # At [2, 3, 5, 10] sigma, weights are [.56, .40, .24, .12].
+            Z = resid / 1.205
+            weightsY = np.tanh(Z) / Z
+        elif weightType == 'Fair':
+            # Fair (1974) weighting.  This is a soft weight.
+            # At [2, 3, 5, 10] sigma, weights are [.41, .32, .22, .12].
+            Z = resid / 1.4
+            weightsY = (1.0 / (1.0 + (Z)))
+
         polyFit, polyFitErr, chiSq = fitLeastSq(initialParams, dataX, dataY, function, weightsY=weightsY)
 
     return polyFit, polyFitErr, chiSq, weightsY
