@@ -327,9 +327,10 @@ class NonexistentDatasetTaskDataIdContainer(pipeBase.DataIdContainer):
 def irlsFit(initialParams, dataX, dataY, function, weightsY=None, weightType='Cauchy'):
     """Iteratively reweighted least squares fit.
 
-    This uses the `lsst.cp.pipe.utils.fitLeastSq`, but applies
-    weights based on the Cauchy distribution to the fitter.  See
-    e.g. Holland and Welsch, 1977, doi:10.1080/03610927708827533
+    This uses the `lsst.cp.pipe.utils.fitLeastSq`, but applies weights
+    based on the Cauchy distribution by default.  Other weight options
+    are implemented.  See e.g. Holland and Welsch, 1977,
+    doi:10.1080/03610927708827533
 
     Parameters
     ----------
@@ -344,7 +345,8 @@ def irlsFit(initialParams, dataX, dataY, function, weightsY=None, weightType='Ca
     weightsY : `numpy.array` [`float`]
         Weights to apply to the data.
     weightType : `str`, optional
-        Type of weighting to use.
+        Type of weighting to use.  One of Cauchy, Anderson, bisquare,
+        box, Welsch, Huber, logistic, or Fair.
 
     Returns
     -------
@@ -383,7 +385,7 @@ def irlsFit(initialParams, dataX, dataY, function, weightsY=None, weightType='Ca
             # Hinich and Talwar (1975).  This is a hard weight.
             # At [2, 3, 5, 10] sigma, weights are [1.0, 0.0, 0.0, 0.0].
             weightsY = np.where(resid < 2.795, 1.0, 0.0)
-        elif weightType == 'Welch':
+        elif weightType == 'Welsch':
             # Dennis and Welsch (1976).  This is a hard weight.
             # At [2, 3, 5, 10] sigma, weights are [.64, .36, .06, 1e-5].
             Z = resid / 2.985
