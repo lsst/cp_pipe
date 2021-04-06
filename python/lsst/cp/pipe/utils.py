@@ -359,6 +359,11 @@ def irlsFit(initialParams, dataX, dataY, function, weightsY=None, weightType='Ca
     weightsY : `list` [`float`]
         Final weights used for each point.
 
+    Raises
+    ------
+    RuntimeError :
+        Raised if an unknown weightType string is passed.
+
     """
     if not weightsY:
         weightsY = np.ones_like(dataX)
@@ -405,7 +410,8 @@ def irlsFit(initialParams, dataX, dataY, function, weightsY=None, weightType='Ca
             # At [2, 3, 5, 10] sigma, weights are [.41, .32, .22, .12].
             Z = resid / 1.4
             weightsY = (1.0 / (1.0 + (Z)))
-
+        else:
+            raise RuntimeError(f"Unknown weighting type: {weightType}")
         polyFit, polyFitErr, chiSq = fitLeastSq(initialParams, dataX, dataY, function, weightsY=weightsY)
 
     return polyFit, polyFitErr, chiSq, weightsY
