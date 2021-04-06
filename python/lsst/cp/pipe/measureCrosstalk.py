@@ -20,7 +20,6 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import itertools
 import numpy as np
-from scipy.stats import norm
 
 from collections import defaultdict
 
@@ -33,7 +32,7 @@ from lsst.afw.display import getDisplay
 from lsst.pex.config import Config, Field, ListField, ConfigurableField
 from lsst.ip.isr import CrosstalkCalib, IsrProvenance
 from lsst.pipe.tasks.getRepositoryData import DataRefListRunner
-from lsst.cp.pipe.utils import ddict2dict
+from lsst.cp.pipe.utils import (ddict2dict, sigmaClipCorrection)
 
 from ._lookupStaticCalibration import lookupStaticCalibration
 
@@ -604,7 +603,7 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
                 if calib.coeffNum[ii][jj] == 1:
                     calib.coeffErr[ii][jj] = np.nan
                 else:
-                    correctionFactor = self.sigmaClipCorrection(rejSigma)
+                    correctionFactor = sigmaClipCorrection(rejSigma)
                     calib.coeffErr[ii][jj] = np.std(values) * correctionFactor
                 calib.coeffValid[ii][jj] = (np.abs(calib.coeffs[ii][jj])
                                             > calib.coeffErr[ii][jj] / np.sqrt(calib.coeffNum[ii][jj]))
@@ -614,33 +613,6 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
                                  calib.coeffs[ii][jj], calib.coeffValid[ii][jj])
 
         return calib
-
-    @staticmethod
-    def sigmaClipCorrection(nSigClip):
-        """Correct measured sigma to account for clipping.
-
-        If we clip our input data and then measure sigma, then the
-        measured sigma is smaller than the true value because real
-        points beyond the clip threshold have been removed.  This is a
-        small (1.5% at nSigClip=3) effect when nSigClip >~ 3, but the
-        default parameters for measure crosstalk use nSigClip=2.0.
-        This causes the measured sigma to be about 15% smaller than
-        real.  This formula corrects the issue, for the symmetric case
-        (upper clip threshold equal to lower clip threshold).
-
-        Parameters
-        ----------
-        nSigClip : `float`
-            Number of sigma the measurement was clipped by.
-
-        Returns
-        -------
-        scaleFactor : `float`
-            Scale factor to increase the measured sigma by.
-
-        """
-        varFactor = 1.0 + (2 * nSigClip * norm.pdf(nSigClip)) / (norm.cdf(nSigClip) - norm.cdf(-nSigClip))
-        return 1.0 / np.sqrt(varFactor)
 
     @staticmethod
     def filterCrosstalkCalib(inCalib):

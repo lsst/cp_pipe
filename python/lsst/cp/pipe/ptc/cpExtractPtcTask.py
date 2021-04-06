@@ -24,7 +24,8 @@ import numpy as np
 import lsst.afw.math as afwMath
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
-from lsst.cp.pipe.utils import arrangeFlatsByExpTime, arrangeFlatsByExpId
+from lsst.cp.pipe.utils import (arrangeFlatsByExpTime, arrangeFlatsByExpId,
+                                sigmaClipCorrection)
 
 import lsst.pipe.base.connectionTypes as cT
 
@@ -279,6 +280,11 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                 # in {maxLag, maxLag}^2]
                 muDiff, varDiff, covAstier = self.measureMeanVarCov(exp1, exp2, region=region,
                                                                     covAstierRealSpace=doRealSpace)
+                # Correction factor for sigma clipping. Function returns 1/sqrt(varFactor),
+                # so it needs to be squared. varDiff is calculated via afwMath.VARIANCECLIP.
+                varFactor = sigmaClipCorrection(self.config.nSigmaClipPtc)**2
+                varDiff *= varFactor
+
                 expIdMask = True
                 if np.isnan(muDiff) or np.isnan(varDiff) or (covAstier is None):
                     msg = (f"NaN mean or var, or None cov in amp {ampName} in exposure pair {expId1},"
@@ -300,6 +306,12 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                     covArray, vcov, _ = makeCovArray(tempStructArray,
                                                      self.config.maximumRangeCovariancesAstier)
                     covSqrtWeights = np.nan_to_num(1./np.sqrt(vcov))
+
+                # Correct covArray for sigma clipping:
+                # 1) Apply varFactor twice for the whole covariance matrix
+                covArray *= varFactor**2
+                # 2) But, only once for the variance element of the matrix, covArray[0,0]
+                covArray[0, 0] /= varFactor
 
                 partialPtcDataset.setAmpValues(ampName, rawExpTime=[expTime], rawMean=[muDiff],
                                                rawVar=[varDiff], inputExpIdPair=[(expId1, expId2)],
