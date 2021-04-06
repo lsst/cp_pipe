@@ -112,13 +112,20 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
     nIterSigmaClipPtc = pexConfig.Field(
         dtype=int,
         doc="Number of sigma-clipping iterations for afwMath.StatisticsControl()",
-        default=3,
+        default=1,
     )
     minNumberGoodPixelsForCovariance = pexConfig.Field(
         dtype=int,
         doc="Minimum number of acceptable good pixels per amp to calculate the covariances (via FFT or"
             " direclty).",
         default=10000,
+    )
+    thresholdDiffAfwVarVsCov0 = pexConfig.Field(
+        dtype=float,
+        doc="If the absolute fractional differece between afwMath.VARIANCECLIP and Cov00 "
+            "for a region of a difference image is greater than this threshold (percentage), "
+            "a warning will be issued.",
+        default=1.,
     )
     detectorMeasurementRegion = pexConfig.ChoiceField(
         dtype=str,
@@ -455,7 +462,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         # Compare Cov[0,0] and afwMath.VARIANCECLIP
         # covDiffAstier[0] is the Cov[0,0] element, [3] is the variance, and there's a factor of 0.5
         # difference with afwMath.VARIANCECLIP.
-        thresholdPercentage = 1.  # 1%
+        thresholdPercentage = self.config.thresholdDiffAfwVarVsCov00
         fractionalDiff = 100*np.fabs(1 - varDiff/(covDiffAstier[0][3]*0.5))
         if fractionalDiff >= thresholdPercentage:
             self.log.warn("Absolute fractional difference between afwMatch.VARIANCECLIP and Cov[0,0] "
