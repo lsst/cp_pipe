@@ -231,6 +231,10 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
                     datasetPtc.rawVars[ampName].append(partialPtcDataset.rawVars[ampName][0])
                 else:
                     datasetPtc.rawVars[ampName].append(partialPtcDataset.rawVars[ampName])
+                if type(partialPtcDataset.expIdMask[ampName]) is list:
+                    datasetPtc.expIdMask[ampName].append(partialPtcDataset.expIdMask[ampName][0])
+                else:
+                    datasetPtc.expIdMask[ampName].append(partialPtcDataset.expIdMask[ampName])
                 datasetPtc.covariances[ampName].append(np.array(partialPtcDataset.covariances[ampName][0]))
                 datasetPtc.covariancesSqrtWeights[ampName].append(
                     np.array(partialPtcDataset.covariancesSqrtWeights[ampName][0]))
@@ -241,10 +245,10 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             datasetPtc.rawExpTimes[ampName] = np.array(datasetPtc.rawExpTimes[ampName])[index]
             datasetPtc.rawMeans[ampName] = np.array(datasetPtc.rawMeans[ampName])[index]
             datasetPtc.rawVars[ampName] = np.array(datasetPtc.rawVars[ampName])[index]
+            datasetPtc.expIdMask[ampName] = np.array(datasetPtc.expIdMask[ampName])[index]
             datasetPtc.covariances[ampName] = np.array(datasetPtc.covariances[ampName])[index]
             datasetPtc.covariancesSqrtWeights[ampName] = np.array(
                 datasetPtc.covariancesSqrtWeights[ampName])[index]
-
         if self.config.ptcFitType == "FULLCOVARIANCE":
             # Calculate covariances and fit them, including the PTC, to Astier+19 full model (Eq. 20)
             # First, fit get the flat pairs that are masked, fitting C_00 vs mu to
@@ -607,7 +611,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
                 assert (len(mask) == len(timeVecOriginal) == len(meanVecOriginal) == len(varVecOriginal))
             if not (mask.any() and newMask.any()):
                 continue
-            dataset.expIdMask[ampName] = mask  # store the final mask
+            dataset.expIdMask[ampName] &= mask  # store the final mask
             parsIniPtc = pars
             meanVecFinal = meanVecOriginal[mask]
             varVecFinal = varVecOriginal[mask]
