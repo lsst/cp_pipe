@@ -102,7 +102,7 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
     maskNameList = pexConfig.ListField(
         dtype=str,
         doc="Mask list to exclude from statistics calculations.",
-        default=['SUSPECT', 'BAD', 'NO_DATA'],
+        default=['SUSPECT', 'BAD', 'NO_DATA', 'SAT'],
     )
     nSigmaClipPtc = pexConfig.Field(
         dtype=float,
@@ -112,13 +112,20 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
     nIterSigmaClipPtc = pexConfig.Field(
         dtype=int,
         doc="Number of sigma-clipping iterations for afwMath.StatisticsControl()",
-        default=1,
+        default=3,
     )
     minNumberGoodPixelsForCovariance = pexConfig.Field(
         dtype=int,
         doc="Minimum number of acceptable good pixels per amp to calculate the covariances (via FFT or"
             " direclty).",
         default=10000,
+    )
+    thresholdDiffAfwVarVsCov00 = pexConfig.Field(
+        dtype=float,
+        doc="If the absolute fractional differece between afwMath.VARIANCECLIP and Cov00 "
+            "for a region of a difference image is greater than this threshold (percentage), "
+            "a warning will be issued.",
+        default=1.,
     )
     detectorMeasurementRegion = pexConfig.ChoiceField(
         dtype=str,
@@ -418,13 +425,18 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         varDiff = 0.5*(afwMath.makeStatistics(diffIm, afwMath.VARIANCECLIP, diffImStatsCtrl).getValue())
 
         # Covariances calculations
-        # Get the mask and identify good pixels as '1', and the rest as '0'.
-        w1 = np.where(im1Area.getMask().getArray() == 0, 1, 0)
-        w2 = np.where(im2Area.getMask().getArray() == 0, 1, 0)
+        # Get the pixels that were not clipped
+        varClip = afwMath.makeStatistics(diffIm, afwMath.VARIANCECLIP, diffImStatsCtrl).getValue()
+        meanClip = afwMath.makeStatistics(diffIm, afwMath.MEANCLIP, diffImStatsCtrl).getValue()
+        cut = meanClip + self.config.nSigmaClipPtc*np.sqrt(varClip)
+        unmasked = np.where(np.fabs(diffIm.image.array) <= cut, 1, 0)
 
-        w12 = w1*w2
+        # Get the pixels in the mask planes of teh differenc eimage that were ignored
+        # by the clipping algorithm
         wDiff = np.where(diffIm.getMask().getArray() == 0, 1, 0)
-        w = w12*wDiff
+        # Combine the two sets of pixels ('1': use; '0': don't use) into a final weight matrix
+        # to be used in the covariance calculations below.
+        w = unmasked*wDiff
 
         if np.sum(w) < self.config.minNumberGoodPixelsForCovariance:
             self.log.warn(f"Number of good points for covariance calculation ({np.sum(w)}) is less "
@@ -446,5 +458,14 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
 
             c = CovFastFourierTransform(diffIm.image.array, w, fftShape, maxRangeCov)
             covDiffAstier = c.reportCovFastFourierTransform(maxRangeCov)
+
+        # Compare Cov[0,0] and afwMath.VARIANCECLIP
+        # covDiffAstier[0] is the Cov[0,0] element, [3] is the variance, and there's a factor of 0.5
+        # difference with afwMath.VARIANCECLIP.
+        thresholdPercentage = self.config.thresholdDiffAfwVarVsCov00
+        fractionalDiff = 100*np.fabs(1 - varDiff/(covDiffAstier[0][3]*0.5))
+        if fractionalDiff >= thresholdPercentage:
+            self.log.warn("Absolute fractional difference between afwMatch.VARIANCECLIP and Cov[0,0] "
+                          f"is more than {thresholdPercentage}%: {fractionalDiff}")
 
         return mu, varDiff, covDiffAstier

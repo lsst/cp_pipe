@@ -81,7 +81,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
         # create fake PTC data to see if fit works, for one amp ('amp')
         self.flux = 1000.  # ADU/sec
-        self.timeVec = np.arange(1., 101.)
+        self.timeVec = np.arange(1., 101., 5)
         self.k2NonLinearity = -5e-6
         # quadratic signal-chain non-linearity
         muVec = self.flux*self.timeVec + self.k2NonLinearity*self.timeVec**2
