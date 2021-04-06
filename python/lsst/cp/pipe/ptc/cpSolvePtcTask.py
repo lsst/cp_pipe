@@ -611,7 +611,12 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
                 assert (len(mask) == len(timeVecOriginal) == len(meanVecOriginal) == len(varVecOriginal))
             if not (mask.any() and newMask.any()):
                 continue
-            dataset.expIdMask[ampName] &= mask  # store the final mask
+            dataset.expIdMask[ampName] = np.array(dataset.expIdMask[ampName])
+            # store the final mask
+            if len(dataset.expIdMask[ampName]):
+                dataset.expIdMask[ampName] &= mask  # bitwise_and if there is already a  mask
+            else:
+                dataset.expIdMask[ampName] = mask
             parsIniPtc = pars
             meanVecFinal = meanVecOriginal[mask]
             varVecFinal = varVecOriginal[mask]
