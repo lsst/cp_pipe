@@ -22,7 +22,7 @@ tasks:
     config:
       connections.inputExp: 'cpDarkIsr'
       connections.outputExp: 'cpDarkProc'
-  cpCombine:
+  cpDarkCombine:
     class: lsst.cp.pipe.cpCombine.CalibCombineTask
     config:
       connections.inputExps: 'cpDarkProc'
@@ -32,5 +32,5 @@ tasks:
       python: config.mask.append("CR")
 contracts:
   - isr.doDark == False
-  - cpCombine.calibrationType == "dark"
-  - cpCombine.exposureScaling == "DarkTime"
+  - cpDarkCombine.calibrationType == "dark"
+  - cpDarkCombine.exposureScaling == "DarkTime"

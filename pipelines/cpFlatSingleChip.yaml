@@ -17,7 +17,7 @@ tasks:
       doFlat: False
       doFringe: False
       doApplyGains: False
-  cpCombine:
+  cpFlatCombine:
     class: lsst.cp.pipe.cpCombine.CalibCombineTask
     config:
       connections.inputExps: 'cpFlatProc'
@@ -27,4 +27,4 @@ tasks:
       exposureScaling: MeanStats
 contracts:
   - isr.doFlat == False
-  - cpCombine.calibrationType == "flat"
+  - cpFlatCombine.calibrationType == "flat"
