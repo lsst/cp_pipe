@@ -217,7 +217,8 @@ class CrosstalkExtractTask(pipeBase.PipelineTask,
 
             for sourceAmp in sourceDetector:
                 sourceAmpName = sourceAmp.getName()
-                sourceAmpImage = sourceIm[sourceAmp.getBBox()]
+                sourceAmpBBox = sourceAmp.getBBox() if self.config.isTrimmed else sourceAmp.getRawDataBBox()
+                sourceAmpImage = sourceIm[sourceAmpBBox]
                 sourceMask = sourceAmpImage.mask.array
                 select = ((sourceMask & detected > 0)
                           & (sourceMask & bad == 0)

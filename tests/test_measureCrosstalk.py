@@ -115,9 +115,7 @@ class MeasureCrosstalkTaskCases(lsst.utils.tests.TestCase):
         """
         goodFitMask = self.setup_measureCrosstalk(isTrimmed=False, nSources=8)
 
-        # DM-26031 This doesn't always fully converge, so be permissive
-        # for now.
-        self.assertTrue(np.any(goodFitMask))
+        self.assertTrue(np.all(goodFitMask))
 
 
 class MemoryTester(lsst.utils.tests.MemoryTestCase):
