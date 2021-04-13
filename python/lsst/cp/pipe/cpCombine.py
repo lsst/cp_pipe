@@ -117,34 +117,6 @@ class CalibCombineConnections(pipeBase.PipelineTaskConnections,
         isCalibration=True,
     )
 
-    def __init__(self, *, config=None):
-        super().__init__(config=config)
-
-        if config and config.exposureScaling != 'InputList':
-            self.inputs.discard("inputScales")
-
-        if config and len(config.calibrationDimensions) != 0:
-            newDimensions = tuple(config.calibrationDimensions)
-            newOutputData = cT.Output(
-                name=self.outputData.name,
-                doc=self.outputData.doc,
-                storageClass=self.outputData.storageClass,
-                dimensions=self.allConnections['outputData'].dimensions + newDimensions,
-                isCalibration=True,
-            )
-            self.dimensions.update(config.calibrationDimensions)
-            self.outputData = newOutputData
-
-            if config.exposureScaling == 'InputList':
-                newInputScales = cT.PrerequisiteInput(
-                    name=self.inputScales.name,
-                    doc=self.inputScales.doc,
-                    storageClass=self.inputScales.storageClass,
-                    dimensions=self.allConnections['inputScales'].dimensions + newDimensions
-                )
-                self.dimensions.update(config.calibrationDimensions)
-                self.inputScales = newInputScales
-
 
 # CalibCombineConfig/CalibCombineTask from pipe_base/constructCalibs.py
 class CalibCombineConfig(pipeBase.PipelineTaskConfig,
@@ -155,11 +127,6 @@ class CalibCombineConfig(pipeBase.PipelineTaskConfig,
         dtype=str,
         default="calibration",
         doc="Name of calibration to be generated.",
-    )
-    calibrationDimensions = pexConfig.ListField(
-        dtype=str,
-        default=[],
-        doc="List of updated dimensions to append to output."
     )
 
     exposureScaling = pexConfig.ChoiceField(
@@ -524,6 +491,24 @@ class CalibCombineTask(pipeBase.PipelineTask,
         array[bad] = median
         if count > 0:
             self.log.warn("Found %s NAN pixels", count)
+
+
+# Create versions of the Connections, Config, and Task that support filter constraints.
+class CalibCombineByFilterConnections(CalibCombineConnections,
+                                      dimensions=("instrument", "detector", "physical_filter")):
+    pass
+
+
+class CalibCombineByFilterConfig(CalibCombineConfig,
+                                 pipelineConnections=CalibCombineConnections):
+    pass
+
+
+class CalibCombineByFilterTask(CalibCombineTask):
+    """Task to combine calib exposures."""
+    ConfigClass = CalibCombineByFilterConfig
+    _DefaultName = 'cpFilterCombine'
+    pass
 
 
 def VignetteExposure(exposure, polygon=None,
