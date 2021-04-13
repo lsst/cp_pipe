@@ -33,7 +33,7 @@ from .astierCovPtcUtils import (CovFastFourierTransform, computeCovDirect)
 from .astierCovPtcFit import makeCovArray
 
 from lsst.ip.isr import PhotonTransferCurveDataset
-
+from lsst.ip.isr import IsrTask
 
 __all__ = ['PhotonTransferCurveExtractConfig', 'PhotonTransferCurveExtractTask']
 
@@ -136,6 +136,20 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
             "AMP": "Amplifier of the detector.",
             "FULL": "Full image."
         }
+    )
+    numEdgeSuspect = pexConfig.Field(
+        dtype=int,
+        doc="Number of edge pixels to be flagged as untrustworthy.",
+        default=0,
+    )
+    edgeMaskLevel = pexConfig.ChoiceField(
+        dtype=str,
+        doc="Mask edge pixels in which coordinate frame: DETECTOR or AMP?",
+        default="DETECTOR",
+        allowed={
+            'DETECTOR': 'Mask only the edges of the full detector.',
+            'AMP': 'Mask edges of each amplifier.',
+        },
     )
 
 
@@ -248,6 +262,11 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         for i in range(len(inputDims)):
             partialPtcDatasetList.append(dummyPtcDataset)
 
+        if self.config.numEdgeSuspect > 0:
+            isrTask = IsrTask()
+            self.log.info(f"Masking {self.config.numEdgeSuspect} pixels from the edges "
+                          "of all exposures as SUSPECT.")
+
         for expTime in inputExp:
             exposures = inputExp[expTime]
             if len(exposures) == 1:
@@ -261,6 +280,12 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                     self.log.warn(f"Already found 2 exposures at expTime {expTime}. "
                                   "Ignoring exposures: "
                                   f"{i.getInfo().getVisitInfo().getExposureId() for i in exposures[2:]}")
+            # Mask pixels at the edge of the detector or of each amp
+            if self.config.numEdgeSuspect > 0:
+                isrTask.maskEdges(exp1, numEdgePixels=self.config.numEdgeSuspect,
+                                  maskPlane="SUSPECT", level=self.config.edgeMaskLevel)
+                isrTask.maskEdges(exp2, numEdgePixels=self.config.numEdgeSuspect,
+                                  maskPlane="SUSPECT", level=self.config.edgeMaskLevel)
             expId1 = exp1.getInfo().getVisitInfo().getExposureId()
             expId2 = exp2.getInfo().getVisitInfo().getExposureId()
             nAmpsNan = 0
