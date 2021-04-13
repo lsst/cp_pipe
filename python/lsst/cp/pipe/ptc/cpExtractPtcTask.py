@@ -262,6 +262,11 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         for i in range(len(inputDims)):
             partialPtcDatasetList.append(dummyPtcDataset)
 
+        if self.config.numEdgeSuspect > 0:
+            isrTask = IsrTask()
+            self.log.info(f"Masking {self.config.numEdgeSuspect} pixels from the edges "
+                          "of all exposures as SUSPECT.")
+
         for expTime in inputExp:
             exposures = inputExp[expTime]
             if len(exposures) == 1:
@@ -277,10 +282,9 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                                   f"{i.getInfo().getVisitInfo().getExposureId() for i in exposures[2:]}")
             # Mask pixels at the edge of the detector or of each amp
             if self.config.numEdgeSuspect > 0:
-                self.log.info(f"Masking {self.config.numEdgeSuspect} pixels from the edges as SUSPECT.")
-                IsrTask.maskEdges(exp1, numEdgePixels=self.config.numEdgeSuspect,
+                isrTask.maskEdges(exp1, numEdgePixels=self.config.numEdgeSuspect,
                                   maskPlane="SUSPECT", level=self.config.edgeMaskLevel)
-                IsrTask.maskEdges(exp2, numEdgePixels=self.config.numEdgeSuspect,
+                isrTask.maskEdges(exp2, numEdgePixels=self.config.numEdgeSuspect,
                                   maskPlane="SUSPECT", level=self.config.edgeMaskLevel)
             expId1 = exp1.getInfo().getVisitInfo().getExposureId()
             expId2 = exp2.getInfo().getVisitInfo().getExposureId()
