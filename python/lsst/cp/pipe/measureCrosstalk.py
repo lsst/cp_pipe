@@ -464,6 +464,11 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
             calibChip = None
             instrument = None
 
+        if camera and calibChip:
+            calibDetector = camera[calibChip]
+        else:
+            calibDetector = None
+
         self.log.info("Combining measurements from %d ratios and %d fluxes",
                       len(inputRatios), len(inputFluxes) if inputFluxes else 0)
 
@@ -474,7 +479,7 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
         combinedFluxes = defaultdict(lambda: defaultdict(list))
         for ratioDict, fluxDict in zip(inputRatios, inputFluxes):
             for targetChip in ratioDict:
-                if calibChip and targetChip != calibChip:
+                if calibChip and targetChip != calibChip and targetChip != calibDetector.getName():
                     raise RuntimeError("Received multiple target chips!")
 
                 sourceChip = targetChip
@@ -519,9 +524,9 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
 
         # calibChip is the detector dimension, which is the detector Id
         calib._detectorId = calibChip
-        if camera:
-            calib._detectorName = camera[calibChip].getName()
-            calib._detectorSerial = camera[calibChip].getSerial()
+        if calibDetector:
+            calib._detectorName = calibDetector.getName()
+            calib._detectorSerial = calibDetector.getSerial()
 
         calib._instrument = instrument
         calib.updateMetadata(setCalibId=True, setDate=True)
