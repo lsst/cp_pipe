@@ -480,7 +480,8 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
         for ratioDict, fluxDict in zip(inputRatios, inputFluxes):
             for targetChip in ratioDict:
                 if calibChip and targetChip != calibChip and targetChip != calibDetector.getName():
-                    raise RuntimeError("Received multiple target chips!")
+                    raise RuntimeError(f"Target chip: {targetChip} does not match calibration dimension: "
+                                       f"{calibChip}, {calibDetector.getName()}!")
 
                 sourceChip = targetChip
                 if sourceChip in ratioDict[targetChip]:
