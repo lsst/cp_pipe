@@ -344,20 +344,31 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                                                covSqrtWeights=covSqrtWeights)
             # Use location of exp1 to save PTC dataset from (exp1, exp2) pair.
             # expId1 and expId2, as returned by getInfo().getVisitInfo().getExposureId(),
-            # and the exposure IDs stured in inoutDims,
+            # and the exposure IDs stored in inputDims,
             # may have the zero-padded detector number appended at
             # the end (in gen3). A temporary fix is to consider expId//1000 and/or
-            # inputDims//1000.
+            # inputDims//1000 (we try also //100 and //10 for other cameras such as DECam).
             # Below, np.where(expId1 == np.array(inputDims)) (and the other analogous
             # comparisons) returns a tuple with a single-element array, so [0][0]
             # is necessary to extract the required index.
-            try:
-                datasetIndex = np.where(expId1 == np.array(inputDims))[0][0]
-            except IndexError:
-                try:
-                    datasetIndex = np.where(expId1//1000 == np.array(inputDims))[0][0]
-                except IndexError:
-                    datasetIndex = np.where(expId1//1000 == np.array(inputDims)//1000)[0][0]
+
+            if (match := np.where(expId1 == np.array(inputDims))[0]).shape[0] != 0:
+                datasetIndex = match[0]
+            elif (match := np.where(expId1/1000 == np.array(inputDims))[0]).shape[0] != 0:
+                datasetIndex = match[0]
+            elif (match := np.where(expId1/1000 == np.array(inputDims))[0]//1000).shape[0] != 0:
+                datasetIndex = match[0]
+            elif (match := np.where(expId1//100 == np.array(inputDims))[0]).shape[0] != 0:
+                datasetIndex = match[0]
+            elif (match := np.where(expId1//100 == np.array(inputDims))[0]//100).shape[0] != 0:
+                datasetIndex = match[0]
+            elif (match := np.where(expId1//10 == np.array(inputDims))[0]).shape[0] != 0:
+                datasetIndex = match[0]
+            elif (match := np.where(expId1//10 == np.array(inputDims))[0]//10).shape[0] != 0:
+                datasetIndex = match[0]
+            else:
+                raise RuntimeError("Cannot find appropriate datasetIndex!")
+
             partialPtcDatasetList[datasetIndex] = partialPtcDataset
             if nAmpsNan == len(ampNames):
                 msg = f"NaN mean in all amps of exposure pair {expId1}, {expId2} of detector {detNum}."
