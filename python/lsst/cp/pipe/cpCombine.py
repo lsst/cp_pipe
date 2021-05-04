@@ -117,6 +117,12 @@ class CalibCombineConnections(pipeBase.PipelineTaskConnections,
         isCalibration=True,
     )
 
+    def __init__(self, *, config=None):
+        super().__init__(config=config)
+
+        if config and config.exposureScaling != 'InputList':
+            self.inputs.discard("inputScales")
+
 
 # CalibCombineConfig/CalibCombineTask from pipe_base/constructCalibs.py
 class CalibCombineConfig(pipeBase.PipelineTaskConfig,
