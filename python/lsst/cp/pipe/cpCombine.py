@@ -316,6 +316,10 @@ class CalibCombineTask(pipeBase.PipelineTask,
         self.combineHeaders(inputExps, combinedExp,
                             calibType=self.config.calibrationType, scales=expScales)
 
+        # Set the detector
+        inputDetector = inputExps[0].getDetector()
+        combinedExp.setDetector(inputDetector)
+
         # Return
         return pipeBase.Struct(
             outputData=combinedExp,
