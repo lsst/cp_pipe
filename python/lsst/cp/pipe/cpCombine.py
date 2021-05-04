@@ -502,11 +502,23 @@ class CalibCombineTask(pipeBase.PipelineTask,
 # Create versions of the Connections, Config, and Task that support filter constraints.
 class CalibCombineByFilterConnections(CalibCombineConnections,
                                       dimensions=("instrument", "detector", "physical_filter")):
-    pass
+    inputScales = cT.Input(
+        name="cpFilterScales",
+        doc="Input scale factors to use.",
+        storageClass="StructuredDataDict",
+        dimensions=("instrument", "physical_filter"),
+        multiple=False,
+    )
+
+    def __init__(self, *, config=None):
+        super().__init__(config=config)
+
+        if config and config.exposureScaling != 'InputList':
+            self.inputs.discard("inputScales")
 
 
 class CalibCombineByFilterConfig(CalibCombineConfig,
-                                 pipelineConnections=CalibCombineConnections):
+                                 pipelineConnections=CalibCombineByFilterConnections):
     pass
 
 
