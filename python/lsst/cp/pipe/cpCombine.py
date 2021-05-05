@@ -510,6 +510,14 @@ class CalibCombineByFilterConnections(CalibCombineConnections,
         multiple=False,
     )
 
+    outputData = cT.Output(
+        name="cpFilterProposal",
+        doc="Output combined proposed calibration.",
+        storageClass="ExposureF",
+        dimensions=("instrument", "detector", "physical_filter"),
+        isCalibration=True,
+    )
+
     def __init__(self, *, config=None):
         super().__init__(config=config)
 
