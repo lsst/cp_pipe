@@ -18,12 +18,11 @@ tasks:
       doFringe: False
       doApplyGains: False
   cpFlatCombine:
-    class: lsst.cp.pipe.cpCombine.CalibCombineTask
+    class: lsst.cp.pipe.cpCombine.CalibCombineByFilterTask
     config:
       connections.inputExps: 'cpFlatProc'
       connections.outputData: 'flat'
       calibrationType: 'flat'
-      calibrationDimensions: ['physical_filter']
       exposureScaling: MeanStats
 contracts:
   - isr.doFlat == False
