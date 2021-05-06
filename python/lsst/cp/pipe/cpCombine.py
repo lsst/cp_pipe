@@ -111,7 +111,7 @@ class CalibCombineConnections(pipeBase.PipelineTaskConnections,
 
     outputData = cT.Output(
         name="cpProposal",
-        doc="Output combined proposed calibration.",
+        doc="Output combined proposed calibration to be validated and certified..",
         storageClass="ExposureF",
         dimensions=("instrument", "detector"),
         isCalibration=True,
@@ -512,7 +512,7 @@ class CalibCombineByFilterConnections(CalibCombineConnections,
 
     outputData = cT.Output(
         name="cpFilterProposal",
-        doc="Output combined proposed calibration.",
+        doc="Output combined proposed calibration to be validated and certified.",
         storageClass="ExposureF",
         dimensions=("instrument", "detector", "physical_filter"),
         isCalibration=True,
