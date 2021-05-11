@@ -1,0 +1,17 @@
+description: Sky frame generation pipeline definition.
+tasks:
+  isr:
+    class: lsst.ip.isr.isrTask.IsrTask
+    config:
+      connections.outputExposure: cpSkyIsr
+      doLinearize: False
+      doCrosstalk: True
+      doBrighterFatter: False
+  cpSkyImage:
+    class: lsst.cp.pipe.CpSkyImageTask
+  cpSkyScaleMeasure:
+    class: lsst.cp.pipe.CpSkyScaleMeasureTask
+  cpSkySubtractBackground:
+    class: lsst.cp.pipe.CpSkySubtractBackgroundTask
+  cpSkyCombine:
+    class: lsst.cp.pipe.CpSkyCombineTask
