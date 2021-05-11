@@ -340,7 +340,7 @@ class CpSkySubtractBackgroundTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
 class CpSkyCombineConnections(pipeBase.PipelineTaskConnections,
                               dimensions=("instrument", "physical_filter", "detector")):
     inputBkgs = cT.Input(
-        name="icExpBackground",
+        name="cpExpBackground",
         doc="Normalized, static background.",
         storageClass="Background",
         dimensions=("instrument", "exposure", "detector"),
