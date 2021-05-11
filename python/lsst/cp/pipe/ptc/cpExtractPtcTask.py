@@ -66,7 +66,7 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
     """
     matchByExposureId = pexConfig.Field(
         dtype=bool,
-        doc="Should exposures by matched by ID rather than exposure time?",
+        doc="Should exposures be matched by ID rather than exposure time?",
         default=False,
     )
     maximumRangeCovariancesAstier = pexConfig.Field(
@@ -201,30 +201,47 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
             Output data refs to persist.
         """
         inputs = butlerQC.get(inputRefs)
+        # Ids of input list of exposures
+        inputs['inputDims'] = [expId.dataId['exposure'] for expId in inputRefs.inputExp]
+
+        # Define a 1-1 correspondence between exp.getInfo().getVisitInfo().getExposureId()
+        # and inputs['inputDims']. This will be used in `run` when saving partial datasets.
+        expIdToInputDim = {}
+        for exp, dim in zip(inputs['inputExp'], inputs['inputDims']):
+            expId = exp.getInfo().getVisitInfo().getExposureId()
+            expIdToInputDim[expId] = dim
+        inputs['expIdToInputDim'] = expIdToInputDim
+
         # Dictionary, keyed by expTime, with flat exposures
         if self.config.matchByExposureId:
             inputs['inputExp'] = arrangeFlatsByExpId(inputs['inputExp'])
         else:
             inputs['inputExp'] = arrangeFlatsByExpTime(inputs['inputExp'])
-        # Ids of input list of exposures
-        inputs['inputDims'] = [expId.dataId['exposure'] for expId in inputRefs.inputExp]
+
         outputs = self.run(**inputs)
         butlerQC.put(outputs, outputRefs)
 
-    def run(self, inputExp, inputDims):
+    def run(self, inputDims, expIdToInputDim, inputExp):
         """Measure covariances from difference of flat pairs
 
         Parameters
         ----------
+        inputDims : `list`
+            List of exposure IDs.
+
+        expIdToInputDim : `dict` [`int`, `int`]
+            Dictionary with a 1-1 correspondence between the expIds
+            of the exposures in inputs['inputExp'] via
+            exp.getInfo().getVisitInfo().getExposureId() and the
+            expIds of inputs['inputDims'] via  inputRefs.inputExp
+            in `runQuantum`.
+
         inputExp : `dict` [`float`,
                         (`~lsst.afw.image.exposure.exposure.ExposureF`,
                         `~lsst.afw.image.exposure.exposure.ExposureF`, ...,
                         `~lsst.afw.image.exposure.exposure.ExposureF`)]
             Dictionary that groups flat-field exposures that have the same
             exposure time (seconds).
-
-        inputDims : `list`
-            List of exposure IDs.
         """
         # inputExp.values() returns a view, which we turn into a list. We then
         # access the first exposure to get teh detector.
@@ -343,22 +360,12 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                                                expIdMask=[expIdMask], covArray=covArray,
                                                covSqrtWeights=covSqrtWeights)
             # Use location of exp1 to save PTC dataset from (exp1, exp2) pair.
-            # expId1 and expId2, as returned by getInfo().getVisitInfo().getExposureId(),
-            # and the exposure IDs stured in inoutDims,
-            # may have the zero-padded detector number appended at
-            # the end (in gen3). A temporary fix is to consider expId//1000 and/or
-            # inputDims//1000.
-            # Below, np.where(expId1 == np.array(inputDims)) (and the other analogous
-            # comparisons) returns a tuple with a single-element array, so [0][0]
+            # Below, np.where(expId1 == np.array(inputDims))  returns a tuple
+            # with a single-element array, so [0][0]
             # is necessary to extract the required index.
-            try:
-                datasetIndex = np.where(expId1 == np.array(inputDims))[0][0]
-            except IndexError:
-                try:
-                    datasetIndex = np.where(expId1//1000 == np.array(inputDims))[0][0]
-                except IndexError:
-                    datasetIndex = np.where(expId1//1000 == np.array(inputDims)//1000)[0][0]
+            datasetIndex = np.where(expIdToInputDim[expId1] == np.array(inputDims))[0][0]
             partialPtcDatasetList[datasetIndex] = partialPtcDataset
+
             if nAmpsNan == len(ampNames):
                 msg = f"NaN mean in all amps of exposure pair {expId1}, {expId2} of detector {detNum}."
                 self.log.warn(msg)
