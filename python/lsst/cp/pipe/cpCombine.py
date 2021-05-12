@@ -254,6 +254,21 @@ class CalibCombineTask(pipeBase.PipelineTask,
         if numExps < self.config.maxVisitsToCalcErrorFromInputVariance:
             stats.setCalcErrorFromInputVariance(True)
 
+        # Check that all inputs either share the same detector (based
+        # on detId), or that no inputs have any detector.
+        detectorList = [exp.getDetector() for exp in inputExps]
+        if None in detectorList:
+            self.log.warn("Not all input detectors defined.")
+        detectorIds = [det.getId() if det is not None else None for det in detectorList]
+        detectorSerials = [det.getId() if det is not None else None for det in detectorList]
+        numDetectorIds = len(set(detectorIds))
+        numDetectorSerials = len(set(detectorSerials))
+        numDetectors = len(set([numDetectorIds, numDetectorSerials]))
+        if numDetectors != 1:
+            raise RuntimeError("Input data contains multiple detectors.")
+
+        inputDetector = inputExps[0].getDetector()
+
         # Create output exposure for combined data.
         combined = afwImage.MaskedImageF(width, height)
         combinedExp = afwImage.makeExposure(combined)
@@ -315,6 +330,9 @@ class CalibCombineTask(pipeBase.PipelineTask,
         # Combine headers
         self.combineHeaders(inputExps, combinedExp,
                             calibType=self.config.calibrationType, scales=expScales)
+
+        # Set the detector
+        combinedExp.setDetector(inputDetector)
 
         # Return
         return pipeBase.Struct(
