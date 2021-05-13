@@ -4,7 +4,7 @@ parameters:
     measuredCovariances: cpCovariances
 tasks:
   isr:
-    class: lsst.ip.isr.isrTask.IsrTask
+    class: lsst.ip.isr.IsrTask
     config:
       connections.ccdExposure: raw
       connections.outputExposure: parameters.exposureName
@@ -38,5 +38,5 @@ tasks:
       connections.inputCovariances: parameters.measuredCovariances
       connections.outputPtcDataset: ptc
       ptcFitType: FULLCOVARIANCE
-contracts: 
+contracts:
   - ptcSolve.maximumRangeCovariancesAstier == ptcExtract.maximumRangeCovariancesAstier

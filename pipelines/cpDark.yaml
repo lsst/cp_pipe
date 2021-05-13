@@ -1,7 +1,7 @@
 description: cp_pipe DARK calibration construction
 tasks:
   isr:
-    class: lsst.ip.isr.isrTask.IsrTask
+    class: lsst.ip.isr.IsrTask
     config:
       connections.ccdExposure: 'raw'
       connections.outputExposure: 'cpDarkIsr'
