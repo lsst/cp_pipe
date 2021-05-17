@@ -123,17 +123,14 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         muStandard, varStandard = {}, {}
         expDict = {}
         expIds = []
-        expIdToInputDim = {}
         idCounter = 0
         for expTime in self.timeVec:
             mockExp1, mockExp2 = makeMockFlats(expTime, gain=inputGain,
                                                readNoiseElectrons=3, expId1=idCounter,
                                                expId2=idCounter+1)
-            expDict[expTime] = (mockExp1, mockExp2)
+            expDict[expTime] = ((mockExp1, idCounter), (mockExp2, idCounter+1))
             expIds.append(idCounter)
             expIds.append(idCounter+1)
-            expIdToInputDim[idCounter] = mockExp1.getInfo().getVisitInfo().getExposureId()
-            expIdToInputDim[idCounter+1] = mockExp2.getInfo().getVisitInfo().getExposureId()
             for ampNumber, ampName in enumerate(self.ampNames):
                 # cov has (i, j, var, cov, npix)
                 muDiff, varDiff, covAstier = task.extract.measureMeanVarCov(mockExp1, mockExp2)
@@ -147,7 +144,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                     for a, b in zip(row1, row2):
                         self.assertAlmostEqual(a, b)
             idCounter += 2
-        resultsExtract = extractTask.run(inputExp=expDict, expIdToInputDim=expIdToInputDim, inputDims=expIds)
+        resultsExtract = extractTask.run(inputExp=expDict, inputDims=expIds)
         resultsSolve = solveTask.run(resultsExtract.outputCovariances)
 
         for amp in self.ampNames:

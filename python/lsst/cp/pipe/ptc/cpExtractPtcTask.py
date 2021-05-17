@@ -204,37 +204,22 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         # Ids of input list of exposures
         inputs['inputDims'] = [expId.dataId['exposure'] for expId in inputRefs.inputExp]
 
-        # Define a 1-1 correspondence between exp.getInfo().getVisitInfo().getExposureId()
-        # and inputs['inputDims']. This will be used in `run` when saving partial datasets.
-        expIdToInputDim = {}
-        for exp, dim in zip(inputs['inputExp'], inputs['inputDims']):
-            expId = exp.getInfo().getVisitInfo().getExposureId()
-            expIdToInputDim[expId] = dim
-        inputs['expIdToInputDim'] = expIdToInputDim
-
-        # Dictionary, keyed by expTime, with flat exposures
+        # Dictionary, keyed by expTime, with tuples containing flat exposures and their IDs.
         if self.config.matchByExposureId:
-            inputs['inputExp'] = arrangeFlatsByExpId(inputs['inputExp'])
+            inputs['inputExp'] = arrangeFlatsByExpId(inputs['inputExp'], inputs['inputDims'])
         else:
-            inputs['inputExp'] = arrangeFlatsByExpTime(inputs['inputExp'])
+            inputs['inputExp'] = arrangeFlatsByExpTime(inputs['inputExp'], inputs['inputDims'])
 
         outputs = self.run(**inputs)
         butlerQC.put(outputs, outputRefs)
 
-    def run(self, inputDims, expIdToInputDim, inputExp):
+    def run(self, inputDims, inputExp):
         """Measure covariances from difference of flat pairs
 
         Parameters
         ----------
         inputDims : `list`
             List of exposure IDs.
-
-        expIdToInputDim : `dict` [`int`, `int`]
-            Dictionary with a 1-1 correspondence between the expIds
-            of the exposures in inputs['inputExp'] via
-            exp.getInfo().getVisitInfo().getExposureId() and the
-            expIds of inputs['inputDims'] via  inputRefs.inputExp
-            in `runQuantum`.
 
         inputExp : `dict` [`float`,
                         (`~lsst.afw.image.exposure.exposure.ExposureF`,
@@ -244,8 +229,8 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
             exposure time (seconds).
         """
         # inputExp.values() returns a view, which we turn into a list. We then
-        # access the first exposure to get teh detector.
-        detector = list(inputExp.values())[0][0].getDetector()
+        # access the first exposure-ID tuple to get the detector.
+        detector = list(inputExp.values())[0][0][0].getDetector()
         detNum = detector.getId()
         amps = detector.getAmplifiers()
         ampNames = [amp.getName() for amp in amps]
@@ -288,23 +273,23 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
             exposures = inputExp[expTime]
             if len(exposures) == 1:
                 self.log.warn(f"Only one exposure found at expTime {expTime}. Dropping exposure "
-                              f"{exposures[0].getInfo().getVisitInfo().getExposureId()}.")
+                              f"{exposures[0][1]}")
                 continue
             else:
-                # Only use the first two exposures at expTime
-                exp1, exp2 = exposures[0], exposures[1]
+                # Only use the first two exposures at expTime. Each elements is a tuple (exposure, expId)
+                exp1, expId1 = exposures[0]
+                exp2, expId2 = exposures[1]
                 if len(exposures) > 2:
                     self.log.warn(f"Already found 2 exposures at expTime {expTime}. "
                                   "Ignoring exposures: "
-                                  f"{i.getInfo().getVisitInfo().getExposureId() for i in exposures[2:]}")
+                                  f"{i[1] for i in exposures[2:]}")
             # Mask pixels at the edge of the detector or of each amp
             if self.config.numEdgeSuspect > 0:
                 isrTask.maskEdges(exp1, numEdgePixels=self.config.numEdgeSuspect,
                                   maskPlane="SUSPECT", level=self.config.edgeMaskLevel)
                 isrTask.maskEdges(exp2, numEdgePixels=self.config.numEdgeSuspect,
                                   maskPlane="SUSPECT", level=self.config.edgeMaskLevel)
-            expId1 = exp1.getInfo().getVisitInfo().getExposureId()
-            expId2 = exp2.getInfo().getVisitInfo().getExposureId()
+
             nAmpsNan = 0
             partialPtcDataset = PhotonTransferCurveDataset(ampNames, '',
                                                            self.config.maximumRangeCovariancesAstier)
@@ -363,7 +348,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
             # Below, np.where(expId1 == np.array(inputDims))  returns a tuple
             # with a single-element array, so [0][0]
             # is necessary to extract the required index.
-            datasetIndex = np.where(expIdToInputDim[expId1] == np.array(inputDims))[0][0]
+            datasetIndex = np.where(expId1 == np.array(inputDims))[0][0]
             partialPtcDatasetList[datasetIndex] = partialPtcDataset
 
             if nAmpsNan == len(ampNames):

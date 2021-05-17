@@ -591,7 +591,7 @@ def funcAstier(pars, x):
     return 0.5/(a00*gain*gain)*(np.exp(2*a00*x*gain)-1) + noise/(gain*gain)  # C_00
 
 
-def arrangeFlatsByExpTime(exposureList):
+def arrangeFlatsByExpTime(exposureList, exposureIdList):
     """Arrange exposures by exposure time.
 
     Parameters
@@ -599,24 +599,27 @@ def arrangeFlatsByExpTime(exposureList):
     exposureList : `list`[`lsst.afw.image.exposure.exposure.ExposureF`]
         Input list of exposures.
 
+    exposureIdList : `list`[`int`]
+        List of exposure ids as obtained by dataId[`exposure`].
+
     Returns
     ------
     flatsAtExpTime : `dict` [`float`,
-                      `list`[`lsst.afw.image.exposure.exposure.ExposureF`]]
-        Dictionary that groups flat-field exposures that have the same
-        exposure time (seconds).
+                      `list`[(`lsst.afw.image.exposure.exposure.ExposureF`, `int`)]]
+        Dictionary that groups flat-field exposures (and their IDs) that have
+        the same exposure time (seconds).
     """
     flatsAtExpTime = {}
-    for exp in exposureList:
-        tempFlat = exp
-        expTime = tempFlat.getInfo().getVisitInfo().getExposureTime()
+    assert len(exposureList) == len(exposureIdList), "Different lengths for exp. list and exp. ID lists"
+    for exp, expId in zip(exposureList, exposureIdList):
+        expTime = exp.getInfo().getVisitInfo().getExposureTime()
         listAtExpTime = flatsAtExpTime.setdefault(expTime, [])
-        listAtExpTime.append(tempFlat)
+        listAtExpTime.append((exp, expId))
 
     return flatsAtExpTime
 
 
-def arrangeFlatsByExpId(exposureList):
+def arrangeFlatsByExpId(exposureList, exposureIdList):
     """Arrange exposures by exposure ID.
 
     There is no guarantee that this will properly group exposures, but
@@ -628,12 +631,15 @@ def arrangeFlatsByExpId(exposureList):
     exposureList : `list`[`lsst.afw.image.exposure.exposure.ExposureF`]
         Input list of exposures.
 
+    exposureIdList : `list`[`int`]
+        List of exposure ids as obtained by dataId[`exposure`].
+
     Returns
     ------
     flatsAtExpId : `dict` [`float`,
-                   `list`[`lsst.afw.image.exposure.exposure.ExposureF`]]
-        Dictionary that groups flat-field exposures sequentially by
-        their exposure id.
+                   `list`[(`lsst.afw.image.exposure.exposure.ExposureF`, `int`)]]
+        Dictionary that groups flat-field exposuresi (and their IDs)
+        sequentially by their exposure id.
 
     Notes
     -----
@@ -646,14 +652,17 @@ def arrangeFlatsByExpId(exposureList):
     populated pairs.
     """
     flatsAtExpId = {}
-    sortedExposures = sorted(exposureList, key=lambda exp: exp.getInfo().getVisitInfo().getExposureId())
+    # sortedExposures = sorted(exposureList, key=lambda exp: exp.getInfo().getVisitInfo().getExposureId())
+    assert len(exposureList) == len(exposureIdList), "Different lengths for exp. list and exp. ID lists"
+    # Sort exposures by expIds, which are in the second list `exposureIdList`.
+    sortedExposures = sorted(zip(exposureList, exposureIdList), key=lambda pair: pair[1])
 
-    for jPair, exp in enumerate(sortedExposures):
+    for jPair, expTuple in enumerate(sortedExposures):
         if (jPair + 1) % 2:
             kPair = jPair // 2
             listAtExpId = flatsAtExpId.setdefault(kPair, [])
             try:
-                listAtExpId.append(exp)
+                listAtExpId.append(expTuple)
                 listAtExpId.append(sortedExposures[jPair + 1])
             except IndexError:
                 pass
