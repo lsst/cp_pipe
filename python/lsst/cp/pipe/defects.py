@@ -143,8 +143,9 @@ class MeasureDefectsTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         -------
         results : `lsst.pipe.base.Struct`
              Results struct containing:
-             - ``outputDefects` : `lsst.ip.isr.Defects`
-                 The defects measured from this exposure.
+
+             ``outputDefects``
+                 The defects measured from this exposure (`lsst.ip.isr.Defects`).
         """
         detector = inputExp.getDetector()
 
@@ -303,12 +304,12 @@ class MeasureDefectsTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         consecutive good pixels between two bad pixels in the column.
 
         Parameters
-        ---------
+        ----------
         defects: `lsst.ip.isr.Defect`
             The defects found in the image so far
 
         Returns
-        ------
+        -------
         defects: `lsst.ip.isr.Defect`
             If the number of bad pixels in a column is not larger or
             equal than self.config.badPixelColumnThreshold, the iput
@@ -743,8 +744,7 @@ class FindDefectsTask(pipeBase.CmdLineTask):
     The task has two modes of operation, defect finding in raws and in
     master calibrations, which work as follows.
 
-    Master calib defect finding
-    ----------------------------
+    - Master calib defect finding
 
     A single visit number is supplied, for which the corresponding flat & dark
     will be used. This is because, at present at least, there is no way to pass
@@ -758,8 +758,7 @@ class FindDefectsTask(pipeBase.CmdLineTask):
     All pixels above/below the specified nSigma which lie with the specified
     borders for flats/darks are identified as defects.
 
-    Raw visit defect finding
-    ------------------------
+    - Raw visit defect finding
 
     A list of exposure IDs are supplied for defect finding. The task will
     detect bright pixels in the dark frames, if supplied, and bright & dark

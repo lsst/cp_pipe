@@ -181,9 +181,9 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         -----
         This task currently fits only polynomial-defined corrections,
         where the correction coefficients are defined such that:
-            corrImage = uncorrImage + sum_i c_i uncorrImage^(2 + i)
+        corrImage = uncorrImage + sum_i c_i uncorrImage^(2 + i)
         These `c_i` are defined in terms of the direct polynomial fit:
-            meanVector ~ P(x=timeVector) = sum_j k_j x^j
+        meanVector ~ P(x=timeVector) = sum_j k_j x^j
         such that c_(j-2) = -k_j/(k_1^j) in units of DN^(1-j) (c.f.,
         Eq. 37 of 2003.05978). The `config.polynomialOrder` or
         `config.splineKnots` define the maximum order of x^j to fit.

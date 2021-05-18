@@ -407,12 +407,12 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
                         [ 6,  5,  4,  5,  6],
                         [ 9,  8,  7,  8,  9]])
 
-        Parameters:
+        Parameters
         -----------
         input : `np.array`
             The square input quarter-array
 
-        Returns:
+        Returns
         --------
         output : `np.array`
             The full, tiled array
@@ -435,8 +435,8 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
         A numerical method for solving a system of linear equations
         with faster convergence than the Gauss-Seidel method.
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         source : `numpy.ndarray`
             The input array.
         maxIter : `int`, optional
@@ -445,8 +445,8 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
             The target error level at which we deem convergence to have
             occurred.
 
-        Returns:
-        --------
+        Returns
+        -------
         output : `numpy.ndarray`
             The solution.
         """

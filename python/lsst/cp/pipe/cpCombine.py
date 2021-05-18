@@ -33,6 +33,10 @@ from astro_metadata_translator import merge_headers, ObservationGroup
 from astro_metadata_translator.serialize import dates_to_fits
 
 
+__all__ = ['CalibStatsConfig', 'CalibStatsTask', 'VignetteExposure',
+           'CalibCombineConfig', 'CalibCombineConnections', 'CalibCombineTask',
+           'CalibCombineByFilterConfig', 'CalibCombineByFilterConnections', 'CalibCombineByFilterTask']
+
 # CalibStatsConfig/CalibStatsTask from pipe_base/constructCalibs.py
 class CalibStatsConfig(pexConfig.Config):
     """Parameters controlling the measurement of background statistics.
@@ -128,6 +132,7 @@ class CalibCombineConnections(pipeBase.PipelineTaskConnections,
 class CalibCombineConfig(pipeBase.PipelineTaskConfig,
                          pipelineConnections=CalibCombineConnections):
     """Configuration for combining calib exposures.
+
     """
     calibrationType = pexConfig.Field(
         dtype=str,

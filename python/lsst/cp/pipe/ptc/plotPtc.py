@@ -1109,8 +1109,8 @@ class PlotPhotonTransferCurveTask():
     def binData(x, y, binIndex, wy=None):
         """Bin data (usually for display purposes).
 
-        Patrameters
-        -----------
+        Parameters
+        ----------
         x: `numpy.array`
             Data to bin.
 
@@ -1123,9 +1123,8 @@ class PlotPhotonTransferCurveTask():
         wy: `numpy.array`
             Inverse rms of each datum to use when averaging (the actual weight is wy**2).
 
-        Returns:
+        Returns
         -------
-
         xbin: `numpy.array`
             Binned data in x.
 

@@ -158,16 +158,19 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
 class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
                                    pipeBase.CmdLineTask):
     """Task to fit the PTC from flat covariances.
+
     This task assembles the list of individual PTC datasets produced
-    by `PhotonTransferCurveSolveTask` into one single final PTC dataset.
-    The task fits the measured (co)variances to a polynomial model or to
-    the models described in equations 16 and 20 of Astier+19
-    (referred to as `POLYNOMIAL`, `EXPAPPROXIMATION`, and `FULLCOVARIANCE`
-    in the configuration options of the task, respectively). Parameters
-    of interest such as tghe gain and noise are derived from the fits.
+    by ``PhotonTransferCurveSolveTask`` into one single final PTC
+    dataset.  The task fits the measured (co)variances to a polynomial
+    model or to the models described in equations 16 and 20 of
+    Astier+19 (referred to as ``POLYNOMIAL``, ``EXPAPPROXIMATION``,
+    and ``FULLCOVARIANCE`` in the configuration options of the task,
+    respectively). Parameters of interest such as tghe gain and noise
+    are derived from the fits.
 
     Astier+19: "The Shape of the Photon Transfer Curve
     of CCD sensors", arXiv:1905.08677
+
     """
     ConfigClass = PhotonTransferCurveSolveConfig
     _DefaultName = 'cpPhotonTransferCurveSolve'
@@ -206,9 +209,10 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         -------
         results : `lsst.pipe.base.Struct`
             The results struct containing:
-            ``outputPtcDatset`` : `lsst.ip.isr.PhotonTransferCurveDataset`
+
+            ``outputPtcDatset``
                 Final PTC dataset, containing information such as the means, variances,
-                and exposure times.
+                and exposure times (`lsst.ip.isr.PhotonTransferCurveDataset`).
         """
         # Assemble partial PTC datasets into a single dataset.
         ampNames = np.unique(inputCovariances[0].ampNames)

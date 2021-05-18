@@ -156,6 +156,7 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
 class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                                      pipeBase.CmdLineTask):
     """Task to measure covariances from flat fields.
+
     This task receives as input a list of flat-field images
     (flats), and sorts these flats in pairs taken at the
     same time (if there's a different number of flats,
@@ -169,7 +170,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
 
     The measured covariances at a particular time (along with
     other quantities such as the mean) are stored in a PTC dataset
-    object (`PhotonTransferCurveDataset`), which gets partially
+    object (``PhotonTransferCurveDataset``), which gets partially
     filled. The number of partially-filled PTC dataset objects
     will be less than the number of input exposures, but gen3
     requires/assumes that the number of input dimensions matches
@@ -177,8 +178,8 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
     number of "dummy" PTC dataset are inserted in the output list
     that has the partially-filled PTC datasets with the covariances.
     This output list will be used as input of
-    `PhotonTransferCurveSolveTask`, which will assemble the multiple
-    `PhotonTransferCurveDataset`s into a single one in order to fit
+    ``PhotonTransferCurveSolveTask``, which will assemble the multiple
+    ``PhotonTransferCurveDataset`` into a single one in order to fit
     the measured covariances as a function of flux to a particular
     model.
 
@@ -218,10 +219,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
 
         Parameters
         ----------
-        inputExp : `dict` [`float`,
-                        (`~lsst.afw.image.exposure.exposure.ExposureF`,
-                        `~lsst.afw.image.exposure.exposure.ExposureF`, ...,
-                        `~lsst.afw.image.exposure.exposure.ExposureF`)]
+        inputExp : `dict` [`float`, `list` [`~lsst.afw.image.exposure.exposure.ExposureF`]]
             Dictionary that groups flat-field exposures that have the same
             exposure time (seconds).
 
@@ -398,6 +396,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                     Covariance at (dx, dy).
                 nPix : `int`
                     Number of pixel pairs used to evaluate var and cov.
+
             If either mu1 or m2 are NaN's, the returned value is NaN.
         """
 
