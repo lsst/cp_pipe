@@ -213,20 +213,20 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         outputs = self.run(**inputs)
         butlerQC.put(outputs, outputRefs)
 
-    def run(self, inputDims, inputExp):
+    def run(self, inputExp, inputDims):
         """Measure covariances from difference of flat pairs
 
         Parameters
         ----------
-        inputDims : `list`
-            List of exposure IDs.
-
         inputExp : `dict` [`float`,
                         (`~lsst.afw.image.exposure.exposure.ExposureF`,
                         `~lsst.afw.image.exposure.exposure.ExposureF`, ...,
                         `~lsst.afw.image.exposure.exposure.ExposureF`)]
             Dictionary that groups flat-field exposures that have the same
             exposure time (seconds).
+
+        inputDims : `list`
+            List of exposure IDs.
         """
         # inputExp.values() returns a view, which we turn into a list. We then
         # access the first exposure-ID tuple to get the detector.

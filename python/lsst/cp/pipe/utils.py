@@ -638,7 +638,7 @@ def arrangeFlatsByExpId(exposureList, exposureIdList):
     ------
     flatsAtExpId : `dict` [`float`,
                    `list`[(`lsst.afw.image.exposure.exposure.ExposureF`, `int`)]]
-        Dictionary that groups flat-field exposuresi (and their IDs)
+        Dictionary that groups flat-field exposures (and their IDs)
         sequentially by their exposure id.
 
     Notes
