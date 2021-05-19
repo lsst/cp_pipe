@@ -66,7 +66,7 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
     """
     matchByExposureId = pexConfig.Field(
         dtype=bool,
-        doc="Should exposures by matched by ID rather than exposure time?",
+        doc="Should exposures be matched by ID rather than exposure time?",
         default=False,
     )
     maximumRangeCovariancesAstier = pexConfig.Field(
@@ -201,13 +201,15 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
             Output data refs to persist.
         """
         inputs = butlerQC.get(inputRefs)
-        # Dictionary, keyed by expTime, with flat exposures
-        if self.config.matchByExposureId:
-            inputs['inputExp'] = arrangeFlatsByExpId(inputs['inputExp'])
-        else:
-            inputs['inputExp'] = arrangeFlatsByExpTime(inputs['inputExp'])
         # Ids of input list of exposures
         inputs['inputDims'] = [expId.dataId['exposure'] for expId in inputRefs.inputExp]
+
+        # Dictionary, keyed by expTime, with tuples containing flat exposures and their IDs.
+        if self.config.matchByExposureId:
+            inputs['inputExp'] = arrangeFlatsByExpId(inputs['inputExp'], inputs['inputDims'])
+        else:
+            inputs['inputExp'] = arrangeFlatsByExpTime(inputs['inputExp'], inputs['inputDims'])
+
         outputs = self.run(**inputs)
         butlerQC.put(outputs, outputRefs)
 
@@ -227,8 +229,8 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
             List of exposure IDs.
         """
         # inputExp.values() returns a view, which we turn into a list. We then
-        # access the first exposure to get teh detector.
-        detector = list(inputExp.values())[0][0].getDetector()
+        # access the first exposure-ID tuple to get the detector.
+        detector = list(inputExp.values())[0][0][0].getDetector()
         detNum = detector.getId()
         amps = detector.getAmplifiers()
         ampNames = [amp.getName() for amp in amps]
@@ -271,23 +273,23 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
             exposures = inputExp[expTime]
             if len(exposures) == 1:
                 self.log.warn(f"Only one exposure found at expTime {expTime}. Dropping exposure "
-                              f"{exposures[0].getInfo().getVisitInfo().getExposureId()}.")
+                              f"{exposures[0][1]}")
                 continue
             else:
-                # Only use the first two exposures at expTime
-                exp1, exp2 = exposures[0], exposures[1]
+                # Only use the first two exposures at expTime. Each elements is a tuple (exposure, expId)
+                exp1, expId1 = exposures[0]
+                exp2, expId2 = exposures[1]
                 if len(exposures) > 2:
                     self.log.warn(f"Already found 2 exposures at expTime {expTime}. "
                                   "Ignoring exposures: "
-                                  f"{i.getInfo().getVisitInfo().getExposureId() for i in exposures[2:]}")
+                                  f"{i[1] for i in exposures[2:]}")
             # Mask pixels at the edge of the detector or of each amp
             if self.config.numEdgeSuspect > 0:
                 isrTask.maskEdges(exp1, numEdgePixels=self.config.numEdgeSuspect,
                                   maskPlane="SUSPECT", level=self.config.edgeMaskLevel)
                 isrTask.maskEdges(exp2, numEdgePixels=self.config.numEdgeSuspect,
                                   maskPlane="SUSPECT", level=self.config.edgeMaskLevel)
-            expId1 = exp1.getInfo().getVisitInfo().getExposureId()
-            expId2 = exp2.getInfo().getVisitInfo().getExposureId()
+
             nAmpsNan = 0
             partialPtcDataset = PhotonTransferCurveDataset(ampNames, '',
                                                            self.config.maximumRangeCovariancesAstier)
@@ -343,22 +345,12 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                                                expIdMask=[expIdMask], covArray=covArray,
                                                covSqrtWeights=covSqrtWeights)
             # Use location of exp1 to save PTC dataset from (exp1, exp2) pair.
-            # expId1 and expId2, as returned by getInfo().getVisitInfo().getExposureId(),
-            # and the exposure IDs stured in inoutDims,
-            # may have the zero-padded detector number appended at
-            # the end (in gen3). A temporary fix is to consider expId//1000 and/or
-            # inputDims//1000.
-            # Below, np.where(expId1 == np.array(inputDims)) (and the other analogous
-            # comparisons) returns a tuple with a single-element array, so [0][0]
+            # Below, np.where(expId1 == np.array(inputDims))  returns a tuple
+            # with a single-element array, so [0][0]
             # is necessary to extract the required index.
-            try:
-                datasetIndex = np.where(expId1 == np.array(inputDims))[0][0]
-            except IndexError:
-                try:
-                    datasetIndex = np.where(expId1//1000 == np.array(inputDims))[0][0]
-                except IndexError:
-                    datasetIndex = np.where(expId1//1000 == np.array(inputDims)//1000)[0][0]
+            datasetIndex = np.where(expId1 == np.array(inputDims))[0][0]
             partialPtcDatasetList[datasetIndex] = partialPtcDataset
+
             if nAmpsNan == len(ampNames):
                 msg = f"NaN mean in all amps of exposure pair {expId1}, {expId2} of detector {detNum}."
                 self.log.warn(msg)

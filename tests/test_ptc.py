@@ -128,7 +128,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             mockExp1, mockExp2 = makeMockFlats(expTime, gain=inputGain,
                                                readNoiseElectrons=3, expId1=idCounter,
                                                expId2=idCounter+1)
-            expDict[expTime] = (mockExp1, mockExp2)
+            expDict[expTime] = ((mockExp1, idCounter), (mockExp2, idCounter+1))
             expIds.append(idCounter)
             expIds.append(idCounter+1)
             for ampNumber, ampName in enumerate(self.ampNames):
