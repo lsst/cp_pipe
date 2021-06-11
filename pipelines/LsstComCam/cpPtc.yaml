@@ -1,5 +1,5 @@
-description: ImSim PTC calibration construction.
-instrument: lsst.obs.lsst.LsstCamImSim
+description: ComCam PTC calibration construction.
+instrument: lsst.obs.lsst.LsstComCam
 imports:
   - location: $CP_PIPE_DIR/pipelines/measurePhotonTransferCurve.yaml
 tasks:
@@ -15,10 +15,4 @@ tasks:
   ptcSolve:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
     config:
-      ptcFitType: FULLCOVARIANCE
-      initialNonLinearityExclusionThresholdPositive: 0.999
-      initialNonLinearityExclusionThresholdNegative: 0.999
-      minVarPivotSearch: 250000
-      minMeanRatioTest: 150000
-      sigmaCutPtcOutliers: 10
-      sigmaClipFullFitCovariancesAstier: 10
+      ptcFitType: EXPAPPROXIMATION

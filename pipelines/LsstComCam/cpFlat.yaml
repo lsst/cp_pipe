@@ -1,5 +1,5 @@
-description: ImSim flat calibration construction
-instrument: lsst.obs.lsst.LsstCamImSim
+description: ComCam flat calibration construction
+instrument: lsst.obs.lsst.LsstComCam
 imports:
   - location: $CP_PIPE_DIR/pipelines/cpFlat.yaml
 tasks:

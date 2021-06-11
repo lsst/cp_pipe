@@ -1,5 +1,5 @@
-description: ImSim dark calibration construction
-instrument: lsst.obs.lsst.LsstCamImSim
+description: ComCam dark calibration construction
+instrument: lsst.obs.lsst.LsstComCam
 imports:
   - location: $CP_PIPE_DIR/pipelines/cpDark.yaml
 tasks:
