@@ -205,11 +205,12 @@ class CalibCombineTask(pipeBase.PipelineTask,
         self.makeSubtask("stats")
 
     def runQuantum(self, butlerQC, inputRefs, outputRefs):
+        self.log.info("In runQuantum, at start.")
         inputs = butlerQC.get(inputRefs)
-
+        self.log.info("In runQuantum, post inputs.")
         dimensions = [exp.dataId.byName() for exp in inputRefs.inputExps]
         inputs['inputDims'] = dimensions
-
+        self.log.info("In runQuantum, post dimension organization.")
         outputs = self.run(**inputs)
         butlerQC.put(outputs, outputRefs)
 
@@ -253,7 +254,7 @@ class CalibCombineTask(pipeBase.PipelineTask,
             raise RuntimeError("No valid input data")
         if numExps < self.config.maxVisitsToCalcErrorFromInputVariance:
             stats.setCalcErrorFromInputVariance(True)
-
+        self.log.info("In run, post variance check.")
         # Check that all inputs either share the same detector (based
         # on detId), or that no inputs have any detector.
         detectorList = [exp.getDetector() for exp in inputExps]
@@ -272,7 +273,7 @@ class CalibCombineTask(pipeBase.PipelineTask,
         # Create output exposure for combined data.
         combined = afwImage.MaskedImageF(width, height)
         combinedExp = afwImage.makeExposure(combined)
-
+        self.log.info("In run, post setup.")
         # Apply scaling:
         expScales = []
         if inputDims is None:
