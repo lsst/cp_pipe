@@ -355,7 +355,7 @@ class CpSkyCombineConnections(pipeBase.PipelineTaskConnections,
     )
 
     outputCalib = cT.Output(
-        name="skyCalib",
+        name="sky",
         doc="Averaged static background.",
         storageClass="Exposure",
         dimensions=("instrument", "detector", "physical_filter"),
