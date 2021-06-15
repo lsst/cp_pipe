@@ -4,6 +4,6 @@ imports:
  - location: $CP_PIPE_DIR/pipelines/cpBias.yaml
 tasks:
   isr:
-    class: lsst.ip.isr.isrTask.IsrTask
+    class: lsst.ip.isr.IsrTask
     config:
       doDefect: False

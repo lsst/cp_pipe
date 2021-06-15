@@ -4,7 +4,7 @@ imports:
   -  location: $CP_PIPE_DIR/pipelines/cpDark.yaml
 tasks:
   isr:
-    class: lsst.ip.isr.isrTask.IsrTask
+    class: lsst.ip.isr.IsrTask
     config:
       # Disable these until valid calibrations exist.
       doLinearize: False
