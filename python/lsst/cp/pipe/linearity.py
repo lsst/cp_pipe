@@ -31,26 +31,37 @@ from lsstDebug import getDebugFrame
 from lsst.ip.isr import (Linearizer, IsrProvenance)
 
 from .utils import (funcPolynomial, irlsFit)
-
+from ._lookupStaticCalibration import lookupStaticCalibration
 
 __all__ = ["LinearitySolveTask", "LinearitySolveConfig", "MeasureLinearityTask"]
 
 
 class LinearitySolveConnections(pipeBase.PipelineTaskConnections,
-                                dimensions=("instrument", "detector")):
-    inputPtc = cT.Input(
-        name="inputPtc",
-        doc="Input PTC dataset.",
-        storageClass="StructuredDataDict",
-        dimensions=("instrument", "detector"),
-        multiple=False,
+                                dimensions=("instrument", "exposure", "detector")):
+    dummy = cT.Input(
+        name="raw",
+        doc="Dummy exposure.",
+        storageClass='Exposure',
+        dimensions=("instrument", "exposure", "detector"),
+        multiple=True,
+        deferLoad=True,
     )
-    camera = cT.Input(
+    camera = cT.PrerequisiteInput(
         name="camera",
         doc="Camera Geometry definition.",
         storageClass="Camera",
         dimensions=("instrument", ),
+        isCalibration=True,
+        lookupFunction=lookupStaticCalibration,
     )
+    inputPtc = cT.PrerequisiteInput(
+        name="ptc",
+        doc="Input PTC dataset.",
+        storageClass="PhotonTransferCurveDataset",
+        dimensions=("instrument", "detector"),
+        isCalibration=True,
+    )
+
     outputLinearizer = cT.Output(
         name="linearity",
         doc="Output linearity measurements.",
@@ -129,12 +140,12 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         inputs = butlerQC.get(inputRefs)
 
         # Use the dimensions to set calib/provenance information.
-        inputs['inputDims'] = [exp.dataId.byName() for exp in inputRefs.inputPtc]
+        inputs['inputDims'] = inputRefs.inputPtc.dataId.byName()
 
         outputs = self.run(**inputs)
         butlerQC.put(outputs, outputRefs)
 
-    def run(self, inputPtc, camera, inputDims):
+    def run(self, inputPtc, dummy, camera, inputDims):
         """Fit non-linearity to PTC data, returning the correct Linearizer
         object.
 
@@ -170,6 +181,9 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         As k_0 and k_1 are degenerate with bias level and gain, they
         are not included in the non-linearity correction.
         """
+        if len(dummy) == 0:
+            self.log.warn("No dummy exposure found.")
+
         detector = camera[inputDims['detector']]
         if self.config.linearityType == 'LookupTable':
             table = np.zeros((len(detector), self.config.maxLookupTableAdu), dtype=np.float32)
