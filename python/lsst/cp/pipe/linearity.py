@@ -208,23 +208,25 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         for i, amp in enumerate(detector):
             ampName = amp.getName()
             if ampName in inputPtc.badAmps:
-                linearizer.linearityType[ampName] = "None"
-
                 nEntries = 1
+                pEntries = 1
                 if self.config.linearityType in ['Polynomial']:
                     nEntries = fitOrder + 1
+                    pEntries = fitOrder + 1
                 elif self.config.linearityType in ['Spline']:
                     nEntries = fitOrder * 2
                 elif self.config.linearityType in ['Squared', 'None']:
                     nEntries = 1
+                    pEntries = fitOrder + 1
                 elif self.config.linearityType in ['LookupTable']:
                     nEntries = 2
+                    pEntries = fitOrder + 1
 
-                coeffs = np.zeros(nEntries)
-                linearizer.linearityCoeffs[ampName] = coeffs
+                linearizer.linearityType[ampName] = "None"
+                linearizer.linearityCoeffs[ampName] = np.zeros(nEntries)
                 linearizer.linearityBBox[ampName] = amp.getBBox()
-                linearizer.fitParams[ampName] = np.array([0.0])
-                linearizer.fitParamsErr[ampName] = np.array([0.0])
+                linearizer.fitParams[ampName] = np.zeros(pEntries)
+                linearizer.fitParamsErr[ampName] = np.zeros(pEntries)
                 linearizer.fitChiSq[ampName] = np.nan
                 self.log.warn("Amp %s has no usable PTC information.  Skipping!", ampName)
                 continue
