@@ -173,8 +173,10 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
         ----------
         inputPtc : `lsst.ip.isr.PhotonTransferCurveDataset`
             PTC data containing per-amplifier covariance measurements.
-        dummy : `lsst.afw.image.Exposure
+        dummy : `lsst.afw.image.Exposure`
             The exposure used to select the appropriate PTC dataset.
+            In almost all circumstances, one of the input exposures
+            used to generate the PTC dataset is the best option.
         camera : `lsst.afw.cameraGeom.Camera`
             Camera to use for camera geometry information.
         inputDims : `lsst.daf.butler.DataCoordinate` or `dict`

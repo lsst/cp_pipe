@@ -119,7 +119,7 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
     )
     ignorePtcMask = pexConfig.Field(
         dtype=bool,
-        doc="Ignore the values masked by PTC?",
+        doc="Ignore the expIdMask set by the PTC solver?",
         default=False,
     )
 
@@ -158,6 +158,10 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         ----------
         inputPtc : `lsst.cp.pipe.PtcDataset`
             Pre-measured PTC dataset.
+        dummy : `lsst.afw.image.Exposure`
+            The exposure used to select the appropriate PTC dataset.
+            In almost all circumstances, one of the input exposures
+            used to generate the PTC dataset is the best option.
         camera : `lsst.afw.cameraGeom.Camera`
             Camera geometry.
         inputDims : `lsst.daf.butler.DataCoordinate` or `dict`
