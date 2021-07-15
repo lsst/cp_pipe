@@ -4,9 +4,9 @@
 Constructing calibrations
 #########################
 
-`cp_pipe` now supports the production of all of the calibration types for the gen-three middleware.  This page presents example commands that can be used to create calibrations for the LATISS instrument.  The operation should be similar for other cameras, but potential differences are described below.
+`cp_pipe` now supports the production of all of the calibration types for the gen-three middleware.  This page presents example commands that can be used to create calibrations for the LATISS instrument.  The operation should be similar for other cameras, and potential differences are described below.
 
-In general, calibration construction is a four step process.  First, a pipeline is run to generate a proposed calibration from a set of raw calibration frames.  This proposed calibration is then certified to a butler CALIBRATION collection, associating it with a time range during which the calibration is considered valid.  Next, the calibration should be checked by the tests in the ``cp_verify`` package, to confirm that it is suitable for the entire validity range, and that it satisfies all of the quality metrics defined in DMTN-101.  Finally, that CALIBRATION collection can be grouped into a butler CHAINED collection that connects all of the various calibrations into a single collection, avoiding the need to remember a large sequence of collection names.  As ``cp_verify`` is still in development, not every example has an associated verification step.
+In general, calibration construction is a four step process.  First, a set of exposures is identified to be used in the calibration.  Then, a pipeline is run to generate a proposed calibration from that set of raw exposures.  Next, the calibration should be checked by the tests in the ``cp_verify`` package, to confirm that it is suitable for the entire validity range, and that it satisfies all of the quality metrics defined in DMTN-101.  Finally, the calibration can be certified for use, with a timespan indicating when the calibration is valid.  Individual CALIBRATION collections can be grouped into a butler CHAINED collection to connect all of the various calibrations into a single collection, avoiding the need to remember a large sequence of collection names.  As ``cp_verify`` is still in development, not every example has an associated verification step.
 
 The examples presented below follow the collection naming conventions listed in DMTN-167, and will use ticketed user collection names.
 
@@ -22,35 +22,121 @@ A gen-three butler is needed to run the ``pipetask`` commands defined by this pa
 Calibration certification
 =========================
 
+Certification of calibrations should be done after confirming that all of the ``cp_verify`` tests have passed, and any tests that still fail should be documented on the ticket.  Calibrations created as part of daily observations should be certified into a single collection per calibration type, with the validity range set to only include the day they were taken, such as::
+
+    butler certify-calibrations /repo/main \
+        u/czw/DM-XYZ/biasGen.20210715 LATISS/calib/dailyBiases \
+        --begin_date 2021-07-15 --end_date 2021-07-16 bias
+
+Longer term master calibrations should be certified into ticketed CALIBRATION collection (containing however many calibration types and date ranges that entails), that should then be chained to the instrument's recommended CALIBRATION collection.  The results of ``cp_verify`` should provide some guidance on the validity range, as additional raw exposures can be checked against the proposed calibration to identify when the verifcation tests fail.  The end date may be best set to a future date that will allow the calibration to be used until a new one supersedes it::
+
+    butler certify-calibrations /repo/main \
+        u/czw/DM-XYZ/biasGen.20210715 LATISS/calib/DM-XYZ \
+        --begin_date 2021-01-01 --end_date 2050-01-01 bias
+
+.. _cp-pipe-readNoise:
+
+Read Noise
+==========
+
+Calibration construction and verification are sensitive to the read noise value listed in the ``camera`` camera geometry definition.  Inaccurate values may trigger test failures that are spurious.  Setting the ``isr:doEmpiricalReadNoise=True`` option during the bias processing (as the bias generally has very little signal other than noise) may be necessary to bootstrap a full set of calibrations from scratch.  This option records the values measured in the log, and by analysing the results of many exposures, better estimates of the read noise can be generated.
 
 .. _cp-pipe-biases:
 
 Constructing biases
 ===================
 
-- Identify a set of exposures to use as inputs:
+- Identify a set of exposures to use as inputs from the repository::
 
-  - ``butler query-dimension-records /repo/main exposure --where "instrument='LATISS' AND exposure.observation_type='bias' AND exposure.target_name='Park position' AND exposure.exposure_time=0.0 AND exposure.dark_time < 0.1 AND exposure.day_obs > 20210101"``
-  - This returns a large number of potential exposures, with some dates dominating the counts.  Selecting 25 exposures from this sample, and attempting to choose exposures from a wide range of dates gives a list:
+    butler query-dimension-records /repo/main exposure \
+        --where "instrument='LATISS' AND exposure.observation_type='bias' \
+                 AND exposure.target_name='Park position' \
+                 AND exposure.exposure_time=0.0 AND exposure.dark_time < 0.1 \
+                 AND exposure.day_obs > 20210101"
 
-    - ``EXPOSURES='2021012000037, 2021012000055, 2021012000059, 2021012000063, 2021012100078, 2021012100105, 2021012100131, 2021012100157, 2021012100188, 2021012700038, 2021012700061, 2021012700423, 2021012700701, 2021020100047, 2021020100072, 2021020100329, 2021020100375, 2021030500001, 2021030500005, 2021030500026, 2021030500050, 2021031100004, 2021031100005, 2021031100010, 2021031100048'``
+  - This returns a large number of potential exposures, with some dates dominating the counts.  An initial semi-random sample of 50 exposures was used as input for the master bias.  These exposures were selected to attempt to have the widest possible date coverage, as well as preventing any one date from having a majority of the exposures::
 
-- Run the bias pipeline on these exposures.  This pipeline is simple, with a short ISR step that only applies overscan correction and assembles the exposures, before passing them to a combine step that finds the clipped per-pixel mean for the output bias.  Only the raw and curated calibration collections are needed as inputs.
+    EXPOSURES='2021012000019, 2021012000020, 2021012000032, 2021012000055, 2021012000061, \
+               2021012100060, 2021012100079, 2021012100134, 2021012100177, 2021012100188, \
+               2021012100229, 2021012100273, 2021012100303, 2021012700032, 2021012700037, \
+               2021012700038, 2021012700052, 2021012700119, 2021012700842, 2021012700900, \
+               2021012700926, 2021020100022, 2021020100032, 2021020100036, 2021020100047, \
+               2021020100049, 2021020100335, 2021020100344, 2021020100369, 2021030500001, \
+               2021030500009, 2021030500015, 2021030500019, 2021030500023, 2021030500032, \
+               2021030500046, 2021031100028, 2021031100032, 2021031100036, 2021031100037, \
+               2021031100041, 2021031100045, 2021031100048, 2021060900011, 2021060900026, \
+               2021060900038, 2021060900039, 2021060900042, 2021060900048, 2021060900049'
 
-  - ``pipetask run -b /repo/main -p $CP_PIPE_DIR/pipelines/LATISS/cpBias.yaml -i LATISS/raw/all,LATISS/calib -o u/czw/DM-28920/biasGen -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES)``
+  - This sample was later cleaned and supplemented with additional exposures after running into failures during verification, as the lack of a set of defects meant that the cosmic ray rejection in ``cp_verify`` would raise due to triggering on the unmasked defect pixels.  The final sample used was::
 
-- Certify this calibration into a temporary collection.
+    EXPOSURES='2021012000020, 2021012000032, 2021012000055, 2021012000061, 2021012100060, \
+               2021012100134, 2021012100188, 2021012100229, 2021012700032, 2021012700037, \
+               2021012700038, 2021012700052, 2021012700119, 2021012700842, 2021012700900, \
+               2021012700926, 2021020100022, 2021020100032, 2021020100036, 2021020100047, \
+               2021020100049, 2021020100335, 2021020100344, 2021020100369, 2021030500009, \
+               2021030500015, 2021030500019, 2021030500023, 2021030500032, 2021030500046, \
+               2021031100028, 2021031100032, 2021031100036, 2021031100037, 2021031100041, \
+               2021031100045, 2021031100048, 2021060900011, 2021060900026, 2021060900038, \
+               2021060900039, 2021060900042, 2021060900048, 2021060900049, 2021012000037, \
+               2021012000059, 2021012000063, 2021012100078, 2021012700061, 2021012700423, \
+               2021012700701, 2021020100072, 2021020100329, 2021020100375, 2021030500005, \
+               2021030500026, 2021030500050, 2021031100004, 2021031100005, 2021031100010'
 
-  - ``butler certify-calibrations /repo/main u/czw/DM-28920/biasGen u/czw/DM-28920/calibTemp --begin-date 1980-01-01 --end-date 2050-01-01 bias``
+- Run the bias pipeline on these exposures.  This pipeline is simple, with a short ISR step that only applies overscan correction and assembles the exposures, before passing them to a combine step that finds the clipped per-pixel mean for the output bias.  Only the raw and curated calibration collections are needed as inputs::
 
-- Validate with ``cp_verify``.
+    RERUN=20210702a
+    pipetask --long-log run -b /repo/main -p $CP_PIPE_DIR/pipelines/Latiss/cpBias.yaml \
+         -i LATISS/raw/all,LATISS/calib -o u/czw/DM-28920/biasGen.$RERUN \
+         -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES) \
+         -c isr:doDefect=False -c isr:doEmpiricalReadNoise=True >& ./bias.$RERUN.log
 
-  - ``pipetask run -b /repo/main -p $CP_PIPE_DIR/pipelines/LATISS/verifyBias.yaml -i LATISS/raw/all,LATISS/calib,u/czw/DM-28920/calibTemp -o u/czw/DM-28920/verifyBias -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES)``
-  - ``cp_verify.py /repo/main -i u/czw/DM-28920/verifyBias bias``
+  - Passing the ``--long-log`` and saving the output to a logfile are recommended, as it is easier to debug issues with that information.
+  - No good defect set exists, so the ``-c isr:doDefect=False`` option was disabled.  This should only be necessary when starting calibrations from scratch.
+  - As discussed above, the nominal read noise values are incorrect (especially for amplifier ``C07``), and so the ``-c isr:doEmpiricalReadNoise=True`` was enabled to prevent this amplifier from being thrown out.
 
-- Certify to final collection.
+- Validate the input exposures with ``cp_verify``.  Additional exposures could be validated to firmly establish a date range that this bias should be used::
 
-  - ``butler certify-calibrations /repo/main u/czw/DM-28920/biasGen u/czw/DM-28920/calib --begin-date 2021-01-01 --end-date 2050-01-01 bias``
+    pipetask run -b /repo/main -p $CP_VERIFY_DIR/pipelines/Latiss/verifyBias.yaml \
+         -i u/czw/DM-28920/biasGen.$RERUN,LATISS/raw/all,LATISS/calib \
+         -o u/czw/DM-28920/verifyBias.$RERUN \
+          -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES)
+
+  - This pipeline produces statistics and test results for every ``{exposure, detector}`` pair in the input data, and then collates that data to produce per-exposure summaries (and optionally addition exposure-level statistics and tests), and finally into one final per-run summary.
+  - As part of DM-28920, ``cp_verify`` is being augmented with a series of Jupyter notebooks that are designed to help visualize and process the potentially very large amount of information.  Running the ``$CP_VERIFY_DIR/examples/cpVerifyBias.ipynb`` will show the final generated bias, allow each residual image to be examined along with the statistic and test results, as well as provide histograms of number of failed tests.  Further discussion of these notebooks will be available in DMTN-192 and in the ``cp_verify`` documentation.
+
+- Upon confirming that the calibration has passed all of the verification tests (or that the failed tests are permanent/uncorrectable), the calibraion is now ready to be certified to final collection::
+
+    butler certify-calibrations /repo/main u/czw/DM-28920/biasGen LATISS/calib/DM-28920 \
+         --begin-date 2020-01-01 --end-date 2050-01-01 bias
+
+.. _cp-pipe-defects:
+
+Constructing defects
+====================
+
+- As the majority of the tests failed during the bias verification were on amplifiers that had obvious defects, constructing a new list of defects is a priority.  The fact that the defects were obvious makes the input exposure selection easy: we can simply reuse the list of exposures used to construct the bias.
+- Followed by running the defect pipeline::
+
+    RERUN=20210706h
+    pipetask --long-log run -b /repo/main -p $CP_PIPE_DIR/pipelines/Latiss/findDefects.yaml \
+        -i LATISS/raw/all,u/czw/DM-28920/biasGen.20210702a,LATISS/calib \
+        -o u/czw/DM-28920/defectGen.$RERUN \
+        -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES)"  >& ./defect.$RERUN.log
+
+  - For this test, certification was delayed until the entire chain of calibrations had been generated and verified.  This illustrates the fact that the butler can access calibrations from the RUN collection that they were generated in, that no other types of that calibration are found in a collection that is searched earlier.
+- Verification of the defects::
+
+    pipetask --long-log run -b /repo/main -p $CP_VERIFY_DIR/pipelines/verifyDefect.yaml \
+        -i LATISS/raw/all,u/czw/DM-28920/defectGen.$RERUN,u/czw/DM-28920/biasGen.20210702a,LATISS/calib \
+        -o u/czw/DM-28920/verifyDefect.$RERUN \
+        -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES)" >& ./defectVerify.$RERUN.log
+
+  - By placing the ``u/czw/DM-28920/defectGen.20210706h`` collection before the ``LATISS/calib`` collection, we can use the defects just created, and not the ingested defects that mask the entirety of amplifier ``C07``.
+  - As before, there will be a ``$CP_VERIFY_DIR/examples/cpVerifyDefects.ipynb`` containing the visualization and test failure information.
+- If the validation tests pass, the new defects can be certified::
+
+    butler certify-calibrations /repo/main u/czw/DM-28920/defectGen.20210706h LATISS/calib/DM-28920 \
+         --begin-date 2020-01-01 --end-date 2050-01-01 defects
 
 .. _cp-pipe-darks:
 
