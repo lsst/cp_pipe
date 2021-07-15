@@ -203,12 +203,14 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             localDataset = solveTask.fitPtc(localDataset)
             # linDataset here is a lsst.pipe.base.Struct
             linDataset = linearityTask.run(localDataset,
+                                           dummy=[1.0],
                                            camera=FakeCamera([self.flatExp1.getDetector()]),
                                            inputDims={'detector': 0})
             linDataset = linDataset.outputLinearizer
         else:
             localDataset = solveTask.fitPtc(localDataset)
             linDataset = linearityTask.run(localDataset,
+                                           dummy=[1.0],
                                            camera=FakeCamera([self.flatExp1.getDetector()]),
                                            inputDims={'detector': 0})
             linDataset = linDataset.outputLinearizer

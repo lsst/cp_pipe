@@ -31,26 +31,37 @@ from lsstDebug import getDebugFrame
 from lsst.ip.isr import (Linearizer, IsrProvenance)
 
 from .utils import (funcPolynomial, irlsFit)
-
+from ._lookupStaticCalibration import lookupStaticCalibration
 
 __all__ = ["LinearitySolveTask", "LinearitySolveConfig", "MeasureLinearityTask"]
 
 
 class LinearitySolveConnections(pipeBase.PipelineTaskConnections,
-                                dimensions=("instrument", "detector")):
-    inputPtc = cT.Input(
-        name="inputPtc",
-        doc="Input PTC dataset.",
-        storageClass="StructuredDataDict",
-        dimensions=("instrument", "detector"),
-        multiple=False,
+                                dimensions=("instrument", "exposure", "detector")):
+    dummy = cT.Input(
+        name="raw",
+        doc="Dummy exposure.",
+        storageClass='Exposure',
+        dimensions=("instrument", "exposure", "detector"),
+        multiple=True,
+        deferLoad=True,
     )
-    camera = cT.Input(
+    camera = cT.PrerequisiteInput(
         name="camera",
         doc="Camera Geometry definition.",
         storageClass="Camera",
         dimensions=("instrument", ),
+        isCalibration=True,
+        lookupFunction=lookupStaticCalibration,
     )
+    inputPtc = cT.PrerequisiteInput(
+        name="ptc",
+        doc="Input PTC dataset.",
+        storageClass="PhotonTransferCurveDataset",
+        dimensions=("instrument", "detector"),
+        isCalibration=True,
+    )
+
     outputLinearizer = cT.Output(
         name="linearity",
         doc="Output linearity measurements.",
@@ -106,6 +117,11 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
         doc="Maximum deviation from linear solution for Poissonian noise.",
         default=5.0,
     )
+    ignorePtcMask = pexConfig.Field(
+        dtype=bool,
+        doc="Ignore the expIdMask set by the PTC solver?",
+        default=False,
+    )
 
 
 class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
@@ -129,12 +145,12 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         inputs = butlerQC.get(inputRefs)
 
         # Use the dimensions to set calib/provenance information.
-        inputs['inputDims'] = [exp.dataId.byName() for exp in inputRefs.inputPtc]
+        inputs['inputDims'] = inputRefs.inputPtc.dataId.byName()
 
         outputs = self.run(**inputs)
         butlerQC.put(outputs, outputRefs)
 
-    def run(self, inputPtc, camera, inputDims):
+    def run(self, inputPtc, dummy, camera, inputDims):
         """Fit non-linearity to PTC data, returning the correct Linearizer
         object.
 
@@ -142,6 +158,10 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         ----------
         inputPtc : `lsst.cp.pipe.PtcDataset`
             Pre-measured PTC dataset.
+        dummy : `lsst.afw.image.Exposure`
+            The exposure used to select the appropriate PTC dataset.
+            In almost all circumstances, one of the input exposures
+            used to generate the PTC dataset is the best option.
         camera : `lsst.afw.cameraGeom.Camera`
             Camera geometry.
         inputDims : `lsst.daf.butler.DataCoordinate` or `dict`
@@ -170,6 +190,9 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         As k_0 and k_1 are degenerate with bias level and gain, they
         are not included in the non-linearity correction.
         """
+        if len(dummy) == 0:
+            self.log.warn("No dummy exposure found.")
+
         detector = camera[inputDims['detector']]
         if self.config.linearityType == 'LookupTable':
             table = np.zeros((len(detector), self.config.maxLookupTableAdu), dtype=np.float32)
@@ -188,11 +211,35 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
 
         for i, amp in enumerate(detector):
             ampName = amp.getName()
-            if (len(inputPtc.expIdMask[ampName]) == 0):
+            if ampName in inputPtc.badAmps:
+                nEntries = 1
+                pEntries = 1
+                if self.config.linearityType in ['Polynomial']:
+                    nEntries = fitOrder + 1
+                    pEntries = fitOrder + 1
+                elif self.config.linearityType in ['Spline']:
+                    nEntries = fitOrder * 2
+                elif self.config.linearityType in ['Squared', 'None']:
+                    nEntries = 1
+                    pEntries = fitOrder + 1
+                elif self.config.linearityType in ['LookupTable']:
+                    nEntries = 2
+                    pEntries = fitOrder + 1
+
+                linearizer.linearityType[ampName] = "None"
+                linearizer.linearityCoeffs[ampName] = np.zeros(nEntries)
+                linearizer.linearityBBox[ampName] = amp.getBBox()
+                linearizer.fitParams[ampName] = np.zeros(pEntries)
+                linearizer.fitParamsErr[ampName] = np.zeros(pEntries)
+                linearizer.fitChiSq[ampName] = np.nan
+                self.log.warn("Amp %s has no usable PTC information.  Skipping!", ampName)
+                continue
+
+            if (len(inputPtc.expIdMask[ampName]) == 0) or self.config.ignorePtcMask:
                 self.log.warn(f"Mask not found for {ampName} in non-linearity fit. Using all points.")
                 mask = np.repeat(True, len(inputPtc.expIdMask[ampName]))
             else:
-                mask = inputPtc.expIdMask[ampName]
+                mask = np.array(inputPtc.expIdMask[ampName], dtype=bool)
 
             inputAbscissa = np.array(inputPtc.rawExpTimes[ampName])[mask]
             inputOrdinate = np.array(inputPtc.rawMeans[ampName])[mask]

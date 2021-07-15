@@ -1,0 +1,11 @@
+description: cp_pipe linearity calibration construction.
+instrument: lsst.obs.lsst.Latiss
+imports:
+  - location: $CP_PIPE_DIR/pipelines/cpLinearitySolve.yaml
+tasks:
+  linearitySolve:
+    class: lsst.cp.pipe.LinearitySolveTask
+    config:
+      linearityType: Spline
+      splineKnots: 10
+      maxLinearAdu: 120000
