@@ -37,6 +37,7 @@ __all__ = ['CalibStatsConfig', 'CalibStatsTask', 'VignetteExposure',
            'CalibCombineConfig', 'CalibCombineConnections', 'CalibCombineTask',
            'CalibCombineByFilterConfig', 'CalibCombineByFilterConnections', 'CalibCombineByFilterTask']
 
+
 # CalibStatsConfig/CalibStatsTask from pipe_base/constructCalibs.py
 class CalibStatsConfig(pexConfig.Config):
     """Parameters controlling the measurement of background statistics.
