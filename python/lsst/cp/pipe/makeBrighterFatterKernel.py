@@ -408,12 +408,12 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
                         [ 9,  8,  7,  8,  9]])
 
         Parameters
-        -----------
+        ----------
         input : `np.array`
             The square input quarter-array
 
         Returns
-        --------
+        -------
         output : `np.array`
             The full, tiled array
         """
