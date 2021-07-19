@@ -12,6 +12,7 @@ The examples presented below follow the collection naming conventions listed in 
 
 .. _cp-pipe-example-butler
 
+
 Butler requirements
 ===================
 
@@ -19,20 +20,24 @@ A gen-three butler is needed to run the ``pipetask`` commands defined by this pa
 
 .. _cp-pipe-certification
 
+
 Calibration certification
 =========================
 
-Certification of calibrations should be done after confirming that all of the ``cp_verify`` tests have passed, and any tests that still fail should be documented on the ticket.  Calibrations created as part of daily observations should be certified into a single collection per calibration type, with the validity range set to only include the day they were taken, such as::
+Certification of calibrations should be done after confirming that all of the ``cp_verify`` tests have passed, and any tests that still fail should be documented on the ticket.  Calibrations created as part of daily observations should be certified into a single collection per calibration type, with the validity range set to only include the day they were taken, such as:
+.. code:: bash
 
     butler certify-calibrations /repo/main \
         u/czw/DM-XYZ/biasGen.20210715 LATISS/calib/dailyBiases \
         --begin_date 2021-07-15 --end_date 2021-07-16 bias
 
-Longer term master calibrations should be certified into ticketed CALIBRATION collection (containing however many calibration types and date ranges that entails), that should then be chained to the instrument's recommended CALIBRATION collection.  The results of ``cp_verify`` should provide some guidance on the validity range, as additional raw exposures can be checked against the proposed calibration to identify when the verifcation tests fail.  The end date may be best set to a future date that will allow the calibration to be used until a new one supersedes it::
+Longer term master calibrations should be certified into ticketed CALIBRATION collection (containing however many calibration types and date ranges that entails), that should then be chained to the instrument's recommended CALIBRATION collection.  The results of ``cp_verify`` should provide some guidance on the validity range, as additional raw exposures can be checked against the proposed calibration to identify when the verifcation tests fail.  The end date may be best set to a future date that will allow the calibration to be used until a new one supersedes it:
+.. code:: bash
 
     butler certify-calibrations /repo/main \
         u/czw/DM-XYZ/biasGen.20210715 LATISS/calib/DM-XYZ \
         --begin_date 2021-01-01 --end_date 2050-01-01 bias
+
 
 .. _cp-pipe-readNoise:
 
@@ -41,12 +46,14 @@ Read Noise
 
 Calibration construction and verification are sensitive to the read noise value listed in the ``camera`` camera geometry definition.  Inaccurate values may trigger test failures that are spurious.  Setting the ``isr:doEmpiricalReadNoise=True`` option during the bias processing (as the bias generally has very little signal other than noise) may be necessary to bootstrap a full set of calibrations from scratch.  This option records the values measured in the log, and by analysing the results of many exposures, better estimates of the read noise can be generated.
 
+
 .. _cp-pipe-biases:
 
 Constructing biases
 ===================
 
-- Identify a set of exposures to use as inputs from the repository::
+- Identify a set of exposures to use as inputs from the repository:
+.. code:: bash
 
     butler query-dimension-records /repo/main exposure \
         --where "instrument='LATISS' AND exposure.observation_type='bias' \
@@ -54,7 +61,10 @@ Constructing biases
                  AND exposure.exposure_time=0.0 AND exposure.dark_time < 0.1 \
                  AND exposure.day_obs > 20210101"
 
-  - This returns a large number of potential exposures, with some dates dominating the counts.  An initial semi-random sample of 50 exposures was used as input for the master bias.  These exposures were selected to attempt to have the widest possible date coverage, as well as preventing any one date from having a majority of the exposures::
+..
+
+  - This returns a large number of potential exposures, with some dates dominating the counts.  An initial semi-random sample of 50 exposures was used as input for the master bias.  These exposures were selected to attempt to have the widest possible date coverage, as well as preventing any one date from having a majority of the exposures:
+.. code:: bash
 
     EXPOSURES='2021012000019, 2021012000020, 2021012000032, 2021012000055, 2021012000061, \
                2021012100060, 2021012100079, 2021012100134, 2021012100177, 2021012100188, \
@@ -67,7 +77,10 @@ Constructing biases
                2021031100041, 2021031100045, 2021031100048, 2021060900011, 2021060900026, \
                2021060900038, 2021060900039, 2021060900042, 2021060900048, 2021060900049'
 
-  - This sample was later cleaned and supplemented with additional exposures after running into failures during verification, as the lack of a set of defects meant that the cosmic ray rejection in ``cp_verify`` would raise due to triggering on the unmasked defect pixels.  The final sample used was::
+..
+
+  - This sample was later cleaned and supplemented with additional exposures after running into failures during verification, as the lack of a set of defects meant that the cosmic ray rejection in ``cp_verify`` would raise due to triggering on the unmasked defect pixels.  The final sample used was:
+.. code:: bash
 
     EXPOSURES='2021012000020, 2021012000032, 2021012000055, 2021012000061, 2021012100060, \
                2021012100134, 2021012100188, 2021012100229, 2021012700032, 2021012700037, \
@@ -82,7 +95,8 @@ Constructing biases
                2021012700701, 2021020100072, 2021020100329, 2021020100375, 2021030500005, \
                2021030500026, 2021030500050, 2021031100004, 2021031100005, 2021031100010'
 
-- Run the bias pipeline on these exposures.  This pipeline is simple, with a short ISR step that only applies overscan correction and assembles the exposures, before passing them to a combine step that finds the clipped per-pixel mean for the output bias.  Only the raw and curated calibration collections are needed as inputs::
+- Run the bias pipeline on these exposures.  This pipeline is simple, with a short ISR step that only applies overscan correction and assembles the exposures, before passing them to a combine step that finds the clipped per-pixel mean for the output bias.  Only the raw and curated calibration collections are needed as inputs:
+.. code:: bash
 
     RERUN=20210702a
     pipetask --long-log run -b /repo/main -p $CP_PIPE_DIR/pipelines/Latiss/cpBias.yaml \
@@ -90,24 +104,31 @@ Constructing biases
          -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES) \
          -c isr:doDefect=False -c isr:doEmpiricalReadNoise=True >& ./bias.$RERUN.log
 
+..
+
   - Passing the ``--long-log`` and saving the output to a logfile are recommended, as it is easier to debug issues with that information.
   - No good defect set exists, so the ``-c isr:doDefect=False`` option was disabled.  This should only be necessary when starting calibrations from scratch.
   - As discussed above, the nominal read noise values are incorrect (especially for amplifier ``C07``), and so the ``-c isr:doEmpiricalReadNoise=True`` was enabled to prevent this amplifier from being thrown out.
 
-- Validate the input exposures with ``cp_verify``.  Additional exposures could be validated to firmly establish a date range that this bias should be used::
+- Validate the input exposures with ``cp_verify``.  Additional exposures could be validated to firmly establish a date range that this bias should be used
+.. code:: bash
 
     pipetask run -b /repo/main -p $CP_VERIFY_DIR/pipelines/Latiss/verifyBias.yaml \
          -i u/czw/DM-28920/biasGen.$RERUN,LATISS/raw/all,LATISS/calib \
          -o u/czw/DM-28920/verifyBias.$RERUN \
           -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES)
 
+..
+
   - This pipeline produces statistics and test results for every ``{exposure, detector}`` pair in the input data, and then collates that data to produce per-exposure summaries (and optionally addition exposure-level statistics and tests), and finally into one final per-run summary.
   - As part of DM-28920, ``cp_verify`` is being augmented with a series of Jupyter notebooks that are designed to help visualize and process the potentially very large amount of information.  Running the ``$CP_VERIFY_DIR/examples/cpVerifyBias.ipynb`` will show the final generated bias, allow each residual image to be examined along with the statistic and test results, as well as provide histograms of number of failed tests.  Further discussion of these notebooks will be available in DMTN-192 and in the ``cp_verify`` documentation.
 
-- Upon confirming that the calibration has passed all of the verification tests (or that the failed tests are permanent/uncorrectable), the calibraion is now ready to be certified to final collection::
+- Upon confirming that the calibration has passed all of the verification tests (or that the failed tests are permanent/uncorrectable), the calibraion is now ready to be certified to final collection:
+.. code:: bash
 
     butler certify-calibrations /repo/main u/czw/DM-28920/biasGen LATISS/calib/DM-28920 \
          --begin-date 2020-01-01 --end-date 2050-01-01 bias
+
 
 .. _cp-pipe-defects:
 
@@ -115,7 +136,8 @@ Constructing defects
 ====================
 
 - As the majority of the tests failed during the bias verification were on amplifiers that had obvious defects, constructing a new list of defects is a priority.  The fact that the defects were obvious makes the input exposure selection easy: we can simply reuse the list of exposures used to construct the bias.
-- Followed by running the defect pipeline::
+- Followed by running the defect pipeline:
+.. code:: bash
 
     RERUN=20210706h
     pipetask --long-log run -b /repo/main -p $CP_PIPE_DIR/pipelines/Latiss/findDefects.yaml \
@@ -123,48 +145,98 @@ Constructing defects
         -o u/czw/DM-28920/defectGen.$RERUN \
         -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES)"  >& ./defect.$RERUN.log
 
+..
+
   - For this test, certification was delayed until the entire chain of calibrations had been generated and verified.  This illustrates the fact that the butler can access calibrations from the RUN collection that they were generated in, that no other types of that calibration are found in a collection that is searched earlier.
-- Verification of the defects::
+- Verification of the defects:
+.. code:: bash
 
     pipetask --long-log run -b /repo/main -p $CP_VERIFY_DIR/pipelines/verifyDefect.yaml \
         -i LATISS/raw/all,u/czw/DM-28920/defectGen.$RERUN,u/czw/DM-28920/biasGen.20210702a,LATISS/calib \
         -o u/czw/DM-28920/verifyDefect.$RERUN \
         -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES)" >& ./defectVerify.$RERUN.log
 
+..
+
   - By placing the ``u/czw/DM-28920/defectGen.20210706h`` collection before the ``LATISS/calib`` collection, we can use the defects just created, and not the ingested defects that mask the entirety of amplifier ``C07``.
   - As before, there will be a ``$CP_VERIFY_DIR/examples/cpVerifyDefects.ipynb`` containing the visualization and test failure information.
-- If the validation tests pass, the new defects can be certified::
+  - It is also possible to rerun the bias verification, and confirm that these new defects improve the tests success.  That was the case here, with all failures on ``C04`` being resolved as well as some of the failures on ``C11``:
+.. code:: bash
+
+    pipetask --long-log run -b /repo/main -p $CP_VERIFY_DIR/pipelines/verifyBias.yaml \
+        -i LATISS/raw/all,u/czw/DM-28920/defectGen.20210702e,u/czw/DM-28920/biasGen.20210702a,LATISS/calib \
+        -o u/czw/DM-28920/verifyBias.$RERUN \
+        -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES)" \
+        -c verifyBiasApply:doDefect=True >& ./biasVerify.$RERUN.log
+
+- If the validation tests pass, the new defects can be certified:
+.. code:: bash
 
     butler certify-calibrations /repo/main u/czw/DM-28920/defectGen.20210706h LATISS/calib/DM-28920 \
          --begin-date 2020-01-01 --end-date 2050-01-01 defects
+
 
 .. _cp-pipe-darks:
 
 Constructing darks
 ==================
 
-- Identify the inputs:
+- As with biases, first identify the inputs:
+.. code:: bash
 
-  - ``butler query-dimension-records /repo/main exposure --where "instrument='LATISS' AND exposure.observation_type='dark' AND exposure.exposure_time > 0.0 AND exposure.dark_time > 0.0 AND exposure.day_obs > 20210101"``
-  - Select 100 of these exposures to match the suggestion in DMTN-101.
+  butler query-dimension-records /repo/main exposure \
+      --where "instrument='LATISS' AND exposure.observation_type='dark' \
+              AND exposure.exposure_time > 0.0 AND exposure.dark_time > 0.0 \
+              AND exposure.day_obs > 20210101"
 
-    - ``EXPOSURES='2021011900151, 2021011900152, 2021011900153, 2021011900154, 2021011900155, 2021011900156, 2021011900157, 2021011900158, 2021011900159, 2021011900160, 2021012100668, 2021012100670, 2021012100671, 2021012100672, 2021012100673, 2021012100674, 2021012100676, 2021012100677, 2021012100685, 2021012600022, 2021012600024, 2021012600026, 2021012600028, 2021012600029, 2021012600051, 2021012600052, 2021012600057, 2021012600060, 2021021700076, 2021021700077, 2021021700078, 2021021700081, 2021021700082, 2021021700084, 2021021700085, 2021021800058, 2021021800060, 2021021800061, 2021021800063, 2021021800065, 2021021800066, 2021030300006, 2021030300007, 2021030300010, 2021030300018, 2021030300028, 2021030300032, 2021030300048, 2021030300054, 2021030300057, 2021030300058, 2021030300066, 2021030800001, 2021030800003, 2021030800004, 2021030800005, 2021030800006, 2021030800007, 2021030900052, 2021030900053, 2021030900054, 2021030900058, 2021030900060, 2021030900061, 2021031000052, 2021031000053, 2021031000054, 2021031000055, 2021031000056, 2021031000057, 2021031000058, 2021031000061, 2021031100052, 2021031100054, 2021031100055, 2021031100056, 2021031100057, 2021031100058, 2021031100059, 2021031100060, 2021032200013, 2021032200014, 2021032200016, 2021032200021, 2021032200024, 2021032200028, 2021032200029, 2021032200032, 2021032200034, 2021032300024, 2021032300032, 2021032300049, 2021032300064, 2021032300087, 2021032300115, 2021032300125, 2021032300126, 2021032300136, 2021032300149, 2021032300167'``
+..
 
-- Run the dark pipeline on these exposures.  The ISR step here applies the bias in addition to the overscan and assembly, cosmic rays are rejected, the images are scaled by the ``dark_time``, and the clipped per-pixel mean is written to the output bias.  The previously generated bias CALIBRATION collection is also needed now.
+  - From this sample, 70 exposures with exposure times of ``{10, 30, 48, 60}`` seconds were used:
+.. code:: bash
 
-  - ``pipetask run -b /repo/main -p $CP_PIPE_DIR/pipelines/LATISS/cpDark.yaml -i LATISS/raw/all,LATISS/calib,u/czw/DM-28920/calib -o u/czw/DM-28920/darkGen -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES)``
+    EXPOSURES='2021021700078, 2021021700080, 2021021800057, 2021030900054, 2021030900060, \
+               2021031000052, 2021031000054, 2021031100053, 2021031100058, 2021032300224, \
+               2021032300229, 2021052100012, 2021052100016, 2021052400011, 2021052400012, \
+               2021052500056, 2021052500057, 2021060800055, 2021060900070, 2021061000059, \
+               2021011900151, 2021011900152, 2021011900153, 2021011900154, 2021011900155, \
+               2021011900156, 2021011900157, 2021011900158, 2021011900159, 2021011900160, \
+               2021012100668, 2021012100669, 2021012100670, 2021012100671, 2021012100672, \
+               2021012100673, 2021012100674, 2021012100675, 2021012100676, 2021012100677, \
+               2021012600051, 2021012600052, 2021012600053, 2021012600054, 2021012600055, \
+               2021012600056, 2021012600057, 2021012600058, 2021012600059, 2021012600060, \
+               2021012600022, 2021012600023, 2021012600027, 2021012600028, 2021030300021, \
+               2021030300022, 2021030300024, 2021030300056, 2021030300079, 2021030800002, \
+               2021030800003, 2021030800006, 2021032200011, 2021032200021, 2021032200026, \
+               2021032200028, 2021032200031, 2021032300033, 2021032300148, 2021032300171'
 
-- Certify for verification.
+- Run the dark pipeline on these exposures.  The ISR step here applies the bias in addition to the overscan and assembly, cosmic rays are rejected, the images are scaled by the exposure ``dark_time``, and the clipped per-pixel mean is written to the output bias.  The previously generated bias and defect collections are also needed now:
+.. code:: bash
 
-  - ``butler certify-calibrations /repo/main u/czw/DM-28920/darkGen u/czw/DM-28920/darkTemp --begin-date 1980-01-01 --end-date 2050-01-01 dark``
+    RERUN=20210707a
+    pipetask --long-log run -b /repo/main -p $CP_PIPE_DIR/pipelines/LATISS/cpDark.yaml \
+        -i LATISS/raw/all,u/czw/DM-28920/defectGen.20210706h,u/czw/DM-28920/biasGen.20210702a,LATISS/calib \
+        -o u/czw/DM-28920/darkGen
+        -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES) \
+        >& dark.$RERUN.log
 
-- Verify:
+- Run ``cp_verify``:
+.. code:: bash
 
-  - ``pipetask run -b /repo/main -p $CP_PIPE_DIR/pipelines/LATISS/verifyDark.yaml -i LATISS/raw/all,LATISS/calib,u/czw/DM-28920/calib,u/czw/DM-28920/darkTemp -o u/czw/DM-28920/verifyDark -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES)``
+    pipetask --long-log run -b /repo/main -p $CP_VERIFY_DIR/pipelines/VerifyDark.yaml \
+        -i LATISS/raw/all,u/czw/DM-28920/darkGen.$RERUN,u/czw/DM-28920/defectGen.20210706h,u/czw/DM-28920/biasGen.20210702a,LATISS/calib \
+        -o u/czw/DM-28920/verifyDark.$RERUN -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES)" \
+        -j 4 >& ./darkVerify.$RERUN.log
 
-- Certify to final collection.
+..
 
-  - ``butler certify-calibrations /repo/main u/czw/DM-28920/darkGen u/czw/DM-28920/calib --begin-date 2021-01-01 --end-date 2050-01-01 dark``
+  - The visualization notebook is ``$CP_VERIFY_DIR/examples/cpVerifyDark.ipynb``.
+
+- Certify to final collection:
+.. code:: bash
+
+    butler certify-calibrations /repo/main u/czw/DM-28920/darkGen.20210707a LATISS/calib/DM-28920 \
+        --begin-date 2020-01-01 --end-date 2050-01-01 dark
+
 
 .. _cp-pipe-flats:
 
@@ -172,42 +244,277 @@ Constructing flats
 ==================
 
 - Identify the inputs:
+.. code:: bash
 
-  - ``butler query-dimension-records /repo/main exposure --where "instrument='LATISS' AND exposure.observation_type='flat' AND exposure.exposure_time > 0.0 AND exposure.day_obs > 20210101"``
-  - This needs to be split into two groups, as we have two filters, ``empty~empty`` and ``RG610~empty``.
-  - ``EXPOSURES_empty='2021011900083, 2021011900098, 2021011900117, 2021012100565, 2021012100606, 2021012100614, 2021021600116, 2021021600117, 2021021600140, 2021021700102, 2021021700103, 2021021700128, 2021021800104, 2021021800120, 2021021800166, 2021030900077, 2021030900095, 2021030900100, 2021031000077, 2021031000088, 2021031000097, 2021031100080, 2021031100087, 2021032300251, 2021032300265'``
-  - ``EXPOSURES_RG610='2021011900132, 2021011900135, 2021011900136, 2021011900139, 2021021600102, 2021021600104, 2021021600105, 2021021700088, 2021021700093, 2021021700094, 2021021800067, 2021021800070, 2021021800118, 2021021800167, 2021030900062, 2021030900063, 2021030900069, 2021031000062, 2021031000070, 2021031100064, 2021031100066, 2021031100069, 2021032300234, 2021032300240, 2021032300241'``
+    butler query-dimension-records /repo/main exposure \
+        --where "instrument='LATISS' AND exposure.observation_type='flat' \
+                 AND exposure.exposure_time > 0.0 AND exposure.day_obs > 20210101"
 
-- Run the appropriate flat pipeline on these exposures.  Again, ISR adds dark correction, but the scaling for flats is more complicated.  LATISS is a single chip device, and so can use the `cpFlatSingleChip.yaml` pipeline definition.  This scales each input exposure by the total flux before running the clipped mean stacking.
-  However, for cameras that have multiple devices, the `cpFlat.yaml` pipeline adds an additional full focal plane scaling calculation that attempts to isolate the chip-to-chip differences along with the possible exposure-to-exposure illumination differences.
-  Finally, for cameras with vignetting, there is a ``doVignette`` option that needs to be set so that the vignetted region (defined by the ``VignettePolygon`` set by ``lsst.ip.isr.IsrTask`) is properly excluded from the flux calculations.
+..
 
-  - ``pipetask run -b /repo/main -p $CP_PIPE_DIR/pipelines/LATISS/cpFlat.yaml -i LATISS/raw/all,LATISS/calib,u/czw/DM-28920/calib -o u/czw/DM-28920/flatGen -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES)``
+  - This needs to be split into two groups, as we have two filters, ``RG610~empty`` and ``empty~empty``.
+.. code:: bash
 
-- Certify for verification.
+    EXPOSURES_empty='2021011900091, 2021011900092, 2021011900093, 2021011900094, 2021011900095, \
+                     2021011900096, 2021011900097, 2021011900098, 2021011900099, 2021011900100, \
+                     2021011900101, 2021011900102, 2021011900103, 2021011900104, 2021011900105, \
+                     2021011900106, 2021011900107, 2021011900108, 2021011900109, 2021011900110, \
+                     2021011900111, 2021011900112, 2021011900113, 2021011900114, 2021011900115, \
+                     2021011900116, 2021011900117, 2021011900118, 2021011900119, 2021011900120, \
+                     2021011900121, 2021011900122, 2021011900123, 2021011900124, 2021011900125, \
+                     2021011900126, 2021011900127, 2021011900128, 2021011900129, 2021011900130'
 
-  - ``butler certify-calibrations /repo/main u/czw/DM-28920/flatGen u/czw/DM-28920/flatTemp --begin-date 1980-01-01 --end-date 2050-01-01 flat``
+    EXPOSURES_RG610='2021052500077, 2021052500078, 2021052500079, 2021052500080, 2021052500081, \
+                     2021052500082, 2021052500083, 2021052500084, 2021052500085, 2021052500086, \
+                     2021052500087, 2021052500088, 2021052500089, 2021052500090, 2021052500091, \
+                     2021052500092, 2021052500093, 2021052500094, 2021052500095, 2021052500096, \
+                     2021052500097, 2021052500098, 2021052500099, 2021052500100, 2021052500101, \
+                     2021052500102, 2021052500103, 2021052500104, 2021052500105, 2021052500106, \
+                     2021052500107, 2021052500108, 2021052500109, 2021052500110, 2021052500111, \
+                     2021052500112, 2021052500113, 2021052500114, 2021052500115, 2021052500116, \
+                     2021052500117, 2021052500118, 2021052500119'
+
+    EXCLUDED_RG610= '2021052500120, 2021052500121, 2021052500122, 2021052500123, 2021052500124, \
+                     2021052500125, 2021052500126, 2021052500127, 2021052500128, 2021052500129, \
+                     2021052500130, 2021052500131, 2021052500132, 2021052500133, 2021052500134, \
+                     2021052500135, 2021052500136'
+
+    VERIFY_EXP_empty='2021011900083, 2021011900088'
+
+    VERIFY_EXP_RG610='2021060800082, 2021060800083, 2021060800084, 2021060800085, 2021060800086, \
+                      2021060800087, 2021060800088, 2021060800089, 2021060800090, 2021060800091, \
+                      2021060800092, 2021060800093, 2021060800094, 2021060800095, 2021060800096, \
+                      2021060800097, 2021060800098, 2021060800099, 2021060800100, 2021060800101, \
+                      2021060800102, 2021060800103, 2021060800104, 2021060800105, 2021060800106, \
+                      2021060800107, 2021060800108, 2021060800109, 2021060800110, 2021060800111, \
+                      2021060800112, 2021060800113, 2021060800114, 2021060800115, 2021060800116, \
+                      2021060800117, 2021060800118, 2021060800119, 2021060800120, 2021060800121, \
+                      2021060800122, 2021060800123, 2021060800124, 2021060800125, 2021060800126, \
+                      2021060800127, 2021060800128, 2021060800129, 2021060800130, 2021060800131, \
+                      2021060800132, 2021060800133, 2021060800134, 2021060800135, 2021060800136, \
+                      2021060800137, 2021060800138, 2021060800139, 2021060800140, 2021060800141'
+
+..
+
+    - There were PTC ramps (a sequence of flat field exposures, taken in pairs at a particular exposure time, with a steadily increasing exposure time) available for both filters, from 2021-01-19 for ``empty~empty``, and from 2021-05-25 and 2021-06-08 for ``RG610~empty``.  These provide a good set of exposure times and flux values for inputs.
+    - The second ramp for ``RG610~empty`` provides a useful inputs to do independent verification of the final flat.  A similar dataset was not available for ``empty~empty``, so a pair of 2 second exposures were selected as semi-independent checks.
+    - The ``EXCLUDED_RG610`` exposures were part of the original PTC ramp, but based on the flat residuals and subsequent PTC measurements, were excluded for being likely saturated.
+
+- Run the appropriate flat pipeline on these exposures.  Again, ISR adds dark correction, but the scaling for flats is more complicated (see `lsst.cp.pipe.CpFlatNormalizationTask` for details).  Each input exposure is scaled by the appropriate normalization factor before running a clipped mean stacking is used to combine the inputs.
+.. code:: bash
+
+    RERUN=20210712a
+    pipetask --long-log run -b /repo/main -p $CP_PIPE_DIR/pipelines/Latiss/cpFlat.yaml \
+        -i LATISS/raw/all,u/czw/DM-28920/defectGen.20210706h,u/czw/DM-28920/darkGen.20210707a,u/czw/DM-28920/biasGen.20210702a,LATISS/calib \
+        -o u/czw/DM-28920/flatGen.$RERUN -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES_RG610)" \
+        -j 4 >& ./flat.$RERUN.log
+
+    RERUN=20210712b
+    pipetask --long-log run -b /repo/main -p $CP_PIPE_DIR/pipelines/Latiss/cpFlat.yaml \
+        -i LATISS/raw/all,u/czw/DM-28920/defectGen.20210706h,u/czw/DM-28920/darkGen.20210707a,u/czw/DM-28920/biasGen.20210702a,LATISS/calib \
+        -o u/czw/DM-28920/flatGen.$RERUN -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES_empty)" \
+        -j 4 >& ./flat.$RERUN.log
+
+..
+
+  - For cameras with vignetting, there is a ``CpFlatMeasureTaskConfig.doVignette`` option that needs to be set so that the vignetted region (defined by the ``VignettePolygon`` set by `lsst.ip.isr.IsrTask`) is properly excluded from the flux calculations.
 
 - Verify:
+.. code:: bash
 
-  - ``pipetask run -b /repo/main -p $CP_PIPE_DIR/pipelines/LATISS/verifyFlat.yaml -i LATISS/raw/all,LATISS/calib,u/czw/DM-28920/calib,u/czw/DM-28920/flatTemp -o u/czw/DM-28920/verifyFlat -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES)``
+    pipetask run -b /repo/main -p $CP_VERIFY_DIR/pipelines/Latiss/verifyFlat.yaml \
+        -i LATISS/raw/all,u/czw/DM-28920/defectGen.20210706h,u/czw/DM-28920/flatGen.20210712a,u/czw/DM-28920/darkGen.20210707a,u/czw/DM-28920/biasGen.20210702a,LATISS/calib
+        -o u/czw/DM-28920/verifyFlat.20210712a \
+        -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES_RG610, $VERIFY_EXP_RG610) \
+        -j 4 >& ./flatVerify.20210712a.log
 
-- Certify to final collection.
+    pipetask run -b /repo/main -p $CP_VERIFY_DIR/pipelines/Latiss/verifyFlat.yaml \
+        -i LATISS/raw/all,u/czw/DM-28920/defectGen.20210706h,u/czw/DM-28920/flatGen.20210712b,u/czw/DM-28920/darkGen.20210707a,u/czw/DM-28920/biasGen.20210702a,LATISS/calib
+        -o u/czw/DM-28920/verifyFlat.20210712a \
+        -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES_empty, $VERIFY_EXP_empty) \
+        -j 4 >& ./flatVerify.20210712b.log
 
-  - ``butler certify-calibrations /repo/main u/czw/DM-28920/flatGen u/czw/DM-28920/calib --begin-date 2021-01-01 --end-date 2050-01-01 flat``
+..
+
+  - The visualization notebook is ``$CP_VERIFY_DIR/examples/cpVerifyFlat.ipynb``.
+  - The verification of the flat fields showed that the largest residuals (and therefore failed tests) occurred with the highest flux inputs, as well as certain amplifiers from the second PTC ramp.  As discussed above, the highest flux inputs were likely saturated, and were put into the ``EXCLUDED_RG610`` list.  The test failures with the second PTC ramp were most obvious around the "donut" features, which are likely caused by out-of-focus images of dust.  The residuals suggest these dust particles are not stable, and that their movement changes the flat response.
+
+- Certify to final collection:
+.. code:: bash
+
+    butler certify-calibrations /repo/main u/czw/DM-28920/flatGen LATISS/calib/DM-28920 \
+         --begin-date 2020-01-01 --end-date 2050-01-01 flat
+
+
+.. _cp-pipe-defects2:
+
+Remeasuring the defects
+=======================
+
+With flat field calibrations constructed, we can now reliably measure defects on flat exposures, without the flat signal skewing the measurement statistics.  The steps are nearly identical to the first pass of defects, with only minor changes to the pipeline definitions.
+
+- Identify exposures to use.  We can use the ``EXPOSURES_RG610`` flat data, in addition to the original bias data used previously.
+
+- Run defect generation
+.. code:: bash
+
+    RERUN=20210712a
+    pipetask --long-log run -b /repo/main -p $CP_PIPE_DIR/pipelines/Latiss/findDefectsPostFlat.yaml \
+        -i LATISS/raw/all,u/czw/DM-28920/defectGen.20210706h,u/czw/DM-28920/flatGen.20210712b,u/czw/DM-28920/flatGen.20210712a,u/czw/DM-28920/darkGen.20210707a,u/czw/DM-28920/biasGen.20210702a,LATISS/calib \
+        -o u/czw/DM-28920/defectGen.$RERUN \
+        -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES, $EXPOSURES2)" \
+        -j 4  >& ./defectPostFlat.$RERUN.log
+
+- Validate the new defect set
+.. code:: bash
+
+    pipetask --long-log run -b /repo/main -p $CP_VERIFY_DIR/pipelines/VerifyDefectPostFlat.yaml \
+        -i LATISS/raw/all,u/czw/DM-28920/defectGen.$RERUN,u/czw/DM-28920/flatGen.20210712b,u/czw/DM-28920/flatGen.20210712a,u/czw/DM-28920/darkGen.20210707a,u/czw/DM-28920/biasGen.20210702a,LATISS/calib \
+        -o u/czw/DM-28920/verifyDefect.$RERUN \
+        -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES, $EXPOSURES2)" \
+        -j 4  >& ./defectVerify.$RERUN.log
+
+..
+
+  - The same verification notebook can be used as before: ``CP_VERIFY_DIR/examples/cpVerifyDefects.ipynb``
+
+
+.. _cp-pipe-ptc:
+
+Measuring the photon transfer curve
+===================================
+
+- The PTC is generated from a sequence of paired flats, so care should be taken to ensure that a planned sequence of flats, with a ramp in exposure time (and therefore a ramp in received flux), is used as the input.  In the flat data above, we've identified two PTC runs in ``RG610~empty``.  The following commands will run both, as a check that the gains are consistent from the two measurements.
+- Generate the two PTC results
+.. code:: bash
+
+    RERUN=20210712a
+    pipetask --long-log run -b /repo/main -p $CP_PIPE_DIR/pipelines/measurePhotonTransferCurve.yaml \
+        -i LATISS/raw/all,u/czw/DM-28920/defectGen.20210712a,u/czw/DM-28920/flatGen.20210712b,u/czw/DM-28920/darkGen.20210707a,u/czw/DM-28920/biasGen.20210702a,LATISS/calib \
+        -o u/czw/DM-28920/ptcGen.$RERUN -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES_RG610, $EXCLUDED_RG610)" \
+        -c isr:doCrosstalk=False -j 4 >& ./ptc.$RERUN.log
+
+    RERUN=20210712b
+    pipetask --long-log run -b /repo/main -p $CP_PIPE_DIR/pipelines/measurePhotonTransferCurve.yaml \
+        -i LATISS/raw/all,u/czw/DM-28920/defectGen.20210712a,u/czw/DM-28920/flatGen.20210712b,u/czw/DM-28920/darkGen.20210707a,u/czw/DM-28920/biasGen.20210702a,LATISS/calib \
+        -o u/czw/DM-28920/ptcGen.$RERUN -d "instrument='LATISS' AND detector=0 AND exposure IN ($VERIFY_EXP_RG610)" \
+        -c isr:doCrosstalk=False -j 4 >& ./ptc.$RERUN.log
+
+..
+
+- Verification is not yet implemented for PTC (TODO: DM-30171), but there is a short visualization notebook in ``CP_VERIFY_DIR/examples/cpPtc.ipynb``
+- Certification of the PTC datasets is necessary (TODO: check this is true?) for the tasks that rely on the PTC output to correctly find the datasets.
+.. code:: bash
+
+    butler certify-calibrations /repo/main u/czw/DM-28920/ptcGen.20210712a u/czw/DM-28920/tempPtcA \
+        --begin-date 2019-01-01 --end-date 2050-01-01 ptc
+    butler certify-calibrations /repo/main u/czw/DM-28920/ptcGen.20210712b u/czw/DM-28920/tempPtcB \
+        --begin-date 2019-01-01 --end-date 2050-01-01 ptc
+
+
+.. _cp-pipe-linearity:
+
+Constructing a linearity correction
+===================================
+
+- The linearity measurement uses the outputs measured by the photon transfer curve as its inputs.  A "dummy exposure" is necessary, however, to ensure that the butler can identify the PTC dataset to use.  The standard option is to select the first exposure from the PTC exposure lists.
+.. code:: bash
+
+    EXPOSURES_A='2021052500077'
+    EXPOSURES_B='2021060800082'
+
+- Run the linearity generation tasks:
+.. code:: bash
+
+    RERUN=20210713a
+    pipetask --long-log run -b /repo/main -p $CP_PIPE_DIR/pipelines/cpLinearitySolve.yaml \
+        -i u/czw/DM-28920/tempPtcA,LATISS/calib,LATISS/raw/all \
+        -o u/czw/DM-28920/linearityGen.$RERUN \
+        -d "instrument='LATISS' AND exposure=$EXPOSURES_A AND detector = 0" \
+        -c linearitySolve:ignorePtcMask=True \
+        >& ./linearity.$RERUN.log
+
+    RERUN=20210713b
+    pipetask --long-log run -b /repo/main -p $CP_PIPE_DIR/pipelines/cpLinearitySolve.yaml \
+        -i u/czw/DM-28920/tempPtcB,LATISS/calibm,LATISS/raw/all \
+        -o u/czw/DM-28920/linearityGen.$RERUN \
+        -d "instrument='LATISS' AND exposure=$EXPOSURES_B AND detector = 0" \
+        -c linearitySolve:ignorePtcMask=True \
+        >& ./linearity.$RERUN.log
+
+..
+
+  - The ``linearitySolve:ignorePtcMask=True`` option allows all points masked by the PTC code to be accepted, although the ``minLinearAdu`` and ``maxLinearAdu`` config options will still restrict the range that is considered for linearity.
+- Verification is not yet implemented for linearity (TODO: DM-30174), but there is a short visualization notebook in ``CP_VERIFY_DIR/examples/cpVerifyLinearity.ipynb``
+- Certification is as with the other calibration types
+.. code:: bash
+
+    butler certify-calibrations /repo/main u/czw/DM-28920/linearityGen LATISS/calib/DM-28920 \
+         --begin-date 2021-01-01 --end-date 2050-01-01 linearity``
+
+
+.. _cp-pipe-bfk:
+
+Constructing a brighter-fatter correction
+=========================================
+
+- The brighter-fatter kernel is also generated from the photon transfer curve, and so the commands are nearly identical to the ones for the linearity.
+- Generate the kernels:
+.. code:: bash
+
+    RERUN=20210714a
+    pipetask --long-log run -b /repo/main -p $CP_PIPE_DIR/pipelines/Latiss/cpBfkSolve.yaml \
+        -i u/czw/DM-28920/tempPtcA,LATISS/calib,LATISS/raw/all \
+        -o u/czw/DM-28920/bfkGen.$RERUN \
+        -d "instrument='LATISS' AND exposure=$EXPOSURES_A AND detector = 0" \
+        >& ./bfk.$RERUN.log
+
+    RERUN=20210714b
+    pipetask --long-log run -b /repo/main -p $CP_PIPE_DIR/pipelines/Latiss/cpBfkSolve.yaml \
+        -i u/czw/DM-28920/tempPtcB,LATISS/calib,LATISS/raw/all \
+        -o u/czw/DM-28920/bfkGen.$RERUN \
+        -d "instrument='LATISS' AND exposure=$EXPOSURES_B AND detector = 0" \
+        >& ./ptc.$RERUN.log
+
+- Verification is not yet implemented for brighter-fatter kernels (TODO: DM-30172).
+- Certification:
+.. code:: bash
+
+    butler certify-calibrations /repo/main u/czw/DM-28920/flatGen.20210623 LATISS/calib/DM-28920 \
+        --begin-date 2020-01-01 --end-date 2050-01-01 bfk
+
 
 .. _cp-pipe-fringes:
 
 Constructing fringes
 ====================
 
-No fringe data currently is available for LATISS, but the queries and commands would be the same, operating on science observations.
+- No fringe data is currently available for LATISS, but the queries and commands would be the same as have been used for previous calibrations, with the input exposures coming from science observations.
+.. code:: bash
 
-  - ``butler query-dimension-records /repo/main exposure --where "instrument='LATISS' AND exposure.observation_type='science' AND exposure.exposure_time > 0.0 AND exposure.day_obs > 20210101"``
-  - ``pipetask run -b /repo/main -p $CP_PIPE_DIR/pipelines/LATISS/cpFringe.yaml -i LATISS/raw/all,LATISS/calib,u/czw/DM-28920/calib -o u/czw/DM-28920/fringeGen -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES)``
-  - ``butler certify-calibrations /repo/main u/czw/DM-28920/fringeGen u/czw/DM-28920/fringeTemp --begin-date 1980-01-01 --end-date 2050-01-01 fringe``
-  - ``pipetask run -b /repo/main -p $CP_PIPE_DIR/pipelines/LATISS/verifyFringe.yaml -i LATISS/raw/all,LATISS/calib,u/czw/DM-28920/calib,u/czw/DM-28920/fringeTemp -o u/czw/DM-28920/verifyFringe -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES)``
-  - ``butler certify-calibrations /repo/main u/czw/DM-28920/fringeGen u/czw/DM-28920/calib --begin-date 2021-01-01 --end-date 2050-01-01 fringe``
+    butler query-dimension-records /repo/main exposure \
+        --where "instrument='LATISS' AND exposure.observation_type='science' \
+                 AND exposure.exposure_time > 0.0 AND exposure.day_obs > 20210101"
+
+- Fringe generation should operate identically to any other calibration.
+.. code:: bash
+
+    RERUN=202107XXa
+    pipetask run -b /repo/main -p $CP_PIPE_DIR/pipelines/Latiss/cpFringe.yaml \
+        -i LATISS/raw/all,LATISS/calib,u/czw/DM-28920/calib \
+        -o u/czw/DM-28920/fringeGen.$RERUN \
+        -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES)" \
+        -j 4 >& ./fringe.$RERUN.log
+
+..
+
+  - The current implementation only finds a single fringe signal, so if the fringe signal is a function of an external factor (aerosol content, moon phase/position, etc.), only an average signal will be obtained.
+- Validation is not yet implemented for fringes (TODO: DM-30175).
+- Certification:
+.. code:: bash
+
+    butler certify-calibrations /repo/main u/czw/DM-28920/fringeGen.$RERUN LATISS/calib/DM-28920 \
+         --begin-date 2020-01-01 --end-date 2050-01-01 fringe``
 
 
 .. _cp-pipe-crosstalk:
@@ -215,65 +522,82 @@ No fringe data currently is available for LATISS, but the queries and commands w
 Measuring the crosstalk signal
 ==============================
 
-The crosstalk signal can also be measured from a sequence of science exposures that have bright stars.  A special observation sequence that tried to realize this was observed on 2021-02-18.
+- The crosstalk signal is also be measured from a sequence of science exposures that have bright stars.  A special observation sequence that tried to realize this was observed on 2021-02-18.
+.. code:: bash
 
-  - ``butler query-dimension-records /repo/main exposure --where "instrument='LATISS' AND exposure.observation_type='science' AND exposure.exposure_time > 0.0 AND exposure.target_name = 'NGC 4755' AND exposure.day_obs = 20210218"``
-  - ``EXPOSURES='2021021700347, 2021021700348, 2021021700349, 2021021700350, 2021021700351, 2021021700352, 2021021700353, 2021021700354, 2021021700355, 2021021700356, 2021021700357, 2021021700358, 2021021700359'``
-  - ``pipetask run -b /repo/main -p $CP_PIPE_DIR/pipelines/LATISS/measurePhotonTransferCurve.yaml -i LATISS/raw/all,LATISS/calib,u/czw/DM-28920/calib -o u/czw/DM-28920/crosstalkGen -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES)``
-  - ``butler certify-calibrations /repo/main u/czw/DM-28920/crosstalkGen u/czw/DM-28920/crosstalkTemp --begin-date 1980-01-01 --end-date 2050-01-01 crosstalk``
-  - ``pipetask run -b /repo/main -p $CP_PIPE_DIR/pipelines/LATISS/verifyCrosstalk.yaml -i LATISS/raw/all,LATISS/calib,u/czw/DM-28920/calib,u/czw/DM-28920/crosstalkTemp -o u/czw/DM-28920/verifyCrosstalk -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES)``
-  - ``butler certify-calibrations /repo/main u/czw/DM-28920/crosstalkGen u/czw/DM-28920/calib --begin-date 2021-01-01 --end-date 2050-01-01 crosstalk``
+    butler query-dimension-records /repo/main exposure \
+         --where "instrument='LATISS' AND exposure.observation_type='science'
+                  AND exposure.exposure_time > 0.0
+                  AND exposure.target_name = 'NGC 4755'
+                  AND exposure.day_obs = 20210218"
 
-.. _cp-pipe-ptc:
+..
 
+  - The exposures identified from this sequence are
+.. code:: bash
 
-Measuring the photon transfer curve
-===================================
+    EXPOSURES='2021021700347, 2021021700348, 2021021700349, 2021021700350, 2021021700351, \
+               2021021700352, 2021021700353, 2021021700354, 2021021700355, 2021021700356, \
+               2021021700357, 2021021700358, 2021021700359'
 
-The PTC is generated from a sequence of paired flats, so care should be taken to ensure that a planned sequence of flats, with a ramp in exposure time (and therefore a ramp in received flux), is used as the input.  Such data was taken on 2021-03-11, so we use that.
+- Generating new crosstalk coefficients:
+.. code:: bash
 
-  - ``butler query-dimension-records /repo/main exposure --where "instrument='LATISS' AND exposure.observation_type='flat' AND exposure.exposure_time > 0.0 AND exposure.day_obs = 20210311"``
-  - ``EXPOSURES='2021031100072, 2021031100073, 2021031100074, 2021031100075, 2021031100076, 2021031100077, 2021031100078, 2021031100079, 2021031100080, 2021031100081, 2021031100082, 2021031100083, 2021031100084, 2021031100085, 2021031100086, 2021031100087, 2021031100088, 2021031100089, 2021031100090, 2021031100091, 2021031100092, 2021031100093, 2021031100094, 2021031100095, 2021031100096, 2021031100097, 2021031100098, 2021031100099, 2021031100100, 2021031100101, 2021031100102, 2021031100103, 2021031100104, 2021031100105, 2021031100106, 2021031100107, 2021031100108, 2021031100109, 2021031100110, 2021031100111'``
-  - ``pipetask run -b /repo/main -p $CP_PIPE_DIR/pipelines/LATISS/measurePhotonTransferCurve.yaml -i LATISS/raw/all,LATISS/calib,u/czw/DM-28920/calib -o u/czw/DM-28920/ptcGen -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES)``
-  - ``butler certify-calibrations /repo/main u/czw/DM-28920/ptcGen u/czw/DM-28920/ptcTemp --begin-date 1980-01-01 --end-date 2050-01-01 ptc``
-  - ``pipetask run -b /repo/main -p $CP_PIPE_DIR/pipelines/LATISS/verifyPtc.yaml -i LATISS/raw/all,LATISS/calib,u/czw/DM-28920/calib,u/czw/DM-28920/ptcTemp -o u/czw/DM-28920/verifyPtc -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES)``
-  - ``butler certify-calibrations /repo/main u/czw/DM-28920/ptcGen u/czw/DM-28920/calib --begin-date 2021-01-01 --end-date 2050-01-01 ptc``
+    RERUN=20210716a
+    pipetask run -b /repo/main -p $CP_PIPE_DIR/pipelines/measureCrosstalk.yaml \
+        -i LATISS/raw/all,u/czw/DM-28920/defectGen.20210712a,u/czw/DM-28920/bfkGen.20210714a,u/czw/DM-28920/linearityGen.20210713a,u/czw/DM-28920/flatGen.20210712b,u/czw/DM-28920/darkGen.20210707a,u/czw/DM-28920/biasGen.20210702a,LATISS/calib \
+        -o u/czw/DM-28920/crosstalkGen.$RERUN \
+        -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES)" \
+        >& ./crosstalk.$RERUN.log
 
-.. _cp-pipe-linearity:
+- Validation is not yet implemented for crosstalk (TODO: DM-30170).
+- Certification:
+.. code:: bash
 
-Constructing a linearity correction
-===================================
+    butler certify-calibrations /repo/main u/czw/DM-28920/crosstalkGen.$RERUN LATISS/calib/DM-28920 \
+         --begin-date 2020-01-01 --end-date 2050-01-01 crosstalk``
 
-The linearity measurement uses the outputs measured by the photon transfer curve as its inputs.  Working from the previously generated PTC:
-
-  - ``pipetask run -b /repo/main -p $CP_PIPE_DIR/pipelines/LATISS/measureLinearity.yaml -i LATISS/raw/all,LATISS/calib,u/czw/DM-28920/calib -o u/czw/DM-28920/linearityGen -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES)``
-  - ``butler certify-calibrations /repo/main u/czw/DM-28920/linearityGen u/czw/DM-28920/linearityTemp --begin-date 1980-01-01 --end-date 2050-01-01 linearity``
-  - ``pipetask run -b /repo/main -p $CP_PIPE_DIR/pipelines/LATISS/verifyLinearity.yaml -i LATISS/raw/all,LATISS/calib,u/czw/DM-28920/calib,u/czw/DM-28920/linearityTemp -o u/czw/DM-28920/verifyLinearity -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES)``
-  - ``butler certify-calibrations /repo/main u/czw/DM-28920/linearityGen u/czw/DM-28920/calib --begin-date 2021-01-01 --end-date 2050-01-01 linearity``
-
-.. _cp-pipe-bfk:
-
-Constructing a brighter-fatter correction
-=========================================
-
-The brighter-fatter kernel is also generated from the photon transfer curve, so this can also be generated from the previous calibration product.
-
-  - ``pipetask run -b /repo/main -p $CP_PIPE_DIR/pipelines/LATISS/cpBfkSolve.yaml -i LATISS/raw/all,LATISS/calib,u/czw/DM-28920/calib -o u/czw/DM-28920/bfkGen -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES)``
-  - ``butler certify-calibrations /repo/main u/czw/DM-28920/bfkGen u/czw/DM-28920/bfkTemp --begin-date 1980-01-01 --end-date 2050-01-01 bfk``
-  - ``pipetask run -b /repo/main -p $CP_PIPE_DIR/pipelines/LATISS/verifyBfk.yaml -i LATISS/raw/all,LATISS/calib,u/czw/DM-28920/calib,u/czw/DM-28920/bfkTemp -o u/czw/DM-28920/verifyBfk -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES)``
-  - ``butler certify-calibrations /repo/main u/czw/DM-28920/bfkGen u/czw/DM-28920/calib --begin-date 2021-01-01 --end-date 2050-01-01 bfk``
 
 .. _cp-pipe-sky:
 
 Constructing sky frames
 =======================
 
-Sky frames are also constructed from science exposures, and are filter dependent.  Selecting a sample of exposures from 2021-03-23:
+- Sky frames are also constructed from science exposures, and are filter dependent.  Selecting a sample of exposures from 2021-03-23:
+.. code:: bash
 
-  - ``butler query-dimension-records /repo/main exposure --where "instrument='LATISS' AND exposure.observation_type='science' AND exposure.exposure_time > 0.0 AND exposure.day_obs = 20210323 and physical_filter = 'RG610~empty'"``
-  - ``EXPOSURES='2021032300284, 2021032300290, 2021032300291, 2021032300294, 2021032300297, 2021032300299, 2021032300303, 2021032300334, 2021032300341, 2021032300358, 2021032300362, 2021032300364, 2021032300365, 2021032300378, 2021032300388, 2021032300394, 2021032300414, 2021032300416, 2021032300454, 2021032300459, 2021032300470, 2021032300494, 2021032300498, 2021032300499, 2021032300522, 2021032300529, 2021032300577, 2021032300611, 2021032300615, 2021032300628'``
-  - ``pipetask run -b /repo/main -p $CP_PIPE_DIR/pipelines/LATISS/cpSkySolve.yaml -i LATISS/raw/all,LATISS/calib,u/czw/DM-28920/calib -o u/czw/DM-28920/skyGen -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES)``
-  - ``butler certify-calibrations /repo/main u/czw/DM-28920/skyGen u/czw/DM-28920/skyTemp --begin-date 1980-01-01 --end-date 2050-01-01 sky``
-  - ``pipetask run -b /repo/main -p $CP_PIPE_DIR/pipelines/LATISS/verifySky.yaml -i LATISS/raw/all,LATISS/calib,u/czw/DM-28920/calib,u/czw/DM-28920/skyTemp -o u/czw/DM-28920/verifySky -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES)``
-  - ``butler certify-calibrations /repo/main u/czw/DM-28920/skyGen u/czw/DM-28920/calib --begin-date 2021-01-01 --end-date 2050-01-01 sky``
+    butler query-dimension-records /repo/main exposure \
+        --where "instrument='LATISS' AND exposure.observation_type='science' \
+                 AND exposure.exposure_time > 0.0 AND exposure.day_obs = 20210323 \
+                 AND physical_filter = 'RG610~empty'"
+
+..
+
+  - Yielding
+.. code:: bash
+
+    EXPOSURES='2021032300284, 2021032300290, 2021032300291, 2021032300294, 2021032300297, \
+               2021032300299, 2021032300303, 2021032300334, 2021032300341, 2021032300358, \
+               2021032300362, 2021032300364, 2021032300365, 2021032300378, 2021032300388, \
+               2021032300394, 2021032300414, 2021032300416, 2021032300454, 2021032300459, \
+               2021032300470, 2021032300494, 2021032300498, 2021032300499, 2021032300522, \
+               2021032300529, 2021032300577, 2021032300611, 2021032300615, 2021032300628'
+- Construction of sky frames will be available with DM-22534.
+.. code:: bash
+
+    RERUN=202107XXa
+    pipetask run -b /repo/main -p $CP_PIPE_DIR/pipelines/Latiss/cpSkySolve.yaml \
+        -i LATISS/raw/all,LATISS/calib,u/czw/DM-28920/calib \
+        -o u/czw/DM-28920/skyGen.$RERUN \
+        -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES)" \
+        >& ./sky.$RERUN.log
+
+- Validation is not yet implemented for sky frames (TODO).
+- Certification.
+.. code:: bash
+
+    butler certify-calibrations /repo/main u/czw/DM-28920/skyGen.$RERUN LATISS/calib/DM-28920
+        --begin-date 2020-01-01 --end-date 2050-01-01 sky
+
+
 
