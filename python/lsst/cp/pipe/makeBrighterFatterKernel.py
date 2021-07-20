@@ -37,7 +37,7 @@ from ._lookupStaticCalibration import lookupStaticCalibration
 
 
 class BrighterFatterKernelSolveConnections(pipeBase.PipelineTaskConnections,
-                                           dimensions=("instrument", "exposure", "detector")):
+                                           dimensions=("instrument", "detector")):
     dummy = cT.Input(
         name="raw",
         doc="Dummy exposure.",
