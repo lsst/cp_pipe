@@ -21,17 +21,23 @@ A gen-three butler is needed to run the ``pipetask`` commands defined by this pa
 .. _cp-pipe-certification
 
 
+Verification of calibrations
+============================
+
+The goal of the `cp_verify` package is to provide a largely automated way to determine the quality of newly produced calibrations.  This is done by applying the newly constructed calibration to a set of test exposures, measuring some set of metrics on the resulting images, and comparing those metrics to the tests documented in DMTN-101.  It should be run as part of a general inspection of the calibration prior to use.  However, as this is still in development, and hasn't been extended to all calibration types, it is still only a recommended step.  Manually examining the output calibration (or its effect on a few test exposures) is still highly recommended before large scale processing is performed.
+
+
 Calibration certification
 =========================
 
-Certification of calibrations should be done after confirming that all of the ``cp_verify`` tests have passed, and any tests that still fail should be documented on the ticket.  Calibrations created as part of daily observations should be certified into a single collection per calibration type, with the validity range set to only include the day they were taken, such as:
+Certification of calibrations should be done after confirming that all of the ``cp_verify`` tests have passed, and any tests that still fail should be documented on the ticket managing the construction.  Calibrations created as part of daily observations should be certified into a single collection per calibration type, with the validity range set to only include the day they were taken, such as:
 .. code:: bash
 
     butler certify-calibrations /repo/main \
         u/czw/DM-XYZ/biasGen.20210715 LATISS/calib/dailyBiases \
         --begin_date 2021-07-15 --end_date 2021-07-16 bias
 
-Longer term master calibrations should be certified into ticketed CALIBRATION collection (containing however many calibration types and date ranges that entails), that should then be chained to the instrument's recommended CALIBRATION collection.  The results of ``cp_verify`` should provide some guidance on the validity range, as additional raw exposures can be checked against the proposed calibration to identify when the verifcation tests fail.  The end date may be best set to a future date that will allow the calibration to be used until a new one supersedes it:
+Longer term master calibrations should be certified into ticketed CALIBRATION collection (containing however many calibration types and date ranges that entails), that should then be chained to the instrument's recommended CALIBRATION collection.  The results of ``cp_verify`` should provide some guidance on the validity range, as additional raw exposures can be checked against the proposed calibration to identify when the verification tests fail.  The end date may be best set to a future date that will allow the calibration to be used until a new one supersedes it:
 .. code:: bash
 
     butler certify-calibrations /repo/main \
@@ -44,7 +50,7 @@ Longer term master calibrations should be certified into ticketed CALIBRATION co
 Read Noise
 ==========
 
-Calibration construction and verification are sensitive to the read noise value listed in the ``camera`` camera geometry definition.  Inaccurate values may trigger test failures that are spurious.  Setting the ``isr:doEmpiricalReadNoise=True`` option during the bias processing (as the bias generally has very little signal other than noise) may be necessary to bootstrap a full set of calibrations from scratch.  This option records the values measured in the log, and by analysing the results of many exposures, better estimates of the read noise can be generated.
+Calibration construction and verification are sensitive to the read noise value listed in the ``camera`` camera geometry definition.  Inaccurate values may trigger test failures that are spurious.  Setting the ``isr:doEmpiricalReadNoise=True`` option during the bias processing (as the bias generally has very little signal other than noise) may be necessary to bootstrap a full set of calibrations from scratch.  This option records the values measured in the log, and by analyzing the results of many exposures, better estimates of the read noise can be generated.
 
 
 .. _cp-pipe-biases:
@@ -106,7 +112,7 @@ Constructing biases
 
 ..
 
-  - Passing the ``--long-log`` and saving the output to a logfile are recommended, as it is easier to debug issues with that information.
+  - Passing the ``--long-log`` and saving the output to a log file are recommended, as it is easier to debug issues with that information.
   - No good defect set exists, so the ``-c isr:doDefect=False`` option was disabled.  This should only be necessary when starting calibrations from scratch.
   - As discussed above, the nominal read noise values are incorrect (especially for amplifier ``C07``), and so the ``-c isr:doEmpiricalReadNoise=True`` was enabled to prevent this amplifier from being thrown out.
 
@@ -123,7 +129,7 @@ Constructing biases
   - This pipeline produces statistics and test results for every ``{exposure, detector}`` pair in the input data, and then collates that data to produce per-exposure summaries (and optionally addition exposure-level statistics and tests), and finally into one final per-run summary.
   - As part of DM-28920, ``cp_verify`` is being augmented with a series of Jupyter notebooks that are designed to help visualize and process the potentially very large amount of information.  Running the ``$CP_VERIFY_DIR/examples/cpVerifyBias.ipynb`` will show the final generated bias, allow each residual image to be examined along with the statistic and test results, as well as provide histograms of number of failed tests.  Further discussion of these notebooks will be available in DMTN-192 and in the ``cp_verify`` documentation.
 
-- Upon confirming that the calibration has passed all of the verification tests (or that the failed tests are permanent/uncorrectable), the calibraion is now ready to be certified to final collection:
+- Upon confirming that the calibration has passed all of the verification tests (or that the failed tests are permanent/uncorrectable), the calibration is now ready to be certified to final collection:
 .. code:: bash
 
     butler certify-calibrations /repo/main u/czw/DM-28920/biasGen LATISS/calib/DM-28920 \
@@ -436,7 +442,7 @@ Constructing a linearity correction
 
     RERUN=20210713b
     pipetask --long-log run -b /repo/main -p $CP_PIPE_DIR/pipelines/cpLinearitySolve.yaml \
-        -i u/czw/DM-28920/tempPtcB,LATISS/calibm,LATISS/raw/all \
+        -i u/czw/DM-28920/tempPtcB,LATISS/calib,LATISS/raw/all \
         -o u/czw/DM-28920/linearityGen.$RERUN \
         -d "instrument='LATISS' AND exposure=$EXPOSURES_B AND detector = 0" \
         -c linearitySolve:ignorePtcMask=True \
