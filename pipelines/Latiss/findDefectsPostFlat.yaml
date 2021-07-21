@@ -1,4 +1,5 @@
 description: cp_pipe DEFECT calibration construction.
+instrument: lsst.obs.lsst.Latiss
 tasks:
   isr:
     class: lsst.ip.isr.IsrTask

@@ -1,4 +1,4 @@
-description: Latiss PTC calibration construction.
+description: Latiss Brighter-Fatter kernel calibration construction.
 instrument: lsst.obs.lsst.Latiss
 imports:
   - location: $CP_PIPE_DIR/pipelines/cpBfkSolve.yaml
