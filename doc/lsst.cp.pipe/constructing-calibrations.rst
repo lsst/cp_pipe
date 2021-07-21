@@ -44,6 +44,130 @@ Longer term master calibrations should be certified into ticketed CALIBRATION co
         u/czw/DM-XYZ/biasGen.20210715 LATISS/calib/DM-XYZ \
         --begin_date 2021-01-01 --end_date 2050-01-01 bias
 
+Calibration collection best practices
+-------------------------------------
+
+Although the example presented below certifies each new calibration to a final calibration collection, in situations where there is some question at to the quality of the calibration, it may be better to use a chained collection as the target.  Fixing an error in the example presented a way to demonstrate this as well.
+
+- The initial bias and defects were correct, and a chained collection was used:
+.. code:: bash
+
+   butler certify-calibrations /repo/main \
+       u/czw/DM-28920/biasGen.20210702a \
+       u/czw/DM-28920/calib/bias.20210720 \
+       --begin-date 2020-01-01 --end-date 2050-01-01 bias
+   butler certify-calibrations /repo/main \
+       u/czw/DM-28920/defectGen.20210706h \
+       u/czw/DM-28920/calib/defect.20210720 \
+       --begin-date 2020-01-01 --end-date 2050-01-01 defects
+   butler certify-calibrations /repo/main \
+       u/czw/DM-28920/darkGen.20210707a \
+       u/czw/DM-28920/calib/dark.20210720 \
+       --begin-date 2020-01-01 --end-date 2050-01-01 dark
+
+   butler collection-chain /repo/main u/czw/DM-28920/calib.20210720 \
+       u/czw/DM-28920/calib/defect.20210720 \
+       u/czw/DM-28920/calib/bias.20210720 \
+       u/czw/DM-28920/calib/dark.20210720
+
+- However, the dark calibration had used the incorrect defect set, and over masked one amplifier.  With a chained collection this is easy to remove and replace:
+.. code:: bash
+
+    butler collection-chain /repo/main --mode=remove \
+        u/czw/DM-28920/calib.20210720 \
+        u/czw/DM-28920/calib/dark.20210720
+    butler certify-calibrations /repo/main \
+        u/czw/DM-28920/darkGen.20210707d \
+        u/czw/DM-28920/calib/dark.20210720a \
+        --begin-date 2020-01-01 --end-date 2050-01-01 dark
+    butler collection-chain /repo/main --mode=extend \
+        u/czw/DM-28920/calib.20210720 \
+        u/czw/DM-28920/calib/dark.20210720a
+
+- From that point, the processing continued as before, remaking the flat:
+.. code:: bash
+
+    butler certify-calibrations /repo/main \
+        u/czw/DM-28920/flatGen.20210720Xa \
+        u/czw/DM-28920/calib/flat.20210720 \
+        --begin-date 2020-01-01 --end-date 2050-01-01 flat
+    butler certify-calibrations /repo/main \
+        u/czw/DM-28920/flatGen.20210720Xb \
+        u/czw/DM-28920/calib/flat.20210720 \
+        --begin-date 2020-01-01 --end-date 2050-01-01 flat
+    butler collection-chain /repo/main --mode=extend \
+        u/czw/DM-28920/calib.20210720 \
+        u/czw/DM-28920/calib/flat.20210720
+
+- With the flat created, the defects can be reconstructed using both bias and flat images:
+.. code:: bash
+
+    butler collection-chain /repo/main --mode=remove \
+        u/czw/DM-28920/calib.20210720 \
+        u/czw/DM-28920/calib/defect.20210720
+    butler certify-calibrations /repo/main \
+        u/czw/DM-28920/defectGen.20210720a \
+        u/czw/DM-28920/calib/defect.20210720a \
+        --begin-date 2020-01-01 --end-date 2050-01-01 defects
+    butler collection-chain /repo/main --mode=extend \
+        u/czw/DM-28920/calib.20210720 \
+        u/czw/DM-28920/calib/defect.20210720a
+
+- The PTC is not generally used outside of calibration production, so the initial pass can be certified to a temporary collection:
+.. code:: bash
+
+    butler certify-calibrations /repo/main \
+        u/czw/DM-28920/ptcGen.20210721a \
+        u/czw/DM-28920/tempPtcA.0721 \
+        --begin-date 2019-01-01 --end-date 2050-01-01 ptc
+    butler certify-calibrations /repo/main \
+        u/czw/DM-28920/ptcGen.20210721b \
+        u/czw/DM-28920/tempPtcB.0721 \
+        --begin-date 2019-01-01 --end-date 2050-01-01 ptc
+
+- That PTC can be used to construct a linearity solution:
+.. code:: bash
+
+    butler certify-calibrations /repo/main \
+        u/czw/DM-28920/linearityGen.20210721Xa \
+        u/czw/DM-28920/calib/linearity.20210721 \
+        --begin-date 2020-01-01 --end-date 2050-01-01 linearity
+    butler collection-chain /repo/main --mode=extend \
+        u/czw/DM-28920/calib.20210720 \
+        u/czw/DM-28920/calib/linearity.20210721
+
+- Which can be used to update the PTC and remove linearity effects:
+.. code:: bash
+
+    butler certify-calibrations /repo/main\
+        u/czw/DM-28920/ptcGen.20210721Ya \
+        u/czw/DM-28920/ptcA.20210721 \
+        --begin-date 2019-01-01 --end-date 2050-01-01 ptc
+    butler certify-calibrations /repo/main
+        u/czw/DM-28920/ptcGen.20210721Yb \
+        u/czw/DM-28920/ptcB.20210721 \
+        --begin-date 2019-01-01 --end-date 2050-01-01 ptc
+
+- The updated PTC can be used to create a brighter-fatter kernel:
+.. code:: bash
+
+    butler certify-calibrations /repo/main \
+        u/czw/DM-28920/bfkGen.20210721a \
+        u/czw/DM-28920/bfk.20210721 \
+        --begin-date 2020-01-01 --end-date 2050-01-01 bfk
+    butler collection-chain /repo/main --mode=extend \
+        u/czw/DM-28920/calib.20210720 \
+        u/czw/DM-28920/calib/bfk.20210721
+
+- With a full set of calibrations, the crosstalk can be measured:
+.. code:: bash
+
+   butler certify-calibrations /repo/main \
+       u/czw/DM-28920/crosstalkGen.20210721a \
+       u/czw/DM-28920/crosstalk.20210721
+       --begin-date 2020-01-01 --end-date 2050-01-01 crosstalk
+   butler collection-chain /repo/main --mode=extend \
+       u/czw/DM-28920/calib.20210720 u/czw/DM-28920/calib/crosstalk.20210721
 
 .. _cp-pipe-readNoise:
 
