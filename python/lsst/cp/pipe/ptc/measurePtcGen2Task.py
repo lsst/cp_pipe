@@ -86,11 +86,13 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
     Parameters
     ----------
     *args: `list`
-        Positional arguments passed to the Task constructor. None used at this
-        time.
+        Positional arguments passed to the Task constructor. None used
+        at this time.
+
     **kwargs: `dict`
-        Keyword arguments passed on to the Task constructor. None used at this
-        time.
+        Keyword arguments passed on to the Task constructor. None used
+        at this time.
+
     """
 
     RunnerClass = DataRefListRunner
@@ -105,14 +107,16 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
     @pipeBase.timeMethod
     def runDataRef(self, dataRefList):
         """Run the Photon Transfer Curve (PTC) measurement task.
-        For a dataRef (which is each detector here),
-        and given a list of exposure pairs (postISR) at different exposure times,
+
+        For a dataRef (which is each detector here), and given a list
+        of exposure pairs (postISR) at different exposure times,
         measure the PTC.
 
         Parameters
         ----------
         dataRefList : `list` [`lsst.daf.peristence.ButlerDataRef`]
             Data references for exposures.
+
         """
         if len(dataRefList) < 2:
             raise RuntimeError("Insufficient inputs to combine.")
@@ -136,11 +140,13 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         # Create dictionary of exposures, keyed by exposure time
         expDict = arrangeFlatsByExpTime(expList)
-        # Call the "extract" (measure flat covariances) and "solve" (fit covariances) subtasks
+        # Call the "extract" (measure flat covariances) and "solve"
+        # (fit covariances) subtasks
         resultsExtract = self.extract.run(inputExp=expDict, inputDims=expIds)
         resultsSolve = self.solve.run(resultsExtract.outputCovariances, camera=camera)
 
-        # Fill up the photodiode data, if found, that will be used by linearity task.
+        # Fill up the photodiode data, if found, that will be used by
+        # linearity task.
         # Get expIdPairs from one of the amps
         expIdsPairsList = []
         ampNames = resultsSolve.outputPtcDataset.ampNames
@@ -204,8 +210,8 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 for ampName in datasetPtc.ampNames:
                     datasetPtc.photoCharge[ampName].append((charges[0], charges[1]))
         else:
-            # Can't be an empty list, as initialized, because astropy.Table won't allow it
-            # when saving as fits
+            # Can't be an empty list, as initialized, because
+            # astropy.Table won't allow it when saving as fits
             for ampName in datasetPtc.ampNames:
                 datasetPtc.photoCharge[ampName] = np.repeat(np.nan, len(expIdList))
 

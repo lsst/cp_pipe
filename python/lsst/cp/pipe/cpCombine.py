@@ -67,7 +67,9 @@ class CalibStatsConfig(pexConfig.Config):
 class CalibStatsTask(pipeBase.Task):
     """Measure statistics on the background
 
-    This can be useful for scaling the background, e.g., for flats and fringe frames.
+    This can be useful for scaling the background, e.g., for flats and
+    fringe frames.
+
     """
     ConfigClass = CalibStatsConfig
 
@@ -76,7 +78,9 @@ class CalibStatsTask(pipeBase.Task):
 
         Parameters
         ----------
-        exposureOrImage : `lsst.afw.image.Exposure`, `lsst.afw.image.MaskedImage`, or `lsst.afw.image.Image`
+        exposureOrImage : `lsst.afw.image.Exposure`,
+                          `lsst.afw.image.MaskedImage`, or
+                          `lsst.afw.image.Image`
            Exposure or image to calculate statistics on.
 
         Returns
@@ -505,13 +509,15 @@ class CalibCombineTask(pipeBase.PipelineTask,
     def interpolateNans(self, exp):
         """Interpolate over NANs in the combined image.
 
-        NANs can result from masked areas on the CCD.  We don't want them getting
-        into our science images, so we replace them with the median of the image.
+        NANs can result from masked areas on the CCD.  We don't want
+        them getting into our science images, so we replace them with
+        the median of the image.
 
         Parameters
         ----------
         exp : `lsst.afw.image.Exposure`
             Exp to check for NaNs.
+
         """
         array = exp.getImage().getArray()
         bad = np.isnan(array)
@@ -523,7 +529,8 @@ class CalibCombineTask(pipeBase.PipelineTask,
             self.log.warn("Found %s NAN pixels", count)
 
 
-# Create versions of the Connections, Config, and Task that support filter constraints.
+# Create versions of the Connections, Config, and Task that support
+# filter constraints.
 class CalibCombineByFilterConnections(CalibCombineConnections,
                                       dimensions=("instrument", "detector", "physical_filter")):
     inputScales = cT.Input(

@@ -371,7 +371,7 @@ class CpFlatNormalizationTask(pipeBase.PipelineTask,
 
         References
         ----------
-        .. [1] https://svn.pan-starrs.ifa.hawaii.edu/trac/ipp/browser/trunk/psModules/src/detrend/pmFlatNormalize.c  # noqa: E501
+        .. [1] https://svn.pan-starrs.ifa.hawaii.edu/trac/ipp/browser/trunk/psModules/src/detrend/pmFlatNormalize.c  # noqa: W505, E501
 
         """
         numExps = bgMatrix.shape[1]

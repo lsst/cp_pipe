@@ -205,7 +205,8 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         # Ids of input list of exposures
         inputs['inputDims'] = [expId.dataId['exposure'] for expId in inputRefs.inputExp]
 
-        # Dictionary, keyed by expTime, with tuples containing flat exposures and their IDs.
+        # Dictionary, keyed by expTime, with tuples containing flat
+        # exposures and their IDs.
         if self.config.matchByExposureId:
             inputs['inputExp'] = arrangeFlatsByExpId(inputs['inputExp'], inputs['inputDims'])
         else:
@@ -219,7 +220,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
 
         Parameters
         ----------
-        inputExp : `dict` [`float`, `list` [`~lsst.afw.image.exposure.exposure.ExposureF`]]
+        inputExp : `dict` [`float`, `list` [`~lsst.afw.image..ExposureF`]]
             Dictionary that groups flat-field exposures that have the same
             exposure time (seconds).
 
@@ -233,7 +234,8 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         amps = detector.getAmplifiers()
         ampNames = [amp.getName() for amp in amps]
 
-        # Each amp may have a different  min and max ADU signal specified in the config.
+        # Each amp may have a different min and max ADU signal
+        # specified in the config.
         maxMeanSignalDict = {ampName: 1e6 for ampName in ampNames}
         minMeanSignalDict = {ampName: 0.0 for ampName in ampNames}
         for ampName in ampNames:
@@ -257,8 +259,8 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
             dummyPtcDataset.setAmpValues(ampName)
         # Output list with PTC datasets.
         partialPtcDatasetList = []
-        # The number of output references needs to match that of input references:
-        # initialize outputlist with dummy PTC datasets.
+        # The number of output references needs to match that of input
+        # references: initialize outputlist with dummy PTC datasets.
         for i in range(len(inputDims)):
             partialPtcDatasetList.append(dummyPtcDataset)
 
@@ -274,7 +276,8 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                               f"{exposures[0][1]}")
                 continue
             else:
-                # Only use the first two exposures at expTime. Each elements is a tuple (exposure, expId)
+                # Only use the first two exposures at expTime. Each
+                # elements is a tuple (exposure, expId)
                 exp1, expId1 = exposures[0]
                 exp2, expId2 = exposures[1]
                 if len(exposures) > 2:
@@ -293,20 +296,25 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                                                            self.config.maximumRangeCovariancesAstier)
             for ampNumber, amp in enumerate(detector):
                 ampName = amp.getName()
-                # covAstier: [(i, j, var (cov[0,0]), cov, npix) for (i,j) in {maxLag, maxLag}^2]
+                # covAstier: [(i, j, var (cov[0,0]), cov, npix) for
+                # (i,j) in {maxLag, maxLag}^2]
                 doRealSpace = self.config.covAstierRealSpace
                 if self.config.detectorMeasurementRegion == 'AMP':
                     region = amp.getBBox()
                 elif self.config.detectorMeasurementRegion == 'FULL':
                     region = None
-                # `measureMeanVarCov` is the function that measures the variance and  covariances from
-                # the difference image of two flats at the same exposure time.
-                # The variable `covAstier` is of the form: [(i, j, var (cov[0,0]), cov, npix) for (i,j)
-                # in {maxLag, maxLag}^2]
+                # `measureMeanVarCov` is the function that measures
+                # the variance and covariances from the difference
+                # image of two flats at the same exposure time.  The
+                # variable `covAstier` is of the form: [(i, j, var
+                # (cov[0,0]), cov, npix) for (i,j) in {maxLag,
+                # maxLag}^2]
                 muDiff, varDiff, covAstier = self.measureMeanVarCov(exp1, exp2, region=region,
                                                                     covAstierRealSpace=doRealSpace)
-                # Correction factor for sigma clipping. Function returns 1/sqrt(varFactor),
-                # so it needs to be squared. varDiff is calculated via afwMath.VARIANCECLIP.
+                # Correction factor for sigma clipping. Function
+                # returns 1/sqrt(varFactor), so it needs to be
+                # squared. varDiff is calculated via
+                # afwMath.VARIANCECLIP.
                 varFactor = sigmaClipCorrection(self.config.nSigmaClipPtc)**2
                 varDiff *= varFactor
 
@@ -335,7 +343,8 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                 # Correct covArray for sigma clipping:
                 # 1) Apply varFactor twice for the whole covariance matrix
                 covArray *= varFactor**2
-                # 2) But, only once for the variance element of the matrix, covArray[0,0]
+                # 2) But, only once for the variance element of the
+                # matrix, covArray[0,0]
                 covArray[0, 0] /= varFactor
 
                 partialPtcDataset.setAmpValues(ampName, rawExpTime=[expTime], rawMean=[muDiff],
@@ -371,19 +380,22 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         exposure2 : `lsst.afw.image.exposure.exposure.ExposureF`
             Second exposure of flat field pair.
         region : `lsst.geom.Box2I`, optional
-            Region of each exposure where to perform the calculations (e.g, an amplifier).
+            Region of each exposure where to perform the calculations
+            (e.g, an amplifier).
         covAstierRealSpace : `bool`, optional
-            Should the covariannces in Astier+19 be calculated in real space or via FFT?
-            See Appendix A of Astier+19.
+            Should the covariannces in Astier+19 be calculated in real
+            space or via FFT?  See Appendix A of Astier+19.
 
         Returns
         -------
         mu : `float` or `NaN`
-            0.5*(mu1 + mu2), where mu1, and mu2 are the clipped means of the regions in
-            both exposures. If either mu1 or m2 are NaN's, the returned value is NaN.
+            0.5*(mu1 + mu2), where mu1, and mu2 are the clipped means
+            of the regions in both exposures. If either mu1 or m2 are
+            NaN's, the returned value is NaN.
         varDiff : `float` or `NaN`
-            Half of the clipped variance of the difference of the regions inthe two input
-            exposures. If either mu1 or m2 are NaN's, the returned value is NaN.
+            Half of the clipped variance of the difference of the
+            regions inthe two input exposures. If either mu1 or m2 are
+            NaN's, the returned value is NaN.
         covDiffAstier : `list` or `NaN`
             List with tuples of the form (dx, dy, var, cov, npix), where:
                 dx : `int`
@@ -398,6 +410,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                     Number of pixel pairs used to evaluate var and cov.
 
             If either mu1 or m2 are NaN's, the returned value is NaN.
+
         """
 
         if region is not None:
@@ -459,11 +472,12 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         cut = meanClip + self.config.nSigmaClipPtc*np.sqrt(varClip)
         unmasked = np.where(np.fabs(diffIm.image.array) <= cut, 1, 0)
 
-        # Get the pixels in the mask planes of teh differenc eimage that were ignored
-        # by the clipping algorithm
+        # Get the pixels in the mask planes of teh differenc eimage
+        # that were ignored by the clipping algorithm
         wDiff = np.where(diffIm.getMask().getArray() == 0, 1, 0)
-        # Combine the two sets of pixels ('1': use; '0': don't use) into a final weight matrix
-        # to be used in the covariance calculations below.
+        # Combine the two sets of pixels ('1': use; '0': don't use)
+        # into a final weight matrix to be used in the covariance
+        # calculations below.
         w = unmasked*wDiff
 
         if np.sum(w) < self.config.minNumberGoodPixelsForCovariance:
@@ -487,9 +501,9 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
             c = CovFastFourierTransform(diffIm.image.array, w, fftShape, maxRangeCov)
             covDiffAstier = c.reportCovFastFourierTransform(maxRangeCov)
 
-        # Compare Cov[0,0] and afwMath.VARIANCECLIP
-        # covDiffAstier[0] is the Cov[0,0] element, [3] is the variance, and there's a factor of 0.5
-        # difference with afwMath.VARIANCECLIP.
+        # Compare Cov[0,0] and afwMath.VARIANCECLIP covDiffAstier[0]
+        # is the Cov[0,0] element, [3] is the variance, and there's a
+        # factor of 0.5 difference with afwMath.VARIANCECLIP.
         thresholdPercentage = self.config.thresholdDiffAfwVarVsCov00
         fractionalDiff = 100*np.fabs(1 - varDiff/(covDiffAstier[0][3]*0.5))
         if fractionalDiff >= thresholdPercentage:

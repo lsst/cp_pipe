@@ -202,7 +202,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         camera : `lsst.afw.cameraGeom.Camera`, optional
             Input camera.
 
-        inputExpList : `list` [`~lsst.afw.image.exposure.exposure.ExposureF`], optional
+        inputExpList : `list` [`~lsst.afw.image.ExposureF`], optional
             List of exposures.
 
         Returns
@@ -211,8 +211,10 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             The results struct containing:
 
             ``outputPtcDatset``
-                Final PTC dataset, containing information such as the means, variances,
-                and exposure times (`lsst.ip.isr.PhotonTransferCurveDataset`).
+                Final PTC dataset, containing information such as the
+                means, variances, and exposure times
+                (`lsst.ip.isr.PhotonTransferCurveDataset`).
+
         """
         # Assemble partial PTC datasets into a single dataset.
         ampNames = np.unique(inputCovariances[0].ampNames)
@@ -242,7 +244,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
                 datasetPtc.covariances[ampName].append(np.array(partialPtcDataset.covariances[ampName][0]))
                 datasetPtc.covariancesSqrtWeights[ampName].append(
                     np.array(partialPtcDataset.covariancesSqrtWeights[ampName][0]))
-        # Sort arrays that are filled so far in the final dataset by rawMeans index
+        # Sort arrays that are filled so far in the final dataset by
+        # rawMeans index
         for ampName in ampNames:
             index = np.argsort(np.ravel(np.array(datasetPtc.rawMeans[ampName])))
             datasetPtc.inputExpIdPairs[ampName] = np.array(datasetPtc.inputExpIdPairs[ampName])[index]
@@ -254,10 +257,12 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             datasetPtc.covariancesSqrtWeights[ampName] = np.array(
                 datasetPtc.covariancesSqrtWeights[ampName])[index]
         if self.config.ptcFitType == "FULLCOVARIANCE":
-            # Calculate covariances and fit them, including the PTC, to Astier+19 full model (Eq. 20)
-            # First, fit get the flat pairs that are masked, fitting C_00 vs mu to
-            # the EXPAPPROXIMATION model (Eq. 16 in Astier+19).
-            # The points at these fluxes will also be masked when calculating the other covariances, C_ij)
+            # Calculate covariances and fit them, including the PTC,
+            # to Astier+19 full model (Eq. 20) First, fit get the flat
+            # pairs that are masked, fitting C_00 vs mu to the
+            # EXPAPPROXIMATION model (Eq. 16 in Astier+19).  The
+            # points at these fluxes will also be masked when
+            # calculating the other covariances, C_ij)
             tempDatasetPtc = copy.copy(datasetPtc)
             tempDatasetPtc.ptcFitType = "EXPAPPROXIMATION"
             tempDatasetPtc = self.fitPtc(tempDatasetPtc)
@@ -265,10 +270,12 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
                 datasetPtc.expIdMask[ampName] = tempDatasetPtc.expIdMask[ampName]
             datasetPtc.fitType = "FULLCOVARIANCE"
             datasetPtc = self.fitCovariancesAstier(datasetPtc)
-        # The other options are: self.config.ptcFitType in ("EXPAPPROXIMATION", "POLYNOMIAL")
+        # The other options are: self.config.ptcFitType in
+        # ("EXPAPPROXIMATION", "POLYNOMIAL")
         else:
-            # Fit the PTC to a polynomial or to Astier+19 exponential approximation (Eq. 16).
-            # Fill up PhotonTransferCurveDataset object.
+            # Fit the PTC to a polynomial or to Astier+19 exponential
+            # approximation (Eq. 16).  Fill up
+            # PhotonTransferCurveDataset object.
             datasetPtc = self.fitPtc(datasetPtc)
         if inputExpList is not None:
             # It should be a list of exposures, to get the detector.
@@ -287,15 +294,17 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         Parameters
         ----------
         dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
-            The dataset containing information such as the means, (co)variances,
-            and exposure times.
+            The dataset containing information such as the means,
+            (co)variances, and exposure times.
 
         Returns
         -------
         dataset: `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
-            This is the same dataset as the input paramter, however, it has been modified
-            to include information such as the fit vectors and the fit parameters. See
-            the class `PhotonTransferCurveDatase`.
+            This is the same dataset as the input paramter, however,
+            it has been modified to include information such as the
+            fit vectors and the fit parameters. See the class
+            `PhotonTransferCurveDatase`.
+
         """
 
         covFits, covFitsNoB = fitDataFullCovariance(dataset)
@@ -304,24 +313,30 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         return dataset
 
     def getOutputPtcDataCovAstier(self, dataset, covFits, covFitsNoB):
-        """Get output data for PhotonTransferCurveCovAstierDataset from CovFit objects.
+        """Get output data for PhotonTransferCurveCovAstierDataset from CovFit
+        objects.
 
         Parameters
         ----------
         dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
-            The dataset containing information such as the means, variances and exposure times.
+            The dataset containing information such as the means,
+            variances and exposure times.
         covFits: `dict`
             Dictionary of CovFit objects, with amp names as keys.
         covFitsNoB : `dict`
-             Dictionary of CovFit objects, with amp names as keys, and 'b=0' in Eq. 20 of Astier+19.
+             Dictionary of CovFit objects, with amp names as keys, and
+             'b=0' in Eq. 20 of Astier+19.
 
         Returns
         -------
         dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
-            This is the same dataset as the input paramter, however, it has been modified
-            to include extra information such as the mask 1D array, gains, reoudout noise, measured signal,
-            measured variance, modeled variance, a, and b coefficient matrices (see Astier+19) per amplifier.
-            See the class `PhotonTransferCurveDatase`.
+            This is the same dataset as the input paramter, however,
+            it has been modified to include extra information such as
+            the mask 1D array, gains, reoudout noise, measured signal,
+            measured variance, modeled variance, a, and b coefficient
+            matrices (see Astier+19) per amplifier.  See the class
+            `PhotonTransferCurveDatase`.
+
         """
         assert(len(covFits) == len(covFitsNoB))
 
@@ -358,7 +373,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
 
             else:
                 # Bad amp
-                # Entries need to have proper dimensions so read/write with astropy.Table works.
+                # Entries need to have proper dimensions so read/write
+                # with astropy.Table works.
                 matrixSide = self.config.maximumRangeCovariancesAstier
                 nanMatrix = np.full((matrixSide, matrixSide), np.nan)
                 listNanMatrix = np.full((lenInputTimes, matrixSide, matrixSide), np.nan)
@@ -441,16 +457,19 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         Notes
         -----
         A linear function has a constant ratio, so find the median
-        value of the ratios, and exclude the points that deviate
-        from that by more than a factor of maxDeviationPositive/negative.
-        Asymmetric deviations are supported as we expect the PTC to turn
-        down as the flux increases, but sometimes it anomalously turns
-        upwards just before turning over, which ruins the fits, so it
-        is wise to be stricter about restricting positive outliers than
-        negative ones.
-        Too high and points that are so bad that fit will fail will be included
-        Too low and the non-linear points will be excluded, biasing the NL fit.
-        This function also masks points after the variance starts decreasing.
+        value of the ratios, and exclude the points that deviate from
+        that by more than a factor of maxDeviationPositive/negative.
+        Asymmetric deviations are supported as we expect the PTC to
+        turn down as the flux increases, but sometimes it anomalously
+        turns upwards just before turning over, which ruins the fits,
+        so it is wise to be stricter about restricting positive
+        outliers than negative ones.
+
+        Too high and points that are so bad that fit will fail will be
+        included Too low and the non-linear points will be excluded,
+        biasing the NL fit.  This function also masks points after the
+        variance starts decreasing.
+
         """
 
         assert(len(means) == len(variances))
@@ -459,7 +478,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         ratioDeviations = [0.0 if a < minMeanRatioTest else (r/medianRatio)-1
                            for (a, r) in zip(means, ratios)]
 
-        # so that it doesn't matter if the deviation is expressed as positive or negative
+        # so that it doesn't matter if the deviation is expressed as
+        # positive or negative
         maxDeviationPositive = abs(maxDeviationPositive)
         maxDeviationNegative = -1. * abs(maxDeviationNegative)
 
@@ -495,7 +515,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         return array
 
     def fitPtc(self, dataset):
-        """Fit the photon transfer curve to a polynomial or to Astier+19 approximation.
+        """Fit the photon transfer curve to a polynomial or to Astier+19
+        approximation.
 
         Fit the photon transfer curve with either a polynomial of the order
         specified in the task config, or using the exponential approximation
@@ -518,14 +539,16 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         Returns
         -------
         dataset: `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
-            This is the same dataset as the input parameter, however, it has been modified
-            to include information such as the fit vectors and the fit parameters. See
-            the class `PhotonTransferCurveDatase`.
+            This is the same dataset as the input parameter, however,
+            it has been modified to include information such as the
+            fit vectors and the fit parameters. See the class
+            `PhotonTransferCurveDatase`.
 
         Raises
         ------
         RuntimeError:
             Raises if dataset.ptcFitType is None or empty.
+
         """
         if dataset.ptcFitType:
             ptcFitType = dataset.ptcFitType
@@ -576,7 +599,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             if ptcFitType == 'EXPAPPROXIMATION':
                 ptcFunc = funcAstier
                 parsIniPtc = [-1e-9, 1.0, 10.]  # a00, gain, noisei^2
-                # lowers and uppers obtained from BOT data studies by C. Lage (UC Davis, 11/2020).
+                # lowers and uppers obtained from BOT data studies by
+                # C. Lage (UC Davis, 11/2020).
                 bounds = self._boundsForAstier(parsIniPtc, lowers=[-1e-4, 0.5, -2000],
                                                uppers=[1e-4, 2.5, 2000])
             if ptcFitType == 'POLYNOMIAL':
@@ -595,9 +619,10 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
                 res = least_squares(errFunc, parsIniPtc, bounds=bounds, args=(meanTempVec, varTempVec))
                 pars = res.x
 
-                # change this to the original from the temp because the masks are ANDed
-                # meaning once a point is masked it's always masked, and the masks must
-                # always be the same length for broadcasting
+                # change this to the original from the temp because
+                # the masks are ANDed meaning once a point is masked
+                # it's always masked, and the masks must always be the
+                # same length for broadcasting
                 sigResids = (varVecOriginal - ptcFunc(pars, meanVecOriginal))/np.sqrt(varVecOriginal)
                 newMask = np.array([True if np.abs(r) < sigmaCutPtcOutliers else False for r in sigResids])
                 mask = mask & newMask
@@ -618,7 +643,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             dataset.expIdMask[ampName] = np.array(dataset.expIdMask[ampName])
             # store the final mask
             if len(dataset.expIdMask[ampName]):
-                dataset.expIdMask[ampName] &= mask  # bitwise_and if there is already a  mask
+                dataset.expIdMask[ampName] &= mask  # bitwise_and if there is already a mask
             else:
                 dataset.expIdMask[ampName] = mask
             parsIniPtc = pars
@@ -648,8 +673,9 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             dataset.ptcFitPars[ampName] = parsFit
             dataset.ptcFitParsError[ampName] = parsFitErr
             dataset.ptcFitChiSq[ampName] = reducedChiSqPtc
-            # Masked variances (measured and modeled) and means. Need to pad the array so astropy.Table does
-            # not crash (the mask may vary per amp).
+            # Masked variances (measured and modeled) and means. Need
+            # to pad the array so astropy.Table does not crash (the
+            # mask may vary per amp).
             padLength = len(dataset.rawExpTimes[ampName]) - len(varVecFinal)
             dataset.finalVars[ampName] = np.pad(varVecFinal, (0, padLength), 'constant',
                                                 constant_values=np.nan)

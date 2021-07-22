@@ -188,7 +188,8 @@ class CrosstalkExtractTask(pipeBase.PipelineTask,
         targetDetector = inputExp.getDetector()
         targetChip = targetDetector.getName()
 
-        # Always look at the target chip first, then go to any other supplied exposures.
+        # Always look at the target chip first, then go to any other
+        # supplied exposures.
         sourceExtractExps = [inputExp]
         sourceExtractExps.extend(sourceExps)
 
@@ -211,7 +212,8 @@ class CrosstalkExtractTask(pipeBase.PipelineTask,
                 FootprintSet(sourceIm, Threshold(threshold), "DETECTED")
                 detected = sourceIm.getMask().getPlaneBitMask("DETECTED")
 
-            # The dictionary of amp-to-amp ratios for this pair of source->target detectors.
+            # The dictionary of amp-to-amp ratios for this pair of
+            # source->target detectors.
             ratioDict = defaultdict(lambda: defaultdict(list))
             extractedCount = 0
 
@@ -493,8 +495,8 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
                             if fluxDict:
                                 combinedFluxes[targetAmp][sourceAmp].extend(fluxDict[sourceChip][sourceAmp])
                 # TODO: DM-21904
-                # Iterating over all other entries in ratioDict[targetChip] will yield
-                # inter-chip terms.
+                # Iterating over all other entries in
+                # ratioDict[targetChip] will yield inter-chip terms.
 
         for targetAmp in combinedRatios:
             for sourceAmp in combinedRatios[targetAmp]:

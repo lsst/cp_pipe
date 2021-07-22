@@ -281,7 +281,8 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
                 if self.config.linearityType == 'Squared':
                     linearityFit = [linearityFit[2]]
                 elif self.config.linearityType == 'LookupTable':
-                    # Use linear part to get time at wich signal is maxAduForLookupTableLinearizer DN
+                    # Use linear part to get time at wich signal is
+                    # maxAduForLookupTableLinearizer DN
                     tMax = (self.config.maxLookupTableAdu - polyFit[0])/polyFit[1]
                     timeRange = np.linspace(0, tMax, self.config.maxLookupTableAdu)
                     signalIdeal = polyFit[0] + polyFit[1]*timeRange
@@ -292,7 +293,8 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
                     linearityFit = [tableIndex, 0]
                     tableIndex += 1
             elif self.config.linearityType in ['Spline']:
-                # See discussion in `lsst.ip.isr.linearize.py` before modifying.
+                # See discussion in `lsst.ip.isr.linearize.py` before
+                # modifying.
                 numPerBin, binEdges = np.histogram(linearOrdinate, bins=fitOrder)
                 with np.errstate(invalid="ignore"):
                     # Algorithm note: With the counts of points per

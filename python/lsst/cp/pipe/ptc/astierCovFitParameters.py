@@ -24,9 +24,10 @@
 import numpy as np
 
 """
-The classes in this file were taken from https://github.com/PierreAstier/bfptc
-by Pierre Astier (Laboratoire de Physique Nucléaire et de Hautes Energies (LPNHE),
-Sorbonne Université, Paris, France).
+The classes in this file were taken from
+https://github.com/PierreAstier/bfptc by Pierre Astier (Laboratoire de
+Physique Nucléaire et de Hautes Energies (LPNHE), Sorbonne Université,
+Paris, France).
 
 File: bfptc/py/fitparameters.py
 Commit hash: d46ba836fd5feb1c0065b61472c5f31b73b8480f
@@ -45,6 +46,7 @@ vectors organized into named subgroups.
 - `FitParameters` : a class to manage large parameter vectors.  It
 allows to easily fix/release specific parameters or entire subgroups,
 and remap the remaining free parameters into a contiguous vector.
+
 """
 
 
@@ -152,7 +154,8 @@ class StructArray(np.ndarray):
         pickled_state = super(StructArray, self).__reduce__()
         # Create our own tuple to pass to __setstate__
         new_state = pickled_state[2] + (self.struct,)
-        # Return a tuple that replaces the parent's __setstate__ tuple with our own
+        # Return a tuple that replaces the parent's __setstate__ tuple
+        # with our own
         return (pickled_state[0], pickled_state[1], new_state)
 
     def __setstate__(self, state):
@@ -162,14 +165,14 @@ class StructArray(np.ndarray):
 
 
 class FitParameters(object):
-    """ Manages a vector of fit parameters with the possibility to mark a subset of
-    them as fixed to a given value.
+    """Manages a vector of fit parameters with the possibility to mark a
+    subset of them as fixed to a given value.
 
     The parameters can be organized in named slices (block of contiguous
     values) accessible through indexing by their name as in `StructArray`.
 
     >>> p_salt = FitParameters(['X0', 'X1', 'Color', 'Redshift'])
-    >>> p_dice = FitParameters([('alpha', 2), ('S', 10), ('dSdT', 10), 'idark'])
+    >>> p_dice = FitParameters([('alpha', 2), ('S', 10), ('dSdT', 10), 'idark'])  # noqa: W505
 
     It is possible to modify the parameters in place. Using the indexing
     of slices by name simplifies somewhat the operations, as one does

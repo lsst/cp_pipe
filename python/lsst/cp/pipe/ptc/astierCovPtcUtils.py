@@ -33,16 +33,19 @@ class CovFastFourierTransform:
     Parameters
     ----------
     diff: `numpy.array`
-        Image where to calculate the covariances (e.g., the difference image of two flats).
+        Image where to calculate the covariances (e.g., the difference
+        image of two flats).
 
     w: `numpy.array`
-        Weight image (mask): it should consist of 1's (good pixel) and 0's (bad pixels).
+        Weight image (mask): it should consist of 1's (good pixel) and
+        0's (bad pixels).
 
     fftShape: `tuple`
         2d-tuple with the shape of the FFT
 
     maxRangeCov: `int`
         Maximum range for the covariances.
+
     """
 
     def __init__(self, diff, w, fftShape, maxRangeCov):
@@ -131,7 +134,8 @@ def computeCovDirect(diffImage, weightImage, maxRange):
         Image to compute the covariance of.
 
     weightImage : `numpy.array`
-        Weight image of diffImage (1's and 0's for good and bad pixels, respectively).
+        Weight image of diffImage (1's and 0's for good and bad
+        pixels, respectively).
 
     maxRange : `int`
         Last index of the covariance to be computed.
@@ -150,6 +154,7 @@ def computeCovDirect(diffImage, weightImage, maxRange):
             Covariance at (dx, dy).
         nPix : `int`
             Number of pixel pairs used to evaluate var and cov.
+
     """
     outList = []
     var = 0
@@ -173,7 +178,8 @@ def computeCovDirect(diffImage, weightImage, maxRange):
 def covDirectValue(diffImage, weightImage, dx, dy):
     """Compute covariances of diffImage in real space at lag (dx, dy).
 
-    Taken from https://github.com/PierreAstier/bfptc/ (c.f., appendix of Astier+19).
+    Taken from https://github.com/PierreAstier/bfptc/ (c.f., appendix
+    of Astier+19).
 
     Parameters
     ----------
@@ -181,7 +187,8 @@ def covDirectValue(diffImage, weightImage, dx, dy):
         Image to compute the covariance of.
 
     weightImage : `numpy.array`
-        Weight image of diffImage (1's and 0's for good and bad pixels, respectively).
+        Weight image of diffImage (1's and 0's for good and bad
+        pixels, respectively).
 
     dx : `int`
         Lag in x.
@@ -196,6 +203,7 @@ def covDirectValue(diffImage, weightImage, dx, dy):
 
     nPix : `int`
         Number of pixel pairs used to evaluate var and cov.
+
     """
     (nCols, nRows) = diffImage.shape
     # switching both signs does not change anything:
@@ -274,19 +282,22 @@ def fitDataFullCovariance(dataset):
         Dictionary of CovFit objects, with amp names as keys.
 
     covFitNoBDict: `dict`
-       Dictionary of CovFit objects, with amp names as keys (b=0 in Eq. 20 of Astier+19).
+       Dictionary of CovFit objects, with amp names as keys (b=0 in
+       Eq. 20 of Astier+19).
 
     Notes
     -----
-    The parameters of the full model for C_ij(mu) ("C_ij" and "mu" in ADU^2 and ADU, respectively)
-    in Astier+19 (Eq. 20) are:
+    The parameters of the full model for C_ij(mu) ("C_ij" and "mu" in
+    ADU^2 and ADU, respectively) in Astier+19 (Eq. 20) are:
 
         "a" coefficients (r by r matrix), units: 1/e
         "b" coefficients (r by r matrix), units: 1/e
         noise matrix (r by r matrix), units: e^2
         gain, units: e/ADU
 
-    "b" appears in Eq. 20 only through the "ab" combination, which is defined in this code as "c=ab".
+    "b" appears in Eq. 20 only through the "ab" combination, which is
+    defined in this code as "c=ab".
+
     """
 
     covFitDict = parseData(dataset)
@@ -301,7 +312,8 @@ def fitDataFullCovariance(dataset):
 
 def getFitDataFromCovariances(i, j, mu, fullCov, fullCovModel, fullCovSqrtWeights, gain=1.0,
                               divideByMu=False, returnMasked=False):
-    """Get measured signal and covariance, cov model, weigths, and mask at covariance lag (i, j).
+    """Get measured signal and covariance, cov model, weigths, and mask at
+    covariance lag (i, j).
 
     Parameters
     ----------
@@ -318,20 +330,23 @@ def getFitDataFromCovariances(i, j, mu, fullCov, fullCovModel, fullCovSqrtWeight
         Measured covariance matrices at each mean signal level in mu.
 
     fullCovSqrtWeights: `list` of `numpy.array`
-        List of square root of measured covariances at each mean signal level in mu.
+        List of square root of measured covariances at each mean
+        signal level in mu.
 
     fullCovModel : `list` of `numpy.array`
         List of modeled covariances at each mean signal level in mu.
 
     gain : `float`, optional
-        Gain, in e-/ADU. If other than 1.0 (default), the returned quantities will be in
-        electrons or powers of electrons.
+        Gain, in e-/ADU. If other than 1.0 (default), the returned
+        quantities will be in electrons or powers of electrons.
 
     divideByMu: `bool`, optional
-        Divide returned covariance, model, and weights by the mean signal mu?
+        Divide returned covariance, model, and weights by the mean
+        signal mu?
 
     returnMasked : `bool`, optional
-        Use mask (based on weights) in returned arrays (mu, covariance, and model)?
+        Use mask (based on weights) in returned arrays (mu,
+        covariance, and model)?
 
     Returns
     -------
@@ -348,11 +363,13 @@ def getFitDataFromCovariances(i, j, mu, fullCov, fullCovModel, fullCovSqrtWeight
         Weights at (i, j).
 
     maskFromWeights : `numpy.array`, optional
-        Boolean mask of the covariance at (i,j), where the weights differ from 0.
+        Boolean mask of the covariance at (i,j), where the weights
+        differ from 0.
 
     Notes
     -----
     This function is a method of the `CovFit` class.
+
     """
     mu = np.array(mu)
     fullCov = np.array(fullCov)
