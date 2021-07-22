@@ -1,0 +1,24 @@
+description: ImSim Photon-Transfer Curve calibration construction.
+instrument: lsst.obs.lsst.LsstCamImSim
+imports:
+  - location: $CP_PIPE_DIR/pipelines/measurePhotonTransferCurve.yaml
+tasks:
+  isr:
+    class: lsst.ip.isr.IsrTask
+    config:
+      doCrosstalk: False
+      doDefect: False
+  ptcExtract:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
+    config:
+      matchByExposureId: True
+  ptcSolve:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
+    config:
+      ptcFitType: FULLCOVARIANCE
+      initialNonLinearityExclusionThresholdPositive: 0.999
+      initialNonLinearityExclusionThresholdNegative: 0.999
+      minVarPivotSearch: 250000
+      minMeanRatioTest: 150000
+      sigmaCutPtcOutliers: 10
+      sigmaClipFullFitCovariancesAstier: 10

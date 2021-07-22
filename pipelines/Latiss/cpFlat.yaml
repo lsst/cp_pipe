@@ -1,0 +1,12 @@
+description: Latiss flat calibration construction
+instrument: lsst.obs.lsst.Latiss
+imports:
+  - location: $CP_PIPE_DIR/pipelines/cpFlatSingleChip.yaml
+tasks:
+  isr:
+    class: lsst.ip.isr.IsrTask
+    config:
+      # Disable these until useful calibrations exist.
+      overscan.fitType: 'MEDIAN_PER_ROW'
+      doLinearize: False
+      doCrosstalk: False

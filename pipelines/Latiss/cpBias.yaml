@@ -1,0 +1,13 @@
+description: Latiss bias calibration construction
+instrument: lsst.obs.lsst.Latiss
+imports:
+  - location: $CP_PIPE_DIR/pipelines/cpBias.yaml
+tasks:
+  isr:
+    class: lsst.ip.isr.IsrTask
+    config:
+      overscan.fitType: 'MEDIAN_PER_ROW'
+      doDefect: False
+      # Disable these until useful calibrations exist.
+      doLinearize: False
+      doCrosstalk: False

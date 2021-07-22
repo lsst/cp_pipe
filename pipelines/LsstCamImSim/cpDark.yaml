@@ -1,0 +1,11 @@
+description: ImSim dark calibration construction
+instrument: lsst.obs.lsst.LsstCamImSim
+imports:
+  - location: $CP_PIPE_DIR/pipelines/cpDark.yaml
+tasks:
+  isr:
+    class: lsst.ip.isr.IsrTask
+    config:
+      doLinearize: False
+      doCrosstalk: False
+      doDefect: False
