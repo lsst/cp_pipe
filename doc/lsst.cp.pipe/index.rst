@@ -1,18 +1,24 @@
+.. py:currentmodule:: lsst.cp.pipe
+
 .. _lsst.cp.pipe:
 
 ############
 lsst.cp.pipe
 ############
 
-.. The module is used to produce the calibration products required to calibrate a camera. Producing master calibration frames, generating bad pixel/column masks, calculating brighter-fatter effect coefficients, etc.
+.. This module is used to produce the calibration products required to perform instrument signal removal for a camera. Producing master calibration frames, generating bad pixel/column masks, calculating photon transfer curves (and the child products of that, linearity models and brighter-fatter kernels), and measuring crosstalk coefficients.
+
+.. _lsst.cp.pipe-using:
 
 Using lsst.cp.pipe
 ==================
 
 .. toctree::
-   :maxdepth: 3
+   :maxdepth: 1
 
    constructing-calibrations
+
+.. _lsst.cp.pipe-contributing:
 
 Contributing
 ============
@@ -24,6 +30,25 @@ You can find Jira issues for this module under the `cp_pipe <https://jira.lsstco
 
 .. .. toctree::
 ..    :maxdepth: 1
+
+Task reference
+==============
+
+.. _lsst.cp.pipe-pipeline-tasks:
+
+Pipeline tasks
+--------------
+
+.. lsst-pipelinetasks::
+   :root: lsst.cp.pipe
+
+.. _lsst.cp.pipe-command-line-tasks:
+
+Command-line tasks
+------------------
+
+.. lsst-cmdlinetasks::
+   :root: lsst.cp.pipe
 
 Python API reference
 ====================
