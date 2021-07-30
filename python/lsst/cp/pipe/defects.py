@@ -314,10 +314,9 @@ class MeasureDefectsTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         -------
         defects: `lsst.ip.isr.Defect`
             If the number of bad pixels in a column is not larger or
-            equal than self.config.badPixelColumnThreshold, the iput
+            equal than self.config.badPixelColumnThreshold, the input
             list is returned. Otherwise, the defects list returned
             will include boxes that mask blocks of on-and-of pixels.
-
         """
         # Get the (x, y) values of each bad pixel in amp.
         coordinates = []
@@ -500,7 +499,7 @@ class MeasureDefectsTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
                 y, bin_borders, patches = a.hist(imgData, histtype='step', bins=nbins,
                                                  lw=3, edgecolor='blue')
 
-                # Report number of entries in over-and -underflow
+                # Report number of entries in over- and under-flow
                 # bins, i.e. off the edges of the histogram
                 nOverflow = len(imgData[imgData > rightEdge])
                 nUnderflow = len(imgData[imgData < leftEdge])

@@ -472,7 +472,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         cut = meanClip + self.config.nSigmaClipPtc*np.sqrt(varClip)
         unmasked = np.where(np.fabs(diffIm.image.array) <= cut, 1, 0)
 
-        # Get the pixels in the mask planes of teh differenc eimage
+        # Get the pixels in the mask planes of the difference image
         # that were ignored by the clipping algorithm
         wDiff = np.where(diffIm.getMask().getArray() == 0, 1, 0)
         # Combine the two sets of pixels ('1': use; '0': don't use)

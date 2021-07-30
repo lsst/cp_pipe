@@ -512,7 +512,7 @@ class CovFit:
 
         unitsElectrons : `bool`, optional
             mu, covariance, and model are in ADU (or powers of ADU) If this
-            parameter is true, these are multiplied by the adequte
+            parameter is true, these are multiplied by the adequate
             factors of the gain to return quantities in electrons (or
             powers of electrons).
 
