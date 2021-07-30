@@ -6,7 +6,7 @@
 lsst.cp.pipe
 ############
 
-.. This module is used to produce the calibration products required to perform instrument signal removal for a camera. Producing master calibration frames, generating bad pixel/column masks, calculating photon transfer curves (and the child products of that, linearity models and brighter-fatter kernels), and measuring crosstalk coefficients.
+.. This module is used to produce the calibration products required to perform `instrument signal removal </modules/lsst.ip.isr/index>`_ for a camera. It currently can produce master bias, dark, fringe, and flat frames; bad pixel and column masks; the photon transfer curve and the child products of that, linearity models and brighter-fatter kernels; and the intra-detector crosstalk coefficients.
 
 .. _lsst.cp.pipe-using:
 
@@ -49,6 +49,23 @@ Command-line tasks
 
 .. lsst-cmdlinetasks::
    :root: lsst.cp.pipe
+
+Tasks
+-----
+
+.. lsst-tasks::
+   :root: lsst.cp.pipe
+   :toctree: tasks
+
+.. _lsst.cp.pipe-scripts:
+
+Script reference
+================
+
+.. toctree::
+   :maxdepth: 1
+
+.. _lsst.cp.pipe-pyapi:
 
 Python API reference
 ====================
