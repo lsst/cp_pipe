@@ -4,6 +4,8 @@
 FindDefectsTask
 ###############
 
+``FindDefectsTask`` is a gen2 wrapper task that combines the :lsst-task:`~lsst.cp.pipe.MeasureDefectsTask` and :lsst-task:`~lsst.cp.pipe.MergeDefectsTask` tasks together to identify defects.
+
 .. _lsst.cp.pipe.FindDefectsTask-api:
 
 Python API summary

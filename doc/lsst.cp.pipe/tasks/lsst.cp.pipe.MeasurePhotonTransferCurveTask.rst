@@ -4,6 +4,8 @@
 MeasurePhotonTransferCurveTask
 ##############################
 
+``MeasurePhotonTransferCurveTask`` is a gen2 wrapper task that combines the :lsst-task:`lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask` and :lsst-task:`lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask` tasks together.
+
 .. _lsst.cp.pipe.ptc.MeasurePhotonTransferCurveTask-api:
 
 Python API summary

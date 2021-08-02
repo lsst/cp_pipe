@@ -4,6 +4,21 @@
 CalibCombineTask
 ################
 
+``CalibCombineTask`` scales and coadds the input processed calibration exposures to produce a final master calibration.
+
+.. _lsst.cp.pipe.CalibCombineTask-processing-summary:
+
+Processing summary
+==================
+
+``CalibCombineTask`` runs these operations:
+
+#. Determine the scale factors to apply to each input exposure.
+#. Apply the scaling to the input exposures.
+#. Combine the inputs using `~lsst.afw.math.statisticsStack`.
+#. Interpolate NaN pixels.
+#. Optionally mask the vignetted region.
+
 .. _lsst.cp.pipe.CalibCombineTask-api:
 
 Python API summary

@@ -4,6 +4,19 @@
 CrosstalkSolveTask
 ##################
 
+``CrosstalkSolveTask`` fits the crosstalk coefficients based on the full set of input flux ratios.
+
+.. _lsst.cp.pipe.CrosstalkSolveTask-processing-summary:
+
+Processing summary
+==================
+
+``CrosstalkSolveTask`` runs these operations:
+
+#. Combines all of the individual exposure flux ratios measured by :lsst-task:`~lsst.cp.pipe.CrosstalkExtractTask` into one set.
+#. Fits each pair of source-target amplifier pairs to find the clipped mean value.
+#. Optionally prunes coefficients that have coefficients that are statistically consistent with the flux ratio noise.
+
 .. _lsst.cp.pipe.CrosstalkSolveTask-api:
 
 Python API summary

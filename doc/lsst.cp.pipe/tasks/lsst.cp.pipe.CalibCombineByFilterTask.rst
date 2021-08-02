@@ -4,6 +4,8 @@
 CalibCombineByFilterTask
 ########################
 
+``CalibCombineByFilterTask`` is identical to :lsst-task:`lsst.cp.pipe.CalibCombineTask`, with the addition of a filter dimension to ensure filter-dependent calibrations are constructed with the correct dataset dimensions.
+
 .. _lsst.cp.pipe.CalibCombineByFilterTask-api:
 
 Python API summary

@@ -4,6 +4,18 @@
 MeasureLinearityTask
 ####################
 
+``MeasureLinearityTask`` is the gen2 wrapper task around the gen3 implementation task (listed below).
+
+.. _lsst.cp.pipe.MeasureLinearityTask-processing-summary:
+
+Processing summary
+==================
+
+``MeasureLinearityTask`` runs these operations:
+
+#. Runs :lsst-task:`~lsst.cp.pipe.LinearitySolveTask` to generate a linearity solution from the input photon transfer curve.
+
+
 .. _lsst.cp.pipe.MeasureLinearityTask-api:
 
 Python API summary
