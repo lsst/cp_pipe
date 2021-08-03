@@ -63,6 +63,7 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
 
 class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
     """A class to calculate, fit, and plot a PTC from a set of flat pairs.
+
     The Photon Transfer Curve (var(signal) vs mean(signal)) is a standard
     tool used in astronomical detectors characterization (e.g., Janesick 2001,
     Janesick 2007). If ptcFitType is "EXPAPPROXIMATION" or "POLYNOMIAL",
@@ -74,9 +75,11 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
     in Equation 16 of Astier+19 ("The Shape of the Photon Transfer Curve
     of CCD sensors", arXiv:1905.08677) can be fitted to the PTC curve. These
     models include parameters such as the gain (e/DN) and readout noise.
+
     Linearizers to correct for signal-chain non-linearity are also calculated.
     The `Linearizer` class, in general, can support per-amp linearizers, but
     in this task this is not supported.
+
     If ptcFitType is "FULLCOVARIANCE", the covariances of the difference
     images are calculated via the DFT methods described in Astier+19 and the
     variances for the PTC are given by the cov[0,0] elements at each signal
