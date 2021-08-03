@@ -65,6 +65,8 @@ Script reference
 .. toctree::
    :maxdepth: 1
 
+   scripts/plotPhotonTransferCurve.py
+
 .. _lsst.cp.pipe-pyapi:
 
 Python API reference
