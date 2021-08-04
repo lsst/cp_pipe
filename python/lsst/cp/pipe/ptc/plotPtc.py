@@ -93,7 +93,6 @@ class PlotPhotonTransferCurveTask():
     def runDataRef(self):
         """Run the Photon Transfer Curve (PTC) plotting measurement task.
         """
-
         datasetFile = self.datasetFilename
         datasetPtc = PhotonTransferCurveDataset.readFits(datasetFile)
 
@@ -149,7 +148,6 @@ class PlotPhotonTransferCurveTask():
 
         log : `lsst.log.Log`, optional
             Logger to handle messages
-
         """
         mu = dataset.finalMeans
         # dictionaries with ampNames as keys
@@ -241,9 +239,7 @@ class PlotPhotonTransferCurveTask():
 
         pdfPages: `matplotlib.backends.backend_pdf.PdfPages`
             PDF file where the plots will be saved.
-
         """
-
         legendFontSize = 6.5
         labelFontSize = 7
         titleFontSize = 9
@@ -471,7 +467,6 @@ class PlotPhotonTransferCurveTask():
 
         log : `lsst.log.Log`, optional
             Logger to handle messages.
-
         """
         if not topPlot:
             fig = plt.figure(figsize=(8, 10))
@@ -586,7 +581,6 @@ class PlotPhotonTransferCurveTask():
 
         bRange : `int`
             Maximum lag for b arrays.
-
         """
         a, b = [], []
         for amp in aDict:
@@ -643,7 +637,6 @@ class PlotPhotonTransferCurveTask():
 
         bRange : `int`
             Maximum lag for b arrays.
-
         """
         assert (len(aDict) == len(bDict))
         a = []
@@ -727,7 +720,6 @@ class PlotPhotonTransferCurveTask():
 
         pdfPages: `matplotlib.backends.backend_pdf.PdfPages`
             PDF file where the plots will be saved.
-
         """
         assert (len(aDict) == len(bDict))
         a, b = [], []
@@ -797,9 +789,7 @@ class PlotPhotonTransferCurveTask():
 
         maxr : `int`, optional
             Maximum lag.
-
         """
-
         fig = plt.figure(figsize=(7, 11))
         title = [f"'a' relative bias at {signalElectrons} e", "'a' relative bias (b=0)"]
         data = [(aDict, fullCovsModel), (aDictNoB, fullCovsModelNoB)]
@@ -861,9 +851,7 @@ class PlotPhotonTransferCurveTask():
 
         pdfPages: `matplotlib.backends.backend_pdf.PdfPages`
             PDF file where the plots will be saved.
-
         """
-
         if ptcFitType == 'EXPAPPROXIMATION':
             ptcFunc = funcAstier
             stringTitle = (r"Var = $\frac{1}{2g^2a_{00}}(\exp (2a_{00} \mu g) - 1) + \frac{n_{00}}{g^2}$ ")
@@ -1012,7 +1000,6 @@ class PlotPhotonTransferCurveTask():
 
         linearizer : `lsst.ip.isr.Linearizer`
             Linearizer object
-
         """
         legendFontSize = 7
         labelFontSize = 7
@@ -1141,9 +1128,7 @@ class PlotPhotonTransferCurveTask():
         -------
         np.digitize(x, bins): `numpy.array`
             Bin indices.
-
         """
-
         bins = np.linspace(x.min(), x.max() + abs(x.max() * 1e-7), nBins + 1)
         return np.digitize(x, bins)
 
@@ -1180,9 +1165,7 @@ class PlotPhotonTransferCurveTask():
         sybin: `numpy.array`
             Uncertainty on the bin average, considering actual
             scatter, and ignoring weights.
-
         """
-
         if wy is None:
             wy = np.ones_like(x)
         binIndexSet = set(binIndex)

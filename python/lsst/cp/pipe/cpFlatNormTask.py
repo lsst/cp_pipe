@@ -79,6 +79,7 @@ class CpFlatMeasureTask(pipeBase.PipelineTask,
                         pipeBase.CmdLineTask):
     """Apply extra masking and measure image statistics.
     """
+
     ConfigClass = CpFlatMeasureTaskConfig
     _DefaultName = "cpFlatMeasure"
 
@@ -183,6 +184,7 @@ class CpFlatNormalizationTask(pipeBase.PipelineTask,
                               pipeBase.CmdLineTask):
     """Rescale merged flat frames to remove unequal screen illumination.
     """
+
     ConfigClass = CpFlatNormalizationTaskConfig
     _DefaultName = "cpFlatNorm"
 
@@ -372,7 +374,6 @@ class CpFlatNormalizationTask(pipeBase.PipelineTask,
         References
         ----------
         .. [1] https://svn.pan-starrs.ifa.hawaii.edu/trac/ipp/browser/trunk/psModules/src/detrend/pmFlatNormalize.c  # noqa: W505, E501
-
         """
         numExps = bgMatrix.shape[1]
         numChips = bgMatrix.shape[0]

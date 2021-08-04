@@ -85,6 +85,7 @@ class CrosstalkExtractConfig(pipeBase.PipelineTaskConfig,
                              pipelineConnections=CrosstalkExtractConnections):
     """Configuration for the measurement of pixel ratios.
     """
+
     doMeasureInterchip = Field(
         dtype=bool,
         default=False,
@@ -128,6 +129,7 @@ class CrosstalkExtractTask(pipeBase.PipelineTask,
                            pipeBase.CmdLineTask):
     """Task to measure pixel ratios to find crosstalk.
     """
+
     ConfigClass = CrosstalkExtractConfig
     _DefaultName = 'cpCrosstalkExtract'
 
@@ -364,6 +366,7 @@ class CrosstalkSolveConfig(pipeBase.PipelineTaskConfig,
                            pipelineConnections=CrosstalkSolveConnections):
     """Configuration for the solving of crosstalk from pixel ratios.
     """
+
     rejIter = Field(
         dtype=int,
         default=3,
@@ -390,6 +393,7 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
                          pipeBase.CmdLineTask):
     """Task to solve crosstalk from pixel ratios.
     """
+
     ConfigClass = CrosstalkSolveConfig
     _DefaultName = 'cpCrosstalkSolve'
 
@@ -456,7 +460,6 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
             Display a histogram of the combined ratio measurements for
             a pair of source/target amplifiers from all input
             exposures/detectors.
-
         """
         if outputDims:
             calibChip = outputDims['detector']
@@ -758,6 +761,7 @@ class MeasureCrosstalkTask(pipeBase.CmdLineTask):
     This Task simply calls the pipetask versions of the measure
     crosstalk code.
     """
+
     ConfigClass = MeasureCrosstalkConfig
     _DefaultName = "measureCrosstalk"
 

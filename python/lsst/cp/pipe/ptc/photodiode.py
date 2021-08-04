@@ -51,7 +51,6 @@ def getBOTphotodiodeData(dataRef, dataPath='/project/shared/BOT/_parent/raw/phot
     photodiodeData : `lsst.cp.pipe.photodiode.PhotodiodeData` or `None`
         The full time-series of the photodiode readings, with methods to
         integrate the photocharge, or None if the expected file isn't found.
-
     """
     if logger is None:
         logger = lsstLog.Log.getDefaultLogger()

@@ -60,7 +60,6 @@ def sigmaClipCorrection(nSigClip):
     -------
     scaleFactor : `float`
         Scale factor to increase the measured sigma by.
-
     """
     varFactor = 1.0 - (2 * nSigClip * norm.pdf(nSigClip)) / (norm.cdf(nSigClip) - norm.cdf(-nSigClip))
     return 1.0 / np.sqrt(varFactor)
@@ -93,7 +92,6 @@ def calculateWeightedReducedChi2(measured, model, weightsMeasured, nData, nParsM
     redWeightedChi2 : `float`
         Reduced weighted chi2.
     """
-
     wRes = (measured - model)*weightsMeasured
     return ((wRes*wRes).sum())/(nData-nParsModel)
 
@@ -154,7 +152,6 @@ def makeMockFlats(expTime, gain=1.0, readNoiseElectrons=5, fluxElectrons=1000,
 
     Example: galsim.cdmodel.PowerLawCD(8, 1.1e-7, 1.1e-7, 1.0e-8,
                                        1.0e-8, 1.0e-9, 1.0e-9, 2.0)
-
     """
     flatFlux = fluxElectrons  # e/s
     flatMean = flatFlux*expTime  # e
@@ -369,7 +366,6 @@ def irlsFit(initialParams, dataX, dataY, function, weightsY=None, weightType='Ca
     ------
     RuntimeError :
         Raised if an unknown weightType string is passed.
-
     """
     if not weightsY:
         weightsY = np.ones_like(dataX)
@@ -460,7 +456,6 @@ def fitLeastSq(initialParams, dataX, dataY, function, weightsY=None):
 
     reducedChiSqSingleLeastSquares : `float`
         Reduced chi squared, unweighted if weightsY is not provided.
-
     """
     if weightsY is None:
         weightsY = np.ones(len(dataX))
@@ -530,7 +525,6 @@ def fitBootstrap(initialParams, dataX, dataY, function, weightsY=None, confidenc
 
     reducedChiSqBootstrap : `float`
         Reduced chi squared, unweighted if weightsY is not provided.
-
     """
     if weightsY is None:
         weightsY = np.ones(len(dataX))
@@ -599,7 +593,6 @@ def funcAstier(pars, x):
     Returns
     -------
     C_00 (variance) in ADU^2.
-
     """
     a00, gain, noise = pars
     return 0.5/(a00*gain*gain)*(np.exp(2*a00*x*gain)-1) + noise/(gain*gain)  # C_00
@@ -767,7 +760,6 @@ def validateIsrConfig(isrTask, mandatory=None, forbidden=None, desirable=None, u
     -----
     Logs warnings using an isrValidation logger for desirable/undesirable
     options that are of the wrong polarity or if keys are missing.
-
     """
     if not isinstance(isrTask, ipIsr.IsrTask):
         raise TypeError(f'Must supply an instance of lsst.ip.isr.IsrTask not {type(isrTask)}')

@@ -45,7 +45,6 @@ class CovFastFourierTransform:
 
     maxRangeCov: `int`
         Maximum range for the covariances.
-
     """
 
     def __init__(self, diff, w, fftShape, maxRangeCov):
@@ -154,7 +153,6 @@ def computeCovDirect(diffImage, weightImage, maxRange):
             Covariance at (dx, dy).
         nPix : `int`
             Number of pixel pairs used to evaluate var and cov.
-
     """
     outList = []
     var = 0
@@ -203,7 +201,6 @@ def covDirectValue(diffImage, weightImage, dx, dy):
 
     nPix : `int`
         Number of pixel pairs used to evaluate var and cov.
-
     """
     (nCols, nRows) = diffImage.shape
     # switching both signs does not change anything:
@@ -249,7 +246,6 @@ def parseData(dataset):
     covFitDict: `dict`
         Dictionary with amps as keys, and CovFit objects as values.
     """
-
     covFitDict = {}
     for ampName in dataset.ampNames:
         # If there is a bad amp, don't fit it
@@ -297,9 +293,7 @@ def fitDataFullCovariance(dataset):
 
     "b" appears in Eq. 20 only through the "ab" combination, which is
     defined in this code as "c=ab".
-
     """
-
     covFitDict = parseData(dataset)
     covFitNoBDict = {}
     for ext, c in covFitDict.items():
@@ -369,7 +363,6 @@ def getFitDataFromCovariances(i, j, mu, fullCov, fullCovModel, fullCovSqrtWeight
     Notes
     -----
     This function is a method of the `CovFit` class.
-
     """
     mu = np.array(mu)
     fullCov = np.array(fullCov)

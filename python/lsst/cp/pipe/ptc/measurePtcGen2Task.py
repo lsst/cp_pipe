@@ -95,7 +95,6 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
     **kwargs: `dict`
         Keyword arguments passed on to the Task constructor. None used
         at this time.
-
     """
 
     RunnerClass = DataRefListRunner
@@ -119,7 +118,6 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         ----------
         dataRefList : `list` [`lsst.daf.peristence.ButlerDataRef`]
             Data references for exposures.
-
         """
         if len(dataRefList) < 2:
             raise RuntimeError("Insufficient inputs to combine.")

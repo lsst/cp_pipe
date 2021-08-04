@@ -74,6 +74,7 @@ class CpFringeTask(pipeBase.PipelineTask,
                    pipeBase.CmdLineTask):
     """Combine pre-processed fringe frames into a proposed master calibration.
     """
+
     ConfigClass = CpFringeTaskConfig
     _DefaultName = "cpFringe"
 
@@ -99,7 +100,6 @@ class CpFringeTask(pipeBase.PipelineTask,
         -------
         outputExp : `lsst.afw.image.Exposure`
             Fringe pre-processed frame.
-
         """
         bg = self.stats.run(inputExp)
         self.subtractBackground.run(inputExp)

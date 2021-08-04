@@ -82,7 +82,6 @@ def makeCovArray(inputTuple, maxRangeFromTuple=8):
     This routine implements the loss of variance due to clipping cuts
     when measuring variances and covariance, but this should happen
     inside the measurement code, where the cuts are readily available.
-
     """
     if maxRangeFromTuple is not None:
         cut = (inputTuple['i'] < maxRangeFromTuple) & (inputTuple['j'] < maxRangeFromTuple)
@@ -132,7 +131,6 @@ def symmetrize(inputArray):
     aSym: `numpy.array`
         Symmetrized array.
     """
-
     targetShape = list(inputArray.shape)
     r1, r2 = inputArray.shape[-1], inputArray.shape[-2]
     targetShape[-1] = 2*r1-1
@@ -274,7 +272,6 @@ class CovFit:
 
         "b" appears in Eq. 20 only through the "ab" combination, which
         is defined in this code as "c=ab".
-
         """
         sa = (self.r, self.r)
         a = self.params['a'].full.reshape(sa)
@@ -346,7 +343,6 @@ class CovFit:
     def getASig(self):
         """Square root of diagonal of the parameter covariance of the fitted
         "a" matrix
-
         """
         if self._getCovParams('a') is not None:
             sigA = np.sqrt(self._getCovParams('a').diagonal()).reshape((self.r, self.r))
@@ -385,7 +381,6 @@ class CovFit:
     def getNoiseSig(self):
         """Square root of diagonal of the parameter covariance of the fitted
         "noise" matrix
-
         """
         if self._getCovParams('noise') is not None:
             covNoise = self._getCovParams('noise')
@@ -425,7 +420,6 @@ class CovFit:
     def setAandB(self, a, b):
         """Set "a" and "b" coeffcients forfull Astier+19 model
         (Eq. 20). "c=a*b".
-
         """
         self.params['a'].full = a.flatten()
         self.params['c'].full = a.flatten()*b.flatten()
@@ -485,9 +479,7 @@ class CovFit:
 
         "b" appears in Eq. 20 only through the "ab" combination, which
         is defined in this code as "c=ab".
-
         """
-
         if pInit is None:
             pInit = self.getParamValues()
         params, paramsCov, _, mesg, ierr = leastsq(self.weightedRes, pInit, full_output=True)
@@ -543,7 +535,6 @@ class CovFit:
         mu*gain, self.cov[:, i, j]*gain**2 model*gain**2, and
         self.sqrtW/gain**2 in electrons or ADU if
         unitsElectrons=False.
-
         """
         if unitsElectrons:
             gain = self.getGain()

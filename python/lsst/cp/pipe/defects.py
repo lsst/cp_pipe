@@ -75,6 +75,7 @@ class MeasureDefectsTaskConfig(pipeBase.PipelineTaskConfig,
                                pipelineConnections=MeasureDefectsConnections):
     """Configuration for measuring defects from a list of exposures
     """
+
     nSigmaBright = pexConfig.Field(
         dtype=float,
         doc=("Number of sigma above mean for bright pixel detection. The default value was found to be",
@@ -126,6 +127,7 @@ class MeasureDefectsTaskConfig(pipeBase.PipelineTaskConfig,
 class MeasureDefectsTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
     """Measure the defects from one exposure.
     """
+
     ConfigClass = MeasureDefectsTaskConfig
     _DefaultName = 'cpDefectMeasure'
 
@@ -147,7 +149,6 @@ class MeasureDefectsTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
              ``outputDefects``
                  The defects measured from this exposure
                  (`lsst.ip.isr.Defects`).
-
         """
         detector = inputExp.getDetector()
 
@@ -210,9 +211,7 @@ class MeasureDefectsTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         -------
         defects : `lsst.ip.isr.Defect`
             The defects found in the image.
-
         """
-
         self._setEdgeBits(exp)
         maskedIm = exp.maskedImage
 
@@ -373,7 +372,6 @@ class MeasureDefectsTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         defects: `lsst.ip.isr.Defect`
             The defects list returned that will include boxes that
             mask blocks of on-and-of pixels.
-
         """
         with defects.bulk_update():
             goodPixelColumnGapThreshold = self.config.goodPixelColumnGapThreshold
@@ -553,6 +551,7 @@ class MergeDefectsTaskConfig(pipeBase.PipelineTaskConfig,
                              pipelineConnections=MergeDefectsConnections):
     """Configuration for merging single exposure defects.
     """
+
     assertSameRun = pexConfig.Field(
         dtype=bool,
         doc=("Ensure that all visits are from the same run? Raises if this is not the case, or"
@@ -603,6 +602,7 @@ class MergeDefectsTaskConfig(pipeBase.PipelineTaskConfig,
 class MergeDefectsTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
     """Merge the defects from multiple exposures.
     """
+
     ConfigClass = MergeDefectsTaskConfig
     _DefaultName = 'cpDefectMerge'
 
@@ -778,8 +778,8 @@ class FindDefectsTask(pipeBase.CmdLineTask):
     step is done to merge these detections, with pixels appearing in a
     fraction [0..1] of the images are kept as defects and those
     appearing below that occurrence-threshold are discarded.
-
     """
+
     ConfigClass = FindDefectsTaskConfig
     _DefaultName = "findDefects"
 

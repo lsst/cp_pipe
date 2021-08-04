@@ -141,8 +141,8 @@ class BrighterFatterKernelSolveConfig(pipeBase.PipelineTaskConfig,
 
 class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
     """Measure appropriate Brighter-Fatter Kernel from the PTC dataset.
-
     """
+
     ConfigClass = BrighterFatterKernelSolveConfig
     _DefaultName = 'cpBfkMeasure'
 
@@ -190,7 +190,6 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
 
             ``outputBfk`` : `lsst.ip.isr.BrighterFatterKernel`
                 Resulting Brighter-Fatter Kernel.
-
         """
         if len(dummy) == 0:
             self.log.warn("No dummy exposure found.")

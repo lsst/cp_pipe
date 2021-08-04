@@ -124,6 +124,7 @@ class StructArray(np.ndarray):
     [[ 0.  0.]
      [ 0.  0.]]
     """
+
     def __new__(cls, array, struct=[]):
         obj = array.view(cls)
         obj.struct = Structure(struct)
@@ -241,6 +242,7 @@ class FitParameters(object):
     >>> print p_dice['dSdT'].indexof([1,2])
     [ 9 10]
     """
+
     def __init__(self, groups):
         struct = Structure(groups)
         self._free = StructArray(np.ones(len(struct), dtype='bool'), struct)

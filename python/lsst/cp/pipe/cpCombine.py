@@ -40,8 +40,10 @@ __all__ = ['CalibStatsConfig', 'CalibStatsTask', 'VignetteExposure',
 
 # CalibStatsConfig/CalibStatsTask from pipe_base/constructCalibs.py
 class CalibStatsConfig(pexConfig.Config):
-    """Parameters controlling the measurement of background statistics.
+    """Parameters controlling the measurement of background
+    statistics.
     """
+
     stat = pexConfig.Field(
         dtype=str,
         default='MEANCLIP',
@@ -69,8 +71,8 @@ class CalibStatsTask(pipeBase.Task):
 
     This can be useful for scaling the background, e.g., for flats and
     fringe frames.
-
     """
+
     ConfigClass = CalibStatsConfig
 
     def run(self, exposureOrImage):
@@ -137,8 +139,8 @@ class CalibCombineConnections(pipeBase.PipelineTaskConnections,
 class CalibCombineConfig(pipeBase.PipelineTaskConfig,
                          pipelineConnections=CalibCombineConnections):
     """Configuration for combining calib exposures.
-
     """
+
     calibrationType = pexConfig.Field(
         dtype=str,
         default="calibration",
@@ -207,6 +209,7 @@ class CalibCombineConfig(pipeBase.PipelineTaskConfig,
 class CalibCombineTask(pipeBase.PipelineTask,
                        pipeBase.CmdLineTask):
     """Task to combine calib exposures."""
+
     ConfigClass = CalibCombineConfig
     _DefaultName = 'cpCombine'
 
@@ -517,7 +520,6 @@ class CalibCombineTask(pipeBase.PipelineTask,
         ----------
         exp : `lsst.afw.image.Exposure`
             Exp to check for NaNs.
-
         """
         array = exp.getImage().getArray()
         bad = np.isnan(array)
@@ -563,6 +565,7 @@ class CalibCombineByFilterConfig(CalibCombineConfig,
 
 class CalibCombineByFilterTask(CalibCombineTask):
     """Task to combine calib exposures."""
+
     ConfigClass = CalibCombineByFilterConfig
     _DefaultName = 'cpFilterCombine'
     pass

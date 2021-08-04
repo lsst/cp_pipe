@@ -127,6 +127,7 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
 class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
     """Fit the linearity from the PTC dataset.
     """
+
     ConfigClass = LinearitySolveConfig
     _DefaultName = 'cpLinearitySolve'
 
@@ -397,7 +398,6 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
             ``yVector`` to keep.
         ampName : `str`
             Amplifier name to lookup linearity correction values.
-
         """
         frame = getDebugFrame(self._display, stepname)
         if frame:
@@ -461,6 +461,7 @@ class MeasureLinearityTask(pipeBase.CmdLineTask):
     This class wraps the Gen3 linearity task to allow it to be run as
     a Gen2 CmdLineTask.
     """
+
     ConfigClass = MeasureLinearityConfig
     _DefaultName = "measureLinearity"
 

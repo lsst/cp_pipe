@@ -44,6 +44,7 @@ from lsst.ip.isr import PhotonTransferCurveDataset
 
 class PlotPhotonTransferCurveTaskConfigGen2(pexConfig.Config):
     """Config class for photon transfer curve measurement task"""
+
     datasetFileName = pexConfig.Field(
         dtype=str,
         doc="datasetPtc file name (fits)",
@@ -125,7 +126,6 @@ class PlotPhotonTransferCurveTaskGen2(pipeBase.CmdLineTask):
         dataRef : list of lsst.daf.persistence.ButlerDataRef
             dataRef for the detector for the expIds to be fit.
         """
-
         datasetFile = self.config.datasetFileName
         datasetPtc = PhotonTransferCurveDataset.readFits(datasetFile)
 
@@ -181,7 +181,6 @@ class PlotPhotonTransferCurveTaskGen2(pipeBase.CmdLineTask):
 
         log : `lsst.log.Log`, optional
             Logger to handle messages
-
         """
         mu = dataset.finalMeans
         # dictionaries with ampNames as keys
@@ -273,9 +272,7 @@ class PlotPhotonTransferCurveTaskGen2(pipeBase.CmdLineTask):
 
         pdfPages: `matplotlib.backends.backend_pdf.PdfPages`
             PDF file where the plots will be saved.
-
         """
-
         legendFontSize = 6.5
         labelFontSize = 7
         titleFontSize = 9
@@ -503,7 +500,6 @@ class PlotPhotonTransferCurveTaskGen2(pipeBase.CmdLineTask):
 
         log : `lsst.log.Log`, optional
             Logger to handle messages.
-
         """
         if not topPlot:
             fig = plt.figure(figsize=(8, 10))
@@ -618,7 +614,6 @@ class PlotPhotonTransferCurveTaskGen2(pipeBase.CmdLineTask):
 
         bRange : `int`
             Maximum lag for b arrays.
-
         """
         a, b = [], []
         for amp in aDict:
@@ -675,7 +670,6 @@ class PlotPhotonTransferCurveTaskGen2(pipeBase.CmdLineTask):
 
         bRange : `int`
             Maximum lag for b arrays.
-
         """
         assert (len(aDict) == len(bDict))
         a = []
@@ -759,7 +753,6 @@ class PlotPhotonTransferCurveTaskGen2(pipeBase.CmdLineTask):
 
         pdfPages: `matplotlib.backends.backend_pdf.PdfPages`
             PDF file where the plots will be saved.
-
         """
         assert (len(aDict) == len(bDict))
         a, b = [], []
@@ -829,9 +822,7 @@ class PlotPhotonTransferCurveTaskGen2(pipeBase.CmdLineTask):
 
         maxr : `int`, optional
             Maximum lag.
-
         """
-
         fig = plt.figure(figsize=(7, 11))
         title = [f"'a' relative bias at {signalElectrons} e", "'a' relative bias (b=0)"]
         data = [(aDict, fullCovsModel), (aDictNoB, fullCovsModelNoB)]
@@ -893,9 +884,7 @@ class PlotPhotonTransferCurveTaskGen2(pipeBase.CmdLineTask):
 
         pdfPages: `matplotlib.backends.backend_pdf.PdfPages`
             PDF file where the plots will be saved.
-
         """
-
         if ptcFitType == 'EXPAPPROXIMATION':
             ptcFunc = funcAstier
             stringTitle = (r"Var = $\frac{1}{2g^2a_{00}}(\exp (2a_{00} \mu g) - 1) + \frac{n_{00}}{g^2}$ ")
@@ -1044,7 +1033,6 @@ class PlotPhotonTransferCurveTaskGen2(pipeBase.CmdLineTask):
 
         linearizer : `lsst.ip.isr.Linearizer`
             Linearizer object
-
         """
         legendFontSize = 7
         labelFontSize = 7
@@ -1173,9 +1161,7 @@ class PlotPhotonTransferCurveTaskGen2(pipeBase.CmdLineTask):
         -------
         np.digitize(x, bins): `numpy.array`
             Bin indices.
-
         """
-
         bins = np.linspace(x.min(), x.max() + abs(x.max() * 1e-7), nBins + 1)
         return np.digitize(x, bins)
 
@@ -1213,9 +1199,7 @@ class PlotPhotonTransferCurveTaskGen2(pipeBase.CmdLineTask):
         sybin: `numpy.array`
             Uncertainty on the bin average, considering actual
             scatter, and ignoring weights.
-
         """
-
         if wy is None:
             wy = np.ones_like(x)
         binIndexSet = set(binIndex)

@@ -73,6 +73,7 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
                                      pipelineConnections=PhotonTransferCurveSolveConnections):
     """Configuration for fitting measured covariances.
     """
+
     ptcFitType = pexConfig.ChoiceField(
         dtype=str,
         doc="Fit PTC to Eq. 16, Eq. 20 in Astier+19, or to a polynomial.",
@@ -170,8 +171,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
 
     Astier+19: "The Shape of the Photon Transfer Curve
     of CCD sensors", arXiv:1905.08677
-
     """
+
     ConfigClass = PhotonTransferCurveSolveConfig
     _DefaultName = 'cpPhotonTransferCurveSolve'
 
@@ -214,7 +215,6 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
                 Final PTC dataset, containing information such as the
                 means, variances, and exposure times
                 (`lsst.ip.isr.PhotonTransferCurveDataset`).
-
         """
         # Assemble partial PTC datasets into a single dataset.
         ampNames = np.unique(inputCovariances[0].ampNames)
@@ -304,9 +304,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             it has been modified to include information such as the
             fit vectors and the fit parameters. See the class
             `PhotonTransferCurveDatase`.
-
         """
-
         covFits, covFitsNoB = fitDataFullCovariance(dataset)
         dataset = self.getOutputPtcDataCovAstier(dataset, covFits, covFitsNoB)
 
@@ -336,7 +334,6 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             measured variance, modeled variance, a, and b coefficient
             matrices (see Astier+19) per amplifier.  See the class
             `PhotonTransferCurveDatase`.
-
         """
         assert(len(covFits) == len(covFitsNoB))
 
@@ -469,9 +466,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         included Too low and the non-linear points will be excluded,
         biasing the NL fit.  This function also masks points after the
         variance starts decreasing.
-
         """
-
         assert(len(means) == len(variances))
         ratios = [b/a for (a, b) in zip(means, variances)]
         medianRatio = np.nanmedian(ratios)
@@ -548,7 +543,6 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         ------
         RuntimeError:
             Raises if dataset.ptcFitType is None or empty.
-
         """
         if dataset.ptcFitType:
             ptcFitType = dataset.ptcFitType

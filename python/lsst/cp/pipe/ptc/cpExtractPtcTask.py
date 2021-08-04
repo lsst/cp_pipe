@@ -64,6 +64,7 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
                                        pipelineConnections=PhotonTransferCurveExtractConnections):
     """Configuration for the measurement of covariances from flats.
     """
+
     matchByExposureId = pexConfig.Field(
         dtype=bool,
         doc="Should exposures be matched by ID rather than exposure time?",
@@ -186,6 +187,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
     Astier+19: "The Shape of the Photon Transfer Curve of CCD
     sensors", arXiv:1905.08677.
     """
+
     ConfigClass = PhotonTransferCurveExtractConfig
     _DefaultName = 'cpPtcExtract'
 
@@ -410,9 +412,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                     Number of pixel pairs used to evaluate var and cov.
 
             If either mu1 or m2 are NaN's, the returned value is NaN.
-
         """
-
         if region is not None:
             im1Area = exposure1.maskedImage[region]
             im2Area = exposure2.maskedImage[region]
