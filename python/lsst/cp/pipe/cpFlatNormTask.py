@@ -93,8 +93,11 @@ class CpFlatMeasureTask(pipeBase.PipelineTask,
 
         Returns
         -------
-        outputStats : `lsst.daf.base.PropertyList`
-            List containing the statistics.
+        results : `lsst.pipe.base.Struct`
+            The results struct containing:
+
+            ``outputStats``
+                 List containing the statistics (`lsst.daf.base.PropertyList`).
         """
         if self.config.doVignette:
             VignetteExposure(inputExp, doUpdateMask=True, doSetValue=False, log=self.log)
@@ -217,9 +220,13 @@ class CpFlatNormalizationTask(pipeBase.PipelineTask,
 
         Returns
         -------
-        outputScales : `dict` [`dict` [`dict` [`float`]]]
-            Dictionary of scales, indexed by detector (`int`),
-            amplifier (`int`), and exposure (`int`).
+        results : `lsst.pipe.base.Struct`
+            The results struct containing:
+
+            ``outputScales``
+                Dictionary of scales, indexed by detector (`int`),
+                amplifier (`int`), and exposure (`int`) (`dict`
+                [`dict` [`dict` [`float`]]]).
 
         Raises
         ------

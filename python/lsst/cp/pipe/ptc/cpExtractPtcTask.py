@@ -228,6 +228,15 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
 
         inputDims : `list`
             List of exposure IDs.
+
+        Returns
+        -------
+        results : `lsst.pipe.base.Struct`
+            The results struct containing:
+
+            ``outputCovariances``
+                A list containing the per-pair PTC measurements (`list`
+                [`lsst.ip.isr.PhotonTransferCurveDataset`])
         """
         # inputExp.values() returns a view, which we turn into a list. We then
         # access the first exposure-ID tuple to get the detector.

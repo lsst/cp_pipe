@@ -157,16 +157,18 @@ class CrosstalkExtractTask(pipeBase.PipelineTask,
         results : `lsst.pipe.base.Struct`
             The results struct containing:
 
-            ``outputRatios`` : `dict` [`dict` [`dict` [`dict` [`list`]]]]
+            ``outputRatios``
                  A catalog of ratio lists.  The dictionaries are
                  indexed such that:
                  outputRatios[targetChip][sourceChip][targetAmp][sourceAmp]
-                 contains the ratio list for that combination.
-            ``outputFluxes`` : `dict` [`dict` [`list`]]
+                 contains the ratio list for that combination (`dict`
+                 [`dict` [`dict` [`dict` [`list`]]]]).
+            ``outputFluxes``
                  A catalog of flux lists.  The dictionaries are
                  indexed such that:
-                 outputFluxes[sourceChip][sourceAmp]
-                 contains the flux list used in the outputRatios.
+                 outputFluxes[sourceChip][sourceAmp] contains the flux
+                 list used in the outputRatios (`dict` [`dict`
+                 [`list`]]).
 
         Notes
         -----
@@ -441,10 +443,12 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
         results : `lsst.pipe.base.Struct`
             The results struct containing:
 
-            ``outputCrosstalk`` : `lsst.ip.isr.CrosstalkCalib`
-                Final crosstalk calibration.
-            ``outputProvenance`` : `lsst.ip.isr.IsrProvenance`
-                Provenance data for the new calibration.
+            ``outputCrosstalk``
+                Final crosstalk calibration
+                (`lsst.ip.isr.CrosstalkCalib`).
+            ``outputProvenance``
+                Provenance data for the new calibration
+                (`lsst.ip.isr.IsrProvenance`).
 
         Raises
         ------
@@ -787,10 +791,12 @@ class MeasureCrosstalkTask(pipeBase.CmdLineTask):
         results : `lsst.pipe.base.Struct`
             The results struct containing:
 
-            ``outputCrosstalk`` : `lsst.ip.isr.CrosstalkCalib`
-                Final crosstalk calibration.
-            ``outputProvenance`` : `lsst.ip.isr.IsrProvenance`
-                Provenance data for the new calibration.
+            ``outputCrosstalk``
+                Final crosstalk calibration
+                (`lsst.ip.isr.CrosstalkCalib`).
+            ``outputProvenance``
+                Provenance data for the new calibration
+                (`lsst.ip.isr.IsrProvenance`).
 
         Raises
         ------

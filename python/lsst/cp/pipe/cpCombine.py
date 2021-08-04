@@ -236,7 +236,7 @@ class CalibCombineTask(pipeBase.PipelineTask,
         inputScales : `dict` [`dict` [`dict` [`float`]]], optional
             Dictionary of scales, indexed by detector (`int`),
             amplifier (`int`), and exposure (`int`).  Used for
-            'inputList' scaling.
+            'inputExps' scaling.
         inputDims : `list` [`dict`]
             List of dictionaries of input data dimensions/values.
             Each list entry should contain:
@@ -248,8 +248,12 @@ class CalibCombineTask(pipeBase.PipelineTask,
 
         Returns
         -------
-        combinedExp : `lsst.afw.image.Exposure`
-            Final combined exposure generated from the inputs.
+        results : `lsst.pipe.base.Struct`
+            The results struct containing:
+
+            ``combinedExp``
+                Final combined exposure generated from the inputs
+                (`lsst.afw.image.Exposure`).
 
         Raises
         ------
@@ -373,7 +377,7 @@ class CalibCombineTask(pipeBase.PipelineTask,
 
         Parameters
         -----------
-        dimList : iterable of `tuple` (`int`, `int`)
+        dimList : `list` [`tuple` [`int`, `int`]]
             List of dimensions.
 
         Raises
@@ -435,13 +439,13 @@ class CalibCombineTask(pipeBase.PipelineTask,
 
         Parameters
         ----------
-        expList : `list` of `lsst.afw.image.Exposure`
+        expList : `list` [`lsst.afw.image.Exposure`]
             Input list of exposures to combine.
         calib : `lsst.afw.image.Exposure`
             Output calibration to construct headers for.
-        calibType: `str`, optional
+        calibType : `str`, optional
             OBSTYPE the output should claim.
-        scales: `list` of `float`, optional
+        scales : `list` [`float`], optional
             Scale values applied to each input to record.
 
         Returns

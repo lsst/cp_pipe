@@ -173,10 +173,11 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         results : `lsst.pipe.base.Struct`
             The results struct containing:
 
-            ``outputLinearizer`` : `lsst.ip.isr.Linearizer`
-                Final linearizer calibration.
-            ``outputProvenance`` : `lsst.ip.isr.IsrProvenance`
-                Provenance data for the new calibration.
+            ``outputLinearizer``
+                Final linearizer calibration (`lsst.ip.isr.Linearizer`).
+            ``outputProvenance``
+                Provenance data for the new calibration
+                (`lsst.ip.isr.IsrProvenance`).
 
         Notes
         -----
@@ -482,10 +483,11 @@ class MeasureLinearityTask(pipeBase.CmdLineTask):
         results : `lsst.pipe.base.Struct`
             The results struct containing:
 
-            ``outputLinearizer`` : `lsst.ip.isr.Linearizer`
-                Final linearizer calibration.
-            ``outputProvenance`` : `lsst.ip.isr.IsrProvenance`
-                Provenance data for the new calibration.
+            ``outputLinearizer``
+                Final linearizer calibration (`lsst.ip.isr.Linearizer`).
+            ``outputProvenance``
+                Provenance data for the new calibration
+                (`lsst.ip.isr.IsrProvenance`).
         """
         ptc = dataRef.get('photonTransferCurveDataset')
         camera = dataRef.get('camera')

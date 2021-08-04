@@ -276,6 +276,7 @@ class MeasureDefectsTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
 
     def _setEdgeBits(self, exposureOrMaskedImage, maskplaneToSet='EDGE'):
         """Set edge bits on an exposure or maskedImage.
+
         Raises
         ------
         TypeError
@@ -438,14 +439,15 @@ class MeasureDefectsTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
                     break
 
     def debugHistogram(self, stepname, ampImage, nSigmaUsed, exp):
-        """
-        Make a histogram of the distribution of pixel values for each amp.
+        """Make a histogram of the distribution of pixel values for
+        each amp.
 
-        The main image data histogram is plotted in blue. Edge pixels,
-        if masked, are in red. Note that masked edge pixels do not contribute
-        to the underflow and overflow numbers.
+        The main image data histogram is plotted in blue.  Edge
+        pixels, if masked, are in red.  Note that masked edge pixels
+        do not contribute to the underflow and overflow numbers.
 
-        Note that this currently only supports the 16-amp LSST detectors.
+        Note that this currently only supports the 16-amp LSST
+        detectors.
 
         Parameters
         ----------
@@ -607,6 +609,24 @@ class MergeDefectsTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
     _DefaultName = 'cpDefectMerge'
 
     def run(self, inputDefects, camera):
+        """Merge a list of single defects to find the common defect regions.
+
+        Parameters
+        ----------
+        inputDefects : `list` [`lsst.ip.isr.Defects`]
+             Partial defects from a single exposure.
+        camera : `lsst.afw.cameraGeom.Camera`
+             Camera to use for metadata.
+
+        Returns
+        -------
+        results : `lsst.pipe.base.Struct`
+             Results struct containing:
+
+             ``mergedDefects``
+                 The defects merged from the input lists
+                 (`lsst.ip.isr.Defects`).
+        """
         detectorId = inputDefects[0].getMetadata().get('DETECTOR', None)
         if detectorId is None:
             raise RuntimeError("Cannot identify detector id.")
@@ -807,10 +827,10 @@ class FindDefectsTask(pipeBase.CmdLineTask):
         result : `lsst.pipe.base.Struct`
             Result struct with Components:
 
-            - ``defects`` : `lsst.ip.isr.Defect`
-              The defects found by the task.
-            - ``exitStatus`` : `int`
-              The exit code.
+            ``defects``
+                  The defects found by the task (`lsst.ip.isr.Defect`).
+            ``exitStatus``
+                  The exit code (`int`).
         """
         dataRef = dataRefList[0]
         camera = dataRef.get("camera")

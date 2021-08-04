@@ -188,8 +188,9 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
         results : `lsst.pipe.base.Struct`
             The resulst struct containing:
 
-            ``outputBfk`` : `lsst.ip.isr.BrighterFatterKernel`
-                Resulting Brighter-Fatter Kernel.
+            ``outputBfk``
+                Resulting Brighter-Fatter Kernel
+                (`lsst.ip.isr.BrighterFatterKernel`).
         """
         if len(dummy) == 0:
             self.log.warn("No dummy exposure found.")
