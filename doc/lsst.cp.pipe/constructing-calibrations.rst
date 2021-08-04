@@ -9,9 +9,9 @@ Constructing calibrations
 In general, calibration construction is a four step process:
 
 - A set of exposures is identified to be used in the calibration.
-- A `pipetask </modules/lsst.ctrl.mpexec/pipetask.html>`_ pipeline is run to generate a proposed calibration from that set of raw exposures.
+- A :ref:`pipetask <lsst.ctrl.mpexec-scripts>` pipeline is run to generate a proposed calibration from that set of raw exposures.
 - The calibration should be checked by the tests in the ``cp_verify`` package, to confirm that it is suitable for the entire validity range, and that it satisfies all of the quality metrics defined in `DMTN-101 <https://dmtn-101.lsst.io/>`_.  As ``cp_verify`` is still in development, not every example has an associated verification step.
-- The calibration can be certified for use, with a timespan indicating when the calibration is valid.  Individual `CALIBRATION collections </modules/lsst.daf.butler/organizing.html#calibration-collections>`_ can be grouped into a butler `CHAINED collection </modules/lsst.daf.butler/organizing.html#chained-collections>`_ to connect all of the various calibrations into a single collection, avoiding the need to remember a large sequence of collection names.
+- The calibration can be certified for use, with a timespan indicating when the calibration is valid.  Individual :ref:`CALIBRATION collections <lsst.daf.butler.CollectionType.CALIBRATION>` can be grouped into a butler :ref:`CHAINED collection <lsst.daf.butler.CollectionType.CHAINED>` to connect all of the various calibrations into a :ref:`single collection <daf_butler_organizing_datasets>`, avoiding the need to remember a large sequence of collection names.
 
 The examples presented below follow the collection naming conventions listed in `DMTN-167 <https://dmtn-167.lsst.io>`_, and will use ticketed user collection names to illustrate that the calibrations constructed here were made as part of a `JIRA request <https://jira.lsstcorp.org/browse/DM-28920>`_ to create a full set of calibrations for LATISS.
 
@@ -49,7 +49,7 @@ Certification of calibrations should be done after confirming that all of the ``
 Single-date calibrations
 ------------------------
 
-Calibrations created as part of daily observations should be certified into a single collection per calibration type, with the validity range set to only include the day they were taken.  This can be done using the `certify-calibrations </modules/lsst.daf.butler/scripts/butler.html#butler-certify-calibrations>`_ subcommand for ``butler``.
+Calibrations created as part of daily observations should be certified into a single collection per calibration type, with the validity range set to only include the day they were taken.  This can be done using the `certify-calibrations <butler-certify-calibrations>`_ subcommand for ``butler``.
 
 .. code:: bash
 
@@ -79,7 +79,7 @@ Calibration collection best practices
 
 Although the example presented below certifies each new calibration to a final CALIBRATION collection, in situations where a full set of calibrations are constructed at once, it may be better to use a CHAINED collection as the target.  This allows easier control of the set of calibrations included in the final collection.  Fixing an error in the example presented a way to demonstrate this as well.
 
-- The initial bias and defects were correct, and a chained collection was used:
+- The initial bias and defects were correct, and a CHAINED collection was used:
 
 .. code:: bash
 
@@ -214,7 +214,7 @@ Although the example presented below certifies each new calibration to a final C
 Calibration Construction Guide
 ==============================
 
-The following sections cover the construction of a full set of calibrations.  The calibrations build on each other, and are generally calculated in the same order as the calibrations are applied by the `ip_isr </modules/lsst.ip.isr>`_ module.
+The following sections cover the construction of a full set of calibrations.  The calibrations build on each other, and are generally calculated in the same order as the calibrations are applied by the `ip_isr <lsst.ip.isr>`_ module.
 
 .. _cp-pipe-readNoise:
 
