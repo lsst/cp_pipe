@@ -189,8 +189,8 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         such that :math:`c_(j-2) = -k_j/(k_1^j)` in units of DN^(1-j) (c.f.,
         Eq. 37 of 2003.05978). The `config.polynomialOrder` or
         `config.splineKnots` define the maximum order of :math:`x^j` to fit.
-        As :math:`k_0` and :math:`k_1` are degenerate with bias level and gain, they
-        are not included in the non-linearity correction.
+        As :math:`k_0` and :math:`k_1` are degenerate with bias level and gain,
+        they are not included in the non-linearity correction.
         """
         if len(dummy) == 0:
             self.log.warn("No dummy exposure found.")
