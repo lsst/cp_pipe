@@ -169,19 +169,6 @@ class CrosstalkExtractTask(pipeBase.PipelineTask,
                  outputFluxes[sourceChip][sourceAmp] contains the flux
                  list used in the outputRatios (`dict` [`dict`
                  [`list`]]).
-
-        Notes
-        -----
-        The lsstDebug.Info() method can be rewritten for __name__ =
-        `lsst.cp.pipe.measureCrosstalk`, and supports the parameters:
-
-        debug.display['extract'] : `bool`
-            Display the exposure under consideration, with the pixels used
-            for crosstalk measurement indicated by the DETECTED mask plane.
-        debug.display['pixels'] : `bool`
-            Display a plot of the ratio calculated for each pixel used in this
-            exposure, split by amplifier pairs.  The median value is listed
-            for reference.
         """
         outputRatios = defaultdict(lambda: defaultdict(dict))
         outputFluxes = defaultdict(lambda: defaultdict(dict))
@@ -292,9 +279,9 @@ class CrosstalkExtractTask(pipeBase.PipelineTask,
         ----------
         stepname : `str`
             State of processing to view.
-        pixelsIn : `np.ndarray`
+        pixelsIn : `np.ndarray`, (N,)
             Pixel values from the potential crosstalk source.
-        pixelsOut : `np.ndarray`
+        pixelsOut : `np.ndarray`, (N,)
             Pixel values from the potential crosstalk target.
         sourceName : `str`
             Source amplifier name
@@ -454,16 +441,6 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
         ------
         RuntimeError
             Raised if the input data contains multiple target detectors.
-
-        Notes
-        -----
-        The lsstDebug.Info() method can be rewritten for __name__ =
-        `lsst.ip.isr.measureCrosstalk`, and supports the parameters:
-
-        debug.display['reduce'] : `bool`
-            Display a histogram of the combined ratio measurements for
-            a pair of source/target amplifiers from all input
-            exposures/detectors.
         """
         if outputDims:
             calibChip = outputDims['detector']
@@ -565,7 +542,7 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
 
         Parameters
         ----------
-        ratios : `dict` of `dict` of `numpy.ndarray`
+        ratios : `dict` [`dict` [`numpy.ndarray`, (N,)]]
            Catalog of arrays of ratios.
         rejIter : `int`
            Number of rejection iterations.
@@ -576,16 +553,6 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
         -------
         calib : `lsst.ip.isr.CrosstalkCalib`
             The output crosstalk calibration.
-
-        Notes
-        -----
-        The lsstDebug.Info() method can be rewritten for __name__ =
-        `lsst.ip.isr.measureCrosstalk`, and supports the parameters:
-
-        debug.display['measure'] : `bool`
-            Display the CDF of the combined ratio measurements for
-            a pair of source/target amplifiers from the final set of
-            clipped input ratios.
         """
         calib = CrosstalkCalib(nAmp=len(ratios))
 
@@ -670,7 +637,7 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
         ----------
         stepname : `str`
             State of processing to view.
-        ratios : `dict` of `dict` of `np.ndarray`
+        ratios : `dict` [`dict` [`numpy.ndarray`, (N,)]]
             Array of measured CT ratios, indexed by source/victim
             amplifier.
         i : `str`

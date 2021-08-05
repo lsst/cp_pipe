@@ -35,32 +35,32 @@ def makeCovArray(inputTuple, maxRangeFromTuple=8):
 
     Parameters
     ----------
-    inputTuple: `numpy.ndarray`
+    inputTuple : `numpy.ndarray`
         Structured array with rows with at least
         (mu, afwVar, cov, var, i, j, npix), where:
 
         mu : 0.5*(m1 + m2), where:
             mu1: mean value of flat1
             mu2: mean value of flat2
-        afwVar: variance of difference flat, calculated with afw
-        cov: covariance value at lag(i, j)
-        var: variance(covariance value at lag(0, 0))
-        i: lag dimension
-        j: lag dimension
-        npix: number of pixels used for covariance calculation.
+        afwVar : variance of difference flat, calculated with afw
+        cov : covariance value at lag(i, j)
+        var : variance(covariance value at lag(0, 0))
+        i : lag dimension
+        j : lag dimension
+        npix : number of pixels used for covariance calculation.
 
-    maxRangeFromTuple: `int`
+    maxRangeFromTuple : `int`
         Maximum range to select from tuple.
 
     Returns
     -------
-    cov: `numpy.array`
+    cov : `numpy.array`
         Covariance arrays, indexed by mean signal mu.
 
-    vCov: `numpy.array`
+    vCov : `numpy.array`
         Variance arrays, indexed by mean signal mu.
 
-    muVals: `numpy.array`
+    muVals : `numpy.array`
         List of mean signal values.
 
     Notes
@@ -123,12 +123,12 @@ def symmetrize(inputArray):
 
     Parameters
     ----------
-    inputarray: `numpy.array`
+    inputarray : `numpy.array`
         Input array to symmetrize.
 
     Returns
     -------
-    aSym: `numpy.array`
+    aSym : `numpy.array`
         Symmetrized array.
     """
     targetShape = list(inputArray.shape)
@@ -152,21 +152,21 @@ class CovFit:
 
     Parameters
     ----------
-    meanSignals : `list`[`float`]
+    meanSignals : `list` [`float`]
         List with means of the difference image of two flats,
         for a particular amplifier in the detector.
 
-    covariances : `list`[`numpy.array`]
+    covariances : `list` [`numpy.array`, (N, N)]
         List with 2D covariance arrays at a given mean signal.
 
-    covsSqrtWeights : `list`[`numpy.array`]
-        List with 2D arrays with weights from `vcov as defined in
+    covsSqrtWeights : `list` [`numpy.array`, (N, N)]
+        List with 2D arrays with weights from `vcov` as defined in
         `makeCovArray`: weight = 1/sqrt(vcov).
 
-    maxRangeFromTuple: `int`, optional
+    maxRangeFromTuple : `int`, optional
         Maximum range to select from tuple.
 
-    meanSignalMask: `list`[`bool`], optional
+    meanSignalMask : `list` [`bool`], optional
         Mask of mean signal 1D array. Use all entries if empty.
     """
 
@@ -245,12 +245,12 @@ class CovFit:
 
         Parameters
         ----------
-        mu: `numpy.array`, optional
+        mu : `numpy.array`, (N,), optional
             List of mean signals.
 
         Returns
         -------
-        covModel: `numpy.array`
+        covModel : `numpy.array`, (N, M, M)
             Covariances model.
 
         Notes
@@ -464,7 +464,7 @@ class CovFit:
 
         Returns
         -------
-        params : `np.array`
+        params : `np.array`, (N,)
             Fit parameters (see "Notes" below).
 
         Notes
@@ -493,13 +493,13 @@ class CovFit:
 
         Parameters
         ---------
-        i: `int`
+        i : `int`
             Lag for covariance matrix.
 
-        j: `int`
+        j : `int`
             Lag for covariance matrix.
 
-        divideByMu: `bool`, optional
+        divideByMu : `bool`, optional
             Divide covariance, model, and weights by signal mu?
 
         unitsElectrons : `bool`, optional
@@ -514,19 +514,19 @@ class CovFit:
 
         Returns
         -------
-        mu: `numpy.array`
+        mu : `numpy.array`, (N,)
             list of signal values (mu).
 
-        covariance: `numpy.array`
+        covariance : `numpy.array`, (N,)
             Covariance arrays, indexed by mean signal mu (self.cov[:, i, j]).
 
-        covarianceModel: `numpy.array`
+        covarianceModel : `numpy.array`, (N,)
             Covariance model (model).
 
-        weights: `numpy.array`
+        weights : `numpy.array`, (N,)
             Weights (self.sqrtW)
 
-        mask : `numpy.array`, optional
+        mask : `numpy.array`, (N,), optional
             Boolean mask of the covariance at (i,j).
 
         Notes

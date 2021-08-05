@@ -143,7 +143,7 @@ class PlotPhotonTransferCurveTask():
             The dataset containing the necessary information to
             produce the plots.
 
-        pdfPages: `matplotlib.backends.backend_pdf.PdfPages`
+        pdfPages : `matplotlib.backends.backend_pdf.PdfPages`
             PDF file where the plots will be saved.
 
         log : `lsst.log.Log`, optional
@@ -195,49 +195,49 @@ class PlotPhotonTransferCurveTask():
 
         Parameters
         ----------
-        mu : `dict`, [`str`, `list`]
+        mu : `dict` [`str`, `list`]
             Dictionary keyed by amp name with mean signal values.
 
-        covs : `dict`, [`str`, `list`]
+        covs : `dict` [`str`, `list`]
             Dictionary keyed by amp names containing a list of measued
             covariances per mean flux.
 
-        covsModel : `dict`, [`str`, `list`]
+        covsModel : `dict` [`str`, `list`]
             Dictionary keyed by amp names containinging covariances
             model (Eq. 20 of Astier+19) per mean flux.
 
-        covsWeights : `dict`, [`str`, `list`]
+        covsWeights : `dict` [`str`, `list`]
             Dictionary keyed by amp names containinging sqrt. of
             covariances weights.
 
-        covsNoB : `dict`, [`str`, `list`]
+        covsNoB : `dict` [`str`, `list`]
             Dictionary keyed by amp names containing a list of measued
             covariances per mean flux ('b'=0 in Astier+19).
 
-        covsModelNoB : `dict`, [`str`, `list`]
+        covsModelNoB : `dict` [`str`, `list`]
             Dictionary keyed by amp names containing covariances model
             (with 'b'=0 in Eq. 20 of Astier+19) per mean flux.
 
-        covsWeightsNoB : `dict`, [`str`, `list`]
+        covsWeightsNoB : `dict` [`str`, `list`]
             Dictionary keyed by amp names containing sqrt. of
             covariances weights ('b' = 0 in Eq. 20 of Astier+19).
 
-        gainDict : `dict`, [`str`, `float`]
+        gainDict : `dict` [`str`, `float`]
             Dictionary keyed by amp names containing the gains in e-/ADU.
 
-        noiseDict : `dict`, [`str`, `float`]
+        noiseDict : `dict` [`str`, `float`]
             Dictionary keyed by amp names containing the rms redout
             noise in e-.
 
-        aDict : `dict`, [`str`, `numpy.array`]
+        aDict : `dict` [`str`, `numpy.array`]
             Dictionary keyed by amp names containing 'a' coefficients
             (Eq. 20 of Astier+19).
 
-        bDict : `dict`, [`str`, `numpy.array`]
+        bDict : `dict` [`str`, `numpy.array`]
             Dictionary keyed by amp names containing 'b' coefficients
             (Eq. 20 of Astier+19).
 
-        pdfPages: `matplotlib.backends.backend_pdf.PdfPages`
+        pdfPages : `matplotlib.backends.backend_pdf.PdfPages`
             PDF file where the plots will be saved.
         """
         legendFontSize = 6.5
@@ -417,38 +417,38 @@ class PlotPhotonTransferCurveTask():
         j : `int`
             Covariance lag
 
-        inputMu : `dict`, [`str`, `list`]
+        inputMu : `dict` [`str`, `list`]
             Dictionary keyed by amp name with mean signal values.
 
-        covs : `dict`, [`str`, `list`]
+        covs : `dict` [`str`, `list`]
             Dictionary keyed by amp names containing a list of measued
             covariances per mean flux.
 
-        covsModel : `dict`, [`str`, `list`]
+        covsModel : `dict` [`str`, `list`]
             Dictionary keyed by amp names containinging covariances
             model (Eq. 20 of Astier+19) per mean flux.
 
-        covsWeights : `dict`, [`str`, `list`]
+        covsWeights : `dict` [`str`, `list`]
             Dictionary keyed by amp names containinging sqrt. of
             covariances weights.
 
-        covsNoB : `dict`, [`str`, `list`]
+        covsNoB : `dict` [`str`, `list`]
             Dictionary keyed by amp names containing a list of measued
             covariances per mean flux ('b'=0 in Astier+19).
 
-        covsModelNoB : `dict`, [`str`, `list`]
+        covsModelNoB : `dict` [`str`, `list`]
             Dictionary keyed by amp names containing covariances model
             (with 'b'=0 in Eq. 20 of Astier+19) per mean flux.
 
-        covsWeightsNoB : `dict`, [`str`, `list`]
+        covsWeightsNoB : `dict` [`str`, `list`]
             Dictionary keyed by amp names containing sqrt. of
             covariances weights ('b' = 0 in Eq. 20 of Astier+19).
 
-        expIdMask : `dict`, [`str`, `list`]
+        expIdMask : `dict` [`str`, `list`]
             Dictionary keyed by amp names containing the masked
             exposure pairs.
 
-        pdfPages: `matplotlib.backends.backend_pdf.PdfPages`
+        pdfPages : `matplotlib.backends.backend_pdf.PdfPages`
             PDF file where the plots will be saved.
 
         offset : `float`, optional
@@ -566,17 +566,17 @@ class PlotPhotonTransferCurveTask():
 
         Parameters
         ----------
-        aDict : `dict`, [`numpy.array`]
+        aDict : `dict` [`numpy.array`]
             Dictionary keyed by amp names containing the fitted 'a'
             coefficients from the model in Eq. 20 of Astier+19 (if
             `ptcFitType` is `FULLCOVARIANCE`).
 
-        bDict : `dict`, [`numpy.array`]
+        bDict : `dict` [`numpy.array`]
             Dictionary keyed by amp names containing the fitted 'b'
             coefficients from the model in Eq. 20 of Astier+19 (if
             `ptcFitType` is `FULLCOVARIANCE`).
 
-        pdfPages: `matplotlib.backends.backend_pdf.PdfPages`
+        pdfPages : `matplotlib.backends.backend_pdf.PdfPages`
             PDF file where the plots will be saved.
 
         bRange : `int`
@@ -622,17 +622,17 @@ class PlotPhotonTransferCurveTask():
 
         Parameters
         ----------
-        aDict : `dict`, [`numpy.array`]
+        aDict : `dict` [`numpy.array`]
             Dictionary keyed by amp names containing the fitted 'a'
             coefficients from the model in Eq. 20 of Astier+19 (if
             `ptcFitType` is `FULLCOVARIANCE`).
 
-        bDict : `dict`, [`numpy.array`]
+        bDict : `dict` [`numpy.array`]
             Dictionary keyed by amp names containing the fitted 'b'
             coefficients from the model in Eq. 20 of Astier+19 (if
             `ptcFitType` is `FULLCOVARIANCE`).
 
-        pdfPages: `matplotlib.backends.backend_pdf.PdfPages`
+        pdfPages : `matplotlib.backends.backend_pdf.PdfPages`
             PDF file where the plots will be saved.
 
         bRange : `int`
@@ -708,17 +708,17 @@ class PlotPhotonTransferCurveTask():
 
         Parameters
         ----------
-        aDict : `dict`, [`numpy.array`]
+        aDict : `dict` [`numpy.array`]
             Dictionary keyed by amp names containing the fitted 'a'
             coefficients from the model in Eq. 20 of Astier+19 (if
             `ptcFitType` is `FULLCOVARIANCE`).
 
-        bDict : `dict`, [`numpy.array`]
+        bDict : `dict` [`numpy.array`]
             Dictionary keyed by amp names containing the fitted 'b'
             coefficients from the model in Eq. 20 of Astier+19 (if
             `ptcFitType` is `FULLCOVARIANCE`).
 
-        pdfPages: `matplotlib.backends.backend_pdf.PdfPages`
+        pdfPages : `matplotlib.backends.backend_pdf.PdfPages`
             PDF file where the plots will be saved.
         """
         assert (len(aDict) == len(bDict))
@@ -762,29 +762,29 @@ class PlotPhotonTransferCurveTask():
 
         Parameters
         ----------
-        aDict: `dict`
+        aDict : `dict`
             Dictionary of 'a' matrices (Eq. 20, Astier+19), with amp
             names as keys.
 
-        aDictNoB: `dict`
+        aDictNoB : `dict`
             Dictionary of 'a' matrices ('b'= 0 in Eq. 20, Astier+19),
             with amp names as keys.
 
-        fullCovsModel : `dict`, [`str`, `list`]
+        fullCovsModel : `dict` [`str`, `list`]
             Dictionary keyed by amp names containing covariances model
             per mean flux.
 
-        fullCovsModelNoB : `dict`, [`str`, `list`]
+        fullCovsModelNoB : `dict` [`str`, `list`]
             Dictionary keyed by amp names containing covariances model
             (with 'b'=0 in Eq. 20 of Astier+19) per mean flux.
 
         signalElectrons : `float`
             Signal at which to evaluate the a_ij coefficients.
 
-        pdfPages: `matplotlib.backends.backend_pdf.PdfPages`
+        pdfPages : `matplotlib.backends.backend_pdf.PdfPages`
             PDF file where the plots will be saved.
 
-        gainDict : `dict`, [`str`, `float`]
+        gainDict : `dict` [`str`, `float`]
             Dicgionary keyed by amp names with the gains in e-/ADU.
 
         maxr : `int`, optional
@@ -849,7 +849,7 @@ class PlotPhotonTransferCurveTask():
             Type of the model fit to the PTC. Options:
             'FULLCOVARIANCE', EXPAPPROXIMATION, or 'POLYNOMIAL'.
 
-        pdfPages: `matplotlib.backends.backend_pdf.PdfPages`
+        pdfPages : `matplotlib.backends.backend_pdf.PdfPages`
             PDF file where the plots will be saved.
         """
         if ptcFitType == 'EXPAPPROXIMATION':
@@ -1080,15 +1080,15 @@ class PlotPhotonTransferCurveTask():
 
         Parameters
         ----------
-        x: `list`
+        x : `list`
             Data to bin.
 
-        maxDiff: `int`
+        maxDiff : `int`
             Maximum distance between bins.
 
         Returns
         -------
-        index: `list`
+        index : `list`
             Bin indices.
         """
         ix = np.argsort(x)
@@ -1119,9 +1119,9 @@ class PlotPhotonTransferCurveTask():
 
         Parameters
         ----------
-        x: `numpy.array`
+        x : `numpy.array`
             Data to bin.
-        nBins: `int`
+        nBins : `int`
             Number of bin.
 
         Returns
@@ -1138,31 +1138,31 @@ class PlotPhotonTransferCurveTask():
 
         Parameters
         ----------
-        x: `numpy.array`
+        x : `numpy.array`
             Data to bin.
 
-        y: `numpy.array`
+        y : `numpy.array`
             Data to bin.
 
-        binIdex: `list`
+        binIdex : `list`
             Bin number of each datum.
 
-        wy: `numpy.array`
+        wy : `numpy.array`
             Inverse rms of each datum to use when averaging (the
             actual weight is wy**2).
 
         Returns
         -------
-        xbin: `numpy.array`
+        xbin : `numpy.array`
             Binned data in x.
 
-        ybin: `numpy.array`
+        ybin : `numpy.array`
             Binned data in y.
 
-        wybin: `numpy.array`
+        wybin : `numpy.array`
             Binned weights in y, computed from wy's in each bin.
 
-        sybin: `numpy.array`
+        sybin : `numpy.array`
             Uncertainty on the bin average, considering actual
             scatter, and ignoring weights.
         """

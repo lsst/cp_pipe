@@ -32,18 +32,18 @@ class CovFastFourierTransform:
 
     Parameters
     ----------
-    diff: `numpy.array`
+    diff : `numpy.array`
         Image where to calculate the covariances (e.g., the difference
         image of two flats).
 
-    w: `numpy.array`
+    w : `numpy.array`
         Weight image (mask): it should consist of 1's (good pixel) and
         0's (bad pixels).
 
-    fftShape: `tuple`
+    fftShape : `tuple`
         2d-tuple with the shape of the FFT
 
-    maxRangeCov: `int`
+    maxRangeCov : `int`
         Maximum range for the covariances.
     """
 
@@ -72,18 +72,18 @@ class CovFastFourierTransform:
 
         Parameters
         ----------
-        dx: `int`
+        dx : `int`
            Lag in x
 
-        dy: `int
+        dy : `int
            Lag in y
 
         Returns
         -------
-        0.5*(cov1+cov2): `float`
+        0.5*(cov1+cov2) : `float`
             Covariance at (dx, dy) lag
 
-        npix1+npix2: `int`
+        npix1+npix2 : `int`
             Number of pixels used in covariance calculation.
         """
         # compensate rounding errors
@@ -102,12 +102,12 @@ class CovFastFourierTransform:
 
         Parameters
         ----------
-        maxRange: `int`
+        maxRange : `int`
             Maximum range of covariances.
 
         Returns
         -------
-        tupleVec: `list`
+        tupleVec : `list`
             List with covariance tuples.
         """
         tupleVec = []
@@ -243,7 +243,7 @@ def parseData(dataset):
 
     Returns
     -------
-    covFitDict: `dict`
+    covFitDict : `dict`
         Dictionary with amps as keys, and CovFit objects as values.
     """
     covFitDict = {}
@@ -274,10 +274,10 @@ def fitDataFullCovariance(dataset):
 
     Returns
     -------
-    covFitDict: `dict`
+    covFitDict : `dict`
         Dictionary of CovFit objects, with amp names as keys.
 
-    covFitNoBDict: `dict`
+    covFitNoBDict : `dict`
        Dictionary of CovFit objects, with amp names as keys (b=0 in
        Eq. 20 of Astier+19).
 
@@ -314,16 +314,16 @@ def getFitDataFromCovariances(i, j, mu, fullCov, fullCovModel, fullCovSqrtWeight
     i :  `int`
         Lag for covariance matrix.
 
-    j: `int`
+    j : `int`
         Lag for covariance matrix.
 
     mu : `list`
         Mean signal values.
 
-    fullCov: `list` of `numpy.array`
+    fullCov : `list` of `numpy.array`
         Measured covariance matrices at each mean signal level in mu.
 
-    fullCovSqrtWeights: `list` of `numpy.array`
+    fullCovSqrtWeights : `list` of `numpy.array`
         List of square root of measured covariances at each mean
         signal level in mu.
 
@@ -334,7 +334,7 @@ def getFitDataFromCovariances(i, j, mu, fullCov, fullCovModel, fullCovSqrtWeight
         Gain, in e-/ADU. If other than 1.0 (default), the returned
         quantities will be in electrons or powers of electrons.
 
-    divideByMu: `bool`, optional
+    divideByMu : `bool`, optional
         Divide returned covariance, model, and weights by the mean
         signal mu?
 

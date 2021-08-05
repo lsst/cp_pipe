@@ -183,7 +183,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
 
         Returns
         -------
-        datasetPtc: `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
+        datasetPtc : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
             This is the same dataset as the input parameter, however,
             it has been modified to update the datasetPtc.photoCharge
             attribute.

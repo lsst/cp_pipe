@@ -299,7 +299,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
 
         Returns
         -------
-        dataset: `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
+        dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
             This is the same dataset as the input paramter, however,
             it has been modified to include information such as the
             fit vectors and the fit parameters. See the class
@@ -319,7 +319,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
             The dataset containing information such as the means,
             variances and exposure times.
-        covFits: `dict`
+        covFits : `dict`
             Dictionary of CovFit objects, with amp names as keys.
         covFitsNoB : `dict`
              Dictionary of CovFit objects, with amp names as keys, and
@@ -533,7 +533,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
 
         Returns
         -------
-        dataset: `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
+        dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
             This is the same dataset as the input parameter, however,
             it has been modified to include information such as the
             fit vectors and the fit parameters. See the class
@@ -706,7 +706,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         ----------
         dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
             The dataset containing the means, variances and exposure times.
-        ptcFitType : `str`
+        ptcFitType : {'POLYNOMIAL', 'EXPAPPROXIMATION'}
             Fit a 'POLYNOMIAL' (degree: 'polynomialFitDegree') or
             'EXPAPPROXIMATION' (Eq. 16 of Astier+19) to the PTC.
         ampName : `str`

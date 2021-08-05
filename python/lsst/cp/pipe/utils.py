@@ -136,10 +136,10 @@ def makeMockFlats(expTime, gain=1.0, readNoiseElectrons=5, fluxElectrons=1000,
     Returns
     -------
 
-    flatExp1 : `lsst.afw.image.exposure.exposure.ExposureF`
+    flatExp1 : `lsst.afw.image.exposure.ExposureF`
         First exposure of flat field pair.
 
-    flatExp2 : `lsst.afw.image.exposure.exposure.ExposureF`
+    flatExp2 : `lsst.afw.image.exposure.ExposureF`
         Second exposure of flat field pair.
 
     Notes
@@ -339,13 +339,13 @@ def irlsFit(initialParams, dataX, dataY, function, weightsY=None, weightType='Ca
     ----------
     initialParams : `list` [`float`]
         Starting parameters.
-    dataX : `numpy.array` [`float`]
+    dataX : `numpy.array`, (N,)
         Abscissa data.
-    dataY : `numpy.array` [`float`]
+    dataY : `numpy.array`, (N,)
         Ordinate data.
     function : callable
         Function to fit.
-    weightsY : `numpy.array` [`float`]
+    weightsY : `numpy.array`, (N,)
         Weights to apply to the data.
     weightType : `str`, optional
         Type of weighting to use.  One of Cauchy, Anderson, bisquare,
@@ -430,28 +430,28 @@ def fitLeastSq(initialParams, dataX, dataY, function, weightsY=None):
 
     Parameters
     ----------
-    initialParams : `list` of `float`
+    initialParams : `list` [`float`]
         initial values for fit parameters. For ptcFitType=POLYNOMIAL,
         its length determines the degree of the polynomial.
 
-    dataX : `numpy.array` of `float`
+    dataX : `numpy.array`, (N,)
         Data in the abscissa axis.
 
-    dataY : `numpy.array` of `float`
+    dataY : `numpy.array`, (N,)
         Data in the ordinate axis.
 
     function : callable object (function)
         Function to fit the data with.
 
-    weightsY : `numpy.array` of `float`
+    weightsY : `numpy.array`, (N,)
         Weights of the data in the ordinate axis.
 
     Return
     ------
-    pFitSingleLeastSquares : `list` of `float`
+    pFitSingleLeastSquares : `list` [`float`]
         List with fitted parameters.
 
-    pErrSingleLeastSquares : `list` of `float`
+    pErrSingleLeastSquares : `list` [`float`]
         List with errors for fitted parameters.
 
     reducedChiSqSingleLeastSquares : `float`
@@ -495,20 +495,20 @@ def fitBootstrap(initialParams, dataX, dataY, function, weightsY=None, confidenc
 
     Parameters
     ----------
-    initialParams : `list` of `float`
+    initialParams : `list` [`float`]
         initial values for fit parameters. For ptcFitType=POLYNOMIAL,
         its length determines the degree of the polynomial.
 
-    dataX : `numpy.array` of `float`
+    dataX : `numpy.array`, (N,)
         Data in the abscissa axis.
 
-    dataY : `numpy.array` of `float`
+    dataY : `numpy.array`, (N,)
         Data in the ordinate axis.
 
     function : callable object (function)
         Function to fit the data with.
 
-    weightsY : `numpy.array` of `float`, optional.
+    weightsY : `numpy.array`, (N,), optional.
         Weights of the data in the ordinate axis.
 
     confidenceSigma : `float`, optional.
@@ -517,10 +517,10 @@ def fitBootstrap(initialParams, dataX, dataY, function, weightsY=None, confidenc
 
     Return
     ------
-    pFitBootstrap : `list` of `float`
+    pFitBootstrap : `list` [`float`]
         List with fitted parameters.
 
-    pErrBootstrap : `list` of `float`
+    pErrBootstrap : `list` [`float`]
         List with errors for fitted parameters.
 
     reducedChiSqBootstrap : `float`
@@ -567,12 +567,14 @@ def funcPolynomial(pars, x):
     params : `list`
         Polynomial coefficients. Its length determines the polynomial order.
 
-    x : `numpy.array`
+    x : `numpy.array`, (N,)
         Abscisa array.
 
     Returns
     -------
-    Ordinate array after evaluating polynomial of order len(pars)-1 at `x`.
+    y : `numpy.array`, (N,)
+        Ordinate array after evaluating polynomial of order
+        len(pars)-1 at `x`.
     """
     return poly.polyval(x, [*pars])
 
@@ -587,12 +589,13 @@ def funcAstier(pars, x):
         Parameters of the model: a00 (brightter-fatter), gain (e/ADU),
         and noise (e^2).
 
-    x : `numpy.array`
+    x : `numpy.array`, (N,)
         Signal mu (ADU).
 
     Returns
     -------
-    C_00 (variance) in ADU^2.
+    y : `numpy.array`, (N,)
+        C_00 (variance) in ADU^2.
     """
     a00, gain, noise = pars
     return 0.5/(a00*gain*gain)*(np.exp(2*a00*x*gain)-1) + noise/(gain*gain)  # C_00
@@ -603,10 +606,10 @@ def arrangeFlatsByExpTime(exposureList, exposureIdList):
 
     Parameters
     ----------
-    exposureList : `list`[`lsst.afw.image.ExposureF`]
+    exposureList : `list` [`lsst.afw.image.ExposureF`]
         Input list of exposures.
 
-    exposureIdList : `list`[`int`]
+    exposureIdList : `list` [`int`]
         List of exposure ids as obtained by dataId[`exposure`].
 
     Returns
@@ -727,17 +730,17 @@ def validateIsrConfig(isrTask, mandatory=None, forbidden=None, desirable=None, u
     isrTask : `lsst.ip.isr.IsrTask`
         The task whose config is to be validated
 
-    mandatory : `iterable` of `str`
+    mandatory : `iterable` [`str`]
         isr steps that must be set to True. Raises if False or missing
 
-    forbidden : `iterable` of `str`
+    forbidden : `iterable` [`str`]
         isr steps that must be set to False. Raises if True, warns if missing
 
-    desirable : `iterable` of `str`
+    desirable : `iterable` [`str`]
         isr steps that should probably be set to True. Warns is False,
         info if missing
 
-    undesirable : `iterable` of `str`
+    undesirable : `iterable` [`str`]
         isr steps that should probably be set to False. Warns is True,
         info if missing
 

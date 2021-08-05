@@ -336,14 +336,14 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
 
         Parameters
         ----------
-        xCorrList : `list` [`numpy.array`]
+        xCorrList : `list` [`numpy.array`, (N, N)]
             List of cross-correlations.
         name : `str`
             Name for log messages.
 
         Returns
         -------
-        meanXcorr : `numpy.array`
+        meanXcorr : `numpy.array`, (N, N)
             The averaged cross-correlation.
         """
         meanXcorr = np.zeros_like(xCorrList[0])
@@ -365,16 +365,16 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
 
         Parameters
         ----------
-        xCorrList : `list` [`numpy.array`]
+        xCorrList : `list` [`numpy.array`, (N, N)]
             List of cross-correlations.
-        fluxList : `numpy.array`
+        fluxList : `numpy.array`, (Nflux,)
             Associated list of fluxes.
         name : `str`
             Name for log messages.
 
         Returns
         -------
-        meanXcorr : `numpy.array`
+        meanXcorr : `numpy.array`, (N, N)
             The averaged cross-correlation.
         """
         meanXcorr = np.zeros_like(xCorrList[0])
@@ -416,12 +416,12 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
 
         Parameters
         ----------
-        input : `np.array`
+        input : `np.array`, (N, N)
             The square input quarter-array
 
         Returns
         -------
-        output : `np.array`
+        output : `np.array`, (2*N + 1, 2*N + 1)
             The full, tiled array
         """
         assert(in_array.shape[0] == in_array.shape[1])
@@ -444,7 +444,7 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
 
         Parameters
         ----------
-        source : `numpy.ndarray`
+        source : `numpy.ndarray`, (N, N)
             The input array.
         maxIter : `int`, optional
             Maximum number of iterations to attempt before aborting.
@@ -454,7 +454,7 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
 
         Returns
         -------
-        output : `numpy.ndarray`
+        output : `numpy.ndarray`, (N, N)
             The solution.
         """
         if not maxIter:

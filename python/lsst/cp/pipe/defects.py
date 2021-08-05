@@ -78,13 +78,13 @@ class MeasureDefectsTaskConfig(pipeBase.PipelineTaskConfig,
 
     nSigmaBright = pexConfig.Field(
         dtype=float,
-        doc=("Number of sigma above mean for bright pixel detection. The default value was found to be",
+        doc=("Number of sigma above mean for bright pixel detection. The default value was found to be"
              " appropriate for some LSST sensors in DM-17490."),
         default=4.8,
     )
     nSigmaDark = pexConfig.Field(
         dtype=float,
-        doc=("Number of sigma below mean for dark pixel detection. The default value was found to be",
+        doc=("Number of sigma below mean for dark pixel detection. The default value was found to be"
              " appropriate for some LSST sensors in DM-17490."),
         default=-5.0,
     )
@@ -100,18 +100,18 @@ class MeasureDefectsTaskConfig(pipeBase.PipelineTaskConfig,
     )
     badOnAndOffPixelColumnThreshold = pexConfig.Field(
         dtype=int,
-        doc=("If BPC is the set of all the bad pixels in a given column (not necessarily consecutive) ",
-             "and the size of BPC is at least 'badOnAndOffPixelColumnThreshold', all the pixels between the ",
-             "pixels that satisfy minY (BPC) and maxY (BPC) will be marked as bad, with 'Y' being the long ",
-             "axis of the amplifier (and 'X' the other axis, which for a column is a constant for all ",
-             "pixels in the set BPC). If there are more than 'goodPixelColumnGapThreshold' consecutive ",
-             "non-bad pixels in BPC, an exception to the above is made and those consecutive ",
+        doc=("If BPC is the set of all the bad pixels in a given column (not necessarily consecutive) "
+             "and the size of BPC is at least 'badOnAndOffPixelColumnThreshold', all the pixels between the "
+             "pixels that satisfy minY (BPC) and maxY (BPC) will be marked as bad, with 'Y' being the long "
+             "axis of the amplifier (and 'X' the other axis, which for a column is a constant for all "
+             "pixels in the set BPC). If there are more than 'goodPixelColumnGapThreshold' consecutive "
+             "non-bad pixels in BPC, an exception to the above is made and those consecutive "
              "'goodPixelColumnGapThreshold' are not marked as bad."),
         default=50,
     )
     goodPixelColumnGapThreshold = pexConfig.Field(
         dtype=int,
-        doc=("Size, in pixels, of usable consecutive pixels in a column with on and off bad pixels (see ",
+        doc=("Size, in pixels, of usable consecutive pixels in a column with on and off bad pixels (see "
              "'badOnAndOffPixelColumnThreshold')."),
         default=30,
     )
@@ -203,13 +203,13 @@ class MeasureDefectsTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         ----------
         exp : `lsst.afw.image.exposure.Exposure`
             The exposure in which to find defects.
-        nSigma : `list [ `float` ]
+        nSigma : `list` [`float`]
             Detection threshold to use.  Positive for DETECTED pixels,
             negative for DETECTED_NEGATIVE pixels.
 
         Returns
         -------
-        defects : `lsst.ip.isr.Defect`
+        defects : `lsst.ip.isr.Defects`
             The defects found in the image.
         """
         self._setEdgeBits(exp)
@@ -307,12 +307,12 @@ class MeasureDefectsTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
 
         Parameters
         ----------
-        defects: `lsst.ip.isr.Defect`
+        defects : `lsst.ip.isr.Defects`
             The defects found in the image so far
 
         Returns
         -------
-        defects: `lsst.ip.isr.Defect`
+        defects : `lsst.ip.isr.Defects`
             If the number of bad pixels in a column is not larger or
             equal than self.config.badPixelColumnThreshold, the input
             list is returned. Otherwise, the defects list returned
@@ -356,21 +356,21 @@ class MeasureDefectsTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
 
         Parameters
         ---------
-        x: `list`
+        x : `list`
             Lower left x coordinate of defect box. x coordinate is
             along the short axis if amp.
-        y: `list`
+        y : `list`
             Lower left y coordinate of defect box. x coordinate is
             along the long axis if amp.
-        multipleX: list
+        multipleX : list
             List of x coordinates in amp. with multiple bad pixels
             (i.e., columns with defects).
-        defects: `lsst.ip.isr.Defect`
+        defects : `lsst.ip.isr.Defects`
             The defcts found in the image so far
 
         Returns
         -------
-        defects: `lsst.ip.isr.Defect`
+        defects : `lsst.ip.isr.Defects`
             The defects list returned that will include boxes that
             mask blocks of on-and-of pixels.
         """
@@ -404,14 +404,14 @@ class MeasureDefectsTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
 
         Parameters
         ----------
-        exp : `lsst.afw.image.exposure.Exposure`
-            The exposure in which the defects were found.
-        visit : `int`
-            The visit number.
-        defects : `lsst.ip.isr.Defect`
+        stepname : `str`
+            Debug frame to request.
+        ampImage : `lsst.afw.image.MaskedImage`
+            Amplifier image to display.
+        defects : `lsst.ip.isr.Defects`
             The defects to plot.
-        imageType : `str`
-            The type of image, either 'dark' or 'flat'.
+        detector : `lsst.afw.cameraGeom.Detector`
+            Detector holding camera geometry.
         """
         frame = getDebugFrame(self._display, stepname)
         if frame:
@@ -451,14 +451,14 @@ class MeasureDefectsTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
 
         Parameters
         ----------
-        dataRef : `lsst.daf.persistence.ButlerDataRef`
-            dataRef for the detector.
-        exp : `lsst.afw.image.exposure.Exposure`
-            The exposure in which the defects were found.
-        visit : `int`
-            The visit number.
+        stepname : `str`
+            Debug frame to request.
+        ampImage : `lsst.afw.image.MaskedImage`
+            Amplifier image to display.
         nSigmaUsed : `float`
             The number of sigma used for detection
+        exp : `lsst.afw.image.exposure.Exposure`
+            The exposure in which the defects were found.
         """
         frame = getDebugFrame(self._display, stepname)
         if frame:
@@ -556,7 +556,7 @@ class MergeDefectsTaskConfig(pipeBase.PipelineTaskConfig,
 
     assertSameRun = pexConfig.Field(
         dtype=bool,
-        doc=("Ensure that all visits are from the same run? Raises if this is not the case, or"
+        doc=("Ensure that all visits are from the same run? Raises if this is not the case, or "
              "if the run key isn't found."),
         default=False,  # false because most obs_packages don't have runs. obs_lsst/ts8 overrides this.
     )
@@ -768,7 +768,8 @@ class FindDefectsTask(pipeBase.CmdLineTask):
     The task has two modes of operation, defect finding in raws and in
     master calibrations, which work as follows.
 
-    - Master calib defect finding
+    Master calib defect finding
+    ---------------------------
 
     A single visit number is supplied, for which the corresponding
     flat & dark will be used. This is because, at present at least,
@@ -783,7 +784,8 @@ class FindDefectsTask(pipeBase.CmdLineTask):
     All pixels above/below the specified nSigma which lie with the
     specified borders for flats/darks are identified as defects.
 
-    - Raw visit defect finding
+    Raw visit defect finding
+    ------------------------
 
     A list of exposure IDs are supplied for defect finding. The task
     will detect bright pixels in the dark frames, if supplied, and
