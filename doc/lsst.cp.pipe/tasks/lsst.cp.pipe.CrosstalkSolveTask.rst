@@ -37,3 +37,14 @@ Configuration fields
 ====================
 
 .. lsst-task-config-fields:: lsst.cp.pipe.CrosstalkSolveTask
+
+.. _lsst.cp.pipe.CrosstalkSolveTask-debug:
+
+Debugging
+=========
+
+reduce
+    Display a histogram of the combined ratio measurements for a pair of source/target amplifiers from all input exposures/detectors (`bool`)?
+
+measure
+    Display the CDF of the combined ratio measurements for a pair of source/target amplifiers from the final set of clipped input ratios (`bool`)?

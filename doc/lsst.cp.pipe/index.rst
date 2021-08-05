@@ -75,3 +75,19 @@ Python API reference
 .. automodapi:: lsst.cp.pipe
    :no-main-docstr:
    :no-inheritance-diagram:
+
+.. automodapi:: lsst.cp.pipe.cpFlatNormTask
+   :no-main-docstr:
+   :no-inheritance-diagram:
+
+.. automodapi:: lsst.cp.pipe.cpDarkTask
+   :no-main-docstr:
+   :no-inheritance-diagram:
+
+.. automodapi:: lsst.cp.pipe.cpFringeTask
+   :no-main-docstr:
+   :no-inheritance-diagram:
+
+.. automodapi:: lsst.cp.pipe.utils
+   :no-main-docstr:
+   :no-inheritance-diagram:

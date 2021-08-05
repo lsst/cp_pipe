@@ -35,3 +35,11 @@ Configuration fields
 ====================
 
 .. lsst-task-config-fields:: lsst.cp.pipe.MeasureCrosstalkTask
+
+.. _lsst.cp_pipe.MeasureCrosstalkTask-debug:
+
+Debugging
+=========
+
+extract
+    Display the exposure under consideration, with the pixels used for crosstalk measurement indicated by the DETECTED mask plane (`bool`)?

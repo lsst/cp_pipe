@@ -38,3 +38,20 @@ Configuration fields
 ====================
 
 .. lsst-task-config-fields:: lsst.cp.pipe.LinearitySolveTask
+
+.. _lsst.cp.pipe.LinearitySolveTask-debug:
+
+Debugging
+=========
+
+linearFit
+    Display the linearity solution after the initial linear fit (`bool`)?
+
+polyFit
+    Display the linearity solution after generating the polynomial fit (`bool`)?
+
+splineFit
+    Display the linearity solution after generating the spline fit (`bool`)?
+
+solution
+    Display the final linearity solution (`bool`)?
