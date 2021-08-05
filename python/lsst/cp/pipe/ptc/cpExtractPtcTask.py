@@ -169,16 +169,16 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
     be validated, and in the future, we may decide to just keep
     one (covariance).
 
-    The measured covariances at a particular time (along with
-    other quantities such as the mean) are stored in a PTC dataset
-    object (``PhotonTransferCurveDataset``), which gets partially
-    filled. The number of partially-filled PTC dataset objects
-    will be less than the number of input exposures, but gen3
+    The measured covariances at a particular time (along with other
+    quantities such as the mean) are stored in a PTC dataset object
+    (``~lsst.ip.isr.PhotonTransferCurveDataset``), which gets
+    partially filled. The number of partially-filled PTC dataset
+    objects will be less than the number of input exposures, but gen3
     requires/assumes that the number of input dimensions matches
-    bijectively the number of output dimensions. Therefore, a
-    number of "dummy" PTC dataset are inserted in the output list
-    that has the partially-filled PTC datasets with the covariances.
-    This output list will be used as input of
+    bijectively the number of output dimensions. Therefore, a number
+    of "dummy" PTC dataset are inserted in the output list that has
+    the partially-filled PTC datasets with the covariances.  This
+    output list will be used as input of
     ``PhotonTransferCurveSolveTask``, which will assemble the multiple
     ``PhotonTransferCurveDataset`` into a single one in order to fit
     the measured covariances as a function of flux to a particular
@@ -222,7 +222,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
 
         Parameters
         ----------
-        inputExp : `dict` [`float`, `list` [`~lsst.afw.image..ExposureF`]]
+        inputExp : `dict` [`float`, `list` [`~lsst.afw.image.ExposureF`]]
             Dictionary that groups flat-field exposures that have the same
             exposure time (seconds).
 
@@ -386,9 +386,9 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
 
         Parameters
         ----------
-        exposure1 : `lsst.afw.image.exposure.exposure.ExposureF`
+        exposure1 : `lsst.afw.image.exposure.ExposureF`
             First exposure of flat field pair.
-        exposure2 : `lsst.afw.image.exposure.exposure.ExposureF`
+        exposure2 : `lsst.afw.image.exposure.ExposureF`
             Second exposure of flat field pair.
         region : `lsst.geom.Box2I`, optional
             Region of each exposure where to perform the calculations

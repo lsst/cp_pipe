@@ -47,7 +47,7 @@ class CalibStatsConfig(pexConfig.Config):
     stat = pexConfig.Field(
         dtype=str,
         default='MEANCLIP',
-        doc="Statistic name to use to estimate background (from lsst.afw.math)",
+        doc="Statistic name to use to estimate background (from `~lsst.afw.math.Property`)",
     )
     clip = pexConfig.Field(
         dtype=float,
@@ -188,7 +188,7 @@ class CalibCombineConfig(pipeBase.PipelineTaskConfig,
     combine = pexConfig.Field(
         dtype=str,
         default='MEANCLIP',
-        doc="Statistic name to use for combination (from lsst.afw.math)",
+        doc="Statistic name to use for combination (from `~lsst.afw.math.Property`)",
     )
     clip = pexConfig.Field(
         dtype=float,

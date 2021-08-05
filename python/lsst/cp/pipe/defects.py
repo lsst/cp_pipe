@@ -828,7 +828,7 @@ class FindDefectsTask(pipeBase.CmdLineTask):
             Result struct with Components:
 
             ``defects``
-                  The defects found by the task (`lsst.ip.isr.Defect`).
+                  The defects found by the task (`lsst.ip.isr.Defects`).
             ``exitStatus``
                   The exit code (`int`).
         """
