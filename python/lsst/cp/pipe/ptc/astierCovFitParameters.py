@@ -23,6 +23,8 @@
 
 import numpy as np
 
+__all__ = []
+
 """
 The classes in this file were taken from
 https://github.com/PierreAstier/bfptc by Pierre Astier (Laboratoire de
