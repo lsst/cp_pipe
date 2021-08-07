@@ -542,8 +542,8 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
 
         Parameters
         ----------
-        ratios : `dict` [`dict` [`numpy.ndarray`, (N,)]]
-           Catalog of arrays of ratios.
+        ratios : `dict` [`dict` [`numpy.ndarray`]]
+           Catalog of arrays of ratios.  The ratio arrays are one-dimensional
         rejIter : `int`
            Number of rejection iterations.
         rejSigma : `float`
@@ -637,9 +637,9 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
         ----------
         stepname : `str`
             State of processing to view.
-        ratios : `dict` [`dict` [`numpy.ndarray`, (N,)]]
+        ratios : `dict` [`dict` [`numpy.ndarray`]]
             Array of measured CT ratios, indexed by source/victim
-            amplifier.
+            amplifier.  These arrays are one-dimensional.
         i : `str`
             Index of the source amplifier.
         j : `str`

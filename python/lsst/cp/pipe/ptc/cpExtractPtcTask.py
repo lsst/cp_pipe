@@ -171,7 +171,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
 
     The measured covariances at a particular time (along with other
     quantities such as the mean) are stored in a PTC dataset object
-    (``~lsst.ip.isr.PhotonTransferCurveDataset``), which gets
+    (`~lsst.ip.isr.PhotonTransferCurveDataset`), which gets
     partially filled. The number of partially-filled PTC dataset
     objects will be less than the number of input exposures, but gen3
     requires/assumes that the number of input dimensions matches

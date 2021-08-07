@@ -336,8 +336,9 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
 
         Parameters
         ----------
-        xCorrList : `list` [`numpy.array`, (N, N)]
-            List of cross-correlations.
+        xCorrList : `list` [`numpy.array`]
+            List of cross-correlations.  These are expected to be
+            square arrays.
         name : `str`
             Name for log messages.
 
@@ -365,8 +366,9 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
 
         Parameters
         ----------
-        xCorrList : `list` [`numpy.array`, (N, N)]
-            List of cross-correlations.
+        xCorrList : `list` [`numpy.array`]
+            List of cross-correlations.  These are expected to be
+            square arrays.
         fluxList : `numpy.array`, (Nflux,)
             Associated list of fluxes.
         name : `str`

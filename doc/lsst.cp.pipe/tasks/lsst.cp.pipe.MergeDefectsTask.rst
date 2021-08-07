@@ -23,12 +23,6 @@ Processing summary
 Python API summary
 ==================
 
-
-.. _lsst.cp.pipe.MergeDefectsTask-api:
-
-Python API summary
-==================
-
 .. lsst-task-api-summary:: lsst.cp.pipe.MergeDefectsTask
 
 .. _lsst.cp.pipe.MergeDefectsTask-subtasks:

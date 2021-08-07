@@ -201,7 +201,20 @@ def makeMockFlats(expTime, gain=1.0, readNoiseElectrons=5, fluxElectrons=1000,
 
 
 def countMaskedPixels(maskedIm, maskPlane):
-    """Count the number of pixels in a given mask plane."""
+    """Count the number of pixels in a given mask plane.
+
+    Parameters
+    ----------
+    maskedIm : `~lsst.afw.image.MaskedImage`
+        Masked image to examine.
+    maskPlane : `str`
+        Name of the mask plane to examine.
+
+    Returns
+    -------
+    nPix : `int`
+        Number of pixels in the requested mask plane.
+    """
     maskBit = maskedIm.mask.getPlaneBitMask(maskPlane)
     nPix = np.where(np.bitwise_and(maskedIm.mask.array, maskBit))[0].flatten().size
     return nPix
@@ -247,6 +260,16 @@ def parseCmdlineNumberString(inputString):
 
     Take an input of the form "'1..5:2^123..126'" as a string, and return
     a list of ints as [1, 3, 5, 123, 124, 125, 126]
+
+    Parameters
+    ----------
+    inputString : `str`
+        String to be parsed.
+
+    Returns
+    -------
+    outList : `list` [`int`]
+        List of integers identified in the string.
     """
     outList = []
     for subString in inputString.split("^"):
@@ -684,23 +707,28 @@ def arrangeFlatsByExpId(exposureList, exposureIdList):
 def checkExpLengthEqual(exp1, exp2, v1=None, v2=None, raiseWithMessage=False):
     """Check the exposure lengths of two exposures are equal.
 
-    Parameters:
-    -----------
-    exp1 : `lsst.afw.image.exposure.ExposureF`
+    Parameters
+    ----------
+    exp1 : `lsst.afw.image.Exposure`
         First exposure to check
-    exp2 : `lsst.afw.image.exposure.ExposureF`
+    exp2 : `lsst.afw.image.Exposure`
         Second exposure to check
     v1 : `int` or `str`, optional
         First visit of the visit pair
     v2 : `int` or `str`, optional
         Second visit of the visit pair
     raiseWithMessage : `bool`
-        If True, instead of returning a bool, raise a RuntimeError if exposure
-    times are not equal, with a message about which visits mismatch if the
-    information is available.
+        If True, instead of returning a bool, raise a RuntimeError if
+        exposure times are not equal, with a message about which
+        visits mismatch if the information is available.
 
-    Raises:
+    Returns
     -------
+    success : `bool`
+        This is true if the exposures have equal exposure times.
+
+    Raises
+    ------
     RuntimeError
         Raised if the exposure lengths of the two exposures are not equal
     """

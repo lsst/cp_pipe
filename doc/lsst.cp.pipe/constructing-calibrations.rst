@@ -214,7 +214,7 @@ Although the example presented below certifies each new calibration to a final C
 Calibration Construction Guide
 ==============================
 
-The following sections cover the construction of a full set of calibrations.  The calibrations build on each other, and are generally calculated in the same order as the calibrations are applied by the `ip_isr <lsst.ip.isr>`_ module.
+The following sections cover the construction of a full set of calibrations.  The calibrations build on each other, and are generally calculated in the same order as the calibrations are applied by the :doc:`ip_isr </modules/lsst.ip.isr/index>` module.
 
 .. _cp-pipe-readNoise:
 

@@ -4,7 +4,7 @@
 CpFlatMeasureTask
 #################
 
-``CpFlatMeasureTask`` measures image statistics from the input flat field frames to supply the information needed for :lsst:`~lsst.cp.pipe.cpFlatNormTask.CpFlatNormalizationTask` to determine approprate scale factors.
+``CpFlatMeasureTask`` measures image statistics from the input flat field frames to supply the information needed for :lsst-task:`~lsst.cp.pipe.cpFlatNormTask.CpFlatNormalizationTask` to determine approprate scale factors.
 
 .. _lsst.cp.pipe.cpFlatNormTask.CpFlatMeasureTask-processing-summary:
 

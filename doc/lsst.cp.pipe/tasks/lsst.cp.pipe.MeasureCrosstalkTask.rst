@@ -13,7 +13,8 @@ Processing summary
 
 ``MeasureCrosstalkTask`` runs these operations:
 
-#.
+#. Run `~lsst.cp.pipe.CrosstalkExtractTask` on all input exposures.
+#. Run `~lsst.cp.pipe.CrosstalkSolveTask` on the combines set of ratio measurements.
 
 .. _lsst.cp.pipe.MeasureCrosstalkTask-api:
 

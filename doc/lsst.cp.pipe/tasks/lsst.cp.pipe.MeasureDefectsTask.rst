@@ -4,6 +4,8 @@
 MeasureDefectsTask
 ####################
 
+``MeasureCrosstalkTask`` is a task to identify detector defects by looking for pixels that are significantly different than the image mean.
+
 .. _lsst.cp.pipe.MeasureDefectsTask-processing-summary:
 
 Processing summary

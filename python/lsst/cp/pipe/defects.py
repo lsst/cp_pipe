@@ -768,8 +768,7 @@ class FindDefectsTask(pipeBase.CmdLineTask):
     The task has two modes of operation, defect finding in raws and in
     master calibrations, which work as follows.
 
-    Master calib defect finding
-    ---------------------------
+    **Master calib defect finding**
 
     A single visit number is supplied, for which the corresponding
     flat & dark will be used. This is because, at present at least,
@@ -784,8 +783,7 @@ class FindDefectsTask(pipeBase.CmdLineTask):
     All pixels above/below the specified nSigma which lie with the
     specified borders for flats/darks are identified as defects.
 
-    Raw visit defect finding
-    ------------------------
+    **Raw visit defect finding**
 
     A list of exposure IDs are supplied for defect finding. The task
     will detect bright pixels in the dark frames, if supplied, and

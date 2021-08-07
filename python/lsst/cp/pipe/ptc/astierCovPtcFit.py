@@ -39,15 +39,21 @@ def makeCovArray(inputTuple, maxRangeFromTuple=8):
         Structured array with rows with at least
         (mu, afwVar, cov, var, i, j, npix), where:
 
-        mu : 0.5*(m1 + m2), where:
-            mu1: mean value of flat1
-            mu2: mean value of flat2
-        afwVar : variance of difference flat, calculated with afw
-        cov : covariance value at lag(i, j)
-        var : variance(covariance value at lag(0, 0))
-        i : lag dimension
-        j : lag dimension
-        npix : number of pixels used for covariance calculation.
+        mu : `float`
+            0.5*(m1 + m2), where mu1 is the mean value of flat1
+            and mu2 is the mean value of flat2.
+        afwVar : `float`
+            Variance of difference flat, calculated with afw.
+        cov : `float`
+            Covariance value at lag(i, j)
+        var : `float`
+            Variance(covariance value at lag(0, 0))
+        i : `int`
+            Lag in dimension "x".
+        j : `int`
+            Lag in dimension "y".
+        npix : `int`
+            Number of pixels used for covariance calculation.
 
     maxRangeFromTuple : `int`
         Maximum range to select from tuple.
