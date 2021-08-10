@@ -23,7 +23,7 @@
 
 import numpy as np
 
-__all__ = []
+__all__ = ['FitParameters']
 
 """
 The classes in this file were taken from
