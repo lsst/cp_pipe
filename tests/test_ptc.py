@@ -102,11 +102,13 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
     def test_covAstier(self):
         """Test to check getCovariancesAstier
 
-        We check that the gain is the same as the imput gain from the mock data, that
-        the covariances via FFT (as it is in MeasurePhotonTransferCurveTask when
-        doCovariancesAstier=True) are the same as calculated in real space, and that
-        Cov[0, 0] (i.e., the variances) are similar to the variances calculated with the standard
-        method (when doCovariancesAstier=false),
+        We check that the gain is the same as the imput gain from the
+        mock data, that the covariances via FFT (as it is in
+        MeasurePhotonTransferCurveTask when doCovariancesAstier=True)
+        are the same as calculated in real space, and that Cov[0, 0]
+        (i.e., the variances) are similar to the variances calculated
+        with the standard method (when doCovariancesAstier=false),
+
         """
         task = self.defaultTask
         extractConfig = self.defaultConfigExtract
@@ -139,7 +141,8 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                 # Calculate covariances in an independent way: direct space
                 _, _, covsDirect = task.extract.measureMeanVarCov(mockExp1, mockExp2, covAstierRealSpace=True)
 
-                # Test that the arrays "covs" (FFT) and "covDirect" (direct space) are the same
+                # Test that the arrays "covs" (FFT) and "covDirect"
+                # (direct space) are the same
                 for row1, row2 in zip(covAstier, covsDirect):
                     for a, b in zip(row1, row2):
                         self.assertAlmostEqual(a, b)
@@ -160,8 +163,9 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         placesTests = 6
         if doFitBootstrap:
             configSolve.doFitBootstrap = True
-            # Bootstrap method in cp_pipe/utils.py does multiple fits in the precense of noise.
-            # Allow for more margin of error.
+            # Bootstrap method in cp_pipe/utils.py does multiple fits
+            # in the precense of noise.  Allow for more margin of
+            # error.
             placesTests = 3
 
         if fitType == 'POLYNOMIAL':
@@ -199,7 +203,8 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         if doTableArray:
             # Non-linearity
             numberAmps = len(self.ampNames)
-            # localDataset: PTC dataset (`lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`)
+            # localDataset: PTC dataset
+            # (`lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`)
             localDataset = solveTask.fitPtc(localDataset)
             # linDataset here is a lsst.pipe.base.Struct
             linDataset = linearityTask.run(localDataset,
@@ -307,10 +312,12 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         diffIm -= temp
         diffIm /= expectedMu
 
-        # Dive by two as it is what measureMeanVarCov returns (variance of difference)
+        # Divide by two as it is what measureMeanVarCov returns
+        # (variance of difference)
         expectedVar = 0.5*np.nanvar(diffIm.image.array)
 
-        # Check that the standard deviations and the emans agree to less than 1 ADU
+        # Check that the standard deviations and the emans agree to
+        # less than 1 ADU
         self.assertLess(np.sqrt(expectedVar) - np.sqrt(varDiff), 1)
         self.assertLess(expectedMu - mu, 1)
 

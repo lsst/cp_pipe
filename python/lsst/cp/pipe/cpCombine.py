@@ -33,14 +33,21 @@ from astro_metadata_translator import merge_headers, ObservationGroup
 from astro_metadata_translator.serialize import dates_to_fits
 
 
+__all__ = ['CalibStatsConfig', 'CalibStatsTask', 'VignetteExposure',
+           'CalibCombineConfig', 'CalibCombineConnections', 'CalibCombineTask',
+           'CalibCombineByFilterConfig', 'CalibCombineByFilterConnections', 'CalibCombineByFilterTask']
+
+
 # CalibStatsConfig/CalibStatsTask from pipe_base/constructCalibs.py
 class CalibStatsConfig(pexConfig.Config):
-    """Parameters controlling the measurement of background statistics.
+    """Parameters controlling the measurement of background
+    statistics.
     """
+
     stat = pexConfig.Field(
         dtype=str,
         default='MEANCLIP',
-        doc="Statistic name to use to estimate background (from lsst.afw.math)",
+        doc="Statistic name to use to estimate background (from `~lsst.afw.math.Property`)",
     )
     clip = pexConfig.Field(
         dtype=float,
@@ -62,8 +69,10 @@ class CalibStatsConfig(pexConfig.Config):
 class CalibStatsTask(pipeBase.Task):
     """Measure statistics on the background
 
-    This can be useful for scaling the background, e.g., for flats and fringe frames.
+    This can be useful for scaling the background, e.g., for flats and
+    fringe frames.
     """
+
     ConfigClass = CalibStatsConfig
 
     def run(self, exposureOrImage):
@@ -71,7 +80,9 @@ class CalibStatsTask(pipeBase.Task):
 
         Parameters
         ----------
-        exposureOrImage : `lsst.afw.image.Exposure`, `lsst.afw.image.MaskedImage`, or `lsst.afw.image.Image`
+        exposureOrImage : `lsst.afw.image.Exposure`,
+                          `lsst.afw.image.MaskedImage`, or
+                          `lsst.afw.image.Image`
            Exposure or image to calculate statistics on.
 
         Returns
@@ -129,6 +140,7 @@ class CalibCombineConfig(pipeBase.PipelineTaskConfig,
                          pipelineConnections=CalibCombineConnections):
     """Configuration for combining calib exposures.
     """
+
     calibrationType = pexConfig.Field(
         dtype=str,
         default="calibration",
@@ -176,7 +188,7 @@ class CalibCombineConfig(pipeBase.PipelineTaskConfig,
     combine = pexConfig.Field(
         dtype=str,
         default='MEANCLIP',
-        doc="Statistic name to use for combination (from lsst.afw.math)",
+        doc="Statistic name to use for combination (from `~lsst.afw.math.Property`)",
     )
     clip = pexConfig.Field(
         dtype=float,
@@ -197,6 +209,7 @@ class CalibCombineConfig(pipeBase.PipelineTaskConfig,
 class CalibCombineTask(pipeBase.PipelineTask,
                        pipeBase.CmdLineTask):
     """Task to combine calib exposures."""
+
     ConfigClass = CalibCombineConfig
     _DefaultName = 'cpCombine'
 
@@ -223,7 +236,7 @@ class CalibCombineTask(pipeBase.PipelineTask,
         inputScales : `dict` [`dict` [`dict` [`float`]]], optional
             Dictionary of scales, indexed by detector (`int`),
             amplifier (`int`), and exposure (`int`).  Used for
-            'inputList' scaling.
+            'inputExps' scaling.
         inputDims : `list` [`dict`]
             List of dictionaries of input data dimensions/values.
             Each list entry should contain:
@@ -235,8 +248,12 @@ class CalibCombineTask(pipeBase.PipelineTask,
 
         Returns
         -------
-        combinedExp : `lsst.afw.image.Exposure`
-            Final combined exposure generated from the inputs.
+        results : `lsst.pipe.base.Struct`
+            The results struct containing:
+
+            ``combinedExp``
+                Final combined exposure generated from the inputs
+                (`lsst.afw.image.Exposure`).
 
         Raises
         ------
@@ -360,7 +377,7 @@ class CalibCombineTask(pipeBase.PipelineTask,
 
         Parameters
         -----------
-        dimList : iterable of `tuple` (`int`, `int`)
+        dimList : `list` [`tuple` [`int`, `int`]]
             List of dimensions.
 
         Raises
@@ -422,13 +439,13 @@ class CalibCombineTask(pipeBase.PipelineTask,
 
         Parameters
         ----------
-        expList : `list` of `lsst.afw.image.Exposure`
+        expList : `list` [`lsst.afw.image.Exposure`]
             Input list of exposures to combine.
         calib : `lsst.afw.image.Exposure`
             Output calibration to construct headers for.
-        calibType: `str`, optional
+        calibType : `str`, optional
             OBSTYPE the output should claim.
-        scales: `list` of `float`, optional
+        scales : `list` [`float`], optional
             Scale values applied to each input to record.
 
         Returns
@@ -499,8 +516,9 @@ class CalibCombineTask(pipeBase.PipelineTask,
     def interpolateNans(self, exp):
         """Interpolate over NANs in the combined image.
 
-        NANs can result from masked areas on the CCD.  We don't want them getting
-        into our science images, so we replace them with the median of the image.
+        NANs can result from masked areas on the CCD.  We don't want
+        them getting into our science images, so we replace them with
+        the median of the image.
 
         Parameters
         ----------
@@ -517,7 +535,8 @@ class CalibCombineTask(pipeBase.PipelineTask,
             self.log.warn("Found %s NAN pixels", count)
 
 
-# Create versions of the Connections, Config, and Task that support filter constraints.
+# Create versions of the Connections, Config, and Task that support
+# filter constraints.
 class CalibCombineByFilterConnections(CalibCombineConnections,
                                       dimensions=("instrument", "detector", "physical_filter")):
     inputScales = cT.Input(
@@ -550,6 +569,7 @@ class CalibCombineByFilterConfig(CalibCombineConfig,
 
 class CalibCombineByFilterTask(CalibCombineTask):
     """Task to combine calib exposures."""
+
     ConfigClass = CalibCombineByFilterConfig
     _DefaultName = 'cpFilterCombine'
     pass

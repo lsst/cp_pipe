@@ -75,8 +75,8 @@ class CpDarkTaskConfig(pipeBase.PipelineTaskConfig,
 class CpDarkTask(pipeBase.PipelineTask,
                  pipeBase.CmdLineTask):
     """Combine pre-processed dark frames into a proposed master calibration.
-
     """
+
     ConfigClass = CpDarkTaskConfig
     _DefaultName = "cpDark"
 
@@ -96,8 +96,12 @@ class CpDarkTask(pipeBase.PipelineTask,
 
         Returns
         -------
-        outputExp : `lsst.afw.image.Exposure`
-            CR rejected, ISR processed Dark Frame."
+        results : `lsst.pipe.base.Struct`
+            The results struct containing:
+
+            ``outputExp``
+                CR rejected, ISR processed Dark Frame
+                (`lsst.afw.image.Exposure`).
         """
         psf = measAlg.SingleGaussianPsf(self.config.psfSize,
                                         self.config.psfSize,
