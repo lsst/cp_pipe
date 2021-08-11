@@ -79,6 +79,7 @@ class CpFlatMeasureTask(pipeBase.PipelineTask,
                         pipeBase.CmdLineTask):
     """Apply extra masking and measure image statistics.
     """
+
     ConfigClass = CpFlatMeasureTaskConfig
     _DefaultName = "cpFlatMeasure"
 
@@ -92,8 +93,11 @@ class CpFlatMeasureTask(pipeBase.PipelineTask,
 
         Returns
         -------
-        outputStats : `lsst.daf.base.PropertyList`
-            List containing the statistics.
+        results : `lsst.pipe.base.Struct`
+            The results struct containing:
+
+            ``outputStats``
+                 List containing the statistics (`lsst.daf.base.PropertyList`).
         """
         if self.config.doVignette:
             VignetteExposure(inputExp, doUpdateMask=True, doSetValue=False, log=self.log)
@@ -183,6 +187,7 @@ class CpFlatNormalizationTask(pipeBase.PipelineTask,
                               pipeBase.CmdLineTask):
     """Rescale merged flat frames to remove unequal screen illumination.
     """
+
     ConfigClass = CpFlatNormalizationTaskConfig
     _DefaultName = "cpFlatNorm"
 
@@ -215,9 +220,13 @@ class CpFlatNormalizationTask(pipeBase.PipelineTask,
 
         Returns
         -------
-        outputScales : `dict` [`dict` [`dict` [`float`]]]
-            Dictionary of scales, indexed by detector (`int`),
-            amplifier (`int`), and exposure (`int`).
+        results : `lsst.pipe.base.Struct`
+            The results struct containing:
+
+            ``outputScales``
+                Dictionary of scales, indexed by detector (`int`),
+                amplifier (`int`), and exposure (`int`) (`dict`
+                [`dict` [`dict` [`float`]]]).
 
         Raises
         ------
@@ -371,8 +380,7 @@ class CpFlatNormalizationTask(pipeBase.PipelineTask,
 
         References
         ----------
-        .. [1] https://svn.pan-starrs.ifa.hawaii.edu/trac/ipp/browser/trunk/psModules/src/detrend/pmFlatNormalize.c  # noqa: E501
-
+        .. [1] https://svn.pan-starrs.ifa.hawaii.edu/trac/ipp/browser/trunk/psModules/src/detrend/pmFlatNormalize.c  # noqa: W505, E501
         """
         numExps = bgMatrix.shape[1]
         numChips = bgMatrix.shape[0]

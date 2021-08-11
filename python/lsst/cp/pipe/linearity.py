@@ -127,6 +127,7 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
 class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
     """Fit the linearity from the PTC dataset.
     """
+
     ConfigClass = LinearitySolveConfig
     _DefaultName = 'cpLinearitySolve'
 
@@ -172,23 +173,24 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         results : `lsst.pipe.base.Struct`
             The results struct containing:
 
-            ``outputLinearizer`` : `lsst.ip.isr.Linearizer`
-                Final linearizer calibration.
-            ``outputProvenance`` : `lsst.ip.isr.IsrProvenance`
-                Provenance data for the new calibration.
+            ``outputLinearizer``
+                Final linearizer calibration (`lsst.ip.isr.Linearizer`).
+            ``outputProvenance``
+                Provenance data for the new calibration
+                (`lsst.ip.isr.IsrProvenance`).
 
         Notes
         -----
         This task currently fits only polynomial-defined corrections,
         where the correction coefficients are defined such that:
-            corrImage = uncorrImage + sum_i c_i uncorrImage^(2 + i)
-        These `c_i` are defined in terms of the direct polynomial fit:
-            meanVector ~ P(x=timeVector) = sum_j k_j x^j
-        such that c_(j-2) = -k_j/(k_1^j) in units of DN^(1-j) (c.f.,
+        :math:`corrImage = uncorrImage + \\sum_i c_i uncorrImage^(2 + i)`
+        These :math:`c_i` are defined in terms of the direct polynomial fit:
+        :math:`meanVector ~ P(x=timeVector) = \\sum_j k_j x^j`
+        such that :math:`c_(j-2) = -k_j/(k_1^j)` in units of DN^(1-j) (c.f.,
         Eq. 37 of 2003.05978). The `config.polynomialOrder` or
-        `config.splineKnots` define the maximum order of x^j to fit.
-        As k_0 and k_1 are degenerate with bias level and gain, they
-        are not included in the non-linearity correction.
+        `config.splineKnots` define the maximum order of :math:`x^j` to fit.
+        As :math:`k_0` and :math:`k_1` are degenerate with bias level and gain,
+        they are not included in the non-linearity correction.
         """
         if len(dummy) == 0:
             self.log.warn("No dummy exposure found.")
@@ -281,7 +283,8 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
                 if self.config.linearityType == 'Squared':
                     linearityFit = [linearityFit[2]]
                 elif self.config.linearityType == 'LookupTable':
-                    # Use linear part to get time at wich signal is maxAduForLookupTableLinearizer DN
+                    # Use linear part to get time at wich signal is
+                    # maxAduForLookupTableLinearizer DN
                     tMax = (self.config.maxLookupTableAdu - polyFit[0])/polyFit[1]
                     timeRange = np.linspace(0, tMax, self.config.maxLookupTableAdu)
                     signalIdeal = polyFit[0] + polyFit[1]*timeRange
@@ -292,7 +295,8 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
                     linearityFit = [tableIndex, 0]
                     tableIndex += 1
             elif self.config.linearityType in ['Spline']:
-                # See discussion in `lsst.ip.isr.linearize.py` before modifying.
+                # See discussion in `lsst.ip.isr.linearize.py` before
+                # modifying.
                 numPerBin, binEdges = np.histogram(linearOrdinate, bins=fitOrder)
                 with np.errstate(invalid="ignore"):
                     # Algorithm note: With the counts of points per
@@ -382,20 +386,19 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         stepname : `str`
             A label to use to check if we care to debug at a given
             line of code.
-        xVector : `numpy.array`
+        xVector : `numpy.array`, (N,)
             The values to use as the independent variable in the
             linearity fit.
-        yVector : `numpy.array`
+        yVector : `numpy.array`, (N,)
             The values to use as the dependent variable in the
             linearity fit.
-        yModel : `numpy.array`
+        yModel : `numpy.array`, (N,)
             The values to use as the linearized result.
-        mask : `numpy.array` [ `bool` ], optional
+        mask : `numpy.array` [`bool`], (N,) , optional
             A mask to indicate which entries of ``xVector`` and
             ``yVector`` to keep.
         ampName : `str`
             Amplifier name to lookup linearity correction values.
-
         """
         frame = getDebugFrame(self._display, stepname)
         if frame:
@@ -459,6 +462,7 @@ class MeasureLinearityTask(pipeBase.CmdLineTask):
     This class wraps the Gen3 linearity task to allow it to be run as
     a Gen2 CmdLineTask.
     """
+
     ConfigClass = MeasureLinearityConfig
     _DefaultName = "measureLinearity"
 
@@ -479,10 +483,11 @@ class MeasureLinearityTask(pipeBase.CmdLineTask):
         results : `lsst.pipe.base.Struct`
             The results struct containing:
 
-            ``outputLinearizer`` : `lsst.ip.isr.Linearizer`
-                Final linearizer calibration.
-            ``outputProvenance`` : `lsst.ip.isr.IsrProvenance`
-                Provenance data for the new calibration.
+            ``outputLinearizer``
+                Final linearizer calibration (`lsst.ip.isr.Linearizer`).
+            ``outputProvenance``
+                Provenance data for the new calibration
+                (`lsst.ip.isr.IsrProvenance`).
         """
         ptc = dataRef.get('photonTransferCurveDataset')
         camera = dataRef.get('camera')

@@ -9,5 +9,4 @@ cp_pipe documentation preview
 .. toctree::
    :maxdepth: 1
 
-   cp_pipe/index
    lsst.cp.pipe/index

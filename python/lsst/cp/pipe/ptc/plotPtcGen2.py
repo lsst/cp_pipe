@@ -44,6 +44,7 @@ from lsst.ip.isr import PhotonTransferCurveDataset
 
 class PlotPhotonTransferCurveTaskConfigGen2(pexConfig.Config):
     """Config class for photon transfer curve measurement task"""
+
     datasetFileName = pexConfig.Field(
         dtype=str,
         doc="datasetPtc file name (fits)",
@@ -103,7 +104,9 @@ class PlotPhotonTransferCurveTaskGen2(pipeBase.CmdLineTask):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        plt.interactive(False)  # stop windows popping up when plotting. When headless, use 'agg' backend too
+        # stop windows popping up when plotting. When headless, use
+        # 'agg' backend too
+        plt.interactive(False)
 
     @classmethod
     def _makeArgumentParser(cls):
@@ -123,7 +126,6 @@ class PlotPhotonTransferCurveTaskGen2(pipeBase.CmdLineTask):
         dataRef : list of lsst.daf.persistence.ButlerDataRef
             dataRef for the detector for the expIds to be fit.
         """
-
         datasetFile = self.config.datasetFileName
         datasetPtc = PhotonTransferCurveDataset.readFits(datasetFile)
 
@@ -161,17 +163,20 @@ class PlotPhotonTransferCurveTaskGen2(pipeBase.CmdLineTask):
 
     def covAstierMakeAllPlots(self, dataset, pdfPages,
                               log=None):
-        """Make plots for MeasurePhotonTransferCurve task when doCovariancesAstier=True.
+        """Make plots for MeasurePhotonTransferCurve task when
+        doCovariancesAstier=True.
 
-        This function call other functions that mostly reproduce the plots in Astier+19.
-        Most of the code is ported from Pierre Astier's repository https://github.com/PierreAstier/bfptc
+        This function call other functions that mostly reproduce the
+        plots in Astier+19.  Most of the code is ported from Pierre
+        Astier's repository https://github.com/PierreAstier/bfptc
 
         Parameters
         ----------
         dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
-            The dataset containing the necessary information to produce the plots.
+            The dataset containing the necessary information to
+            produce the plots.
 
-        pdfPages: `matplotlib.backends.backend_pdf.PdfPages`
+        pdfPages : `matplotlib.backends.backend_pdf.PdfPages`
             PDF file where the plots will be saved.
 
         log : `lsst.log.Log`, optional
@@ -223,46 +228,51 @@ class PlotPhotonTransferCurveTaskGen2(pipeBase.CmdLineTask):
 
         Parameters
         ----------
-        mu : `dict`, [`str`, `list`]
+        mu : `dict` [`str`, `list`]
             Dictionary keyed by amp name with mean signal values.
 
-        covs : `dict`, [`str`, `list`]
-            Dictionary keyed by amp names containing a list of measued covariances per mean flux.
+        covs : `dict` [`str`, `list`]
+            Dictionary keyed by amp names containing a list of measued
+            covariances per mean flux.
 
-        covsModel : `dict`, [`str`, `list`]
-            Dictionary keyed by amp names containinging covariances model (Eq. 20 of Astier+19) per mean flux.
+        covsModel : `dict` [`str`, `list`]
+            Dictionary keyed by amp names containinging covariances
+            model (Eq. 20 of Astier+19) per mean flux.
 
-        covsWeights : `dict`, [`str`, `list`]
-            Dictionary keyed by amp names containinging sqrt. of covariances weights.
+        covsWeights : `dict` [`str`, `list`]
+            Dictionary keyed by amp names containinging sqrt. of
+            covariances weights.
 
-        covsNoB : `dict`, [`str`, `list`]
-            Dictionary keyed by amp names containing a list of measued covariances per mean flux ('b'=0 in
-            Astier+19).
+        covsNoB : `dict` [`str`, `list`]
+            Dictionary keyed by amp names containing a list of measued
+            covariances per mean flux ('b'=0 in Astier+19).
 
-        covsModelNoB : `dict`, [`str`, `list`]
-            Dictionary keyed by amp names containing covariances model (with 'b'=0 in Eq. 20 of Astier+19)
-            per mean flux.
+        covsModelNoB : `dict` [`str`, `list`]
+            Dictionary keyed by amp names containing covariances model
+            (with 'b'=0 in Eq. 20 of Astier+19) per mean flux.
 
-        covsWeightsNoB : `dict`, [`str`, `list`]
-            Dictionary keyed by amp names containing sqrt. of covariances weights ('b' = 0 in Eq. 20 of
-            Astier+19).
+        covsWeightsNoB : `dict` [`str`, `list`]
+            Dictionary keyed by amp names containing sqrt. of
+            covariances weights ('b' = 0 in Eq. 20 of Astier+19).
 
-        gainDict : `dict`, [`str`, `float`]
+        gainDict : `dict` [`str`, `float`]
             Dictionary keyed by amp names containing the gains in e-/ADU.
 
-        noiseDict : `dict`, [`str`, `float`]
-            Dictionary keyed by amp names containing the rms redout noise in e-.
+        noiseDict : `dict` [`str`, `float`]
+            Dictionary keyed by amp names containing the rms redout
+            noise in e-.
 
-        aDict : `dict`, [`str`, `numpy.array`]
-            Dictionary keyed by amp names containing 'a' coefficients (Eq. 20 of Astier+19).
+        aDict : `dict` [`str`, `numpy.array`]
+            Dictionary keyed by amp names containing 'a' coefficients
+            (Eq. 20 of Astier+19).
 
-        bDict : `dict`, [`str`, `numpy.array`]
-            Dictionary keyed by amp names containing 'b' coefficients (Eq. 20 of Astier+19).
+        bDict : `dict` [`str`, `numpy.array`]
+            Dictionary keyed by amp names containing 'b' coefficients
+            (Eq. 20 of Astier+19).
 
-        pdfPages: `matplotlib.backends.backend_pdf.PdfPages`
+        pdfPages : `matplotlib.backends.backend_pdf.PdfPages`
             PDF file where the plots will be saved.
         """
-
         legendFontSize = 6.5
         labelFontSize = 7
         titleFontSize = 9
@@ -440,38 +450,43 @@ class PlotPhotonTransferCurveTaskGen2(pipeBase.CmdLineTask):
         j : `int`
             Covariance lag
 
-        inputMu : `dict`, [`str`, `list`]
+        inputMu : `dict` [`str`, `list`]
             Dictionary keyed by amp name with mean signal values.
 
-        covs : `dict`, [`str`, `list`]
-            Dictionary keyed by amp names containing a list of measued covariances per mean flux.
+        covs : `dict` [`str`, `list`]
+            Dictionary keyed by amp names containing a list of measued
+            covariances per mean flux.
 
-        covsModel : `dict`, [`str`, `list`]
-            Dictionary keyed by amp names containinging covariances model (Eq. 20 of Astier+19) per mean flux.
+        covsModel : `dict` [`str`, `list`]
+            Dictionary keyed by amp names containinging covariances
+            model (Eq. 20 of Astier+19) per mean flux.
 
-        covsWeights : `dict`, [`str`, `list`]
-            Dictionary keyed by amp names containinging sqrt. of covariances weights.
+        covsWeights : `dict` [`str`, `list`]
+            Dictionary keyed by amp names containinging sqrt. of
+            covariances weights.
 
-        covsNoB : `dict`, [`str`, `list`]
-            Dictionary keyed by amp names containing a list of measued covariances per mean flux ('b'=0 in
-            Astier+19).
+        covsNoB : `dict` [`str`, `list`]
+            Dictionary keyed by amp names containing a list of measued
+            covariances per mean flux ('b'=0 in Astier+19).
 
-        covsModelNoB : `dict`, [`str`, `list`]
-            Dictionary keyed by amp names containing covariances model (with 'b'=0 in Eq. 20 of Astier+19)
-            per mean flux.
+        covsModelNoB : `dict` [`str`, `list`]
+            Dictionary keyed by amp names containing covariances model
+            (with 'b'=0 in Eq. 20 of Astier+19) per mean flux.
 
-        covsWeightsNoB : `dict`, [`str`, `list`]
-            Dictionary keyed by amp names containing sqrt. of covariances weights ('b' = 0 in Eq. 20 of
-            Astier+19).
+        covsWeightsNoB : `dict` [`str`, `list`]
+            Dictionary keyed by amp names containing sqrt. of
+            covariances weights ('b' = 0 in Eq. 20 of Astier+19).
 
-        expIdMask : `dict`, [`str`, `list`]
-            Dictionary keyed by amp names containing the masked exposure pairs.
+        expIdMask : `dict` [`str`, `list`]
+            Dictionary keyed by amp names containing the masked
+            exposure pairs.
 
-        pdfPages: `matplotlib.backends.backend_pdf.PdfPages`
+        pdfPages : `matplotlib.backends.backend_pdf.PdfPages`
             PDF file where the plots will be saved.
 
         offset : `float`, optional
-            Constant offset factor to plot covariances in same panel (so they don't overlap).
+            Constant offset factor to plot covariances in same panel
+            (so they don't overlap).
 
         numberOfBins : `int`, optional
             Number of bins for top and bottom plot.
@@ -480,7 +495,8 @@ class PlotPhotonTransferCurveTaskGen2(pipeBase.CmdLineTask):
             Plot the data points?
 
         topPlot : `bool`, optional
-            Plot the top plot with the covariances, and the bottom plot with the model residuals?
+            Plot the top plot with the covariances, and the bottom
+            plot with the model residuals?
 
         log : `lsst.log.Log`, optional
             Logger to handle messages.
@@ -583,15 +599,17 @@ class PlotPhotonTransferCurveTaskGen2(pipeBase.CmdLineTask):
 
         Parameters
         ----------
-        aDict : `dict`, [`numpy.array`]
-            Dictionary keyed by amp names containing the fitted 'a' coefficients from the model
-            in Eq. 20 of Astier+19 (if `ptcFitType` is `FULLCOVARIANCE`).
+        aDict : `dict` [`numpy.array`]
+            Dictionary keyed by amp names containing the fitted 'a'
+            coefficients from the model in Eq. 20 of Astier+19 (if
+            `ptcFitType` is `FULLCOVARIANCE`).
 
-        bDict : `dict`, [`numpy.array`]
-            Dictionary keyed by amp names containing the fitted 'b' coefficients from the model
-            in Eq. 20 of Astier+19 (if `ptcFitType` is `FULLCOVARIANCE`).
+        bDict : `dict` [`numpy.array`]
+            Dictionary keyed by amp names containing the fitted 'b'
+            coefficients from the model in Eq. 20 of Astier+19 (if
+            `ptcFitType` is `FULLCOVARIANCE`).
 
-        pdfPages: `matplotlib.backends.backend_pdf.PdfPages`
+        pdfPages : `matplotlib.backends.backend_pdf.PdfPages`
             PDF file where the plots will be saved.
 
         bRange : `int`
@@ -632,19 +650,22 @@ class PlotPhotonTransferCurveTaskGen2(pipeBase.CmdLineTask):
     def ab_vs_dist(aDict, bDict, pdfPages, bRange=4):
         """Fig. 13 of Astier+19.
 
-        Values of a and b arrays fits, averaged over amplifiers, as a function of distance.
+        Values of a and b arrays fits, averaged over amplifiers, as a
+        function of distance.
 
         Parameters
         ----------
-        aDict : `dict`, [`numpy.array`]
-            Dictionary keyed by amp names containing the fitted 'a' coefficients from the model
-            in Eq. 20 of Astier+19 (if `ptcFitType` is `FULLCOVARIANCE`).
+        aDict : `dict` [`numpy.array`]
+            Dictionary keyed by amp names containing the fitted 'a'
+            coefficients from the model in Eq. 20 of Astier+19 (if
+            `ptcFitType` is `FULLCOVARIANCE`).
 
-        bDict : `dict`, [`numpy.array`]
-            Dictionary keyed by amp names containing the fitted 'b' coefficients from the model
-            in Eq. 20 of Astier+19 (if `ptcFitType` is `FULLCOVARIANCE`).
+        bDict : `dict` [`numpy.array`]
+            Dictionary keyed by amp names containing the fitted 'b'
+            coefficients from the model in Eq. 20 of Astier+19 (if
+            `ptcFitType` is `FULLCOVARIANCE`).
 
-        pdfPages: `matplotlib.backends.backend_pdf.PdfPages`
+        pdfPages : `matplotlib.backends.backend_pdf.PdfPages`
             PDF file where the plots will be saved.
 
         bRange : `int`
@@ -715,20 +736,22 @@ class PlotPhotonTransferCurveTaskGen2(pipeBase.CmdLineTask):
     def plotAcoeffsSum(aDict, bDict, pdfPages):
         """Fig. 14. of Astier+19
 
-        Cumulative sum of a_ij as a function of maximum separation. This plot displays the average over
-        channels.
+        Cumulative sum of a_ij as a function of maximum
+        separation. This plot displays the average over channels.
 
         Parameters
         ----------
-        aDict : `dict`, [`numpy.array`]
-            Dictionary keyed by amp names containing the fitted 'a' coefficients from the model
-            in Eq. 20 of Astier+19 (if `ptcFitType` is `FULLCOVARIANCE`).
+        aDict : `dict` [`numpy.array`]
+            Dictionary keyed by amp names containing the fitted 'a'
+            coefficients from the model in Eq. 20 of Astier+19 (if
+            `ptcFitType` is `FULLCOVARIANCE`).
 
-        bDict : `dict`, [`numpy.array`]
-            Dictionary keyed by amp names containing the fitted 'b' coefficients from the model
-            in Eq. 20 of Astier+19 (if `ptcFitType` is `FULLCOVARIANCE`).
+        bDict : `dict` [`numpy.array`]
+            Dictionary keyed by amp names containing the fitted 'b'
+            coefficients from the model in Eq. 20 of Astier+19 (if
+            `ptcFitType` is `FULLCOVARIANCE`).
 
-        pdfPages: `matplotlib.backends.backend_pdf.PdfPages`
+        pdfPages : `matplotlib.backends.backend_pdf.PdfPages`
             PDF file where the plots will be saved.
         """
         assert (len(aDict) == len(bDict))
@@ -772,32 +795,34 @@ class PlotPhotonTransferCurveTaskGen2(pipeBase.CmdLineTask):
 
         Parameters
         ----------
-        aDict: `dict`
-            Dictionary of 'a' matrices (Eq. 20, Astier+19), with amp names as keys.
+        aDict : `dict`
+            Dictionary of 'a' matrices (Eq. 20, Astier+19), with amp
+            names as keys.
 
-        aDictNoB: `dict`
-            Dictionary of 'a' matrices ('b'= 0 in Eq. 20, Astier+19), with amp names as keys.
+        aDictNoB : `dict`
+            Dictionary of 'a' matrices ('b'= 0 in Eq. 20, Astier+19),
+            with amp names as keys.
 
-        fullCovsModel : `dict`, [`str`, `list`]
-            Dictionary keyed by amp names containing covariances model per mean flux.
+        fullCovsModel : `dict` [`str`, `list`]
+            Dictionary keyed by amp names containing covariances model
+            per mean flux.
 
-        fullCovsModelNoB : `dict`, [`str`, `list`]
-            Dictionary keyed by amp names containing covariances model (with 'b'=0 in Eq. 20 of
-            Astier+19) per mean flux.
+        fullCovsModelNoB : `dict` [`str`, `list`]
+            Dictionary keyed by amp names containing covariances model
+            (with 'b'=0 in Eq. 20 of Astier+19) per mean flux.
 
         signalElectrons : `float`
             Signal at which to evaluate the a_ij coefficients.
 
-        pdfPages: `matplotlib.backends.backend_pdf.PdfPages`
+        pdfPages : `matplotlib.backends.backend_pdf.PdfPages`
             PDF file where the plots will be saved.
 
-        gainDict : `dict`, [`str`, `float`]
+        gainDict : `dict` [`str`, `float`]
             Dicgionary keyed by amp names with the gains in e-/ADU.
 
         maxr : `int`, optional
             Maximum lag.
         """
-
         fig = plt.figure(figsize=(7, 11))
         title = [f"'a' relative bias at {signalElectrons} e", "'a' relative bias (b=0)"]
         data = [(aDict, fullCovsModel), (aDictNoB, fullCovsModelNoB)]
@@ -809,10 +834,12 @@ class PlotPhotonTransferCurveTaskGen2(pipeBase.CmdLineTask):
                 covModel = np.array(pair[1][amp])
                 if np.isnan(covModel).all():
                     continue
-                # Compute the "a" coefficients of the Antilogus+14 (1402.0725) model as in
-                # Guyonnet+15 (1501.01577, eq. 16, the slope of cov/var at a given flux mu in
-                # electrons). Eq. 16 of 1501.01577 is an approximation to the more complete
-                # model in Astier+19 (1905.08677).
+                # Compute the "a" coefficients of the Antilogus+14
+                # (1402.0725) model as in Guyonnet+15 (1501.01577,
+                # eq. 16, the slope of cov/var at a given flux mu in
+                # electrons). Eq. 16 of 1501.01577 is an approximation
+                # to the more complete model in Astier+19
+                # (1905.08677).
                 var = covModel[0, 0, 0]  # ADU^2
                 # For a result in electrons^-1, we have to use mu in electrons
                 aOld = covModel[0, :, :]/(var*signalElectrons)
@@ -842,20 +869,22 @@ class PlotPhotonTransferCurveTaskGen2(pipeBase.CmdLineTask):
         return
 
     def _plotStandardPtc(self, dataset, ptcFitType, pdfPages):
-        """Plot PTC, var/signal vs signal, linearity, and linearity residual per amplifier.
+        """Plot PTC, var/signal vs signal, linearity, and linearity residual
+        per amplifier.
 
         Parameters
         ----------
         dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
-            The dataset containing the means, variances, exposure times, and mask.
+            The dataset containing the means, variances, exposure
+            times, and mask.
 
         ptcFitType : `str`
-            Type of the model fit to the PTC. Options: 'FULLCOVARIANCE', EXPAPPROXIMATION, or 'POLYNOMIAL'.
+            Type of the model fit to the PTC. Options:
+            'FULLCOVARIANCE', EXPAPPROXIMATION, or 'POLYNOMIAL'.
 
-        pdfPages: `matplotlib.backends.backend_pdf.PdfPages`
+        pdfPages : `matplotlib.backends.backend_pdf.PdfPages`
             PDF file where the plots will be saved.
         """
-
         if ptcFitType == 'EXPAPPROXIMATION':
             ptcFunc = funcAstier
             stringTitle = (r"Var = $\frac{1}{2g^2a_{00}}(\exp (2a_{00} \mu g) - 1) + \frac{n_{00}}{g^2}$ ")
@@ -999,7 +1028,8 @@ class PlotPhotonTransferCurveTaskGen2(pipeBase.CmdLineTask):
         Parameters
         ----------
         dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
-            The dataset containing the means, variances, exposure times, and mask.
+            The dataset containing the means, variances, exposure
+            times, and mask.
 
         linearizer : `lsst.ip.isr.Linearizer`
             Linearizer object
@@ -1083,15 +1113,15 @@ class PlotPhotonTransferCurveTaskGen2(pipeBase.CmdLineTask):
 
         Parameters
         ----------
-        x: `list`
+        x : `list`
             Data to bin.
 
-        maxDiff: `int`
+        maxDiff : `int`
             Maximum distance between bins.
 
         Returns
         -------
-        index: `list`
+        index : `list`
             Bin indices.
         """
         ix = np.argsort(x)
@@ -1117,21 +1147,21 @@ class PlotPhotonTransferCurveTaskGen2(pipeBase.CmdLineTask):
 
     @staticmethod
     def indexForBins(x, nBins):
-        """Builds an index with regular binning. The result can be fed into binData.
+        """Builds an index with regular binning. The result can be fed into
+        binData.
 
         Parameters
         ----------
-        x: `numpy.array`
+        x : `numpy.array`
             Data to bin.
-        nBins: `int`
+        nBins : `int`
             Number of bin.
 
         Returns
         -------
-        np.digitize(x, bins): `numpy.array`
+        indices : `numpy.array`
             Bin indices.
         """
-
         bins = np.linspace(x.min(), x.max() + abs(x.max() * 1e-7), nBins + 1)
         return np.digitize(x, bins)
 
@@ -1141,34 +1171,35 @@ class PlotPhotonTransferCurveTaskGen2(pipeBase.CmdLineTask):
 
         Patrameters
         -----------
-        x: `numpy.array`
+        x : `numpy.array`
             Data to bin.
 
-        y: `numpy.array`
+        y : `numpy.array`
             Data to bin.
 
-        binIdex: `list`
+        binIdex : `list`
             Bin number of each datum.
 
-        wy: `numpy.array`
-            Inverse rms of each datum to use when averaging (the actual weight is wy**2).
+        wy : `numpy.array`
+            Inverse rms of each datum to use when averaging (the
+            actual weight is wy**2).
 
         Returns:
         -------
 
-        xbin: `numpy.array`
+        xbin : `numpy.array`
             Binned data in x.
 
-        ybin: `numpy.array`
+        ybin : `numpy.array`
             Binned data in y.
 
-        wybin: `numpy.array`
+        wybin : `numpy.array`
             Binned weights in y, computed from wy's in each bin.
 
-        sybin: `numpy.array`
-            Uncertainty on the bin average, considering actual scatter, and ignoring weights.
+        sybin : `numpy.array`
+            Uncertainty on the bin average, considering actual
+            scatter, and ignoring weights.
         """
-
         if wy is None:
             wy = np.ones_like(x)
         binIndexSet = set(binIndex)

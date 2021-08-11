@@ -141,8 +141,8 @@ class BrighterFatterKernelSolveConfig(pipeBase.PipelineTaskConfig,
 
 class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
     """Measure appropriate Brighter-Fatter Kernel from the PTC dataset.
-
     """
+
     ConfigClass = BrighterFatterKernelSolveConfig
     _DefaultName = 'cpBfkMeasure'
 
@@ -167,7 +167,8 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
         butlerQC.put(outputs, outputRefs)
 
     def run(self, inputPtc, dummy, camera, inputDims):
-        """Combine covariance information from PTC into brighter-fatter kernels.
+        """Combine covariance information from PTC into brighter-fatter
+        kernels.
 
         Parameters
         ----------
@@ -187,8 +188,9 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
         results : `lsst.pipe.base.Struct`
             The resulst struct containing:
 
-            ``outputBfk`` : `lsst.ip.isr.BrighterFatterKernel`
-                Resulting Brighter-Fatter Kernel.
+            ``outputBfk``
+                Resulting Brighter-Fatter Kernel
+                (`lsst.ip.isr.BrighterFatterKernel`).
         """
         if len(dummy) == 0:
             self.log.warn("No dummy exposure found.")
@@ -235,7 +237,8 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
             fluxes = np.array([flux*gain for flux in fluxes])  # Now in e^-
             variances = np.array([variance*gain*gain for variance in variances])  # Now in e^2-
 
-            # This should duplicate Coulton et al. 2017 Equation 22-29 (arxiv:1711.06273)
+            # This should duplicate Coulton et al. 2017 Equation 22-29
+            # (arxiv:1711.06273)
             scaledCorrList = list()
             for xcorrNum, (xcorr, flux, var) in enumerate(zip(xCorrList, fluxes, variances), 1):
                 q = np.array(xcorr) * gain * gain  # xcorr now in e^-
@@ -245,7 +248,8 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
 
                 # Normalize by the flux, which removes the (0,0)
                 # component attributable to Poisson noise.  This
-                # contains the two "t I delta(x - x')" terms in Coulton et al. 2017 equation 29
+                # contains the two "t I delta(x - x')" terms in
+                # Coulton et al. 2017 equation 29
                 q[0][0] -= 2.0*(flux)
 
                 if q[0][0] > 0.0:
@@ -253,7 +257,8 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
                                   ampName, xcorrNum, q[0][0])
                     continue
 
-                # This removes the "t (I_a^2 + I_b^2)" factor in Coulton et al. 2017 equation 29.
+                # This removes the "t (I_a^2 + I_b^2)" factor in
+                # Coulton et al. 2017 equation 29.
                 q /= -2.0*(flux**2)
                 scaled = self._tileArray(q)
 
@@ -278,7 +283,8 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
                 # Use the aMatrix, ignoring the meanXcorr generated above.
                 preKernel = np.pad(self._tileArray(np.array(inputPtc.aMatrix[ampName])), ((1, 1)))
             elif self.config.correlationQuadraticFit:
-                # Use a quadratic fit to the correlations as a function of flux.
+                # Use a quadratic fit to the correlations as a
+                # function of flux.
                 preKernel = self.quadraticCorrelations(scaledCorrList, fluxes, f"Amp: {ampName}")
             else:
                 # Use a simple average of the measured correlations.
@@ -290,7 +296,8 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
                 totalSum = np.sum(preKernel)
 
                 if self.config.correlationModelRadius < (preKernel.shape[0] - 1) / 2:
-                    # Assume a correlation model of Corr(r) = -preFactor * r^(2 * slope)
+                    # Assume a correlation model of
+                    # Corr(r) = -preFactor * r^(2 * slope)
                     preFactor = np.sqrt(preKernel[center, center + 1] * preKernel[center + 1, center])
                     slopeFactor = 2.0 * np.abs(self.config.correlationModelSlope)
                     totalSum += 2.0*np.pi*(preFactor / (slopeFactor*(center + 0.5))**slopeFactor)
@@ -330,13 +337,14 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
         Parameters
         ----------
         xCorrList : `list` [`numpy.array`]
-            List of cross-correlations.
+            List of cross-correlations.  These are expected to be
+            square arrays.
         name : `str`
             Name for log messages.
 
         Returns
         -------
-        meanXcorr : `numpy.array`
+        meanXcorr : `numpy.array`, (N, N)
             The averaged cross-correlation.
         """
         meanXcorr = np.zeros_like(xCorrList[0])
@@ -359,15 +367,16 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
         Parameters
         ----------
         xCorrList : `list` [`numpy.array`]
-            List of cross-correlations.
-        fluxList : `numpy.array`
+            List of cross-correlations.  These are expected to be
+            square arrays.
+        fluxList : `numpy.array`, (Nflux,)
             Associated list of fluxes.
         name : `str`
             Name for log messages.
 
         Returns
         -------
-        meanXcorr : `numpy.array`
+        meanXcorr : `numpy.array`, (N, N)
             The averaged cross-correlation.
         """
         meanXcorr = np.zeros_like(xCorrList[0])
@@ -407,14 +416,14 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
                         [ 6,  5,  4,  5,  6],
                         [ 9,  8,  7,  8,  9]])
 
-        Parameters:
-        -----------
-        input : `np.array`
+        Parameters
+        ----------
+        input : `np.array`, (N, N)
             The square input quarter-array
 
-        Returns:
-        --------
-        output : `np.array`
+        Returns
+        -------
+        output : `np.array`, (2*N + 1, 2*N + 1)
             The full, tiled array
         """
         assert(in_array.shape[0] == in_array.shape[1])
@@ -435,9 +444,9 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
         A numerical method for solving a system of linear equations
         with faster convergence than the Gauss-Seidel method.
 
-        Parameters:
-        -----------
-        source : `numpy.ndarray`
+        Parameters
+        ----------
+        source : `numpy.ndarray`, (N, N)
             The input array.
         maxIter : `int`, optional
             Maximum number of iterations to attempt before aborting.
@@ -445,9 +454,9 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
             The target error level at which we deem convergence to have
             occurred.
 
-        Returns:
-        --------
-        output : `numpy.ndarray`
+        Returns
+        -------
+        output : `numpy.ndarray`, (N, N)
             The solution.
         """
         if not maxIter:

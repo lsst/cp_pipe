@@ -60,7 +60,6 @@ def sigmaClipCorrection(nSigClip):
     -------
     scaleFactor : `float`
         Scale factor to increase the measured sigma by.
-
     """
     varFactor = 1.0 - (2 * nSigClip * norm.pdf(nSigClip)) / (norm.cdf(nSigClip) - norm.cdf(-nSigClip))
     return 1.0 / np.sqrt(varFactor)
@@ -93,7 +92,6 @@ def calculateWeightedReducedChi2(measured, model, weightsMeasured, nData, nParsM
     redWeightedChi2 : `float`
         Reduced weighted chi2.
     """
-
     wRes = (measured - model)*weightsMeasured
     return ((wRes*wRes).sum())/(nData-nParsModel)
 
@@ -118,13 +116,16 @@ def makeMockFlats(expTime, gain=1.0, readNoiseElectrons=5, fluxElectrons=1000,
         Flux of flats, in electrons per second.
 
     randomSeedFlat1 : `int`, optional
-        Random seed for the normal distrubutions for the mean signal and noise (flat1).
+        Random seed for the normal distrubutions for the mean signal
+        and noise (flat1).
 
     randomSeedFlat2 : `int`, optional
-        Random seed for the normal distrubutions for the mean signal and noise (flat2).
+        Random seed for the normal distrubutions for the mean signal
+        and noise (flat2).
 
     powerLawBfParams : `list`, optional
-        Parameters for `galsim.cdmodel.PowerLawCD` to simulate the brightter-fatter effect.
+        Parameters for `galsim.cdmodel.PowerLawCD` to simulate the
+        brightter-fatter effect.
 
     expId1 : `int`, optional
         Exposure ID for first flat.
@@ -135,20 +136,22 @@ def makeMockFlats(expTime, gain=1.0, readNoiseElectrons=5, fluxElectrons=1000,
     Returns
     -------
 
-    flatExp1 : `lsst.afw.image.exposure.exposure.ExposureF`
+    flatExp1 : `lsst.afw.image.exposure.ExposureF`
         First exposure of flat field pair.
 
-    flatExp2 : `lsst.afw.image.exposure.exposure.ExposureF`
+    flatExp2 : `lsst.afw.image.exposure.ExposureF`
         Second exposure of flat field pair.
 
     Notes
     -----
-    The parameters of `galsim.cdmodel.PowerLawCD` are `n, r0, t0, rx, tx, r, t, alpha`. For more
-    information about their meaning, see the Galsim documentation
-    https://galsim-developers.github.io/GalSim/_build/html/_modules/galsim/cdmodel.html
+    The parameters of `galsim.cdmodel.PowerLawCD` are `n, r0, t0, rx,
+    tx, r, t, alpha`. For more information about their meaning, see
+    the Galsim documentation
+    https://galsim-developers.github.io/GalSim/_build/html/_modules/galsim/cdmodel.html  # noqa: W505
     and Gruen+15 (1501.02802).
 
-    Example: galsim.cdmodel.PowerLawCD(8, 1.1e-7, 1.1e-7, 1.0e-8, 1.0e-8, 1.0e-9, 1.0e-9, 2.0)
+    Example: galsim.cdmodel.PowerLawCD(8, 1.1e-7, 1.1e-7, 1.0e-8,
+                                       1.0e-8, 1.0e-9, 1.0e-9, 2.0)
     """
     flatFlux = fluxElectrons  # e/s
     flatMean = flatFlux*expTime  # e
@@ -198,7 +201,20 @@ def makeMockFlats(expTime, gain=1.0, readNoiseElectrons=5, fluxElectrons=1000,
 
 
 def countMaskedPixels(maskedIm, maskPlane):
-    """Count the number of pixels in a given mask plane."""
+    """Count the number of pixels in a given mask plane.
+
+    Parameters
+    ----------
+    maskedIm : `~lsst.afw.image.MaskedImage`
+        Masked image to examine.
+    maskPlane : `str`
+        Name of the mask plane to examine.
+
+    Returns
+    -------
+    nPix : `int`
+        Number of pixels in the requested mask plane.
+    """
     maskBit = maskedIm.mask.getPlaneBitMask(maskPlane)
     nPix = np.where(np.bitwise_and(maskedIm.mask.array, maskBit))[0].flatten().size
     return nPix
@@ -244,6 +260,16 @@ def parseCmdlineNumberString(inputString):
 
     Take an input of the form "'1..5:2^123..126'" as a string, and return
     a list of ints as [1, 3, 5, 123, 124, 125, 126]
+
+    Parameters
+    ----------
+    inputString : `str`
+        String to be parsed.
+
+    Returns
+    -------
+    outList : `list` [`int`]
+        List of integers identified in the string.
     """
     outList = []
     for subString in inputString.split("^"):
@@ -336,13 +362,13 @@ def irlsFit(initialParams, dataX, dataY, function, weightsY=None, weightType='Ca
     ----------
     initialParams : `list` [`float`]
         Starting parameters.
-    dataX : `numpy.array` [`float`]
+    dataX : `numpy.array`, (N,)
         Abscissa data.
-    dataY : `numpy.array` [`float`]
+    dataY : `numpy.array`, (N,)
         Ordinate data.
     function : callable
         Function to fit.
-    weightsY : `numpy.array` [`float`]
+    weightsY : `numpy.array`, (N,)
         Weights to apply to the data.
     weightType : `str`, optional
         Type of weighting to use.  One of Cauchy, Anderson, bisquare,
@@ -363,7 +389,6 @@ def irlsFit(initialParams, dataX, dataY, function, weightsY=None, weightType='Ca
     ------
     RuntimeError :
         Raised if an unknown weightType string is passed.
-
     """
     if not weightsY:
         weightsY = np.ones_like(dataX)
@@ -418,36 +443,38 @@ def irlsFit(initialParams, dataX, dataY, function, weightsY=None, weightType='Ca
 
 
 def fitLeastSq(initialParams, dataX, dataY, function, weightsY=None):
-    """Do a fit and estimate the parameter errors using using scipy.optimize.leastq.
+    """Do a fit and estimate the parameter errors using using
+    scipy.optimize.leastq.
 
-    optimize.leastsq returns the fractional covariance matrix. To estimate the
-    standard deviation of the fit parameters, multiply the entries of this matrix
-    by the unweighted reduced chi squared and take the square root of the diagonal elements.
+    optimize.leastsq returns the fractional covariance matrix. To
+    estimate the standard deviation of the fit parameters, multiply
+    the entries of this matrix by the unweighted reduced chi squared
+    and take the square root of the diagonal elements.
 
     Parameters
     ----------
-    initialParams : `list` of `float`
-        initial values for fit parameters. For ptcFitType=POLYNOMIAL, its length
-        determines the degree of the polynomial.
+    initialParams : `list` [`float`]
+        initial values for fit parameters. For ptcFitType=POLYNOMIAL,
+        its length determines the degree of the polynomial.
 
-    dataX : `numpy.array` of `float`
+    dataX : `numpy.array`, (N,)
         Data in the abscissa axis.
 
-    dataY : `numpy.array` of `float`
+    dataY : `numpy.array`, (N,)
         Data in the ordinate axis.
 
     function : callable object (function)
         Function to fit the data with.
 
-    weightsY : `numpy.array` of `float`
+    weightsY : `numpy.array`, (N,)
         Weights of the data in the ordinate axis.
 
     Return
     ------
-    pFitSingleLeastSquares : `list` of `float`
+    pFitSingleLeastSquares : `list` [`float`]
         List with fitted parameters.
 
-    pErrSingleLeastSquares : `list` of `float`
+    pErrSingleLeastSquares : `list` [`float`]
         List with errors for fitted parameters.
 
     reducedChiSqSingleLeastSquares : `float`
@@ -491,31 +518,32 @@ def fitBootstrap(initialParams, dataX, dataY, function, weightsY=None, confidenc
 
     Parameters
     ----------
-    initialParams : `list` of `float`
-        initial values for fit parameters. For ptcFitType=POLYNOMIAL, its length
-        determines the degree of the polynomial.
+    initialParams : `list` [`float`]
+        initial values for fit parameters. For ptcFitType=POLYNOMIAL,
+        its length determines the degree of the polynomial.
 
-    dataX : `numpy.array` of `float`
+    dataX : `numpy.array`, (N,)
         Data in the abscissa axis.
 
-    dataY : `numpy.array` of `float`
+    dataY : `numpy.array`, (N,)
         Data in the ordinate axis.
 
     function : callable object (function)
         Function to fit the data with.
 
-    weightsY : `numpy.array` of `float`, optional.
+    weightsY : `numpy.array`, (N,), optional.
         Weights of the data in the ordinate axis.
 
     confidenceSigma : `float`, optional.
-        Number of sigmas that determine confidence interval for the bootstrap errors.
+        Number of sigmas that determine confidence interval for the
+        bootstrap errors.
 
     Return
     ------
-    pFitBootstrap : `list` of `float`
+    pFitBootstrap : `list` [`float`]
         List with fitted parameters.
 
-    pErrBootstrap : `list` of `float`
+    pErrBootstrap : `list` [`float`]
         List with errors for fitted parameters.
 
     reducedChiSqBootstrap : `float`
@@ -562,30 +590,35 @@ def funcPolynomial(pars, x):
     params : `list`
         Polynomial coefficients. Its length determines the polynomial order.
 
-    x : `numpy.array`
+    x : `numpy.array`, (N,)
         Abscisa array.
 
     Returns
     -------
-    Ordinate array after evaluating polynomial of order len(pars)-1 at `x`.
+    y : `numpy.array`, (N,)
+        Ordinate array after evaluating polynomial of order
+        len(pars)-1 at `x`.
     """
     return poly.polyval(x, [*pars])
 
 
 def funcAstier(pars, x):
-    """Single brighter-fatter parameter model for PTC; Equation 16 of Astier+19.
+    """Single brighter-fatter parameter model for PTC; Equation 16 of
+    Astier+19.
 
     Parameters
     ----------
     params : `list`
-        Parameters of the model: a00 (brightter-fatter), gain (e/ADU), and noise (e^2).
+        Parameters of the model: a00 (brightter-fatter), gain (e/ADU),
+        and noise (e^2).
 
-    x : `numpy.array`
+    x : `numpy.array`, (N,)
         Signal mu (ADU).
 
     Returns
     -------
-    C_00 (variance) in ADU^2.
+    y : `numpy.array`, (N,)
+        C_00 (variance) in ADU^2.
     """
     a00, gain, noise = pars
     return 0.5/(a00*gain*gain)*(np.exp(2*a00*x*gain)-1) + noise/(gain*gain)  # C_00
@@ -596,16 +629,16 @@ def arrangeFlatsByExpTime(exposureList, exposureIdList):
 
     Parameters
     ----------
-    exposureList : `list`[`lsst.afw.image.exposure.exposure.ExposureF`]
+    exposureList : `list` [`lsst.afw.image.ExposureF`]
         Input list of exposures.
 
-    exposureIdList : `list`[`int`]
+    exposureIdList : `list` [`int`]
         List of exposure ids as obtained by dataId[`exposure`].
 
     Returns
     ------
     flatsAtExpTime : `dict` [`float`,
-                      `list`[(`lsst.afw.image.exposure.exposure.ExposureF`, `int`)]]
+                      `list`[(`lsst.afw.image.ExposureF`, `int`)]]
         Dictionary that groups flat-field exposures (and their IDs) that have
         the same exposure time (seconds).
     """
@@ -628,7 +661,7 @@ def arrangeFlatsByExpId(exposureList, exposureIdList):
 
     Parameters
     ----------
-    exposureList : `list`[`lsst.afw.image.exposure.exposure.ExposureF`]
+    exposureList : `list`[`lsst.afw.image.ExposureF`]
         Input list of exposures.
 
     exposureIdList : `list`[`int`]
@@ -637,7 +670,7 @@ def arrangeFlatsByExpId(exposureList, exposureIdList):
     Returns
     ------
     flatsAtExpId : `dict` [`float`,
-                   `list`[(`lsst.afw.image.exposure.exposure.ExposureF`, `int`)]]
+                   `list`[(`lsst.afw.image.ExposureF`, `int`)]]
         Dictionary that groups flat-field exposures (and their IDs)
         sequentially by their exposure id.
 
@@ -652,7 +685,8 @@ def arrangeFlatsByExpId(exposureList, exposureIdList):
     populated pairs.
     """
     flatsAtExpId = {}
-    # sortedExposures = sorted(exposureList, key=lambda exp: exp.getInfo().getVisitInfo().getExposureId())
+    # sortedExposures = sorted(exposureList, key=lambda exp:
+    # exp.getInfo().getVisitInfo().getExposureId())
     assert len(exposureList) == len(exposureIdList), "Different lengths for exp. list and exp. ID lists"
     # Sort exposures by expIds, which are in the second list `exposureIdList`.
     sortedExposures = sorted(zip(exposureList, exposureIdList), key=lambda pair: pair[1])
@@ -673,23 +707,28 @@ def arrangeFlatsByExpId(exposureList, exposureIdList):
 def checkExpLengthEqual(exp1, exp2, v1=None, v2=None, raiseWithMessage=False):
     """Check the exposure lengths of two exposures are equal.
 
-    Parameters:
-    -----------
-    exp1 : `lsst.afw.image.exposure.ExposureF`
+    Parameters
+    ----------
+    exp1 : `lsst.afw.image.Exposure`
         First exposure to check
-    exp2 : `lsst.afw.image.exposure.ExposureF`
+    exp2 : `lsst.afw.image.Exposure`
         Second exposure to check
     v1 : `int` or `str`, optional
         First visit of the visit pair
     v2 : `int` or `str`, optional
         Second visit of the visit pair
     raiseWithMessage : `bool`
-        If True, instead of returning a bool, raise a RuntimeError if exposure
-    times are not equal, with a message about which visits mismatch if the
-    information is available.
+        If True, instead of returning a bool, raise a RuntimeError if
+        exposure times are not equal, with a message about which
+        visits mismatch if the information is available.
 
-    Raises:
+    Returns
     -------
+    success : `bool`
+        This is true if the exposures have equal exposure times.
+
+    Raises
+    ------
     RuntimeError
         Raised if the exposure lengths of the two exposures are not equal
     """
@@ -719,24 +758,25 @@ def validateIsrConfig(isrTask, mandatory=None, forbidden=None, desirable=None, u
     isrTask : `lsst.ip.isr.IsrTask`
         The task whose config is to be validated
 
-    mandatory : `iterable` of `str`
+    mandatory : `iterable` [`str`]
         isr steps that must be set to True. Raises if False or missing
 
-    forbidden : `iterable` of `str`
+    forbidden : `iterable` [`str`]
         isr steps that must be set to False. Raises if True, warns if missing
 
-    desirable : `iterable` of `str`
-        isr steps that should probably be set to True. Warns is False, info if
-    missing
+    desirable : `iterable` [`str`]
+        isr steps that should probably be set to True. Warns is False,
+        info if missing
 
-    undesirable : `iterable` of `str`
-        isr steps that should probably be set to False. Warns is True, info if
-    missing
+    undesirable : `iterable` [`str`]
+        isr steps that should probably be set to False. Warns is True,
+        info if missing
 
     checkTrim : `bool`
-        Check to ensure the isrTask's assembly subtask is trimming the images.
-    This is a separate config as it is very ugly to do this within the
-    normal configuration lists as it is an option of a sub task.
+        Check to ensure the isrTask's assembly subtask is trimming the
+        images.  This is a separate config as it is very ugly to do
+        this within the normal configuration lists as it is an option
+        of a sub task.
 
     Raises
     ------
