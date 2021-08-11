@@ -108,8 +108,8 @@ class CpSkyImageTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
     This task maps the MaskObjectsTask across all of the initial ISR
     processed cpSkyIsr images to create cpSkyMaskedIsr products for
     all (exposure, detector) values.
-
     """
+
     ConfigClass = CpSkyImageConfig
     _DefaultName = "CpSkyImage"
 
@@ -197,6 +197,7 @@ class CpSkyScaleMeasureTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
     plane background for each exposure, and measure the scale factor
     from that full background.
     """
+
     ConfigClass = CpSkyScaleMeasureConfig
     _DefaultName = "cpSkyScaleMeasure"
 
@@ -293,6 +294,7 @@ class CpSkySubtractBackgroundTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
     created here has definition clashes that prevent that from being
     reused.
     """
+
     ConfigClass = CpSkySubtractBackgroundConfig
     _DefaultName = "cpSkySubtractBkg"
 
@@ -301,7 +303,8 @@ class CpSkySubtractBackgroundTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         self.makeSubtask("sky")
 
     def run(self, inputExp, inputBkg, inputScale):
-        """Subtract per-exposure background from individual detector masked images.
+        """Subtract per-exposure background from individual detector masked
+        images.
 
         Parameters
         ----------
@@ -380,6 +383,7 @@ class CpSkyCombineTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
     As before, this is written to a skyCalib instead of a SKY to avoid
     definition classes in gen3.
     """
+
     ConfigClass = CpSkyCombineConfig
     _DefaultName = "cpSkyCombine"
 
