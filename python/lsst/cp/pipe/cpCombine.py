@@ -33,7 +33,7 @@ from astro_metadata_translator import merge_headers, ObservationGroup
 from astro_metadata_translator.serialize import dates_to_fits
 
 
-__all__ = ['CalibStatsConfig', 'CalibStatsTask', 'VignetteExposure',
+__all__ = ['CalibStatsConfig', 'CalibStatsTask', 'vignetteExposure',
            'CalibCombineConfig', 'CalibCombineConnections', 'CalibCombineTask',
            'CalibCombineByFilterConfig', 'CalibCombineByFilterConnections', 'CalibCombineByFilterTask']
 
@@ -341,7 +341,7 @@ class CalibCombineTask(pipeBase.PipelineTask,
 
         if self.config.doVignette:
             polygon = inputExps[0].getInfo().getValidPolygon()
-            VignetteExposure(combined, polygon=polygon, doUpdateMask=True,
+            vignetteExposure(combined, polygon=polygon, doUpdateMask=True,
                              doSetValue=True, vignetteValue=0.0)
 
         # Combine headers
@@ -575,7 +575,7 @@ class CalibCombineByFilterTask(CalibCombineTask):
     pass
 
 
-def VignetteExposure(exposure, polygon=None,
+def vignetteExposure(exposure, polygon=None,
                      doUpdateMask=True, maskPlane="NO_DATA",
                      doSetValue=False, vignetteValue=0.0,
                      log=None):

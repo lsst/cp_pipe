@@ -26,7 +26,7 @@ import lsst.daf.base as dafBase
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 import lsst.pipe.base.connectionTypes as cT
-from lsst.cp.pipe.cpCombine import VignetteExposure
+from lsst.cp.pipe.cpCombine import vignetteExposure
 from lsst.cp.pipe.utils import ddict2dict
 
 from ._lookupStaticCalibration import lookupStaticCalibration
@@ -100,7 +100,7 @@ class CpFlatMeasureTask(pipeBase.PipelineTask,
                  List containing the statistics (`lsst.daf.base.PropertyList`).
         """
         if self.config.doVignette:
-            VignetteExposure(inputExp, doUpdateMask=True, doSetValue=False, log=self.log)
+            vignetteExposure(inputExp, doUpdateMask=True, doSetValue=False, log=self.log)
         mask = inputExp.getMask()
         maskVal = mask.getPlaneBitMask(self.config.maskNameList)
         statsControl = afwMath.StatisticsControl(self.config.numSigmaClip,
