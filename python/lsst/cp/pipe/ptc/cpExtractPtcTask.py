@@ -303,7 +303,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                                   maskPlane="SUSPECT", level=self.config.edgeMaskLevel)
 
             nAmpsNan = 0
-            partialPtcDataset = PhotonTransferCurveDataset(ampNames, '',
+            partialPtcDataset = PhotonTransferCurveDataset(ampNames, 'PARTIAL',
                                                            self.config.maximumRangeCovariancesAstier)
             for ampNumber, amp in enumerate(detector):
                 ampName = amp.getName()

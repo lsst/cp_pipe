@@ -467,7 +467,7 @@ class MeasureDefectsTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
             detector = exp.getDetector()
             nX = np.floor(np.sqrt(len(detector)))
             nY = len(detector) // nX
-            fig, ax = plt.subplots(nrows=nY, ncols=nX, sharex='col', sharey='row', figsize=(13, 10))
+            fig, ax = plt.subplots(nrows=int(nY), ncols=int(nX), sharex='col', sharey='row', figsize=(13, 10))
 
             expTime = exp.getInfo().getVisitInfo().getExposureTime()
 
@@ -518,7 +518,18 @@ class MeasureDefectsTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
                 a.set_xlim(np.array([lPlot, rPlot]))
                 a.set_yscale('log')
                 a.set_xlabel("ADU/s")
-        return
+            fig.show()
+            prompt = "Press Enter or c to continue [chp]..."
+            while True:
+                ans = input(prompt).lower()
+                if ans in ("", " ", "c",):
+                    break
+                elif ans in ("p", ):
+                    import pdb
+                    pdb.set_trace()
+                elif ans in ("h", ):
+                    print("[h]elp [c]ontinue [p]db")
+            plt.close()
 
 
 class MergeDefectsConnections(pipeBase.PipelineTaskConnections,
