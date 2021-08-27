@@ -528,7 +528,7 @@ class MeasureDefectsTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
                     import pdb
                     pdb.set_trace()
                 elif ans in ("h", ):
-                    print("[h]elp [c]ontinue [p]db e[x]itDebug")
+                    print("[h]elp [c]ontinue [p]db")
             plt.close()
 
 
