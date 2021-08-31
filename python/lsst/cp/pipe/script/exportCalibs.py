@@ -44,6 +44,34 @@ def build_argparser():
     return parser
 
 
+def parseCalibrationCollection(registry, collection, datasetTypes):
+    """Search a calibration collection for calibration datasets.
+
+    Parameters
+    ----------
+    registry : `lsst.daf.butler.Registry`
+        Butler registry to use.
+    collection : `str`
+        Collection to search.  This should be a CALIBRATION
+        collection.
+
+    Returns
+    -------
+    exportCollections : `list` [`str`]
+        List of collections to save on export.
+    exportDatasets : `list` [`lsst.daf.butler.queries.DatasetQueryResults`]
+        Datasets to save on export.
+    """
+    exportCollections = []
+    exportDatasets = []
+    for calibType in datasetTypes:
+        associations = registry.queryDatasetAssociations(calibType, collections=[collection])
+        for result in associations:
+            exportDatasets.append(result.ref)
+            exportCollections.append(result.ref.run)
+    return exportCollections, exportDatasets
+
+
 def main():
     args = build_argparser().parse_args()
 
@@ -60,61 +88,51 @@ def main():
 
     # Begin export
     with butler.export(directory=args.output, format="yaml", transfer="auto") as export:
+        collectionsToExport = []
+        datasetsToExport = []
+
         for collection in args.collections:
             log.info("Checking collection: ", collection)
 
             # Get collection information.
-            collectionsToExport = []
-            runCollectionFound = False
+            collectionsToExport.append(collection)
             collectionType = butler.registry.getCollectionType(collection)
             if collectionType == CollectionType.CHAINED:
                 # Iterate over the chain:
+                collectionsToExport.append(collection)
                 collectionRecords = butler.registry.getCollectionChain(collection)
 
                 for child in collectionRecords:
                     childType = butler.registry.getCollectionType(child)
+                    collectionsToExport.append(child)
                     if childType == CollectionType.CALIBRATION:
-                        if not runCollectionFound:
-                            # If we've found a RUN collection, skip
-                            # any other CALIBRATION collections we
-                            # find.
-                            collectionsToExport.append(child)
-                            pass
-                    elif childType == CollectionType.RUN:
-                        if not runCollectionFound:
-                            # Only include the first RUN collection we
-                            # find.  That is the true collection the
-                            # calibration was constructed in.
-                            collectionsToExport.append(child)
-                            runCollectionFound = True
-                    else:
-                        log.warn("Skipping collection %s of type %s.", child, childType)
-                if not runCollectionFound:
-                    collectionsToExport.append(collection)
+                        exportCollections, exportDatasets = parseCalibrationCollection(butler.registry,
+                                                                                       child,
+                                                                                       calibTypes)
+                        collectionsToExport.extend(exportCollections)
+                        datasetsToExport.extend(exportDatasets)
+            elif collectionType == CollectionType.CALIBRATION:
+                exportCollections, exportDatasets = parseCalibrationCollection(butler.registry,
+                                                                               collection,
+                                                                               calibTypes)
+                collectionsToExport.append(collection)
+                collectionsToExport.extend(exportCollections)
+                datasetsToExport.extend(exportDatasets)
+            else:
+                log.warn("Not checking collection %s of type %s.", collection, collectionType)
 
-            for exportable in collectionsToExport:
-                try:
-                    log.info("Saving collection %s.", exportable)
-                    export.saveCollection(exportable)
-                except Exception as e:
-                    log.warn("Did not save collection %s due to %s.", exportable, e)
+        collectionsToExport = list(set(collectionsToExport))
+        datasetsToExport = list(set(datasetsToExport))
 
-            # Get datasets.
-            if runCollectionFound:
-                # This should contain the calibration with it's
-                # association information.
-                items = []
-                for calib in calibTypes:
-                    try:
-                        found = set(butler.registry.queryDatasets(calib, collections=[collection],
-                                                                  instrument='LATISS', detector=0))
-                        items.extend(found)
-                    except Exception as e:
-                        log.warn("Did not find %s in collection %s due to %s.", calib, collection, e)
+        for exportable in collectionsToExport:
+            try:
+                log.info("Saving collection %s.", exportable)
+                export.saveCollection(exportable)
+            except Exception as e:
+                log.warn("Did not save collection %s due to %s.", exportable, e)
 
-                if len(items) > 0:
-                    try:
-                        log.info("Saving dataset(s) %s", items)
-                        export.saveDatasets(items)
-                    except Exception as e:
-                        log.warn("Did not save datasets %s due to %s.", items, e)
+        try:
+            log.info("Saving dataset(s)")
+            export.saveDatasets(datasetsToExport)
+        except Exception as e:
+            log.warn("Did not save datasets %s due to %s.", exportable, e)
