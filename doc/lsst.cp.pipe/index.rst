@@ -17,6 +17,7 @@ Using lsst.cp.pipe
    :maxdepth: 1
 
    constructing-calibrations
+   exporting-calibrations
 
 .. _lsst.cp.pipe-contributing:
 
@@ -66,6 +67,7 @@ Script reference
    :maxdepth: 1
 
    scripts/plotPhotonTransferCurve.py
+   scripts/exportCalibs.py
 
 .. _lsst.cp.pipe-pyapi:
 
