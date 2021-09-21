@@ -410,6 +410,8 @@ class CpSkyCombineTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
                 The final sky calibration product.
         """
         skyCalib = self.sky.averageBackgrounds(inputBkgs)
+        skyCalib.setDetector(inputExps[0].getDetector())
+
         CalibCombineTask().combineHeaders(inputExps, skyCalib, calibType='SKY')
 
         return pipeBase.Struct(
