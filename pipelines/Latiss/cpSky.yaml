@@ -1,0 +1,13 @@
+description: Sky frame generation pipeline definition.
+instrument: lsst.obs.lsst.Latiss
+imports:
+  -  location: $CP_PIPE_DIR/pipelines/cpSky.yaml
+tasks:
+  isr:
+    class: lsst.ip.isr.isrTask.IsrTask
+    config:
+      connections.outputExposure: cpSkyIsr
+      overscan.fitType: 'MEDIAN_PER_ROW'
+      doLinearize: False
+      doCrosstalk: True
+      doBrighterFatter: False

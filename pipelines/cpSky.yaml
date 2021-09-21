@@ -4,9 +4,6 @@ tasks:
     class: lsst.ip.isr.isrTask.IsrTask
     config:
       connections.outputExposure: cpSkyIsr
-      doLinearize: False
-      doCrosstalk: True
-      doBrighterFatter: False
   cpSkyImage:
     class: lsst.cp.pipe.CpSkyImageTask
   cpSkyScaleMeasure:
