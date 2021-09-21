@@ -87,16 +87,16 @@ class CpSkyImageConfig(pipeBase.PipelineTaskConfig,
 
     largeScaleBackground = pexConfig.ConfigField(
         dtype=FocalPlaneBackgroundConfig,
-        doc="Large-scale background configuration",
+        doc="Large-scale background configuration.",
     )
 
     def setDefaults(self):
-        # self.largeScaleBackground.xSize = 256
-        # self.largeScaleBackground.ySize = 256
-        # obs_subaru values
-        self.largeScaleBackground.xSize = 122.88
-        self.largeScaleBackground.ySize = 122.88
-        self.largeScaleBackground.pixelSize = 0.015
+        # These values correspond to the HSC recommendation.  As noted
+        # below, the sizes are in millimeters, and correspond to an
+        # background image 8192x8192 pixels (8192*0.015=122.88).
+        self.largeScaleBackground.xSize = 122.88  # in mm
+        self.largeScaleBackground.ySize = 122.88  # in mm
+        self.largeScaleBackground.pixelSize = 0.015  # in mm per pixel
         self.largeScaleBackground.minFrac = 0.1
         self.largeScaleBackground.mask = ['BAD', 'SAT', 'INTRP', 'DETECTED', 'DETECTED_NEGATIVE',
                                           'EDGE', 'NO_DATA']
@@ -150,7 +150,7 @@ class CpSkyImageTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         else:
             self.maskTask.run(inputExp, self.config.maskList)
 
-        # As constructCalibs.py  SkyTask.measureBackground()
+        # As constructCalibs.py SkyTask.measureBackground()
         bgModel = FocalPlaneBackground.fromCamera(self.config.largeScaleBackground, camera)
         bgModel.addCcd(inputExp)
 

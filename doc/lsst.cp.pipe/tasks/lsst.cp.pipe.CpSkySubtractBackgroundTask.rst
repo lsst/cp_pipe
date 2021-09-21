@@ -4,14 +4,14 @@
 CpSkySubtractBackground
 #######################
 
-``CpSubtractBackground`` subtracts the scaled full-focal plane model created by :lsst-task:`~lsst.cp.pipe.CpSkyScaleMeasureTask` from the per-detector images created by :lsst-task:`~lsst.cp.pipe.CpSkyImageTask`.
+``CpSkySubtractBackground`` subtracts the scaled full-focal plane model created by :lsst-task:`~lsst.cp.pipe.CpSkyScaleMeasureTask` from the per-detector images created by :lsst-task:`~lsst.cp.pipe.CpSkyImageTask`.
 
 .. _lsst.cp.pipe.cpSkyTask.CpSkySubtractBackground-processing-summary:
 
 Processing summary
 ==================
 
-``CpSubtractBackground`` runs these operations:
+``CpSkySubtractBackground`` runs these operations:
 
 #. Subtract the scaled focal-plane model from the per-detector image.
 #. Remeasure the residual background.
