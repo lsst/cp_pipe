@@ -194,7 +194,9 @@ def makeMockFlats(expTime, gain=1.0, readNoiseElectrons=5, fluxElectrons=1000,
     visitInfoExp1 = lsst.afw.image.VisitInfo(exposureId=expId1, exposureTime=expTime)
     visitInfoExp2 = lsst.afw.image.VisitInfo(exposureId=expId2, exposureTime=expTime)
 
+    flatExp1.info.id = expId1
     flatExp1.getInfo().setVisitInfo(visitInfoExp1)
+    flatExp2.info.id = expId2
     flatExp2.getInfo().setVisitInfo(visitInfoExp2)
 
     return flatExp1, flatExp2
