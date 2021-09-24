@@ -217,13 +217,21 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
 
         for amp in detector:
             ampName = amp.getName()
-            mask = np.array(inputPtc.expIdMask[ampName], dtype=bool)
-
             gain = bfk.gain[ampName]
+
+            # Using the inputPtc.expIdMask works if the covariance
+            # array has the same length as the rawMeans/rawVars.  This
+            # isn't the case, as it's the same size as the
+            # finalMeans/finalVars.  However, these arrays (and the
+            # covariance) are padded with NAN values to match the
+            # longest amplifier vector.  We do not want to include
+            # these NAN values, so we construct a mask for all non-NAN
+            # values in finalMeans, and use that to filter finalVars
+            # and the covariances.
+            mask = np.isfinite(bfk.means[ampName])
             fluxes = np.array(bfk.means[ampName])[mask]
             variances = np.array(bfk.variances[ampName])[mask]
-            xCorrList = [np.array(xcorr) for xcorr in bfk.rawXcorrs[ampName]]
-            xCorrList = np.array(xCorrList)[mask]
+            xCorrList = np.array([np.array(xcorr) for xcorr in bfk.rawXcorrs[ampName]])[mask]
 
             if gain <= 0:
                 # We've received very bad data.
