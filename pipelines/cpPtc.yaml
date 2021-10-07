@@ -41,6 +41,7 @@ tasks:
       ptcFitType: EXPAPPROXIMATION
 contracts:
   - ptcSolve.maximumRangeCovariancesAstier == ptcExtract.maximumRangeCovariancesAstier
+  - ptcSolve.binSize == ptcExtract.binSize
 subsets:
   gainFromFlatPairs:
       subset:
