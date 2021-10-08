@@ -29,11 +29,11 @@ import numpy as np
 from scipy.optimize import leastsq
 import numpy.polynomial.polynomial as poly
 from scipy.stats import norm
+import logging
 
 import lsst.pipe.base as pipeBase
 import lsst.ip.isr as ipIsr
 from lsst.ip.isr import isrMock
-import lsst.log
 import lsst.afw.image
 
 import galsim
@@ -798,9 +798,9 @@ def validateIsrConfig(isrTask, mandatory=None, forbidden=None, desirable=None, u
     configDict = isrTask.config.toDict()
 
     if logName and isinstance(logName, str):
-        log = lsst.log.getLogger(logName)
+        log = logging.getLogger(logName)
     else:
-        log = lsst.log.getLogger("isrValidation")
+        log = logging.getLogger("lsst.isrValidation")
 
     if mandatory:
         for configParam in mandatory:
