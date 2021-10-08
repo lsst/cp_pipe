@@ -35,7 +35,6 @@ import lsst.afw.image as afwImage
 from lsst.geom import Box2I, Point2I, Extent2I
 import lsst.ip.isr as ipIsr
 from lsst.ip.isr import isrMock
-import lsst.log
 
 import lsst.cp.pipe.utils as cpUtils
 
@@ -130,16 +129,18 @@ class UtilsTestCase(lsst.utils.tests.TestCase):
             cpUtils.validateIsrConfig(task, mandatory + ['test'], forbidden, desirable, undesirable)
 
         logName = 'testLogger'
-        with lsst.log.UsePythonLogging():  # otherwise none of this is caught
-            with self.assertLogs(logName, level='INFO'):  # not found info-logs for (un)desirable
-                cpUtils.validateIsrConfig(task, mandatory, forbidden,
-                                          desirable + ['test'], undesirable, logName=logName)
-                cpUtils.validateIsrConfig(task, mandatory, forbidden,
-                                          desirable, undesirable + ['test'], logName=logName)
+        with self.assertLogs(logName, level='INFO'):  # not found info-logs for (un)desirable
+            cpUtils.validateIsrConfig(task, mandatory, forbidden,
+                                      desirable + ['test'], undesirable, logName=logName)
+            cpUtils.validateIsrConfig(task, mandatory, forbidden,
+                                      desirable, undesirable + ['test'], logName=logName)
 
-            with self.assertLogs(logName, "WARN"):  # not found warnings for forbidden
-                cpUtils.validateIsrConfig(task, mandatory, forbidden + ['test'],
-                                          desirable, undesirable, logName=logName)
+        with self.assertLogs(logName, "WARN"):  # not found warnings for forbidden
+            cpUtils.validateIsrConfig(task, mandatory, forbidden + ['test'],
+                                      desirable, undesirable, logName=logName)
+        with self.assertLogs("lsst", "WARN"):  # not found warnings for forbidden
+            cpUtils.validateIsrConfig(task, mandatory, forbidden + ['test'],
+                                      desirable, undesirable, logName=None)
 
 
 class TestMemory(lsst.utils.tests.MemoryTestCase):
