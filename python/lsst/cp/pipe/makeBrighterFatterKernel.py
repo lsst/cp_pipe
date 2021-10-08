@@ -526,7 +526,7 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
 
         if nIter >= maxIter*2:
             self.log.warning("Failure: SuccessiveOverRelaxation did not converge in %s iterations."
-                             "\noutError: %s, inError: %s," % (nIter//2, outError, inError*eLevel))
+                             "\noutError: %s, inError: %s,", nIter//2, outError, inError*eLevel)
         else:
             self.log.info("Success: SuccessiveOverRelaxation converged in %s iterations."
                           "\noutError: %s, inError: %s", nIter//2, outError, inError*eLevel)
