@@ -812,9 +812,9 @@ def validateIsrConfig(isrTask, mandatory=None, forbidden=None, desirable=None, u
     if forbidden:
         for configParam in forbidden:
             if configParam not in configDict:
-                log.warning(f"Failed to find forbidden key {configParam} in the isr config. The keys in the"
+                log.warning("Failed to find forbidden key %s in the isr config. The keys in the"
                             " forbidden list should each have an associated Field in IsrConfig:"
-                            " check that there is not a typo in this case.")
+                            " check that there is not a typo in this case.", configParam)
                 continue
             if configDict[configParam] is True:
                 raise RuntimeError(f"Must set config.isr.{configParam} to False for this task.")
@@ -822,21 +822,21 @@ def validateIsrConfig(isrTask, mandatory=None, forbidden=None, desirable=None, u
     if desirable:
         for configParam in desirable:
             if configParam not in configDict:
-                log.info(f"Failed to find key {configParam} in the isr config. You probably want"
-                         " to set the equivalent for your obs_package to True.")
+                log.info("Failed to find key %s in the isr config. You probably want"
+                         " to set the equivalent for your obs_package to True.", configParam)
                 continue
             if configDict[configParam] is False:
-                log.warning(f"Found config.isr.{configParam} set to False for this task."
-                            " The cp_pipe Config recommends setting this to True.")
+                log.warning("Found config.isr.%s set to False for this task."
+                            " The cp_pipe Config recommends setting this to True.", configParam)
     if undesirable:
         for configParam in undesirable:
             if configParam not in configDict:
-                log.info(f"Failed to find key {configParam} in the isr config. You probably want"
-                         " to set the equivalent for your obs_package to False.")
+                log.info("Failed to find key %s in the isr config. You probably want"
+                         " to set the equivalent for your obs_package to False.", configParam)
                 continue
             if configDict[configParam] is True:
-                log.warning(f"Found config.isr.{configParam} set to True for this task."
-                            " The cp_pipe Config recommends setting this to False.")
+                log.warning("Found config.isr.%s set to True for this task."
+                            " The cp_pipe Config recommends setting this to False.", configParam)
 
     if checkTrim:  # subtask setting, seems non-trivial to combine with above lists
         if not isrTask.assembleCcd.config.doTrim:

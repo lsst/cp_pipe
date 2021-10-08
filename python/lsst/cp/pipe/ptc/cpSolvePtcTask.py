@@ -628,7 +628,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
                     self.fillBadAmp(dataset, ptcFitType, ampName)
                     break
                 nDroppedTotal = Counter(mask)[False]
-                self.log.debug(f"Iteration {count}: discarded {nDroppedTotal} points in total for {ampName}")
+                self.log.debug("Iteration %d: discarded %d points in total for %s",
+                               count, nDroppedTotal, ampName)
                 count += 1
                 # objects should never shrink
                 assert (len(mask) == len(timeVecOriginal) == len(meanVecOriginal) == len(varVecOriginal))
@@ -645,8 +646,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             varVecFinal = varVecOriginal[mask]
 
             if Counter(mask)[False] > 0:
-                self.log.info((f"Number of points discarded in PTC of amplifier {ampName}:"
-                               f" {Counter(mask)[False]} out of {len(meanVecOriginal)}"))
+                self.log.info("Number of points discarded in PTC of amplifier %s:"
+                              " %d out of %d", ampName, Counter(mask)[False], len(meanVecOriginal))
 
             if (len(meanVecFinal) < len(parsIniPtc)):
                 msg = (f"SERIOUS: Not enough data points ({len(meanVecFinal)}) compared to the number of "

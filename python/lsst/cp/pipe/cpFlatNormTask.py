@@ -406,9 +406,11 @@ class CpFlatNormalizationTask(pipeBase.PipelineTask,
             fluxLevel = np.average(np.exp(logG), weights=np.sum(bgCounts, axis=1))
 
             logG -= np.log(fluxLevel)
-            self.log.debug(f"ITER {iter}: Flux: {fluxLevel}")
-            self.log.debug(f"Exps: {np.exp(logE)}")
-            self.log.debug(f"{np.mean(logG)}")
+            if self.log.isEnabledFor(self.log.DEBUG):
+                # Only calculate these values if debug log is enabled.
+                self.log.debug("ITER %d: Flux: %f", iter, fluxLevel)
+                self.log.debug("Exps: %s", np.exp(logE))
+                self.log.debug("%f", np.mean(logG))
 
         logE = np.array([np.average(logMeas[:, iexp] - logG,
                                     weights=bgCounts[:, iexp]) for iexp in range(numExps)])
