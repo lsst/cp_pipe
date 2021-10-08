@@ -180,7 +180,7 @@ class PlotPhotonTransferCurveTaskGen2(pipeBase.CmdLineTask):
         pdfPages : `matplotlib.backends.backend_pdf.PdfPages`
             PDF file where the plots will be saved.
 
-        log : `lsst.log.Log`, optional
+        log : `logging.Logger`, optional
             Logger to handle messages
         """
         mu = dataset.finalMeans
@@ -499,7 +499,7 @@ class PlotPhotonTransferCurveTaskGen2(pipeBase.CmdLineTask):
             Plot the top plot with the covariances, and the bottom
             plot with the model residuals?
 
-        log : `lsst.log.Log`, optional
+        log : `logging.Logger`, optional
             Logger to handle messages.
         """
         if not topPlot:

@@ -23,9 +23,9 @@ import numpy as np
 import copy
 from scipy.signal import fftconvolve
 from scipy.optimize import leastsq
-from .astierCovFitParameters import FitParameters
+import logging
 
-import lsst.log as lsstLog
+from .astierCovFitParameters import FitParameters
 
 __all__ = ["CovFit"]
 
@@ -186,7 +186,7 @@ class CovFit:
         # make it nan safe, replacing nan's with 0 in weights
         self.sqrtW = np.nan_to_num(covsSqrtWeights)[meanSignalsMask]
         self.r = maxRangeFromTuple
-        self.logger = lsstLog.Log.getDefaultLogger()
+        self.logger = logging.getLogger(__name__)
 
     def copy(self):
         """Make a copy of params"""
