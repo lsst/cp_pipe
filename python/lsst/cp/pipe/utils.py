@@ -352,7 +352,7 @@ class NonexistentDatasetTaskDataIdContainer(pipeBase.DataIdContainer):
             self.refList += refList
 
 
-def irlsFit(initialParams, dataX, dataY, function, weightsY=None, weightType='Cauchy'):
+def irlsFit(initialParams, dataX, dataY, function, weightsY=None, weightType='Cauchy', scaleResidual=True):
     """Iteratively reweighted least squares fit.
 
     This uses the `lsst.cp.pipe.utils.fitLeastSq`, but applies weights
@@ -375,6 +375,8 @@ def irlsFit(initialParams, dataX, dataY, function, weightsY=None, weightType='Ca
     weightType : `str`, optional
         Type of weighting to use.  One of Cauchy, Anderson, bisquare,
         box, Welsch, Huber, logistic, or Fair.
+    scaleResidual : `bool`, optional
+        If true, the residual is scaled by the sqrt of the Y values.
 
     Returns
     -------
@@ -397,7 +399,9 @@ def irlsFit(initialParams, dataX, dataY, function, weightsY=None, weightType='Ca
 
     polyFit, polyFitErr, chiSq = fitLeastSq(initialParams, dataX, dataY, function, weightsY=weightsY)
     for iteration in range(10):
-        resid = np.abs(dataY - function(polyFit, dataX)) / np.sqrt(dataY)
+        resid = np.abs(dataY - function(polyFit, dataX))
+        if scaleResidual:
+            resid = resid / np.sqrt(dataY)
         if weightType == 'Cauchy':
             # Use Cauchy weighting.  This is a soft weight.
             # At [2, 3, 5, 10] sigma, weights are [.59, .39, .19, .05].
