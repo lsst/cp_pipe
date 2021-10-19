@@ -30,6 +30,7 @@ from .photodiode import getBOTphotodiodeData
 from lsst.pipe.tasks.getRepositoryData import DataRefListRunner
 from lsst.cp.pipe.ptc.cpExtractPtcTask import PhotonTransferCurveExtractTask
 from lsst.cp.pipe.ptc.cpSolvePtcTask import PhotonTransferCurveSolveTask
+from lsst.utils.timer import timeMethod
 
 
 __all__ = ['MeasurePhotonTransferCurveTask', 'MeasurePhotonTransferCurveTaskConfig']
@@ -106,7 +107,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         self.makeSubtask("extract")
         self.makeSubtask("solve")
 
-    @pipeBase.timeMethod
+    @timeMethod
     def runDataRef(self, dataRefList):
         """Run the Photon Transfer Curve (PTC) measurement task.
 

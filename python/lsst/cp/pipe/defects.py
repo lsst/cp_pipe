@@ -37,6 +37,7 @@ from lsst.meas.algorithms import SourceDetectionTask
 from lsst.ip.isr import IsrTask, Defects
 from .utils import countMaskedPixels
 from lsst.pipe.tasks.getRepositoryData import DataRefListRunner
+from lsst.utils.timer import timeMethod
 
 from ._lookupStaticCalibration import lookupStaticCalibration
 
@@ -821,7 +822,7 @@ class FindDefectsTask(pipeBase.CmdLineTask):
         self.makeSubtask("measure")
         self.makeSubtask("merge")
 
-    @pipeBase.timeMethod
+    @timeMethod
     def runDataRef(self, dataRefList):
         """Run the defect finding task.
 
