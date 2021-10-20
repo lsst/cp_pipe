@@ -32,6 +32,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 import lsst.ip.isr as isr
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
+from lsst.utils.timer import timeMethod
 
 from lsst.cp.pipe.utils import (funcAstier, funcPolynomial, NonexistentDatasetTaskDataIdContainer,
                                 calculateWeightedReducedChi2)
@@ -117,7 +118,7 @@ class PlotPhotonTransferCurveTaskGen2(pipeBase.CmdLineTask):
                                help="The ccds to use, e.g. --id ccd=0..100")
         return parser
 
-    @pipeBase.timeMethod
+    @timeMethod
     def runDataRef(self, dataRef):
         """Run the Photon Transfer Curve (PTC) plotting measurement task.
 
