@@ -19,13 +19,9 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-import numpy as np
-
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 from lsst.cp.pipe.utils import arrangeFlatsByExpTime
-
-from .photodiode import getBOTphotodiodeData
 
 from lsst.pipe.tasks.getRepositoryData import DataRefListRunner
 from lsst.cp.pipe.ptc.cpExtractPtcTask import PhotonTransferCurveExtractTask
@@ -49,16 +45,6 @@ class MeasurePhotonTransferCurveTaskConfig(pexConfig.Config):
         dtype=str,
         doc="The key by which to pull a detector from a dataId, e.g. 'ccd' or 'detector'.",
         default='ccd',
-    )
-    doPhotodiode = pexConfig.Field(
-        dtype=bool,
-        doc="Apply a correction based on the photodiode readings if available?",
-        default=False,
-    )
-    photodiodeDataPath = pexConfig.Field(
-        dtype=str,
-        doc="Gen2 only: path to locate the data photodiode data files.",
-        default=""
     )
 
 
@@ -147,8 +133,6 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
         resultsExtract = self.extract.run(inputExp=expDict, inputDims=expIds)
         resultsSolve = self.solve.run(resultsExtract.outputCovariances, camera=camera)
 
-        # Fill up the photodiode data, if found, that will be used by
-        # linearity task.
         # Get expIdPairs from one of the amps
         expIdsPairsList = []
         ampNames = resultsSolve.outputPtcDataset.ampNames
@@ -160,61 +144,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             first, second = pair[0]
             expIdsPairsList.append((first, second))
 
-        resultsSolve.outputPtcDataset = self._setBOTPhotocharge(dataRef, resultsSolve.outputPtcDataset,
-                                                                expIdsPairsList)
         self.log.info("Writing PTC data.")
         dataRef.put(resultsSolve.outputPtcDataset, datasetType="photonTransferCurveDataset")
 
         return
-
-    def _setBOTPhotocharge(self, dataRef, datasetPtc, expIdList):
-        """Set photoCharge attribute in PTC dataset
-
-        Parameters
-        ----------
-        dataRef : `lsst.daf.peristence.ButlerDataRef`
-            Data reference for exposurre for detector to process.
-
-        datasetPtc : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
-            The dataset containing information such as the means, variances
-            and exposure times.
-
-        expIdList : `list`
-            List with exposure pairs Ids (one pair per list entry).
-
-        Returns
-        -------
-        datasetPtc : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
-            This is the same dataset as the input parameter, however,
-            it has been modified to update the datasetPtc.photoCharge
-            attribute.
-        """
-        if self.config.doPhotodiode:
-            for (expId1, expId2) in expIdList:
-                charges = [-1, -1]  # necessary to have a not-found value to keep lists in step
-                for i, expId in enumerate([expId1, expId2]):
-                    # //1000 is a Gen2 only hack, working around the fact an
-                    # exposure's ID is not the same as the expId in the
-                    # registry. Currently expId is concatenated with the
-                    # zero-padded detector ID. This will all go away in Gen3.
-                    dataRef.dataId['expId'] = expId//1000
-                    if self.config.photodiodeDataPath:
-                        photodiodeData = getBOTphotodiodeData(dataRef, self.config.photodiodeDataPath)
-                    else:
-                        photodiodeData = getBOTphotodiodeData(dataRef)
-                    if photodiodeData:  # default path stored in function def to keep task clean
-                        charges[i] = photodiodeData.getCharge()
-                    else:
-                        # full expId (not //1000) here, as that encodes the
-                        # the detector number as so is fully qualifying
-                        self.log.warn(f"No photodiode data found for {expId}")
-
-                for ampName in datasetPtc.ampNames:
-                    datasetPtc.photoCharge[ampName].append((charges[0], charges[1]))
-        else:
-            # Can't be an empty list, as initialized, because
-            # astropy.Table won't allow it when saving as fits
-            for ampName in datasetPtc.ampNames:
-                datasetPtc.photoCharge[ampName] = np.repeat(np.nan, len(expIdList))
-
-        return datasetPtc
