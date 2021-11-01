@@ -124,7 +124,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
                 self.log.warn("postISR exposure could not be retrieved. Ignoring flat.")
                 continue
             expList.append(tempFlat)
-        expIds = [exp.getInfo().getVisitInfo().getExposureId() for exp in expList]
+        expIds = [exp.info.getVisitInfo().id for exp in expList]
 
         # Create dictionary of exposures, keyed by exposure time
         expDict = arrangeFlatsByExpTime(expList)

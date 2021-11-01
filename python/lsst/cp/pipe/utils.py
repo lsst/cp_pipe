@@ -687,8 +687,6 @@ def arrangeFlatsByExpId(exposureList, exposureIdList):
     populated pairs.
     """
     flatsAtExpId = {}
-    # sortedExposures = sorted(exposureList, key=lambda exp:
-    # exp.getInfo().getVisitInfo().getExposureId())
     assert len(exposureList) == len(exposureIdList), "Different lengths for exp. list and exp. ID lists"
     # Sort exposures by expIds, which are in the second list `exposureIdList`.
     sortedExposures = sorted(zip(exposureList, exposureIdList), key=lambda pair: pair[1])
