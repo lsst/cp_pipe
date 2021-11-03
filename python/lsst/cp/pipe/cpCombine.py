@@ -275,7 +275,7 @@ class CalibCombineTask(pipeBase.PipelineTask,
         # on detId), or that no inputs have any detector.
         detectorList = [exp.getDetector() for exp in inputExps]
         if None in detectorList:
-            self.log.warn("Not all input detectors defined.")
+            self.log.warning("Not all input detectors defined.")
         detectorIds = [det.getId() if det is not None else None for det in detectorList]
         detectorSerials = [det.getId() if det is not None else None for det in detectorList]
         numDetectorIds = len(set(detectorIds))
@@ -298,7 +298,7 @@ class CalibCombineTask(pipeBase.PipelineTask,
         for index, (exp, dims) in enumerate(zip(inputExps, inputDims)):
             scale = 1.0
             if exp is None:
-                self.log.warn("Input %d is None (%s); unable to scale exp.", index, dims)
+                self.log.warning("Input %d is None (%s); unable to scale exp.", index, dims)
                 continue
 
             if self.config.exposureScaling == "ExposureTime":
@@ -500,7 +500,7 @@ class CalibCombineTask(pipeBase.PipelineTask,
         try:
             group = ObservationGroup(visitInfoList, pedantic=False)
         except Exception:
-            self.log.warn("Exception making an obs group for headers. Continuing.")
+            self.log.warning("Exception making an obs group for headers. Continuing.")
             # Fall back to setting a DATE-OBS from the calibDate
             dateCards = {"DATE-OBS": "{}T00:00:00.00".format(calibDate)}
             comments["DATE-OBS"] = "Date of start of day of calibration midpoint"
@@ -532,7 +532,7 @@ class CalibCombineTask(pipeBase.PipelineTask,
         count = np.sum(np.logical_not(bad))
         array[bad] = median
         if count > 0:
-            self.log.warn("Found %s NAN pixels", count)
+            self.log.warning("Found %s NAN pixels", count)
 
 
 # Create versions of the Connections, Config, and Task that support

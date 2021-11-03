@@ -121,7 +121,7 @@ class MeasurePhotonTransferCurveTask(pipeBase.CmdLineTask):
             try:
                 tempFlat = dataRef.get("postISRCCD")
             except RuntimeError:
-                self.log.warn("postISR exposure could not be retrieved. Ignoring flat.")
+                self.log.warning("postISR exposure could not be retrieved. Ignoring flat.")
                 continue
             expList.append(tempFlat)
         expIds = [exp.info.getVisitInfo().id for exp in expList]
