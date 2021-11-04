@@ -193,7 +193,7 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
                 (`lsst.ip.isr.BrighterFatterKernel`).
         """
         if len(dummy) == 0:
-            self.log.warn("No dummy exposure found.")
+            self.log.warning("No dummy exposure found.")
 
         detector = camera[inputDims['detector']]
         detName = detector.getName()
@@ -235,8 +235,8 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
 
             if gain <= 0:
                 # We've received very bad data.
-                self.log.warn("Impossible gain recieved from PTC for %s: %f.  Skipping amplifier.",
-                              ampName, gain)
+                self.log.warning("Impossible gain recieved from PTC for %s: %f.  Skipping amplifier.",
+                                 ampName, gain)
                 bfk.meanXcorrs[ampName] = np.zeros(bfk.shape)
                 bfk.ampKernels[ampName] = np.zeros(bfk.shape)
                 bfk.valid[ampName] = False
@@ -261,8 +261,8 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
                 q[0][0] -= 2.0*(flux)
 
                 if q[0][0] > 0.0:
-                    self.log.warn("Amp: %s %d skipped due to value of (variance-mean)=%f",
-                                  ampName, xcorrNum, q[0][0])
+                    self.log.warning("Amp: %s %d skipped due to value of (variance-mean)=%f",
+                                     ampName, xcorrNum, q[0][0])
                     continue
 
                 # This removes the "t (I_a^2 + I_b^2)" factor in
@@ -272,8 +272,8 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
 
                 xcorrCheck = np.abs(np.sum(scaled))/np.sum(np.abs(scaled))
                 if (xcorrCheck > self.config.xcorrCheckRejectLevel) or not (np.isfinite(xcorrCheck)):
-                    self.log.warn("Amp: %s %d skipped due to value of triangle-inequality sum %f",
-                                  ampName, xcorrNum, xcorrCheck)
+                    self.log.warning("Amp: %s %d skipped due to value of triangle-inequality sum %f",
+                                     ampName, xcorrNum, xcorrCheck)
                     continue
 
                 scaledCorrList.append(scaled)
@@ -281,7 +281,7 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
                               ampName, xcorrNum, len(xCorrList), q[0][0], xcorrCheck)
 
             if len(scaledCorrList) == 0:
-                self.log.warn("Amp: %s All inputs rejected for amp!", ampName)
+                self.log.warning("Amp: %s All inputs rejected for amp!", ampName)
                 bfk.meanXcorrs[ampName] = np.zeros(bfk.shape)
                 bfk.ampKernels[ampName] = np.zeros(bfk.shape)
                 bfk.valid[ampName] = False
@@ -525,8 +525,8 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
             nIter += 1
 
         if nIter >= maxIter*2:
-            self.log.warn("Failure: SuccessiveOverRelaxation did not converge in %s iterations."
-                          "\noutError: %s, inError: %s," % (nIter//2, outError, inError*eLevel))
+            self.log.warning("Failure: SuccessiveOverRelaxation did not converge in %s iterations."
+                             "\noutError: %s, inError: %s," % (nIter//2, outError, inError*eLevel))
         else:
             self.log.info("Success: SuccessiveOverRelaxation converged in %s iterations."
                           "\noutError: %s, inError: %s", nIter//2, outError, inError*eLevel)

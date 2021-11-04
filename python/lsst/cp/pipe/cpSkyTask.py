@@ -146,7 +146,7 @@ class CpSkyImageTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         currentMask = inputExp.getMask()
         badMask = currentMask.getPlaneBitMask(self.config.maskList)
         if (currentMask.getArray() & badMask).all():
-            self.log.warn("All pixels are masked!")
+            self.log.warning("All pixels are masked!")
         else:
             self.maskTask.run(inputExp, self.config.maskList)
 

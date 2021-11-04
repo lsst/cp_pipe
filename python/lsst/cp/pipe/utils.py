@@ -347,7 +347,7 @@ class NonexistentDatasetTaskDataIdContainer(pipeBase.DataIdContainer):
             # exclude nonexistent data
             # this is a recursive test, e.g. for the sake of "raw" data
             if not refList:
-                namespace.log.warn("No data found for dataId=%s", dataId)
+                namespace.log.warning("No data found for dataId=%s", dataId)
                 continue
             self.refList += refList
 
@@ -687,8 +687,6 @@ def arrangeFlatsByExpId(exposureList, exposureIdList):
     populated pairs.
     """
     flatsAtExpId = {}
-    # sortedExposures = sorted(exposureList, key=lambda exp:
-    # exp.getInfo().getVisitInfo().getExposureId())
     assert len(exposureList) == len(exposureIdList), "Different lengths for exp. list and exp. ID lists"
     # Sort exposures by expIds, which are in the second list `exposureIdList`.
     sortedExposures = sorted(zip(exposureList, exposureIdList), key=lambda pair: pair[1])
@@ -814,9 +812,9 @@ def validateIsrConfig(isrTask, mandatory=None, forbidden=None, desirable=None, u
     if forbidden:
         for configParam in forbidden:
             if configParam not in configDict:
-                log.warn(f"Failed to find forbidden key {configParam} in the isr config. The keys in the"
-                         " forbidden list should each have an associated Field in IsrConfig:"
-                         " check that there is not a typo in this case.")
+                log.warning(f"Failed to find forbidden key {configParam} in the isr config. The keys in the"
+                            " forbidden list should each have an associated Field in IsrConfig:"
+                            " check that there is not a typo in this case.")
                 continue
             if configDict[configParam] is True:
                 raise RuntimeError(f"Must set config.isr.{configParam} to False for this task.")
@@ -828,8 +826,8 @@ def validateIsrConfig(isrTask, mandatory=None, forbidden=None, desirable=None, u
                          " to set the equivalent for your obs_package to True.")
                 continue
             if configDict[configParam] is False:
-                log.warn(f"Found config.isr.{configParam} set to False for this task."
-                         " The cp_pipe Config recommends setting this to True.")
+                log.warning(f"Found config.isr.{configParam} set to False for this task."
+                            " The cp_pipe Config recommends setting this to True.")
     if undesirable:
         for configParam in undesirable:
             if configParam not in configDict:
@@ -837,8 +835,8 @@ def validateIsrConfig(isrTask, mandatory=None, forbidden=None, desirable=None, u
                          " to set the equivalent for your obs_package to False.")
                 continue
             if configDict[configParam] is True:
-                log.warn(f"Found config.isr.{configParam} set to True for this task."
-                         " The cp_pipe Config recommends setting this to False.")
+                log.warning(f"Found config.isr.{configParam} set to True for this task."
+                            " The cp_pipe Config recommends setting this to False.")
 
     if checkTrim:  # subtask setting, seems non-trivial to combine with above lists
         if not isrTask.assembleCcd.config.doTrim:

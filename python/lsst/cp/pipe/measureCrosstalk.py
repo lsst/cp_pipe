@@ -568,7 +568,7 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
             calib.coeffNum[ii][jj] = len(values)
 
             if len(values) == 0:
-                self.log.warn("No values for matrix element %d,%d" % (ii, jj))
+                self.log.warning("No values for matrix element %d,%d" % (ii, jj))
                 calib.coeffs[ii][jj] = np.nan
                 calib.coeffErr[ii][jj] = np.nan
                 calib.coeffValid[ii][jj] = False

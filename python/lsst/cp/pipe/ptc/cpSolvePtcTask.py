@@ -503,7 +503,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         index, = np.where(array == 0)
         if len(index):
             msg = f"Found {nBad} zeros in array at elements {index}"
-            self.log.warn(msg)
+            self.log.warning(msg)
 
         array[index] = substituteValue
 
@@ -583,7 +583,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             if not (goodPoints.any()):
                 msg = (f"SERIOUS: All points in goodPoints: {goodPoints} are bad."
                        f"Setting {ampName} to BAD.")
-                self.log.warn(msg)
+                self.log.warning(msg)
                 # Fill entries with NaNs
                 self.fillBadAmp(dataset, ptcFitType, ampName)
                 continue
@@ -623,7 +623,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
                 if not (mask.any() and newMask.any()):
                     msg = (f"SERIOUS: All points in either mask: {mask} or newMask: {newMask} are bad. "
                            f"Setting {ampName} to BAD.")
-                    self.log.warn(msg)
+                    self.log.warning(msg)
                     # Fill entries with NaNs
                     self.fillBadAmp(dataset, ptcFitType, ampName)
                     break
@@ -651,7 +651,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             if (len(meanVecFinal) < len(parsIniPtc)):
                 msg = (f"SERIOUS: Not enough data points ({len(meanVecFinal)}) compared to the number of "
                        f"parameters of the PTC model({len(parsIniPtc)}). Setting {ampName} to BAD.")
-                self.log.warn(msg)
+                self.log.warning(msg)
                 # Fill entries with NaNs
                 self.fillBadAmp(dataset, ptcFitType, ampName)
                 continue

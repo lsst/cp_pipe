@@ -193,7 +193,7 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         they are not included in the non-linearity correction.
         """
         if len(dummy) == 0:
-            self.log.warn("No dummy exposure found.")
+            self.log.warning("No dummy exposure found.")
 
         detector = camera[inputDims['detector']]
         if self.config.linearityType == 'LookupTable':
@@ -234,11 +234,11 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
                 linearizer.fitParams[ampName] = np.zeros(pEntries)
                 linearizer.fitParamsErr[ampName] = np.zeros(pEntries)
                 linearizer.fitChiSq[ampName] = np.nan
-                self.log.warn("Amp %s has no usable PTC information.  Skipping!", ampName)
+                self.log.warning("Amp %s has no usable PTC information.  Skipping!", ampName)
                 continue
 
             if (len(inputPtc.expIdMask[ampName]) == 0) or self.config.ignorePtcMask:
-                self.log.warn(f"Mask not found for {ampName} in non-linearity fit. Using all points.")
+                self.log.warning(f"Mask not found for {ampName} in non-linearity fit. Using all points.")
                 mask = np.repeat(True, len(inputPtc.expIdMask[ampName]))
             else:
                 mask = np.array(inputPtc.expIdMask[ampName], dtype=bool)
