@@ -143,14 +143,30 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
                                    pipeBase.CmdLineTask):
     """Task to fit the PTC from flat covariances.
 
-    This task assembles the list of individual PTC datasets produced
-    by ``PhotonTransferCurveSolveTask`` into one single final PTC
-    dataset.  The task fits the measured (co)variances to a polynomial
-    model or to the models described in equations 16 and 20 of
-    Astier+19 (referred to as ``POLYNOMIAL``, ``EXPAPPROXIMATION``,
-    and ``FULLCOVARIANCE`` in the configuration options of the task,
-    respectively). Parameters of interest such as tghe gain and noise
-    are derived from the fits.
+    The first task of the PTC measurement pipeline,
+    ``PhotonTransferCurveMeasureTask`` (and assumed to have been run
+    before this task), produced a list of
+    `~lsst.ip.isr.PhotonTransferCurveDataset` objects. Each dataset
+    contains the mean signal and covariances of the
+    difference image of to flat-field images taken at
+    the same exposure time. The list also contains dummy
+    datasets (with no measurements), whose purpose is to have
+    the input and output dimensions of ``PhotonTransferCurveMeasureTask``
+    match.
+
+    This task, ``PhotonTransferCurveSolveTask``, assembles the list
+    of individual PTC datasets produced
+    by ``PhotonTransferCurveMeasureTask`` into one single final PTC
+    dataset, discarding the dummy datset as appropiate.
+    The task fits the measured (co)variances to one of three models:
+    a polynomial model of a given order,  or the models described
+    in equations 16 and 20 of Astier+19. These options are referred
+    to as ``POLYNOMIAL``, ``EXPAPPROXIMATION``, and ``FULLCOVARIANCE``
+    in the configuration options of the task, respectively).
+    Parameters of interest such as the gain and noise are derived
+    from the fits. The ``FULLCOVARIANCE`` model is fitted to the
+    full covariance data (as oppossed to the other two models, which
+    are fit to the variance vs mean measurements only).
 
     Astier+19: "The Shape of the Photon Transfer Curve
     of CCD sensors", arXiv:1905.08677
@@ -176,7 +192,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         butlerQC.put(outputs, outputRefs)
 
     def run(self, inputCovariances, camera=None, inputExpList=None):
-        """Fit measure covariances to different models.
+        """Fit measured covariances to different models.
 
         Parameters
         ----------
@@ -199,11 +215,12 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
                 means, variances, and exposure times
                 (`lsst.ip.isr.PhotonTransferCurveDataset`).
         """
-        # Assemble partial PTC datasets into a single dataset.
+        # Assemble individual PTC datasets into a single PTC dataset.
         ampNames = np.unique(inputCovariances[0].ampNames)
         datasetPtc = PhotonTransferCurveDataset(ampNames, self.config.ptcFitType,
                                                 self.config.maximumRangeCovariancesAstier)
         for partialPtcDataset in inputCovariances:
+            # Ignore dummy datasets
             if partialPtcDataset.ptcFitType == 'DUMMY':
                 continue
             for ampName in ampNames:
@@ -240,15 +257,23 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             datasetPtc.covariancesSqrtWeights[ampName] = np.array(
                 datasetPtc.covariancesSqrtWeights[ampName])[index]
         if self.config.ptcFitType == "FULLCOVARIANCE":
-            # Calculate covariances and fit them, including the PTC,
-            # to Astier+19 full model (Eq. 20) First, fit get the flat
-            # pairs that are masked, fitting C_00 vs mu to the
-            # EXPAPPROXIMATION model (Eq. 16 in Astier+19).  The
+            # Fit the measured covariances vs mean signal to
+            # the Astier+19 full model (Eq. 20). Before that
+            # do a preliminary fit to the variance (C_00) vs mean
+            # signal (mu) curve using the EXPAPPROXIMATION model
+            # (Eq. 16 in Astier+19) in order to
+            # get the flat pairs that are masked. The
             # points at these fluxes will also be masked when
-            # calculating the other covariances, C_ij)
+            # calculating the other elements of the covariance
+            # matrix, C_ij, i!=j).
+
+            # Preliminary fit, usign a temp dataset to get the mask
             tempDatasetPtc = copy.copy(datasetPtc)
             tempDatasetPtc.ptcFitType = "EXPAPPROXIMATION"
             tempDatasetPtc = self.fitPtc(tempDatasetPtc)
+
+            # "FULLCOVARIANCE", using the mask obtained from the
+            # previous fit.
             for ampName in datasetPtc.ampNames:
                 datasetPtc.expIdMask[ampName] = tempDatasetPtc.expIdMask[ampName]
             datasetPtc.fitType = "FULLCOVARIANCE"
@@ -272,7 +297,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         )
 
     def fitCovariancesAstier(self, dataset):
-        """Fit measured flat covariances to full model in Astier+19.
+        """Fit measured flat covariances to the full model in
+        Astier+19 (Eq. 20).
 
         Parameters
         ----------
@@ -283,7 +309,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         Returns
         -------
         dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
-            This is the same dataset as the input paramter, however,
+            This is the same dataset as the input parameter, however,
             it has been modified to include information such as the
             fit vectors and the fit parameters. See the class
             `PhotonTransferCurveDatase`.
@@ -294,8 +320,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         return dataset
 
     def getOutputPtcDataCovAstier(self, dataset, covFits, covFitsNoB):
-        """Get output data for PhotonTransferCurveCovAstierDataset from CovFit
-        objects.
+        """Get output data for PhotonTransferCurveCovAstierDataset
+        from CovFit objects.
 
         Parameters
         ----------
@@ -311,7 +337,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         Returns
         -------
         dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
-            This is the same dataset as the input paramter, however,
+            This is the same dataset as the input parameter, however,
             it has been modified to include extra information such as
             the mask 1D array, gains, reoudout noise, measured signal,
             measured variance, modeled variance, a, and b coefficient
@@ -482,26 +508,28 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         return array
 
     def fitPtc(self, dataset):
-        """Fit the photon transfer curve to a polynomial or to Astier+19
-        approximation.
+        """Fit the photon transfer curve to a polynomial or to the
+        Astier+19 approximation (Eq. 16).
 
-        Fit the photon transfer curve with either a polynomial of the order
-        specified in the task config, or using the exponential approximation
-        in Astier+19 (Eq. 16).
+        Fit the photon transfer curve with either a polynomial of
+        the order specified in the task config, or using the
+        exponential approximation in Astier+19 (Eq. 16).
 
-        Sigma clipping is performed iteratively for the fit, as well as an
-        initial clipping of data points that are more than
-        config.initialNonLinearityExclusionThreshold away from lying on a
-        straight line. This other step is necessary because the photon transfer
-        curve turns over catastrophically at very high flux (because saturation
-        drops the variance to ~0) and these far outliers cause the initial fit
-        to fail, meaning the sigma cannot be calculated to perform the
-        sigma-clipping.
+        Sigma clipping is performed iteratively for the fit, as
+        well as an initial clipping of data points that are more
+        than `config.initialNonLinearityExclusionThreshold` away
+        from lying on a straight line. This other step is necessary
+        because the photon transfer curve turns over catastrophically
+        at very high flux (because saturation
+        drops the variance to ~0) and these far outliers cause the
+        initial fit to fail, meaning the sigma cannot be calculated
+        to perform the sigma-clipping.
 
         Parameters
         ----------
         dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
-            The dataset containing the means, variances and exposure times.
+            The dataset containing the means, variances and
+            exposure times.
 
         Returns
         -------
@@ -568,7 +596,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
 
             if ptcFitType == 'EXPAPPROXIMATION':
                 ptcFunc = funcAstier
-                parsIniPtc = [-1e-9, 1.0, 10.]  # a00, gain, noisei^2
+                parsIniPtc = [-1e-9, 1.0, 10.]  # a00, gain, noise^2
                 # lowers and uppers obtained from BOT data studies by
                 # C. Lage (UC Davis, 11/2020).
                 bounds = self._boundsForAstier(parsIniPtc, lowers=[-1e-4, 0.5, -2000],
@@ -683,12 +711,14 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         return dataset
 
     def fillBadAmp(self, dataset, ptcFitType, ampName):
-        """Fill the dataset with NaNs if there are not enough good points.
+        """Fill the dataset with NaNs if there are not enough
+        good points.
 
         Parameters
         ----------
         dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
-            The dataset containing the means, variances and exposure times.
+            The dataset containing the means, variances and
+            exposure times.
         ptcFitType : {'POLYNOMIAL', 'EXPAPPROXIMATION'}
             Fit a 'POLYNOMIAL' (degree: 'polynomialFitDegree') or
             'EXPAPPROXIMATION' (Eq. 16 of Astier+19) to the PTC.
