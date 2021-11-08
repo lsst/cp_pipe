@@ -270,21 +270,21 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             # Preliminary fit, usign a temp dataset to get the mask
             tempDatasetPtc = copy.copy(datasetPtc)
             tempDatasetPtc.ptcFitType = "EXPAPPROXIMATION"
-            tempDatasetPtc = self.fitPtc(tempDatasetPtc)
+            tempDatasetPtc = self.fitMeasurementsToModel(tempDatasetPtc)
 
             # "FULLCOVARIANCE", using the mask obtained from the
             # previous fit.
             for ampName in datasetPtc.ampNames:
                 datasetPtc.expIdMask[ampName] = tempDatasetPtc.expIdMask[ampName]
             datasetPtc.fitType = "FULLCOVARIANCE"
-            datasetPtc = self.fitCovariancesAstier(datasetPtc)
+            datasetPtc = self.fitMeasurementsToModel(datasetPtc)
         # The other options are: self.config.ptcFitType in
         # ("EXPAPPROXIMATION", "POLYNOMIAL")
         else:
             # Fit the PTC to a polynomial or to Astier+19 exponential
             # approximation (Eq. 16).  Fill up
             # PhotonTransferCurveDataset object.
-            datasetPtc = self.fitPtc(datasetPtc)
+            datasetPtc = self.fitMeasurementsToModel(datasetPtc)
         if inputExpList is not None:
             # It should be a list of exposures, to get the detector.
             detector = inputExpList[0].getDetector()
@@ -295,6 +295,42 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         return pipeBase.Struct(
             outputPtcDataset=datasetPtc,
         )
+
+    def fitMeasurementsToModel(self, dataset):
+        """Fit the measured covariances vs mean signal to a
+        polynomial or one of the models in Astier+19
+        (Eq. 16 or Eq.20).
+
+        Parameters
+        ----------
+        dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
+            The dataset containing information such as the means,
+            (co)variances, and exposure times.
+
+        Returns
+        -------
+        dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
+            This is the same dataset as the input parameter, however,
+            it has been modified to include information such as the
+            fit vectors and the fit parameters. See the class
+            `PhotonTransferCurveDatase`.
+        """
+        fitType = dataset.ptcFitType
+        if fitType == "FULLCOVARIANCE":
+            # This model uses the full covariance matrix in the fit.
+            # The PTC is technically defined as variance vs signal,
+            # with variance = Cov_00
+            dataset = self.fitCovariancesAstier(dataset)
+        elif fitType == ["POLYNOMIAL", "EXPAPPROXIMATION"]:
+            # The PTC is technically defined as variance vs signal
+            dataset = self.fitPtc(dataset)
+        else:
+            raise RuntimeError(
+                f"Fitting option {fitType} not one of "
+                "'POLYNOMIAL', 'EXPAPPROXIMATION', or 'FULLCOVARIANCE'"
+            )
+
+        return dataset
 
     def fitCovariancesAstier(self, dataset):
         """Fit measured flat covariances to the full model in
