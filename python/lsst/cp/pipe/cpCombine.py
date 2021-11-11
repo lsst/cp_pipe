@@ -20,7 +20,6 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import numpy as np
 import time
-import logging
 
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
@@ -28,12 +27,13 @@ import lsst.pipe.base.connectionTypes as cT
 import lsst.afw.math as afwMath
 import lsst.afw.image as afwImage
 
-from lsst.geom import Point2D
+from lsst.ip.isr.vignette import maskVignettedRegion
+
 from astro_metadata_translator import merge_headers, ObservationGroup
 from astro_metadata_translator.serialize import dates_to_fits
 
 
-__all__ = ['CalibStatsConfig', 'CalibStatsTask', 'vignetteExposure',
+__all__ = ['CalibStatsConfig', 'CalibStatsTask',
            'CalibCombineConfig', 'CalibCombineConnections', 'CalibCombineTask',
            'CalibCombineByFilterConfig', 'CalibCombineByFilterConnections', 'CalibCombineByFilterTask']
 
@@ -341,8 +341,7 @@ class CalibCombineTask(pipeBase.PipelineTask,
 
         if self.config.doVignette:
             polygon = inputExps[0].getInfo().getValidPolygon()
-            vignetteExposure(combined, polygon=polygon, doUpdateMask=True,
-                             doSetValue=True, vignetteValue=0.0)
+            maskVignettedRegion(combined, polygon=polygon, vignetteValue=0.0)
 
         # Combine headers
         self.combineHeaders(inputExps, combinedExp,
@@ -573,64 +572,3 @@ class CalibCombineByFilterTask(CalibCombineTask):
     ConfigClass = CalibCombineByFilterConfig
     _DefaultName = 'cpFilterCombine'
     pass
-
-
-def vignetteExposure(exposure, polygon=None,
-                     doUpdateMask=True, maskPlane="NO_DATA",
-                     doSetValue=False, vignetteValue=0.0,
-                     log=None):
-    """Apply vignetted polygon to image pixels.
-
-    Parameters
-    ----------
-    exposure : `lsst.afw.image.Exposure`
-        Image to be updated.
-    doUpdateMask : `bool`, optional
-        Update the exposure mask for vignetted area?
-    maskPlane : `str`, optional
-        Mask plane to assign.
-    doSetValue : `bool`, optional
-        Set image value for vignetted area?
-    vignetteValue : `float`, optional
-        Value to assign.
-    log : `logging.Logger`, optional
-        Log to write to.
-
-    Raises
-    ------
-    RuntimeError
-        Raised if no valid polygon exists.
-    """
-    polygon = polygon if polygon else exposure.getInfo().getValidPolygon()
-    if not polygon:
-        raise RuntimeError("Could not find valid polygon!")
-    log = log if log else logging.getLogger(__name__)
-
-    fullyIlluminated = True
-    for corner in exposure.getBBox().getCorners():
-        if not polygon.contains(Point2D(corner)):
-            fullyIlluminated = False
-
-    log.info("Exposure is fully illuminated? %s", fullyIlluminated)
-
-    if not fullyIlluminated:
-        # Scan pixels.
-        mask = exposure.getMask()
-        numPixels = mask.getBBox().getArea()
-
-        xx, yy = np.meshgrid(np.arange(0, mask.getWidth(), dtype=int),
-                             np.arange(0, mask.getHeight(), dtype=int))
-
-        vignMask = np.array([not polygon.contains(Point2D(x, y)) for x, y in
-                             zip(xx.reshape(numPixels), yy.reshape(numPixels))])
-        vignMask = vignMask.reshape(mask.getHeight(), mask.getWidth())
-
-        if doUpdateMask:
-            bitMask = mask.getPlaneBitMask(maskPlane)
-            maskArray = mask.getArray()
-            maskArray[vignMask] |= bitMask
-        if doSetValue:
-            imageArray = exposure.getImage().getArray()
-            imageArray[vignMask] = vignetteValue
-        log.info("Exposure contains %d vignetted pixels.",
-                 np.count_nonzero(vignMask))
