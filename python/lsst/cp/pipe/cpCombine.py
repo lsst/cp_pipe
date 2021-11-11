@@ -20,6 +20,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import numpy as np
 import time
+import logging
 
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
@@ -28,7 +29,6 @@ import lsst.afw.math as afwMath
 import lsst.afw.image as afwImage
 
 from lsst.geom import Point2D
-from lsst.log import Log
 from astro_metadata_translator import merge_headers, ObservationGroup
 from astro_metadata_translator.serialize import dates_to_fits
 
@@ -593,7 +593,7 @@ def vignetteExposure(exposure, polygon=None,
         Set image value for vignetted area?
     vignetteValue : `float`, optional
         Value to assign.
-    log : `lsst.log.Log`, optional
+    log : `logging.Logger`, optional
         Log to write to.
 
     Raises
@@ -604,7 +604,7 @@ def vignetteExposure(exposure, polygon=None,
     polygon = polygon if polygon else exposure.getInfo().getValidPolygon()
     if not polygon:
         raise RuntimeError("Could not find valid polygon!")
-    log = log if log else Log.getLogger(__name__.partition(".")[2])
+    log = log if log else logging.getLogger(__name__)
 
     fullyIlluminated = True
     for corner in exposure.getBBox().getCorners():

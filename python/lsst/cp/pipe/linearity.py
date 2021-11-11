@@ -238,7 +238,7 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
                 continue
 
             if (len(inputPtc.expIdMask[ampName]) == 0) or self.config.ignorePtcMask:
-                self.log.warning(f"Mask not found for {ampName} in non-linearity fit. Using all points.")
+                self.log.warning("Mask not found for %s in non-linearity fit. Using all points.", ampName)
                 mask = np.repeat(True, len(inputPtc.expIdMask[ampName]))
             else:
                 mask = np.array(inputPtc.expIdMask[ampName], dtype=bool)
@@ -275,7 +275,7 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
                 k1 = polyFit[1]
                 linearityFit = [-coeff/(k1**order) for order, coeff in enumerate(polyFit)]
                 significant = np.where(np.abs(linearityFit) > 1e-10, True, False)
-                self.log.info(f"Significant polynomial fits: {significant}")
+                self.log.info("Significant polynomial fits: %s", significant)
 
                 modelOrdinate = funcPolynomial(polyFit, linearAbscissa)
                 self.debugFit('polyFit', linearAbscissa, fitOrdinate, modelOrdinate, None, ampName)

@@ -22,6 +22,7 @@
 
 __all__ = ['PlotPhotonTransferCurveTask']
 
+import logging
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
@@ -36,7 +37,6 @@ from lsst.cp.pipe.utils import (funcAstier, funcPolynomial,
 from matplotlib.ticker import MaxNLocator
 from lsst.cp.pipe.ptc.astierCovPtcUtils import getFitDataFromCovariances
 from lsst.ip.isr import PhotonTransferCurveDataset
-import lsst.log as lsstLog
 
 
 class PlotPhotonTransferCurveTask():
@@ -108,7 +108,7 @@ class PlotPhotonTransferCurveTask():
             linearizer = isr.linearize.Linearizer.readFits(self.linearizerFileName)
         else:
             linearizer = None
-        self.run(filenameFull, datasetPtc, linearizer=linearizer, log=lsstLog)
+        self.run(filenameFull, datasetPtc, linearizer=linearizer, log=logging.getLogger(__name__))
 
         return
 
@@ -146,7 +146,7 @@ class PlotPhotonTransferCurveTask():
         pdfPages : `matplotlib.backends.backend_pdf.PdfPages`
             PDF file where the plots will be saved.
 
-        log : `lsst.log.Log`, optional
+        log : `logging.Logger`, optional
             Logger to handle messages
         """
         mu = dataset.finalMeans
@@ -465,7 +465,7 @@ class PlotPhotonTransferCurveTask():
             Plot the top plot with the covariances, and the bottom
             plot with the model residuals?
 
-        log : `lsst.log.Log`, optional
+        log : `logging.Logger`, optional
             Logger to handle messages.
         """
         if not topPlot:

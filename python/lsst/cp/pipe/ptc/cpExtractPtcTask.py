@@ -277,14 +277,14 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
 
         if self.config.numEdgeSuspect > 0:
             isrTask = IsrTask()
-            self.log.info(f"Masking {self.config.numEdgeSuspect} pixels from the edges "
-                          "of all exposures as SUSPECT.")
+            self.log.info("Masking %d pixels from the edges of all exposures as SUSPECT.",
+                          self.config.numEdgeSuspect)
 
         for expTime in inputExp:
             exposures = inputExp[expTime]
             if len(exposures) == 1:
-                self.log.warning(f"Only one exposure found at expTime {expTime}. Dropping exposure "
-                                 f"{exposures[0][1]}")
+                self.log.warning("Only one exposure found at expTime %f. Dropping exposure %s.",
+                                 expTime, exposures[0][1])
                 continue
             else:
                 # Only use the first two exposures at expTime. Each
@@ -292,9 +292,8 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                 exp1, expId1 = exposures[0]
                 exp2, expId2 = exposures[1]
                 if len(exposures) > 2:
-                    self.log.warning(f"Already found 2 exposures at expTime {expTime}. "
-                                     "Ignoring exposures: "
-                                     f"{i[1] for i in exposures[2:]}")
+                    self.log.warning("Already found 2 exposures at expTime %f. Ignoring exposures: %s",
+                                     expTime, ", ".join(i[1] for i in exposures[2:]))
             # Mask pixels at the edge of the detector or of each amp
             if self.config.numEdgeSuspect > 0:
                 isrTask.maskEdges(exp1, numEdgePixels=self.config.numEdgeSuspect,
@@ -331,8 +330,8 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
 
                 expIdMask = True
                 if np.isnan(muDiff) or np.isnan(varDiff) or (covAstier is None):
-                    msg = (f"NaN mean or var, or None cov in amp {ampName} in exposure pair {expId1},"
-                           f" {expId2} of detector {detNum}.")
+                    msg = ("NaN mean or var, or None cov in amp %s in exposure pair %s, %s of detector %d.",
+                           ampName, expId1, expId2, detNum)
                     self.log.warning(msg)
                     nAmpsNan += 1
                     expIdMask = False
@@ -451,7 +450,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         mu1 = afwMath.makeStatistics(im1Area, afwMath.MEANCLIP, im1StatsCtrl).getValue()
         mu2 = afwMath.makeStatistics(im2Area, afwMath.MEANCLIP, im2StatsCtrl).getValue()
         if np.isnan(mu1) or np.isnan(mu2):
-            self.log.warning(f"Mean of amp in image 1 or 2 is NaN: {mu1}, {mu2}.")
+            self.log.warning("Mean of amp in image 1 or 2 is NaN: %f, %f.", mu1, mu2)
             return np.nan, np.nan, None
         mu = 0.5*(mu1 + mu2)
 
@@ -490,8 +489,8 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         w = unmasked*wDiff
 
         if np.sum(w) < self.config.minNumberGoodPixelsForCovariance:
-            self.log.warning(f"Number of good points for covariance calculation ({np.sum(w)}) is less "
-                             f"(than threshold {self.config.minNumberGoodPixelsForCovariance})")
+            self.log.warning("Number of good points for covariance calculation (%s) is less "
+                             "(than threshold %s)", np.sum(w), self.config.minNumberGoodPixelsForCovariance)
             return np.nan, np.nan, None
 
         maxRangeCov = self.config.maximumRangeCovariancesAstier
@@ -517,6 +516,6 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         fractionalDiff = 100*np.fabs(1 - varDiff/(covDiffAstier[0][3]*0.5))
         if fractionalDiff >= thresholdPercentage:
             self.log.warning("Absolute fractional difference between afwMatch.VARIANCECLIP and Cov[0,0] "
-                             f"is more than {thresholdPercentage}%: {fractionalDiff}")
+                             "is more than %f%%: %f", thresholdPercentage, fractionalDiff)
 
         return mu, varDiff, covDiffAstier
