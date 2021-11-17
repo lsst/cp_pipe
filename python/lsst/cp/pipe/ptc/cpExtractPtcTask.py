@@ -283,7 +283,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         for expTime in inputExp:
             exposures = inputExp[expTime]
             if len(exposures) == 1:
-                self.log.warning("Only one exposure found at expTime %f. Dropping exposure %s.",
+                self.log.warning("Only one exposure found at expTime %f. Dropping exposure %d.",
                                  expTime, exposures[0][1])
                 continue
             else:
@@ -293,7 +293,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                 exp2, expId2 = exposures[1]
                 if len(exposures) > 2:
                     self.log.warning("Already found 2 exposures at expTime %f. Ignoring exposures: %s",
-                                     expTime, ", ".join(i[1] for i in exposures[2:]))
+                                     expTime, ", ".join(str(i[1]) for i in exposures[2:]))
             # Mask pixels at the edge of the detector or of each amp
             if self.config.numEdgeSuspect > 0:
                 isrTask.maskEdges(exp1, numEdgePixels=self.config.numEdgeSuspect,
@@ -330,7 +330,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
 
                 expIdMask = True
                 if np.isnan(muDiff) or np.isnan(varDiff) or (covAstier is None):
-                    msg = ("NaN mean or var, or None cov in amp %s in exposure pair %s, %s of detector %d.",
+                    msg = ("NaN mean or var, or None cov in amp %s in exposure pair %d, %d of detector %d.",
                            ampName, expId1, expId2, detNum)
                     self.log.warning(msg)
                     nAmpsNan += 1
