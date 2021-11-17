@@ -316,12 +316,12 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             `PhotonTransferCurveDatase`.
         """
         fitType = dataset.ptcFitType
-        if fitType == "FULLCOVARIANCE":
+        if fitType in ["FULLCOVARIANCE", ]:
             # This model uses the full covariance matrix in the fit.
             # The PTC is technically defined as variance vs signal,
             # with variance = Cov_00
             dataset = self.fitCovariancesAstier(dataset)
-        elif fitType == ["POLYNOMIAL", "EXPAPPROXIMATION"]:
+        elif fitType in ["POLYNOMIAL", "EXPAPPROXIMATION"]:
             # The PTC is technically defined as variance vs signal
             dataset = self.fitPtc(dataset)
         else:
@@ -396,18 +396,18 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
                 dataset.covariances[amp] = fit.cov
                 dataset.covariancesModel[amp] = fit.evalCovModel()
                 dataset.covariancesSqrtWeights[amp] = fit.sqrtW
-                dataset.aMatrix[amp] = fit.getA()
-                dataset.bMatrix[amp] = fit.getB()
+                dataset.aMatrix[amp] = fit.params['a'].full.reshape(fit.r, fit.r)
+                dataset.bMatrix[amp] = fit.params['c'].full.reshape(fit.r, fit.r)/dataset.aMatrix[amp]
                 dataset.covariancesModelNoB[amp] = fitNoB.evalCovModel()
-                dataset.aMatrixNoB[amp] = fitNoB.getA()
+                dataset.aMatrixNoB[amp] = fitNoB.params['a'].full.reshape(fitNoB.r, fitNoB.r)
 
                 (meanVecFinal, varVecFinal, varVecModel,
                     wc, varMask) = fit.getFitData(0, 0, divideByMu=False)
-                gain = fit.getGain()
+                gain = fit.params['gain'].full[0]
 
                 dataset.gain[amp] = gain
                 dataset.gainErr[amp] = fit.getGainErr()
-                dataset.noise[amp] = np.sqrt(fit.getRon())
+                dataset.noise[amp] = np.sqrt(fit.params['noise'].full[0])
                 dataset.noiseErr[amp] = fit.getRonErr()
                 dataset.finalVars[amp] = varVecFinal
                 dataset.finalModelVars[amp] = varVecModel

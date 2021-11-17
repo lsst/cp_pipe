@@ -315,18 +315,6 @@ class CovFit:
 
         return covModel
 
-    def getA(self):
-        """'a' matrix from Astier+19(e.g., Eq. 20)"""
-        return self.params['a'].full.reshape(self.r, self.r)
-
-    def getB(self):
-        """'b' matrix from Astier+19(e.g., Eq. 20)"""
-        return self.params['c'].full.reshape(self.r, self.r)/self.getA()
-
-    def getC(self):
-        """'c'='ab' matrix from Astier+19(e.g., Eq. 20)"""
-        return np.array(self.params['c'].full.reshape(self.r, self.r))
-
     def _getCovParams(self, what):
         """Get covariance matrix of parameters from fit"""
         indices = self.params[what].indexof()
@@ -338,39 +326,6 @@ class CovFit:
             covp = None
         return covp
 
-    def getACov(self):
-        """Get covariance matrix of "a" coefficients from fit"""
-        if self._getCovParams('a') is not None:
-            cova = self._getCovParams('a').reshape((self.r, self.r, self.r, self.r))
-        else:
-            cova = None
-        return cova
-
-    def getASig(self):
-        """Square root of diagonal of the parameter covariance of the fitted
-        "a" matrix
-        """
-        if self._getCovParams('a') is not None:
-            sigA = np.sqrt(self._getCovParams('a').diagonal()).reshape((self.r, self.r))
-        else:
-            sigA = None
-        return sigA
-
-    def getBCov(self):
-        """Get covariance matrix of "a" coefficients from fit
-        b = c /a
-        """
-        covb = self._getCovParams('c')
-        aval = self.getA().flatten()
-        factor = np.outer(aval, aval)
-        covb /= factor
-        return covb.reshape((self.r, self.r, self.r, self.r))
-
-    def getCCov(self):
-        """Get covariance matrix of "c" coefficients from fit"""
-        cova = self._getCovParams('c')
-        return cova.reshape((self.r, self.r, self.r, self.r))
-
     def getGainErr(self):
         """Get error on fitted gain parameter"""
         if self._getCovParams('gain') is not None:
@@ -378,11 +333,6 @@ class CovFit:
         else:
             gainErr = 0.0
         return gainErr
-
-    def getNoiseCov(self):
-        """Get covariances of noise matrix from fit"""
-        covNoise = self._getCovParams('noise')
-        return covNoise.reshape((self.r, self.r, self.r, self.r))
 
     def getNoiseSig(self):
         """Square root of diagonal of the parameter covariance of the fitted
@@ -395,41 +345,22 @@ class CovFit:
             noise = None
         return noise
 
-    def getGain(self):
-        """Get gain (e/ADU)"""
-        return self.params['gain'].full[0]
-
-    def getRon(self):
-        """Get readout noise (e^2)"""
-        return self.params['noise'].full[0]
-
     def getRonErr(self):
         """Get error on readout noise parameter"""
-        ronSqrt = np.sqrt(np.fabs(self.getRon()))
+        ron = np.sqrt(self.params['noise'].full[0])
+        ronSqrt = np.sqrt(np.fabs(ron))
         if self.getNoiseSig() is not None:
             noiseSigma = self.getNoiseSig()[0][0]
-            ronErr = 0.5*(noiseSigma/np.fabs(self.getRon()))*ronSqrt
+            ronErr = 0.5*(noiseSigma/np.fabs(ron))*ronSqrt
         else:
             ronErr = np.nan
         return ronErr
-
-    def getNoise(self):
-        """Get noise matrix"""
-        return self.params['noise'].full.reshape(self.r, self.r)
 
     def getMaskCov(self, i, j):
         """Get mask of Cov[i,j]"""
         weights = self.sqrtW[:, i, j]
         mask = weights != 0
         return mask
-
-    def setAandB(self, a, b):
-        """Set "a" and "b" coeffcients forfull Astier+19 model
-        (Eq. 20). "c=a*b".
-        """
-        self.params['a'].full = a.flatten()
-        self.params['c'].full = a.flatten()*b.flatten()
-        return
 
     def weightedRes(self, params=None):
         """Weighted residuals.
