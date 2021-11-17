@@ -230,7 +230,7 @@ class CovFit:
                     if(i + j == 0):
                         gain = 1./(1/gain+parsFit[1])
                         self.params['gain'].full[0] = gain
-            chi2 = self.chi2()
+            chi2 = (self.weightedRes()**2).sum()
             if chi2 > oldChi2:
                 break
             oldChi2 = chi2
@@ -430,10 +430,6 @@ class CovFit:
         self.params['a'].full = a.flatten()
         self.params['c'].full = a.flatten()*b.flatten()
         return
-
-    def chi2(self):
-        """Calculate weighted chi2 of full-model fit."""
-        return(self.weightedRes()**2).sum()
 
     def weightedRes(self, params=None):
         """Weighted residuals.
