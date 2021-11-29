@@ -48,7 +48,7 @@ class PhotonTransferCurveExtractConnections(pipeBase.PipelineTaskConnections,
         storageClass="Exposure",
         dimensions=("instrument", "exposure", "detector"),
         multiple=True,
-        deferLoad=False,
+        deferLoad=True,
     )
 
     outputCovariances = cT.Output(
