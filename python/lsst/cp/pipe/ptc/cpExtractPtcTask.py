@@ -205,7 +205,8 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         """
         inputs = butlerQC.get(inputRefs)
         # Ids of input list of exposures
-        inputs['inputDims'] = [expId.dataId['exposure'] for expId in inputRefs.inputExp]
+
+        inputs['inputDims'] = [expRef.datasetRef.dataId['exposure'] for expRef in inputRefs.inputExp]
 
         # Dictionary, keyed by expTime, with tuples containing flat
         # exposures and their IDs.
