@@ -631,8 +631,8 @@ def arrangeFlatsByExpTime(exposureList, exposureIdList):
 
     Parameters
     ----------
-    exposureList : `list` [`lsst.afw.image.ExposureF`]
-        Input list of exposures.
+    exposureList : `list` [`lsst.pipe.base.connections.DeferredDatasetRef`]
+        Input list of exposure references.
 
     exposureIdList : `list` [`int`]
         List of exposure ids as obtained by dataId[`exposure`].
@@ -640,16 +640,17 @@ def arrangeFlatsByExpTime(exposureList, exposureIdList):
     Returns
     ------
     flatsAtExpTime : `dict` [`float`,
-                      `list`[(`lsst.afw.image.ExposureF`, `int`)]]
-        Dictionary that groups flat-field exposures (and their IDs) that have
-        the same exposure time (seconds).
+                      `list`[(`lsst.pipe.base.connections.DeferredDatasetRef`,
+                              `int`)]]
+        Dictionary that groups references to flat-field exposures
+        (and their IDs) that have the same exposure time (seconds).
     """
     flatsAtExpTime = {}
     assert len(exposureList) == len(exposureIdList), "Different lengths for exp. list and exp. ID lists"
-    for exp, expId in zip(exposureList, exposureIdList):
-        expTime = exp.getInfo().getVisitInfo().getExposureTime()
+    for expRef, expId in zip(exposureList, exposureIdList):
+        expTime = expRef.get(component='visitInfo').exposureTime
         listAtExpTime = flatsAtExpTime.setdefault(expTime, [])
-        listAtExpTime.append((exp, expId))
+        listAtExpTime.append((expRef, expId))
 
     return flatsAtExpTime
 
@@ -663,8 +664,8 @@ def arrangeFlatsByExpId(exposureList, exposureIdList):
 
     Parameters
     ----------
-    exposureList : `list`[`lsst.afw.image.ExposureF`]
-        Input list of exposures.
+    exposureList : `list`[`lsst.pipe.base.connections.DeferredDatasetRef`]
+        Input list of exposure references.
 
     exposureIdList : `list`[`int`]
         List of exposure ids as obtained by dataId[`exposure`].
@@ -672,17 +673,18 @@ def arrangeFlatsByExpId(exposureList, exposureIdList):
     Returns
     ------
     flatsAtExpId : `dict` [`float`,
-                   `list`[(`lsst.afw.image.ExposureF`, `int`)]]
-        Dictionary that groups flat-field exposures (and their IDs)
-        sequentially by their exposure id.
+                   `list`[(`lsst.pipe.base.connections.DeferredDatasetRef`,
+                           `int`)]]
+        Dictionary that groups references to flat-field exposures (and their
+        IDs) sequentially by their exposure id.
 
     Notes
     -----
 
-    This algorithm sorts the input exposures by their exposure id, and
-    then assigns each pair of exposures (exp_j, exp_{j+1}) to pair k,
-    such that 2*k = j, where j is the python index of one of the
-    exposures (starting from zero).  By checking for the IndexError
+    This algorithm sorts the input exposure references by their exposure
+    id, and then assigns each pair of exposure references (exp_j, exp_{j+1})
+    to pair k, such that 2*k = j, where j is the python index of one of the
+    exposure references (starting from zero).  By checking for the IndexError
     while appending, we can ensure that there will only ever be fully
     populated pairs.
     """

@@ -204,7 +204,8 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
             Output data refs to persist.
         """
         inputs = butlerQC.get(inputRefs)
-        # Ids of input list of exposures
+        # Ids of input list of exposure references
+        # (deferLoad=True in the input connections)
 
         inputs['inputDims'] = [expRef.datasetRef.dataId['exposure'] for expRef in inputRefs.inputExp]
 
@@ -223,9 +224,11 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
 
         Parameters
         ----------
-        inputExp : `dict` [`float`, `list` [`~lsst.afw.image.ExposureF`]]
-            Dictionary that groups flat-field exposures that have the same
-            exposure time (seconds).
+        inputExp : `dict` [`float`, `list`
+                          [`~lsst.pipe.base.connections.DeferredDatasetRef`]]
+            Dictionary that groups references to flat-field exposures that
+            have the same exposure time (seconds), or that groups them
+            sequentially by their exposure id.
 
         inputDims : `list`
             List of exposure IDs.
@@ -241,7 +244,8 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         """
         # inputExp.values() returns a view, which we turn into a list. We then
         # access the first exposure-ID tuple to get the detector.
-        detector = list(inputExp.values())[0][0][0].getDetector()
+        # The first "get()" retrieves the exposure from the exposure reference.
+        detector = list(inputExp.values())[0][0][0].get().getDetector()
         detNum = detector.getId()
         amps = detector.getAmplifiers()
         ampNames = [amp.getName() for amp in amps]
@@ -290,8 +294,11 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
             else:
                 # Only use the first two exposures at expTime. Each
                 # elements is a tuple (exposure, expId)
-                exp1, expId1 = exposures[0]
-                exp2, expId2 = exposures[1]
+                expRef1, expId1 = exposures[0]
+                expRef2, expId2 = exposures[1]
+                # use get() to obtain `lsst.afw.image.Exposure`
+                exp1, exp2 = expRef1.get(), expRef2.get()
+
                 if len(exposures) > 2:
                     self.log.warning("Already found 2 exposures at expTime %f. Ignoring exposures: %s",
                                      expTime, ", ".join(str(i[1]) for i in exposures[2:]))
