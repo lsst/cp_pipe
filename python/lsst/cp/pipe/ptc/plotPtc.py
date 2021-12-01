@@ -893,7 +893,7 @@ class PlotPhotonTransferCurveTask():
             meanVecOriginal = np.ravel(np.array(dataset.rawMeans[amp]))
             varVecOriginal = np.ravel(np.array(dataset.rawVars[amp]))
             mask = np.ravel(np.array(dataset.expIdMask[amp]))
-            if np.isnan(mask[0]):  # All NaNs the whole amp is bad
+            if np.sum(mask) == 0:  # The whole amp is bad
                 a.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
                 a2.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
                 a3.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
@@ -929,7 +929,6 @@ class PlotPhotonTransferCurveTask():
                                     f"Noise: {ptcNoise:.4}+/-{ptcNoiseError:.2e} e\n"
                                     r"$\chi^2_{\rm{red}}$: " + f"{ptcRedChi2:.4}"
                                     f"\nLast in fit: {meanVecFinal[-1]:.7} ADU ")
-
             a.set_xlabel(r'Mean signal ($\mu$, ADU)', fontsize=labelFontSize)
             a.set_ylabel(r'Variance (ADU$^2$)', fontsize=labelFontSize)
             a.tick_params(labelsize=11)
@@ -947,7 +946,6 @@ class PlotPhotonTransferCurveTask():
             a3.tick_params(labelsize=11)
             a3.set_xscale('log')
             a3.set_yscale('linear')
-
             minMeanVecFinal = np.nanmin(meanVecFinal)
             maxMeanVecFinal = np.nanmax(meanVecFinal)
             meanVecFit = np.linspace(minMeanVecFinal, maxMeanVecFinal, 100*len(meanVecFinal))
@@ -979,7 +977,6 @@ class PlotPhotonTransferCurveTask():
             a3.text(0.05, 0.1, stringLegend, transform=a3.transAxes, fontsize=legendFontSize)
             a3.set_title(amp, fontsize=titleFontSize)
             a3.set_xlim([minMeanVecOriginal - 0.2*deltaXlim, maxMeanVecOriginal + 0.2*deltaXlim])
-
         f.suptitle("PTC \n Fit: " + stringTitle, fontsize=supTitleFontSize)
         pdfPages.savefig(f)
         f2.suptitle("PTC (log-log)", fontsize=supTitleFontSize)
@@ -1024,7 +1021,7 @@ class PlotPhotonTransferCurveTask():
         f2, ax2 = plt.subplots(nrows=nRows, ncols=nCols, sharex='col', sharey='row', figsize=(13, 10))
         for i, (amp, a, a2) in enumerate(zip(dataset.ampNames, ax.flatten(), ax2.flatten())):
             mask = dataset.expIdMask[amp]
-            if np.isnan(mask[0]):
+            if np.sum(mask) == 0:  # Bad amp
                 a.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
                 a2.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
                 continue
