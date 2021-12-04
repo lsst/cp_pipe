@@ -927,7 +927,7 @@ class PlotPhotonTransferCurveTaskGen2(pipeBase.CmdLineTask):
             meanVecOriginal = np.ravel(np.array(dataset.rawMeans[amp]))
             varVecOriginal = np.ravel(np.array(dataset.rawVars[amp]))
             mask = np.ravel(np.array(dataset.expIdMask[amp]))
-            if np.isnan(mask[0]):  # All NaNs the whole amp is bad
+            if np.sum(mask) == 0:  # All NaNs the whole amp is bad
                 a.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
                 a2.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
                 a3.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
@@ -1058,7 +1058,7 @@ class PlotPhotonTransferCurveTaskGen2(pipeBase.CmdLineTask):
         f2, ax2 = plt.subplots(nrows=nRows, ncols=nCols, sharex='col', sharey='row', figsize=(13, 10))
         for i, (amp, a, a2) in enumerate(zip(dataset.ampNames, ax.flatten(), ax2.flatten())):
             mask = dataset.expIdMask[amp]
-            if np.isnan(mask[0]):
+            if np.sum(mask) == 0:  # Bad amp
                 a.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
                 a2.set_title(f"{amp} (BAD)", fontsize=titleFontSize)
                 continue
