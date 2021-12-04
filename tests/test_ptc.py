@@ -43,6 +43,20 @@ class FakeCamera(list):
         return "FakeCam"
 
 
+class PretendRef():
+    "A class to act as a mock exposure reference"
+    def __init__(self, exposure):
+        self.exp = exposure
+
+    def get(self, component=None):
+        if component == 'visitInfo':
+            return self.exp.getVisitInfo()
+        elif component == 'detector':
+            return self.exp.getDetector()
+        else:
+            return self.exp
+
+
 class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
     """A test case for the PTC task."""
 
@@ -130,7 +144,9 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             mockExp1, mockExp2 = makeMockFlats(expTime, gain=inputGain,
                                                readNoiseElectrons=3, expId1=idCounter,
                                                expId2=idCounter+1)
-            expDict[expTime] = ((mockExp1, idCounter), (mockExp2, idCounter+1))
+            mockExpRef1 = PretendRef(mockExp1)
+            mockExpRef2 = PretendRef(mockExp2)
+            expDict[expTime] = ((mockExpRef1, idCounter), (mockExpRef2, idCounter+1))
             expIds.append(idCounter)
             expIds.append(idCounter+1)
             for ampNumber, ampName in enumerate(self.ampNames):
