@@ -200,6 +200,7 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
 
         if self.config.level == 'DETECTOR':
             detectorCorrList = list()
+            detectorFluxes = list()
 
         bfk = BrighterFatterKernel(camera=camera, detectorId=detector.getId(), level=self.config.level)
         bfk.means = inputPtc.finalMeans  # ADU
@@ -263,6 +264,10 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
                 if q[0][0] > 0.0:
                     self.log.warning("Amp: %s %d skipped due to value of (variance-mean)=%f",
                                      ampName, xcorrNum, q[0][0])
+                    # If we drop an element of ``scaledCorrList``
+                    # (which is what this does), we need to ensure we
+                    # drop the flux entry as well.
+                    fluxes = np.delete(fluxes, xcorrNum)
                     continue
 
                 # This removes the "t (I_a^2 + I_b^2)" factor in
@@ -274,6 +279,7 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
                 if (xcorrCheck > self.config.xcorrCheckRejectLevel) or not (np.isfinite(xcorrCheck)):
                     self.log.warning("Amp: %s %d skipped due to value of triangle-inequality sum %f",
                                      ampName, xcorrNum, xcorrCheck)
+                    fluxes = np.delete(fluxes, xcorrNum)
                     continue
 
                 scaledCorrList.append(scaled)
@@ -320,13 +326,17 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
             bfk.ampKernels[ampName] = postKernel
             if self.config.level == 'DETECTOR':
                 detectorCorrList.extend(scaledCorrList)
+                detectorFluxes.extend(fluxes)
             bfk.valid[ampName] = True
             self.log.info("Amp: %s Sum: %g  Center Info Pre: %g  Post: %g",
                           ampName, finalSum, preKernel[center, center], postKernel[center, center])
 
         # Assemble a detector kernel?
         if self.config.level == 'DETECTOR':
-            preKernel = self.averageCorrelations(detectorCorrList, f"Det: {detName}")
+            if self.config.correlationQuadraticFit:
+                preKernel = self.quadraticCorrelations(detectorCorrList, detectorFluxes, f"Amp: {ampName}")
+            else:
+                preKernel = self.averageCorrelations(detectorCorrList, f"Det: {detName}")
             finalSum = np.sum(preKernel)
             center = int((bfk.shape[0] - 1) / 2)
 
@@ -397,9 +407,10 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
                 # i,j indices are inverted to apply the transposition,
                 # as is done in the averaging case.
                 linearFit, linearFitErr, chiSq, weights = irlsFit([0.0, 1e-4], fluxList,
-                                                                  xCorrList[:, j, i], funcPolynomial)
+                                                                  xCorrList[:, j, i], funcPolynomial,
+                                                                  scaleResidual=False)
                 meanXcorr[i, j] = linearFit[1]  # Discard the intercept.
-                self.log.debug("Quad fit meanXcorr[%d,%d] = %g", i, j, linearFit[1])
+                self.log.info("Quad fit meanXcorr[%d,%d] = %g", i, j, linearFit[1])
 
         # To match previous definitions, pad by one element.
         meanXcorr = np.pad(meanXcorr, ((1, 1)))
