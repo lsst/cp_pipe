@@ -256,8 +256,7 @@ def parseData(dataset):
         covAtAmp = dataset.covariances[ampName]
         covSqrtWeightsAtAmp = dataset.covariancesSqrtWeights[ampName]
 
-        c = CovFit(muAtAmp, covAtAmp, covSqrtWeightsAtAmp, dataset.covMatrixSide, maskAtAmp)
-        cc = c.copy()
+        cc = CovFit(muAtAmp, covAtAmp, covSqrtWeightsAtAmp, dataset.covMatrixSide, maskAtAmp)
         cc.initFit()  # allows to get a crude gain.
         covFitDict[ampName] = cc
 
@@ -298,8 +297,7 @@ def fitDataFullCovariance(dataset):
     covFitNoBDict = {}
     for ext, c in covFitDict.items():
         c.fitFullModel()
-        covFitNoBDict[ext] = c.copy()
-        c.params['c'].release()
+        covFitNoBDict[ext] = c
         c.fitFullModel()
     return covFitDict, covFitNoBDict
 

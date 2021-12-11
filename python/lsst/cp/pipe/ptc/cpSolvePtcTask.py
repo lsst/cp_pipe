@@ -396,18 +396,17 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
                 dataset.covariances[amp] = fit.cov
                 dataset.covariancesModel[amp] = fit.evalCovModel()
                 dataset.covariancesSqrtWeights[amp] = fit.sqrtW
-                dataset.aMatrix[amp] = fit.params['a'].full.reshape(fit.r, fit.r)
-                dataset.bMatrix[amp] = fit.params['c'].full.reshape(fit.r, fit.r)/dataset.aMatrix[amp]
+                dataset.aMatrix[amp] = fit.a
+                dataset.bMatrix[amp] = fit.c/fit.a
                 dataset.covariancesModelNoB[amp] = fitNoB.evalCovModel()
-                dataset.aMatrixNoB[amp] = fitNoB.params['a'].full.reshape(fitNoB.r, fitNoB.r)
+                dataset.aMatrixNoB[amp] = fitNoB.a
 
                 (meanVecFinal, varVecFinal, varVecModel,
                     wc, varMask) = fit.getFitData(0, 0, divideByMu=False)
-                gain = fit.params['gain'].full[0]
 
-                dataset.gain[amp] = gain
+                dataset.gain[amp] = fit.gain
                 dataset.gainErr[amp] = fit.getGainErr()
-                dataset.noise[amp] = np.sqrt(fit.params['noise'].full[0])
+                dataset.noise[amp] = fit.noise[0][0]
                 dataset.noiseErr[amp] = fit.getRonErr()
                 dataset.finalVars[amp] = varVecFinal
                 dataset.finalModelVars[amp] = varVecModel

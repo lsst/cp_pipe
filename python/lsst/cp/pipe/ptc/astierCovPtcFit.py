@@ -20,12 +20,9 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import numpy as np
-import copy
 from scipy.signal import fftconvolve
 from scipy.optimize import leastsq
 import logging
-
-from .astierCovFitParameters import FitParameters
 
 __all__ = ["CovFit"]
 
@@ -188,30 +185,16 @@ class CovFit:
         self.r = maxRangeFromTuple
         self.logger = logging.getLogger(__name__)
 
-    def copy(self):
-        """Make a copy of params"""
-        cop = copy.deepcopy(self)
-        # deepcopy does not work for FitParameters.
-        if hasattr(self, 'params'):
-            cop.params = self.params.copy()
-        return cop
+        # Initialize fit parameters
+        self.a = np.zeros((self.r, self.r))
+        self.c = np.zeros((self.r, self.r))
+        self.noise = np.zeros((self.r, self.r))
+        self.gain = 1.
 
     def initFit(self):
         """ Performs a crude parabolic fit of the data in order to start
         the full fit close to the solution.
         """
-        # number of parameters for 'a' array.
-        lenA = self.r*self.r
-        # define parameters: c corresponds to a*b in Astier+19 (Eq. 20).
-        self.params = FitParameters([('a', lenA), ('c', lenA), ('noise', lenA), ('gain', 1)])
-        self.params['gain'] = 1.
-        # c=0 in a first go.
-        self.params['c'].fix(val=0.)
-        # plumbing: extract stuff from the parameter structure
-        a = self.params['a'].full.reshape(self.r, self.r)
-        noise = self.params['noise'].full.reshape(self.r, self.r)
-        gain = self.params['gain'].full[0]
-
         # iterate the fit to account for higher orders
         # the chi2 does not necessarily go down, so one could
         # stop when it increases
@@ -225,25 +208,15 @@ class CovFit:
                     parsFit = np.polyfit(self.mu, self.cov[:, i, j] - model[:, i, j],
                                          2, w=self.sqrtW[:, i, j])
                     # model equation(Eq. 20) in Astier+19:
-                    a[i, j] += parsFit[0]
-                    noise[i, j] += parsFit[2]*gain*gain
+                    self.a[i, j] += parsFit[0]
+                    self.noise[i, j] += parsFit[2]*self.gain*self.gain
                     if(i + j == 0):
-                        gain = 1./(1/gain+parsFit[1])
-                        self.params['gain'].full[0] = gain
+                        self.gain = 1./(1/self.gain+parsFit[1])
             chi2 = (self.weightedRes()**2).sum()
             if chi2 > oldChi2:
                 break
             oldChi2 = chi2
 
-        return
-
-    def getParamValues(self):
-        """Return an array of free parameter values (it is a copy)."""
-        return self.params.free + 0.
-
-    def setParamValues(self, p):
-        """Set parameter values."""
-        self.params.free = p
         return
 
     def evalCovModel(self, mu=None):
@@ -280,77 +253,52 @@ class CovFit:
         is defined in this code as "c=ab".
         """
         sa = (self.r, self.r)
-        a = self.params['a'].full.reshape(sa)
-        c = self.params['c'].full.reshape(sa)
-        gain = self.params['gain'].full[0]
-        noise = self.params['noise'].full.reshape(sa)
         # pad a with zeros and symmetrize
         aEnlarged = np.zeros((int(sa[0]*1.5)+1, int(sa[1]*1.5)+1))
-        aEnlarged[0:sa[0], 0:sa[1]] = a
+        aEnlarged[0:sa[0], 0:sa[1]] = self.a
         aSym = symmetrize(aEnlarged)
         # pad c with zeros and symmetrize
         cEnlarged = np.zeros((int(sa[0]*1.5)+1, int(sa[1]*1.5)+1))
-        cEnlarged[0:sa[0], 0:sa[1]] = c
+        cEnlarged[0:sa[0], 0:sa[1]] = self.c
         cSym = symmetrize(cEnlarged)
         a2 = fftconvolve(aSym, aSym, mode='same')
         a3 = fftconvolve(a2, aSym, mode='same')
         ac = fftconvolve(aSym, cSym, mode='same')
         (xc, yc) = np.unravel_index(np.abs(aSym).argmax(), a2.shape)
         range = self.r
-        a1 = a[np.newaxis, :, :]
+        a1 = self.a[np.newaxis, :, :]
         a2 = a2[np.newaxis, xc:xc + range, yc:yc + range]
         a3 = a3[np.newaxis, xc:xc + range, yc:yc + range]
         ac = ac[np.newaxis, xc:xc + range, yc:yc + range]
-        c1 = c[np.newaxis, ::]
+        c1 = self.c[np.newaxis, ::]
         if mu is None:
             mu = self.mu
         # assumes that mu is 1d
-        bigMu = mu[:, np.newaxis, np.newaxis]*gain
+        bigMu = mu[:, np.newaxis, np.newaxis]*self.gain
         # c(=a*b in Astier+19) also has a contribution to the last
         # term, that is absent for now.
-        covModel = (bigMu/(gain*gain)*(a1*bigMu+2./3.*(bigMu*bigMu)*(a2 + c1)
-                    + (1./3.*a3 + 5./6.*ac)*(bigMu*bigMu*bigMu)) + noise[np.newaxis, :, :]/gain**2)
+        covModel = (bigMu/(self.gain*self.gain)*(a1*bigMu+2./3.*(bigMu*bigMu)*(a2 + c1)
+                    + (1./3.*a3 + 5./6.*ac)*(bigMu*bigMu*bigMu)) + self.noise[np.newaxis, :, :]/self.gain**2)
         # add the Poisson term, and the read out noise (variance)
-        covModel[:, 0, 0] += mu/gain
+        covModel[:, 0, 0] += mu/self.gain
 
         return covModel
 
-    def _getCovParams(self, what):
-        """Get covariance matrix of parameters from fit"""
-        indices = self.params[what].indexof()
-        i1 = indices[:, np.newaxis]
-        i2 = indices[np.newaxis, :]
-        if self.covParams is not None:
-            covp = self.covParams[i1, i2]
-        else:
-            covp = None
-        return covp
-
     def getGainErr(self):
         """Get error on fitted gain parameter"""
-        if self._getCovParams('gain') is not None:
-            gainErr = np.sqrt(self._getCovParams('gain')[0][0])
+        if self.covParams is not None:
+            gainErr = np.sqrt(self.covParams[-1][-1])
         else:
             gainErr = 0.0
         return gainErr
 
-    def getNoiseSig(self):
-        """Square root of diagonal of the parameter covariance of the fitted
-        "noise" matrix
-        """
-        if self._getCovParams('noise') is not None:
-            covNoise = self._getCovParams('noise')
-            noise = np.sqrt(covNoise.diagonal()).reshape((self.r, self.r))
-        else:
-            noise = None
-        return noise
-
     def getRonErr(self):
         """Get error on readout noise parameter"""
-        ron = np.sqrt(self.params['noise'].full[0])
+        ron = np.sqrt(self.noise[0][0])
         ronSqrt = np.sqrt(np.fabs(ron))
-        if self.getNoiseSig() is not None:
-            noiseSigma = self.getNoiseSig()[0][0]
+        if self.covParams is not None:
+            lenParams = self.r*self.r
+            noiseSigma = self.covParams[2*lenParams:3*lenParams][2*lenParams:3*lenParams][0][0]
             ronErr = 0.5*(noiseSigma/np.fabs(ron))*ronSqrt
         else:
             ronErr = np.nan
@@ -374,8 +322,6 @@ class CovFit:
                                              c.getParamValues(),
                                              full_output=True)
         """
-        if params is not None:
-            self.setParamValues(params)
         covModel = np.nan_to_num(self.evalCovModel())
         weightedRes = (covModel-self.cov)*self.sqrtW
 
@@ -414,8 +360,14 @@ class CovFit:
         is defined in this code as "c=ab".
         """
         if pInit is None:
-            pInit = self.getParamValues()
+            pInit = np.concatenate((self.a.flatten(), self.c.flatten(), self.noise.flatten(),
+                                    np.array(self.gain)), axis=None)
         params, paramsCov, _, mesg, ierr = leastsq(self.weightedRes, pInit, full_output=True)
+        lenParams = self.r*self.r
+        self.a = params[:lenParams].reshape((self.r, self.r))
+        self.c = params[lenParams:2*lenParams].reshape((self.r, self.r))
+        self.noise = params[2*lenParams:3*lenParams].reshape((self.r, self.r))
+        self.gain = params[-1]
         self.covParams = paramsCov
 
         return params
@@ -470,7 +422,7 @@ class CovFit:
         unitsElectrons=False.
         """
         if unitsElectrons:
-            gain = self.getGain()
+            gain = self.gain
         else:
             gain = 1.0
 
