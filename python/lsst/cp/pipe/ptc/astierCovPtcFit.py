@@ -219,13 +219,17 @@ class CovFit:
 
         return
 
-    def evalCovModel(self, mu=None):
+    def evalCovModel(self, mu=None, setBtoZero=False):
         """Computes full covariances model (Eq. 20 of Astier+19).
 
         Parameters
         ----------
         mu : `numpy.array`, (N,), optional
             List of mean signals.
+
+        setBtoZero=False : `bool`, optional
+            Set "b" parameter in full model (see Astier+19) to zero.
+
 
         Returns
         -------
@@ -277,6 +281,9 @@ class CovFit:
         bigMu = mu[:, np.newaxis, np.newaxis]*self.gain
         # c(=a*b in Astier+19) also has a contribution to the last
         # term, that is absent for now.
+        if setBtoZero:
+            c1 = np.zeros_like(c1)
+            ac = np.zeros_like(ac)
         covModel = (bigMu/(self.gain*self.gain)*(a1*bigMu+2./3.*(bigMu*bigMu)*(a2 + c1)
                     + (1./3.*a3 + 5./6.*ac)*(bigMu*bigMu*bigMu)) + self.noise[np.newaxis, :, :]/self.gain**2)
         # add the Poisson term, and the read out noise (variance)
@@ -310,8 +317,8 @@ class CovFit:
         mask = weights != 0
         return mask
 
-    def weightedRes(self, params=None):
-        """Weighted residuals.
+    def weightedResFullModel(self, params=None):
+        """Weighted residuals for full model fit.
 
         Notes
         -----
@@ -327,12 +334,29 @@ class CovFit:
 
         return weightedRes.flatten()
 
-    def fitFullModel(self, pInit=None):
+    def weightedResNoB(self, params=None):
+        """Weighted residuals for full model fit with b=0.
+
+        Notes
+        -----
+        To be used via:
+        c = CovFit(meanSignals, covariances, covsSqrtWeights)
+        c.initFit()
+        coeffs, cov, _, mesg, ierr = leastsq(c.weightedRes,
+                                             c.getParamValues(),
+                                             full_output=True)
+        """
+        covModel = np.nan_to_num(self.evalCovModel(setBtoZero=True))
+        weightedRes = (covModel-self.cov)*self.sqrtW
+
+        return weightedRes.flatten()
+
+    def fitFullModel(self, pInit=None, setBtoZero=False):
         """Fit measured covariances to full model in Astier+19 (Eq. 20)
 
         Parameters
         ----------
-        pInit : `list`
+        pInit : `list`, optional
             Initial parameters of the fit.
             len(pInit) = #entries(a) + #entries(c) + #entries(noise) + 1
             len(pInit) = r^2 + r^2 + r^2 + 1, where "r" is the maximum lag
@@ -340,6 +364,9 @@ class CovFit:
               is the gain.
             If "b" is 0, then "c" is 0, and len(pInit) will have r^2 fewer
               entries.
+
+        setBtoZero : `bool`, optional
+            Set "b" parameter in full model (see Astier+19) to zero.
 
         Returns
         -------
@@ -362,7 +389,13 @@ class CovFit:
         if pInit is None:
             pInit = np.concatenate((self.a.flatten(), self.c.flatten(), self.noise.flatten(),
                                     np.array(self.gain)), axis=None)
-        params, paramsCov, _, mesg, ierr = leastsq(self.weightedRes, pInit, full_output=True)
+
+        if setBtoZero:
+            fullModelFunc = self.weightedResNoB
+        else:
+            fullModelFunc = self.weightedRes
+
+        params, paramsCov, _, mesg, ierr = leastsq(fullModelFunc, pInit, full_output=True)
         lenParams = self.r*self.r
         self.a = params[:lenParams].reshape((self.r, self.r))
         self.c = params[lenParams:2*lenParams].reshape((self.r, self.r))

@@ -265,6 +265,7 @@ def fitDataFullCovariance(dataset):
 
     # list of CovFit objects, indexed by amp number
     covFitDict = {}
+    covFitNoBDict = {}
     for ampName in dataset.ampNames:
         # If there is a bad amp, don't fit it
         if ampName in dataset.badAmps:
@@ -276,13 +277,15 @@ def fitDataFullCovariance(dataset):
 
         cc = CovFit(muAtAmp, covAtAmp, covSqrtWeightsAtAmp, dataset.covMatrixSide, maskAtAmp)
         cc.initFit()  # allows to get a crude gain.
+        cc.fiFullModel()
         covFitDict[ampName] = cc
 
-    covFitNoBDict = {}
-    for ext, c in covFitDict.items():
-        c.fitFullModel()
-        covFitNoBDict[ext] = c
-        c.fitFullModel()
+        # No B
+        ccNoB = CovFit(muAtAmp, covAtAmp, covSqrtWeightsAtAmp, dataset.covMatrixSide, maskAtAmp)
+        ccNoB.iniFit()
+        ccNoB.fiFullModel(setBtoZero=True)
+        covFitNoBDict[ampName] = ccNoB
+
     return covFitDict, covFitNoBDict
 
 
