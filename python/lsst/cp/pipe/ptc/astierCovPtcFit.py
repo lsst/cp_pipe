@@ -212,7 +212,7 @@ class CovFit:
                     self.noise[i, j] += parsFit[2]*self.gain*self.gain
                     if(i + j == 0):
                         self.gain = 1./(1/self.gain+parsFit[1])
-            chi2 = (self.weightedRes()**2).sum()
+            chi2 = (self.weightedResFullModel()**2).sum()
             if chi2 > oldChi2:
                 break
             oldChi2 = chi2
@@ -393,7 +393,7 @@ class CovFit:
         if setBtoZero:
             fullModelFunc = self.weightedResNoB
         else:
-            fullModelFunc = self.weightedRes
+            fullModelFunc = self.weightedResFullModel
 
         params, paramsCov, _, mesg, ierr = leastsq(fullModelFunc, pInit, full_output=True)
         lenParams = self.r*self.r

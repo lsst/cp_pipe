@@ -32,7 +32,7 @@ from operator import itemgetter
 
 import lsst.pipe.base.connectionTypes as cT
 
-from .astierCovPtcUtils import fitDataFullCovariance
+from .astierCovPtcFit import CovFit
 
 from lsst.ip.isr import PhotonTransferCurveDataset
 
@@ -320,7 +320,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             # This model uses the full covariance matrix in the fit.
             # The PTC is technically defined as variance vs signal,
             # with variance = Cov_00
-            dataset = self.fitCovariancesAstier(dataset)
+            dataset = self.fitDataFullCovariance(dataset)
         elif fitType in ["POLYNOMIAL", "EXPAPPROXIMATION"]:
             # The PTC is technically defined as variance vs signal
             dataset = self.fitPtc(dataset)
@@ -332,7 +332,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
 
         return dataset
 
-    def fitCovariancesAstier(self, dataset):
+    def fitDataFullCovariance(self, dataset):
         """Fit measured flat covariances to the full model in
         Astier+19 (Eq. 20).
 
@@ -350,69 +350,33 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             fit vectors and the fit parameters. See the class
             `PhotonTransferCurveDatase`.
         """
-        covFits, covFitsNoB = fitDataFullCovariance(dataset)
-        dataset = self.getOutputPtcDataCovAstier(dataset, covFits, covFitsNoB)
 
-        return dataset
+        for ampName in dataset.ampNames:
+            # If there is a bad amp, don't fit it
+            if ampName in dataset.badAmps:
+                continue
+            maskAtAmp = dataset.expIdMask[ampName]
+            muAtAmp = dataset.rawMeans[ampName]
+            covAtAmp = dataset.covariances[ampName]
+            covSqrtWeightsAtAmp = dataset.covariancesSqrtWeights[ampName]
 
-    def getOutputPtcDataCovAstier(self, dataset, covFits, covFitsNoB):
-        """Get output data for PhotonTransferCurveCovAstierDataset
-        from CovFit objects.
+            fit = CovFit(muAtAmp, covAtAmp, covSqrtWeightsAtAmp, dataset.covMatrixSide, maskAtAmp)
+            fit.initFit()  # allows to get a crude gain.
+            fit.fitFullModel()
 
-        Parameters
-        ----------
-        dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
-            The dataset containing information such as the means,
-            variances and exposure times.
-        covFits : `dict`
-            Dictionary of CovFit objects, with amp names as keys.
-        covFitsNoB : `dict`
-             Dictionary of CovFit objects, with amp names as keys, and
-             'b=0' in Eq. 20 of Astier+19.
+            # No B
+            fitNoB = CovFit(muAtAmp, covAtAmp, covSqrtWeightsAtAmp, dataset.covMatrixSide, maskAtAmp)
+            fitNoB.initFit()
+            fitNoB.fitFullModel(setBtoZero=True)
 
-        Returns
-        -------
-        dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
-            This is the same dataset as the input parameter, however,
-            it has been modified to include extra information such as
-            the mask 1D array, gains, reoudout noise, measured signal,
-            measured variance, modeled variance, a, and b coefficient
-            matrices (see Astier+19) per amplifier.  See the class
-            `PhotonTransferCurveDatase`.
-        """
-        assert(len(covFits) == len(covFitsNoB))
-
-        for i, amp in enumerate(dataset.ampNames):
-            lenInputTimes = len(dataset.rawExpTimes[amp])
+            # Put the information in the PTC dataset
+            lenInputTimes = len(dataset.rawExpTimes[ampName])
             # Not used when ptcFitType is 'FULLCOVARIANCE'
-            dataset.ptcFitPars[amp] = [np.nan]
-            dataset.ptcFitParsError[amp] = [np.nan]
-            dataset.ptcFitChiSq[amp] = np.nan
-            if amp in covFits:
-                fit = covFits[amp]
-                fitNoB = covFitsNoB[amp]
-                # Save full covariances, covariances models, and their weights
-                # dataset.expIdMask is already full
-                dataset.covariances[amp] = fit.cov
-                dataset.covariancesModel[amp] = fit.evalCovModel()
-                dataset.covariancesSqrtWeights[amp] = fit.sqrtW
-                dataset.aMatrix[amp] = fit.a
-                dataset.bMatrix[amp] = fit.c/fit.a
-                dataset.covariancesModelNoB[amp] = fitNoB.evalCovModel()
-                dataset.aMatrixNoB[amp] = fitNoB.a
+            dataset.ptcFitPars[ampName] = [np.nan]
+            dataset.ptcFitParsError[ampName] = [np.nan]
+            dataset.ptcFitChiSq[ampName] = np.nan
 
-                (meanVecFinal, varVecFinal, varVecModel,
-                    wc, varMask) = fit.getFitData(0, 0, divideByMu=False)
-
-                dataset.gain[amp] = fit.gain
-                dataset.gainErr[amp] = fit.getGainErr()
-                dataset.noise[amp] = fit.noise[0][0]
-                dataset.noiseErr[amp] = fit.getRonErr()
-                dataset.finalVars[amp] = varVecFinal
-                dataset.finalModelVars[amp] = varVecModel
-                dataset.finalMeans[amp] = meanVecFinal
-
-            else:
+            if ampName not in dataset.badAmps:
                 # Bad amp
                 # Entries need to have proper dimensions so read/write
                 # with astropy.Table works.
@@ -420,22 +384,43 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
                 nanMatrix = np.full((matrixSide, matrixSide), np.nan)
                 listNanMatrix = np.full((lenInputTimes, matrixSide, matrixSide), np.nan)
 
-                dataset.covariances[amp] = listNanMatrix
-                dataset.covariancesModel[amp] = listNanMatrix
-                dataset.covariancesSqrtWeights[amp] = listNanMatrix
-                dataset.aMatrix[amp] = nanMatrix
-                dataset.bMatrix[amp] = nanMatrix
-                dataset.covariancesModelNoB[amp] = listNanMatrix
-                dataset.aMatrixNoB[amp] = nanMatrix
+                dataset.covariances[ampName] = listNanMatrix
+                dataset.covariancesModel[ampName] = listNanMatrix
+                dataset.covariancesSqrtWeights[ampName] = listNanMatrix
+                dataset.aMatrix[ampName] = nanMatrix
+                dataset.bMatrix[ampName] = nanMatrix
+                dataset.covariancesModelNoB[ampName] = listNanMatrix
+                dataset.aMatrixNoB[ampName] = nanMatrix
 
-                dataset.expIdMask[amp] = np.repeat(np.nan, lenInputTimes)
-                dataset.gain[amp] = np.nan
-                dataset.gainErr[amp] = np.nan
-                dataset.noise[amp] = np.nan
-                dataset.noiseErr[amp] = np.nan
-                dataset.finalVars[amp] = np.repeat(np.nan, lenInputTimes)
-                dataset.finalModelVars[amp] = np.repeat(np.nan, lenInputTimes)
-                dataset.finalMeans[amp] = np.repeat(np.nan, lenInputTimes)
+                dataset.expIdMask[ampName] = np.repeat(np.nan, lenInputTimes)
+                dataset.gain[ampName] = np.nan
+                dataset.gainErr[ampName] = np.nan
+                dataset.noise[ampName] = np.nan
+                dataset.noiseErr[ampName] = np.nan
+                dataset.finalVars[ampName] = np.repeat(np.nan, lenInputTimes)
+                dataset.finalModelVars[ampName] = np.repeat(np.nan, lenInputTimes)
+                dataset.finalMeans[ampName] = np.repeat(np.nan, lenInputTimes)
+            else:
+                # Save full covariances, covariances models, and their weights
+                # dataset.expIdMask is already full
+                dataset.covariances[ampName] = fit.cov
+                dataset.covariancesModel[ampName] = fit.evalCovModel()
+                dataset.covariancesSqrtWeights[ampName] = fit.sqrtW
+                dataset.aMatrix[ampName] = fit.a
+                dataset.bMatrix[ampName] = fit.c/fit.a
+                dataset.covariancesModelNoB[ampName] = fitNoB.evalCovModel(setBtoZero=True)
+                dataset.aMatrixNoB[ampName] = fitNoB.a
+
+                (meanVecFinal, varVecFinal, varVecModel,
+                    wc, varMask) = fit.getFitData(0, 0, divideByMu=False)
+
+                dataset.gain[ampName] = fit.gain
+                dataset.gainErr[ampName] = fit.getGainErr()
+                dataset.noise[ampName] = fit.noise[0][0]
+                dataset.noiseErr[ampName] = fit.getRonErr()
+                dataset.finalVars[ampName] = varVecFinal
+                dataset.finalModelVars[ampName] = varVecModel
+                dataset.finalMeans[ampName] = meanVecFinal
 
         return dataset
 
