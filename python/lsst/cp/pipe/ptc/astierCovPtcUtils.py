@@ -232,37 +232,6 @@ def covDirectValue(diffImage, weightImage, dx, dy):
     return cov, nPix
 
 
-def parseData(dataset):
-    """ Returns a list of CovFit objects, indexed by amp number.
-
-    Params
-    ------
-    dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
-        The PTC dataset containing the means, variances, and
-        exposure times.
-
-    Returns
-    -------
-    covFitDict : `dict`
-        Dictionary with amps as keys, and CovFit objects as values.
-    """
-    covFitDict = {}
-    for ampName in dataset.ampNames:
-        # If there is a bad amp, don't fit it
-        if ampName in dataset.badAmps:
-            continue
-        maskAtAmp = dataset.expIdMask[ampName]
-        muAtAmp = dataset.rawMeans[ampName]
-        covAtAmp = dataset.covariances[ampName]
-        covSqrtWeightsAtAmp = dataset.covariancesSqrtWeights[ampName]
-
-        cc = CovFit(muAtAmp, covAtAmp, covSqrtWeightsAtAmp, dataset.covMatrixSide, maskAtAmp)
-        cc.initFit()  # allows to get a crude gain.
-        covFitDict[ampName] = cc
-
-    return covFitDict
-
-
 def fitDataFullCovariance(dataset):
     """Fit data to model in Astier+19 (Eq. 20).
 
@@ -293,7 +262,22 @@ def fitDataFullCovariance(dataset):
     "b" appears in Eq. 20 only through the "ab" combination, which is
     defined in this code as "c=ab".
     """
-    covFitDict = parseData(dataset)
+
+    # list of CovFit objects, indexed by amp number
+    covFitDict = {}
+    for ampName in dataset.ampNames:
+        # If there is a bad amp, don't fit it
+        if ampName in dataset.badAmps:
+            continue
+        maskAtAmp = dataset.expIdMask[ampName]
+        muAtAmp = dataset.rawMeans[ampName]
+        covAtAmp = dataset.covariances[ampName]
+        covSqrtWeightsAtAmp = dataset.covariancesSqrtWeights[ampName]
+
+        cc = CovFit(muAtAmp, covAtAmp, covSqrtWeightsAtAmp, dataset.covMatrixSide, maskAtAmp)
+        cc.initFit()  # allows to get a crude gain.
+        covFitDict[ampName] = cc
+
     covFitNoBDict = {}
     for ext, c in covFitDict.items():
         c.fitFullModel()
