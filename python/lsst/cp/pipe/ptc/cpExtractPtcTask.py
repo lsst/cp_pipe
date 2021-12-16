@@ -26,11 +26,9 @@ import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 from lsst.cp.pipe.utils import (arrangeFlatsByExpTime, arrangeFlatsByExpId,
                                 sigmaClipCorrection, CovFastFourierTransform,
-                                computeCovDirect)
+                                computeCovDirect, makeCovArray)
 
 import lsst.pipe.base.connectionTypes as cT
-
-from .astierCovPtcFit import makeCovArray
 
 from lsst.ip.isr import PhotonTransferCurveDataset
 from lsst.ip.isr import IsrTask

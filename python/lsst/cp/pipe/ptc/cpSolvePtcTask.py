@@ -24,15 +24,14 @@ from collections import Counter
 
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
-from lsst.cp.pipe.utils import (fitLeastSq, fitBootstrap, funcPolynomial, funcAstier)
+from lsst.cp.pipe.utils import (fitLeastSq, fitBootstrap, funcPolynomial, funcAstier, symmetrize)
 
+from scipy.signal import fftconvolve
 from scipy.optimize import least_squares
 from itertools import groupby
 from operator import itemgetter
 
 import lsst.pipe.base.connectionTypes as cT
-
-from .astierCovPtcFit import CovFit
 
 from lsst.ip.isr import PhotonTransferCurveDataset
 
@@ -349,26 +348,67 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             it has been modified to include information such as the
             fit vectors and the fit parameters. See the class
             `PhotonTransferCurveDatase`.
+
+        Notes
+        -----
+        The parameters of the full model for C_ij(mu) ("C_ij" and "mu"
+        in ADU^2 and ADU, respectively) in Astier+19 (Eq. 20) are:
+            "a" coefficients (r by r matrix), units: 1/e
+            "b" coefficients (r by r matrix), units: 1/e
+            noise matrix (r by r matrix), units: e^2
+            gain, units: e/ADU
+        "b" appears in Eq. 20 only through the "ab" combination, which
+        is defined in this code as "c=ab".
+
+        Total number of parameters: #entries(a) + #entries(c) + #entries(noise)
+        + 1. This is equivalent to r^2 + r^2 + r^2 + 1, where "r" is the
+        maximum lag considered for the covariances calculation, and the
+        extra "1" is the gain. If "b" is 0, then "c" is 0, and len(pInit) will
+        have r^2 fewer entries.
         """
 
         for ampName in dataset.ampNames:
-            # If there is a bad amp, don't fit it
-            if ampName in dataset.badAmps:
-                continue
-            maskAtAmp = dataset.expIdMask[ampName]
             muAtAmp = dataset.rawMeans[ampName]
-            covAtAmp = dataset.covariances[ampName]
-            covSqrtWeightsAtAmp = dataset.covariancesSqrtWeights[ampName]
+            maskAtAmp = dataset.expIdMask[ampName]
+            if len(maskAtAmp) == 0:
+                maskAtAmp = np.repeat(True, len(muAtAmp))
 
-            fit = CovFit(muAtAmp, covAtAmp, covSqrtWeightsAtAmp, dataset.covMatrixSide, maskAtAmp)
-            fit.initFit()  # allows to get a crude gain.
-            fit.fitFullModel()
+            muAtAmp = muAtAmp[maskAtAmp]
+            covAtAmp = np.nan_to_num(dataset.covariances[ampName])[maskAtAmp]
+            covSqrtWeightsAtAmp = np.nan_to_num(dataset.covariancesSqrtWeights[ampName])[maskAtAmp]
 
-            # No B
-            fitNoB = CovFit(muAtAmp, covAtAmp, covSqrtWeightsAtAmp, dataset.covMatrixSide, maskAtAmp)
-            fitNoB.initFit()
-            fitNoB.fitFullModel(setBtoZero=True)
+            # Initial fit, to approximate parameters, with c=0
+            a0, c0, noise0, gain0 = self.initialFitFullcovariance(muAtAmp, covAtAmp, covSqrtWeightsAtAmp)
 
+            # Fit full model (Eq. 20 of Astier+19) and same model with
+            # b=0 (c=0 in this code)
+            pInit = np.concatenate((a0.flatten(), c0.flatten(), noise0.flatten(), np.array(gain0)), axis=None)
+            matrixSide = self.config.maximumRangeCovariancesAstier
+            lenParams = matrixSide*matrixSide
+            functionsDict = {'fullModel': self.funcFullCovarianceModel,
+                             'fullModelNoB': self.funcFullCovarianceModelNoB}
+            fitResults = {'fullModel': {'a': [], 'c': [], 'noise': [], 'gain': [], 'paramsErr': []},
+                          'fullModelNoB': {'a': [], 'c': [], 'noise': [], 'gain': [], 'paramsErr': []}}
+            for key in functionsDict:
+                params, paramsErr, _ = fitLeastSq(pInit, muAtAmp,
+                                                  covAtAmp.flatten(), functionsDict[key],
+                                                  weightsY=covSqrtWeightsAtAmp.flatten())
+                a = params[:lenParams].reshape((matrixSide, matrixSide))
+                c = params[lenParams:2*lenParams].reshape((matrixSide, matrixSide))
+                noise = params[2*lenParams:3*lenParams].reshape((matrixSide, matrixSide))
+                gain = params[-1]
+                if key == 'fullModel':
+                    fitResults['fullModel']['a'] = a
+                    fitResults['fullModel']['c'] = c
+                    fitResults['fullModel']['noise'] = noise
+                    fitResults['fullModel']['gain'] = gain
+                    fitResults['fullModel']['paramsErr'] = paramsErr
+                else:
+                    fitResults['fullModelNoB']['a'] = a
+                    fitResults['fullModelNoB']['c'] = c
+                    fitResults['fullModelNoB']['noise'] = noise
+                    fitResults['fullModelNoB']['gain'] = gain
+                    fitResults['fullModelNoB']['paramsErr'] = paramsErr
             # Put the information in the PTC dataset
             lenInputTimes = len(dataset.rawExpTimes[ampName])
             # Not used when ptcFitType is 'FULLCOVARIANCE'
@@ -376,11 +416,10 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             dataset.ptcFitParsError[ampName] = [np.nan]
             dataset.ptcFitChiSq[ampName] = np.nan
 
-            if ampName not in dataset.badAmps:
+            if ampName in dataset.badAmps:
                 # Bad amp
                 # Entries need to have proper dimensions so read/write
                 # with astropy.Table works.
-                matrixSide = self.config.maximumRangeCovariancesAstier
                 nanMatrix = np.full((matrixSide, matrixSide), np.nan)
                 listNanMatrix = np.full((lenInputTimes, matrixSide, matrixSide), np.nan)
 
@@ -403,27 +442,207 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             else:
                 # Save full covariances, covariances models, and their weights
                 # dataset.expIdMask is already full
-                dataset.covariances[ampName] = fit.cov
-                dataset.covariancesModel[ampName] = fit.evalCovModel()
-                dataset.covariancesSqrtWeights[ampName] = fit.sqrtW
-                dataset.aMatrix[ampName] = fit.a
-                dataset.bMatrix[ampName] = fit.c/fit.a
-                dataset.covariancesModelNoB[ampName] = fitNoB.evalCovModel(setBtoZero=True)
-                dataset.aMatrixNoB[ampName] = fitNoB.a
-
-                (meanVecFinal, varVecFinal, varVecModel,
-                    wc, varMask) = fit.getFitData(0, 0, divideByMu=False)
-
-                dataset.gain[ampName] = fit.gain
-                dataset.gainErr[ampName] = fit.getGainErr()
-                dataset.noise[ampName] = fit.noise[0][0]
-                dataset.noiseErr[ampName] = fit.getRonErr()
-                dataset.finalVars[ampName] = varVecFinal
-                dataset.finalModelVars[ampName] = varVecModel
-                dataset.finalMeans[ampName] = meanVecFinal
+                dataset.covariances[ampName] = covAtAmp
+                dataset.covariancesModel[ampName] = self.evalCovModel(muAtAmp,
+                                                                      fitResults['fullModel']['a'],
+                                                                      fitResults['fullModel']['c'],
+                                                                      fitResults['fullModel']['noise'],
+                                                                      fitResults['fullModel']['gain'])
+                dataset.covariancesSqrtWeights[ampName] = covSqrtWeightsAtAmp
+                dataset.aMatrix[ampName] = fitResults['fullModel']['a']
+                dataset.bMatrix[ampName] = fitResults['fullModel']['c']/fitResults['fullModel']['a']
+                dataset.covariancesModelNoB[ampName] = self.evalCovModel(muAtAmp,
+                                                                         fitResults['fullModelNoB']['a'],
+                                                                         fitResults['fullModelNoB']['c'],
+                                                                         fitResults['fullModelNoB']['noise'],
+                                                                         fitResults['fullModelNoB']['gain'],
+                                                                         setBtoZero=True)
+                dataset.aMatrixNoB[ampName] = fitResults['fullModelNoB']['a']
+                dataset.gain[ampName] = fitResults['fullModel']['gain']
+                dataset.gainErr[ampName] = fitResults['fullModel']['paramsErr'][-1]
+                readoutNoise = fitResults['fullModel']['noise'][0][0]
+                readoutNoiseSqrt = np.sqrt(np.fabs(readoutNoise))
+                dataset.noise[ampName] = readoutNoise
+                readoutNoiseSigma = fitResults['fullModel']['paramsErr'][2*lenParams]
+                dataset.noiseErr[ampName] = 0.5*(readoutNoiseSigma/np.fabs(readoutNoise))*readoutNoiseSqrt
+                dataset.finalVars[ampName] = covAtAmp[:, 0, 0]
+                dataset.finalModelVars[ampName] = dataset.covariancesModel[ampName][:, 0, 0]
+                dataset.finalMeans[ampName] = muAtAmp
 
         return dataset
 
+    def initialFitFullcovariance(self, mu, cov, sqrtW):
+        """ Performs a crude parabolic fit of the data in order to start
+        the full fit close to the solution, setting b=0 (c=0) in Eq. 20
+        of Astier+19.
+        """
+        matrixSide = self.config.maximumRangeCovariancesAstier
+
+        # Initialize fit parameters
+        a = np.zeros((matrixSide, matrixSide))
+        c = np.zeros((matrixSide, matrixSide))
+        noise = np.zeros((matrixSide, matrixSide))
+        gain = 1.
+
+        # iterate the fit to account for higher orders
+        # the chi2 does not necessarily go down, so one could
+        # stop when it increases
+        oldChi2 = 1e30
+        for _ in range(5):
+            model = np.nan_to_num(self.evalCovModel(mu, a, c, noise, gain, setBtoZero=True))
+            # loop on lags
+            for i in range(matrixSide):
+                for j in range(matrixSide):
+                    # fit a parabola for a given lag
+                    parsFit = np.polyfit(mu, cov[:, i, j] - model[:, i, j],
+                                         2, w=sqrtW[:, i, j])
+                    # model equation (Eq. 20) in Astier+19, with c=a*b=0:
+                    a[i, j] += parsFit[0]
+                    noise[i, j] += parsFit[2]
+                    if(i + j == 0):
+                        gain = 1./(1/gain+parsFit[1])
+            weightedRes = (model - cov)*sqrtW
+            chi2 = (weightedRes.flatten()**2).sum()
+            if chi2 > oldChi2:
+                break
+            oldChi2 = chi2
+
+        return a, c, noise, gain
+
+    def funcFullCovarianceModel(self, params, x):
+        """Model to fit covariances from flat fields; Equation 20 of
+        Astier+19.
+
+        Parameters
+        ----------
+        params : `list`
+            Parameters of the model: aMatrix, CMatrix, noiseMatrix,
+            gain (e/ADU).
+
+        x : `numpy.array`, (N,)
+            Signal mu (ADU)
+
+        Returns
+        -------
+        y : `numpy.array`, (N,)
+            Covariance matrix.
+        """
+        matrixSide = self.config.maximumRangeCovariancesAstier
+        lenParams = matrixSide*matrixSide
+        aMatrix = params[:lenParams].reshape((matrixSide, matrixSide))
+        cMatrix = params[lenParams:2*lenParams].reshape((matrixSide, matrixSide))
+        noiseMatrix = params[2*lenParams:3*lenParams].reshape((matrixSide, matrixSide))
+        gain = params[-1]
+
+        return self.evalCovModel(x, aMatrix, cMatrix, noiseMatrix, gain).flatten()
+
+    def funcFullCovarianceModelNoB(self, params, x):
+        """Model to fit covariances from flat fields; Equation 20 of
+        Astier+19, with b=0 (equivalent to c=a*b=0 in this code).
+
+        Parameters
+        ----------
+        params : `list`
+            Parameters of the model: aMatrix, CMatrix, noiseMatrix,
+            gain (e/ADU).
+
+        x : `numpy.array`, (N,)
+            Signal mu (ADU)
+
+        Returns
+        -------
+        y : `numpy.array`, (N,)
+            Covariance matrix.
+        """
+        matrixSide = self.config.maximumRangeCovariancesAstier
+        lenParams = matrixSide*matrixSide
+        aMatrix = params[:lenParams].reshape((matrixSide, matrixSide))
+        cMatrix = params[lenParams:2*lenParams].reshape((matrixSide, matrixSide))
+        noiseMatrix = params[2*lenParams:3*lenParams].reshape((matrixSide, matrixSide))
+        gain = params[-1]
+
+        return self.evalCovModel(x, aMatrix, cMatrix, noiseMatrix, gain, setBtoZero=True).flatten()
+
+    def evalCovModel(self, mu, aMatrix, cMatrix, noiseMatrix, gain, setBtoZero=False):
+        """Computes full covariances model (Eq. 20 of Astier+19).
+
+        Parameters
+        ----------
+        mu : `numpy.array`, (N,)
+            List of mean signals.
+
+        aMatrix : `numpy.array`, (M, M)
+            "a" parameter per flux in Eq. 20 of Astier+19.
+
+        cMatrix : `numpy.array`, (M, M)
+            "c"="ab" parameter per flux in Eq. 20 of Astier+19.
+
+        noiseMatrix : `numpy.array`, (M, M)
+            "noise" parameter per flux in Eq. 20 of Astier+19.
+
+        gain : `float`
+            Amplifier gain (e/ADU)
+
+        setBtoZero=False : `bool`, optional
+            Set "b" parameter in full model (see Astier+19) to zero.
+
+        Returns
+        -------
+        covModel : `numpy.array`, (N, M, M)
+            Covariances model.
+
+        Notes
+        -----
+        By default, computes the covModel for the mu's stored(self.mu).
+        Returns cov[Nmu, M, M]. The variance for the PTC is
+        cov[:, 0, 0].  mu and cov are in ADUs and ADUs squared. To use
+        electrons for both, the gain should be set to 1. This routine
+        implements the model in Astier+19 (1905.08677).
+        The parameters of the full model for C_ij(mu) ("C_ij" and "mu"
+        in ADU^2 and ADU, respectively) in Astier+19 (Eq. 20) are:
+        "a" coefficients (M by M matrix), units: 1/e
+        "b" coefficients (M by M matrix), units: 1/e
+        noise matrix (M by M matrix), units: e^2
+        gain, units: e/ADU
+        "b" appears in Eq. 20 only through the "ab" combination, which
+        is defined in this code as "c=ab".
+        """
+        matrixSide = self.config.maximumRangeCovariancesAstier
+        sa = (matrixSide, matrixSide)
+        # pad a with zeros and symmetrize
+        aEnlarged = np.zeros((int(sa[0]*1.5)+1, int(sa[1]*1.5)+1))
+        aEnlarged[0:sa[0], 0:sa[1]] = aMatrix
+        aSym = symmetrize(aEnlarged)
+        # pad c with zeros and symmetrize
+        cEnlarged = np.zeros((int(sa[0]*1.5)+1, int(sa[1]*1.5)+1))
+        cEnlarged[0:sa[0], 0:sa[1]] = cMatrix
+        cSym = symmetrize(cEnlarged)
+        a2 = fftconvolve(aSym, aSym, mode='same')
+        a3 = fftconvolve(a2, aSym, mode='same')
+        ac = fftconvolve(aSym, cSym, mode='same')
+        (xc, yc) = np.unravel_index(np.abs(aSym).argmax(), a2.shape)
+
+        a1 = aMatrix[np.newaxis, :, :]
+        a2 = a2[np.newaxis, xc:xc + matrixSide, yc:yc + matrixSide]
+        a3 = a3[np.newaxis, xc:xc + matrixSide, yc:yc + matrixSide]
+        ac = ac[np.newaxis, xc:xc + matrixSide, yc:yc + matrixSide]
+        c1 = cMatrix[np.newaxis, ::]
+
+        # assumes that mu is 1d
+        bigMu = mu[:, np.newaxis, np.newaxis]*gain
+        # c(=a*b in Astier+19) also has a contribution to the last
+        # term, that is absent for now.
+        if setBtoZero:
+            c1 = np.zeros_like(c1)
+            ac = np.zeros_like(ac)
+        covModel = (bigMu/(gain*gain)*(a1*bigMu+2./3.*(bigMu*bigMu)*(a2 + c1)
+                    + (1./3.*a3 + 5./6.*ac)*(bigMu*bigMu*bigMu)) + noiseMatrix[np.newaxis, :, :]/gain**2)
+        # add the Poisson term, and the read out noise (variance)
+        covModel[:, 0, 0] += mu/gain
+
+        return covModel
+
+    # EXPAPPROXIMATION and POLYNOMIAL fit methods
     @staticmethod
     def _initialParsForPolynomial(order):
         assert(order >= 2)
