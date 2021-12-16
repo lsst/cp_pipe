@@ -35,10 +35,8 @@ import lsst.pipe.base as pipeBase
 from lsst.utils.timer import timeMethod
 
 from lsst.cp.pipe.utils import (funcAstier, funcPolynomial, NonexistentDatasetTaskDataIdContainer,
-                                calculateWeightedReducedChi2)
+                                calculateWeightedReducedChi2, getFitDataFromCovariances)
 from matplotlib.ticker import MaxNLocator
-
-from lsst.cp.pipe.ptc.astierCovPtcUtils import getFitDataFromCovariances
 
 from lsst.ip.isr import PhotonTransferCurveDataset
 

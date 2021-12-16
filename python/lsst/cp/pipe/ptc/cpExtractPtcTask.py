@@ -25,11 +25,11 @@ import lsst.afw.math as afwMath
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 from lsst.cp.pipe.utils import (arrangeFlatsByExpTime, arrangeFlatsByExpId,
-                                sigmaClipCorrection)
+                                sigmaClipCorrection, CovFastFourierTransform,
+                                computeCovDirect)
 
 import lsst.pipe.base.connectionTypes as cT
 
-from .astierCovPtcUtils import (CovFastFourierTransform, computeCovDirect)
 from .astierCovPtcFit import makeCovArray
 
 from lsst.ip.isr import PhotonTransferCurveDataset

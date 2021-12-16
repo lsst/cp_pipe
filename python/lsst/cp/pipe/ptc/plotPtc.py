@@ -33,9 +33,9 @@ from matplotlib.backends.backend_pdf import PdfPages
 import lsst.ip.isr as isr
 
 from lsst.cp.pipe.utils import (funcAstier, funcPolynomial,
-                                calculateWeightedReducedChi2)
+                                calculateWeightedReducedChi2,
+                                getFitDataFromCovariances)
 from matplotlib.ticker import MaxNLocator
-from lsst.cp.pipe.ptc.astierCovPtcUtils import getFitDataFromCovariances
 from lsst.ip.isr import PhotonTransferCurveDataset
 
 
