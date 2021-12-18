@@ -375,31 +375,13 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
     def test_getInitialGoodPoints(self):
         xs = [1, 2, 3, 4, 5, 6]
         ys = [2*x for x in xs]
-        points = self.defaultTaskSolve._getInitialGoodPoints(xs, ys, maxDeviationPositive=0.1,
-                                                             maxDeviationNegative=0.25,
-                                                             minMeanRatioTest=0.,
-                                                             minVarPivotSearch=0.)
+        points = self.defaultTaskSolve._getInitialGoodPoints(xs, ys, minVarPivotSearch=0.)
         assert np.all(points) == np.all(np.array([True for x in xs]))
 
-        ys[-1] = 30
-        points = self.defaultTaskSolve._getInitialGoodPoints(xs, ys,
-                                                             maxDeviationPositive=0.1,
-                                                             maxDeviationNegative=0.25,
-                                                             minMeanRatioTest=0.,
-                                                             minVarPivotSearch=0.)
+        ys[4] = 7  # Variance decreases in two consecutive points after ys[3]=8
+        ys[5] = 6
+        points = self.defaultTaskSolve._getInitialGoodPoints(xs, ys, minVarPivotSearch=0.)
         assert np.all(points) == np.all(np.array([True, True, True, True, False]))
-
-        ys = [2*x for x in xs]
-        newYs = copy.copy(ys)
-        results = [False, True, True, False, False]
-        for i, factor in enumerate([-0.5, -0.1, 0, 0.1, 0.5]):
-            newYs[-1] = ys[-1] + (factor*ys[-1])
-            points = self.defaultTaskSolve._getInitialGoodPoints(xs, newYs, maxDeviationPositive=0.05,
-                                                                 maxDeviationNegative=0.25,
-                                                                 minMeanRatioTest=0.0,
-                                                                 minVarPivotSearch=0.0)
-            assert (np.all(points[0:-2]))  # noqa: E712 - flake8 is wrong here because of numpy.bool
-            assert points[-1] == results[i]
 
     def test_getExpIdsUsed(self):
         localDataset = copy.copy(self.dataset)

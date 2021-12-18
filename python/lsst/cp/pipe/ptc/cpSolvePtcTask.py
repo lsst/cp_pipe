@@ -114,37 +114,10 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
         doc="Maximum number of iterations for outlier rejection in PTC.",
         default=2,
     )
-    initialNonLinearityExclusionThresholdPositive = pexConfig.RangeField(
-        dtype=float,
-        doc="Initially exclude data points with a variance that are more than a factor of this from being"
-            " linear in the positive direction, from the PTC fit. Note that these points will also be"
-            " excluded from the non-linearity fit. This is done before the iterative outlier rejection,"
-            " to allow an accurate determination of the sigmas for said iterative fit.",
-        default=0.05,
-        min=0.0,
-        max=1.0,
-    )
-    initialNonLinearityExclusionThresholdNegative = pexConfig.RangeField(
-        dtype=float,
-        doc="Initially exclude data points with a variance that are more than a factor of this from being"
-            " linear in the negative direction, from the PTC fit. Note that these points will also be"
-            " excluded from the non-linearity fit. This is done before the iterative outlier rejection,"
-            " to allow an accurate determination of the sigmas for said iterative fit.",
-        default=0.25,
-        min=0.0,
-        max=1.0,
-    )
-    minMeanRatioTest = pexConfig.Field(
-        dtype=float,
-        doc="In the initial test to screen out bad points with a ratio test, points with low"
-            " flux can get inadvertantly screened.  This test only screens out points with flux"
-            " above this value.",
-        default=20000,
-    )
     minVarPivotSearch = pexConfig.Field(
         dtype=float,
         doc="The code looks for a pivot signal point after which the variance starts decreasing at high-flux"
-            " to exclude then form the PTC model fit. However, sometimes at low fluxes, the variance"
+            " to exclude then from the PTC model fit. However, sometimes at low fluxes, the variance"
             " decreases slightly. Set this variable for the variance value, in ADU^2, after which the pivot "
             " should be sought.",
         default=10000,
@@ -422,8 +395,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         return (lowers, uppers)
 
     @staticmethod
-    def _getInitialGoodPoints(means, variances, maxDeviationPositive, maxDeviationNegative,
-                              minMeanRatioTest, minVarPivotSearch):
+    def _getInitialGoodPoints(means, variances, minVarPivotSearch):
         """Return a boolean array to mask bad points.
 
         Parameters
@@ -432,16 +404,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             Input array with mean signal values.
         variances : `numpy.array`
             Input array with variances at each mean value.
-        maxDeviationPositive : `float`
-            Maximum deviation from being constant for the variance/mean
-            ratio, in the positive direction.
-        maxDeviationNegative : `float`
-            Maximum deviation from being constant for the variance/mean
-            ratio, in the negative direction.
-        minMeanRatioTest : `float`
-            Minimum signal value (in ADU) after which to start examining
-            the ratios var/mean.
-       minVarPivotSearch : `float`
+        minVarPivotSearch : `float`
             Minimum variance point (in ADU^2) after which the pivot point
             wher the variance starts decreasing should be sought.
 
@@ -453,42 +416,19 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
 
         Notes
         -----
-        A linear function has a constant ratio, so find the median
-        value of the ratios, and exclude the points that deviate from
-        that by more than a factor of maxDeviationPositive/negative.
-        Asymmetric deviations are supported as we expect the PTC to
-        turn down as the flux increases, but sometimes it anomalously
-        turns upwards just before turning over, which ruins the fits,
-        so it is wise to be stricter about restricting positive
-        outliers than negative ones.
-
-        Too high and points that are so bad that fit will fail will be
-        included Too low and the non-linear points will be excluded,
-        biasing the NL fit.  This function also masks points after the
-        variance starts decreasing.
+        Eliminate points beyond which the variance decreases
         """
-        assert(len(means) == len(variances))
-        ratios = [b/a for (a, b) in zip(means, variances)]
-        medianRatio = np.nanmedian(ratios)
-        ratioDeviations = [0.0 if a < minMeanRatioTest else (r/medianRatio)-1
-                           for (a, r) in zip(means, ratios)]
-
-        # so that it doesn't matter if the deviation is expressed as
-        # positive or negative
-        maxDeviationPositive = abs(maxDeviationPositive)
-        maxDeviationNegative = -1. * abs(maxDeviationNegative)
-
-        goodPoints = np.array([True if (r < maxDeviationPositive and r > maxDeviationNegative)
-                              else False for r in ratioDeviations])
-
-        # Eliminate points beyond which the variance decreases
-        pivot = np.where(np.array(np.diff(variances)) < 0)[0]
-        if len(pivot) > 0:
+        goodPoints = np.ones_like(means, dtype=bool)
+        pivotList = np.where(np.array(np.diff(variances)) < 0)[0]
+        if len(pivotList) > 0:
             # For small values, sometimes the variance decreases slightly
             # Only look when var > self.config.minVarPivotSearch
-            pivot = [p for p in pivot if variances[p] > minVarPivotSearch]
-            if len(pivot) > 0:
-                pivot = np.min(pivot)
+            pivotList = [p for p in pivotList if variances[p] > minVarPivotSearch]
+            if len(pivotList) > 0:
+                # Require that the decrease in variance happen for two
+                # consecutive signal levels
+                pivotIndex = np.min(np.where(np.diff(pivotList) == 1)[0])
+                pivot = pivotList[pivotIndex]
                 goodPoints[pivot+1:len(goodPoints)] = False
 
         return goodPoints
@@ -576,9 +516,6 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             varVecOriginal = self._makeZeroSafe(varVecOriginal)
 
             goodPoints = self._getInitialGoodPoints(meanVecOriginal, varVecOriginal,
-                                                    self.config.initialNonLinearityExclusionThresholdPositive,
-                                                    self.config.initialNonLinearityExclusionThresholdNegative,
-                                                    self.config.minMeanRatioTest,
                                                     self.config.minVarPivotSearch)
             if not (goodPoints.any()):
                 msg = (f"SERIOUS: All points in goodPoints: {goodPoints} are bad."
