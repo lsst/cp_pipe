@@ -515,10 +515,16 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             varVecOriginal = np.ravel(np.array(dataset.rawVars[ampName]))
             varVecOriginal = self._makeZeroSafe(varVecOriginal)
 
+            # Discard points when the variance starts to decrease after two
+            # consecutive signal levels
             goodPoints = self._getInitialGoodPoints(meanVecOriginal, varVecOriginal,
                                                     self.config.minVarPivotSearch)
-            if not (goodPoints.any()):
-                msg = (f"SERIOUS: All points in goodPoints: {goodPoints} are bad."
+            # Check if all points are bad from the 'cpExtractPtcTask'
+            initialExpIdMask = np.ravel(np.array(dataset.expIdMask[ampName]))
+
+            if not (goodPoints.any() and initialExpIdMask.any()):
+                msg = (f"SERIOUS: All points in goodPoints: {goodPoints} or "
+                       f"in initialExpIdMask: {initialExpIdMask} are bad."
                        f"Setting {ampName} to BAD.")
                 self.log.warning(msg)
                 # Fill entries with NaNs
