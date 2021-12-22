@@ -4,4 +4,4 @@ tasks:
     class: lsst.cp.pipe.LinearitySolveTask
     config:
       connections.inputPtc: ptc
-      connections.outputLinearizer: linearity
+      connections.outputLinearizer: linearizer

@@ -6,7 +6,7 @@ tasks:
   isr:
     class: lsst.ip.isr.IsrTask
     config:
-      connections.linearizer: linearity
+      connections.linearizer: linearizer
       doLinearize: true
   ptcExtract: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
   ptcSolve: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
