@@ -429,7 +429,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
                 # consecutive signal levels
                 pivotIndex = np.min(np.where(np.diff(pivotList) == 1)[0])
                 pivot = pivotList[pivotIndex]
-                goodPoints[pivot+1:len(goodPoints)] = False
+                goodPoints[pivot+1:] = False
 
         return goodPoints
 
