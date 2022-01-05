@@ -206,6 +206,8 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         else:
             RuntimeError("Enter a fit function type: 'POLYNOMIAL' or 'EXPAPPROXIMATION'")
 
+        for ampName in self.ampNames:
+            localDataset.expIdMask[ampName] = np.repeat(True, len(localDataset.rawMeans[ampName]))
         configLin.maxLookupTableAdu = 200000  # Max ADU in input mock flats
         configLin.maxLinearAdu = 100000
         configLin.minLinearAdu = 50000
