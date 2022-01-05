@@ -405,8 +405,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         variances : `numpy.array`
             Input array with variances at each mean value.
         minVarPivotSearch : `float`
-            Minimum variance point (in ADU^2) after which the pivot point
-            wher the variance starts decreasing should be sought.
+            The variance (in ADU^2), above which, the point
+            of decreasing variance should be sought.
 
         Returns
         ------
