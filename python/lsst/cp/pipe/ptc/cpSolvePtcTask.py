@@ -424,7 +424,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             # For small values, sometimes the variance decreases slightly
             # Only look when var > self.config.minVarPivotSearch
             pivotList = [p for p in pivotList if variances[p] > minVarPivotSearch]
-            if len(pivotList) > 0:
+            if len(pivotList) > 1:
                 # Require that the decrease in variance happen for two
                 # consecutive signal levels
                 pivotIndex = np.min(np.where(np.diff(pivotList) == 1)[0])
