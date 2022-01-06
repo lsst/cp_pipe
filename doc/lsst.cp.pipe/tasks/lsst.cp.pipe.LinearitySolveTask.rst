@@ -4,7 +4,7 @@
 LinearitySolveTask
 ##################
 
-``LinearitySolveTask`` constructs a linearity correction model based on the results stored in the input photon transfer curve (PTC) dataset.
+``LinearitySolveTask`` constructs a linearity correction model (a `~lsst.cp.pipe.linearity.Linearizer`) based on the results stored in the input photon transfer curve (PTC) dataset.
 
 .. _lsst.cp.pipe.LinearitySolveTask-processing-summary:
 
