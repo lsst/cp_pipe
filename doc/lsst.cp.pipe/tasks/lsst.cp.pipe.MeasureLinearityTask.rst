@@ -13,7 +13,7 @@ Processing summary
 
 ``MeasureLinearityTask`` runs these operations:
 
-#. Runs :lsst-task:`~lsst.cp.pipe.LinearitySolveTask` to generate a linearity solution from the input photon transfer curve.
+#. Runs :lsst-task:`~lsst.cp.pipe.LinearitySolveTask` to generate a linearity solution (a `~lsst.cp.pipe.linearity.Linearizer`) from the input photon transfer curve.
 
 
 .. _lsst.cp.pipe.MeasureLinearityTask-api:
