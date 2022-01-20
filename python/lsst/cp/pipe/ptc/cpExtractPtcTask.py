@@ -355,9 +355,8 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                 # the signal, variance, or covariance calculations
                 # from `measureMeanVarCov` resulted in NaNs.
                 if np.isnan(muDiff) or np.isnan(varDiff) or (covAstier is None):
-                    msg = ("NaN mean or var, or None cov in amp %s in exposure pair %d, %d of detector %d.",
-                           ampName, expId1, expId2, detNum)
-                    self.log.warning(msg)
+                    self.log.warning("NaN mean or var, or None cov in amp %s in exposure pair %d, %d of "
+                                     "detector %d.", ampName, expId1, expId2, detNum)
                     nAmpsNan += 1
                     expIdMask = False
                     covArray = np.full((1, self.config.maximumRangeCovariancesAstier,
