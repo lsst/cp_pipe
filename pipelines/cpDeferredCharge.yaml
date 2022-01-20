@@ -1,0 +1,27 @@
+description: cp_pipe CTI calibration construction
+tasks:
+  isr:
+    class: lsst.ip.isr.IsrTask
+    config:
+      connections.ccdExposure: 'raw'
+      connections.outputExposure: 'cpCtiProc'
+      connections.outputStatistics: 'cpCtiStats'
+      doBias: true
+      doCalculateStatistics: true
+      isrStats.doCtiStatistics: true
+      doVariance: true
+      doLinearize: true
+      doCrosstalk: false
+      doDefect: true
+      doNanMasking: true
+      doInterpolate: true
+      doBrighterFatter: false
+      doDark: false
+      doFlat: false
+      doApplyGains: false
+      doFringe: false
+  solveCti:
+    class: lsst.cp.pipe.CpCtiSolveTask
+    config:
+      connections.inputMeasurements: 'cpCtiStats'
+      connections.outputCalib: 'cpCtiCalib'
