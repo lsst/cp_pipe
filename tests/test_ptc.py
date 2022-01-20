@@ -377,12 +377,14 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
     def test_getInitialGoodPoints(self):
         xs = [1, 2, 3, 4, 5, 6]
         ys = [2*x for x in xs]
-        points = self.defaultTaskSolve._getInitialGoodPoints(xs, ys, minVarPivotSearch=0.)
+        points = self.defaultTaskSolve._getInitialGoodPoints(xs, ys, minVarPivotSearch=0.,
+                                                             consecutivePointsVarDecreases=2)
         assert np.all(points) == np.all(np.array([True for x in xs]))
 
         ys[4] = 7  # Variance decreases in two consecutive points after ys[3]=8
         ys[5] = 6
-        points = self.defaultTaskSolve._getInitialGoodPoints(xs, ys, minVarPivotSearch=0.)
+        points = self.defaultTaskSolve._getInitialGoodPoints(xs, ys, minVarPivotSearch=0.,
+                                                             consecutivePointsVarDecreases=2)
         assert np.all(points) == np.all(np.array([True, True, True, True, False]))
 
     def test_getExpIdsUsed(self):
