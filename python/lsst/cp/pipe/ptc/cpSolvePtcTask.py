@@ -584,7 +584,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             # We already did some initial outlier rejection about in
             # self._getInitialGoodPoints.
             count = 1
-            newMask = np.ones_like(meanVecOriginal)
+            newMask = np.ones_like(meanVecOriginal, dtype=bool)
             pars = parsIniPtc
             while count <= maxIterationsPtcOutliers:
                 # Note that application of the mask actually shrinks the array
