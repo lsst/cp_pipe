@@ -27,6 +27,8 @@ import lsst.pipe.base as pipeBase
 from lsst.cp.pipe.utils import (fitLeastSq, fitBootstrap, funcPolynomial, funcAstier)
 
 from scipy.optimize import least_squares
+from itertools import groupby
+from operator import itemgetter
 
 import lsst.pipe.base.connectionTypes as cT
 
@@ -109,10 +111,11 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
         doc="Sigma cut for outlier rejection in PTC.",
         default=5.0,
     )
-    maxIterationsPtcOutliers = pexConfig.Field(
+    maxIterationsPtcOutliers = pexConfig.RangeField(
         dtype=int,
         doc="Maximum number of iterations for outlier rejection in PTC.",
         default=2,
+        min=0
     )
     minVarPivotSearch = pexConfig.Field(
         dtype=float,
@@ -121,6 +124,13 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
             " decreases slightly. Set this variable for the variance value, in ADU^2, after which the pivot "
             " should be sought.",
         default=10000,
+    )
+    consecutivePointsVarDecreases = pexConfig.RangeField(
+        dtype=int,
+        doc="Required number of consecutive points/fluxes in the PTC where the variance "
+            "decreases in order to find a first estimate of the PTC turn-off. ",
+        default=2,
+        min=2
     )
     doFitBootstrap = pexConfig.Field(
         dtype=bool,
@@ -395,7 +405,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         return (lowers, uppers)
 
     @staticmethod
-    def _getInitialGoodPoints(means, variances, minVarPivotSearch):
+    def _getInitialGoodPoints(means, variances, minVarPivotSearch, consecutivePointsVarDecreases):
         """Return a boolean array to mask bad points.
 
         Parameters
@@ -407,6 +417,11 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         minVarPivotSearch : `float`
             The variance (in ADU^2), above which, the point
             of decreasing variance should be sought.
+        consecutivePointsVarDecreases : `int`
+            Required number of consecutive points/fluxes
+            in the PTC where the variance
+            decreases in order to find a first
+            estimate of the PTC turn-off.
 
         Returns
         ------
@@ -416,20 +431,37 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
 
         Notes
         -----
-        Eliminate points beyond which the variance decreases
+        Eliminate points beyond which the variance decreases.
         """
         goodPoints = np.ones_like(means, dtype=bool)
+        # Variances are sorted and should monotonically increase
         pivotList = np.where(np.array(np.diff(variances)) < 0)[0]
         if len(pivotList) > 0:
             # For small values, sometimes the variance decreases slightly
             # Only look when var > self.config.minVarPivotSearch
             pivotList = [p for p in pivotList if variances[p] > minVarPivotSearch]
+            # Require that the varince decreases during
+            # consecutivePointsVarDecreases
+            # consecutive points. This will give a first
+            # estimate of the PTC turn-off, which
+            # may be updated (reduced) further in the code.
             if len(pivotList) > 1:
-                # Require that the decrease in variance happen for two
-                # consecutive signal levels
-                pivotIndex = np.min(np.where(np.diff(pivotList) == 1)[0])
-                pivot = pivotList[pivotIndex]
-                goodPoints[pivot+1:] = False
+                # enumerate(pivotList) creates tuples (index, value), for
+                # each value in pivotList. The lambda function subtracts
+                # each value from the index.
+                # groupby groups elements by equal key value.
+                for k, g in groupby(enumerate(pivotList), lambda x: x[0]-x[1]):
+                    group = (map(itemgetter(1), g))
+                    # Form groups of consecute values from pivotList
+                    group = list(map(int, group))
+                    # values in pivotList are indices where np.diff(variances)
+                    # is negative, i.e., where the variance starts decreasing.
+                    # Find the first group of consecutive numbers when
+                    # variance decreases.
+                    if len(group) >= consecutivePointsVarDecreases:
+                        pivotIndex = np.min(group)
+                        goodPoints[pivotIndex+1:] = False
+                        break
 
         return goodPoints
 
@@ -518,7 +550,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             # Discard points when the variance starts to decrease after two
             # consecutive signal levels
             goodPoints = self._getInitialGoodPoints(meanVecOriginal, varVecOriginal,
-                                                    self.config.minVarPivotSearch)
+                                                    self.config.minVarPivotSearch,
+                                                    self.config.consecutivePointsVarDecreases)
             # Check if all points are bad from the 'cpExtractPtcTask'
             initialExpIdMask = np.ravel(np.array(dataset.expIdMask[ampName]))
 
@@ -545,8 +578,14 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
                 parsIniPtc = self._initialParsForPolynomial(self.config.polynomialFitDegree + 1)
                 bounds = self._boundsForPolynomial(parsIniPtc)
 
-            # Before bootstrap fit, do an iterative fit to get rid of outliers
+            # Before bootstrap fit, do an iterative fit to get rid of outliers.
+            # This further process of outlier rejection be skipped
+            # if self.config.maxIterationsPtcOutliers = 0.
+            # We already did some initial outlier rejection about in
+            # self._getInitialGoodPoints.
             count = 1
+            newMask = np.ones_like(meanVecOriginal, dtype=bool)
+            pars = parsIniPtc
             while count <= maxIterationsPtcOutliers:
                 # Note that application of the mask actually shrinks the array
                 # to size rather than setting elements to zero (as we want) so
