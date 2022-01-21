@@ -434,6 +434,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         Eliminate points beyond which the variance decreases.
         """
         goodPoints = np.ones_like(means, dtype=bool)
+        # Variances are sorted and should monotonically increase
         pivotList = np.where(np.array(np.diff(variances)) < 0)[0]
         if len(pivotList) > 0:
             # For small values, sometimes the variance decreases slightly
@@ -445,9 +446,18 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             # estimate of the PTC turn-off, which
             # may be updated (reduced) further in the code.
             if len(pivotList) > 1:
+                # enumerate(pivotList) creates tuples (index, value), for
+                # each value in pivotList. The lambda function subtracts
+                # each value from the index.
+                # groupby groups elements by equal key value.
                 for k, g in groupby(enumerate(pivotList), lambda x: x[0]-x[1]):
                     group = (map(itemgetter(1), g))
+                    # Form groups of consecute values from pivotList
                     group = list(map(int, group))
+                    # values in pivotList are indices where np.diff(variances)
+                    # is negative, i.e., where the variance starts decreasing.
+                    # Find the first group of consecutive numbers when
+                    # variance decreases.
                     if len(group) >= consecutivePointsVarDecreases:
                         pivotIndex = np.min(group)
                         goodPoints[pivotIndex+1:] = False
