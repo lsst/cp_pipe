@@ -29,3 +29,4 @@ from .cpCombine import *
 from .measureCrosstalk import *
 from .linearity import *
 from .cpSkyTask import *
+from .pdCorrection import *

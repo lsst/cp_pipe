@@ -28,7 +28,7 @@ import lsst.pipe.base.connectionTypes as cT
 import lsst.pex.config as pexConfig
 
 from lsstDebug import getDebugFrame
-from lsst.ip.isr import (Linearizer, IsrProvenance)
+from lsst.ip.isr import (Linearizer, IsrProvenance, PhotodiodeCalib)
 
 from .utils import (funcPolynomial, irlsFit)
 from ._lookupStaticCalibration import lookupStaticCalibration
@@ -61,7 +61,16 @@ class LinearitySolveConnections(pipeBase.PipelineTaskConnections,
         dimensions=("instrument", "detector"),
         isCalibration=True,
     )
-
+    """
+    inputPhotodiodeCorrection = cT.PrerequisiteInput(
+        name="correction",
+        doc="Input Photodiode Correction.",
+        storageClass="PhotodiodeCorrection",
+        dimensions=("instrument", ),
+        isCalibration=True,
+        deferLoad=True,
+    )
+    """
     outputLinearizer = cT.Output(
         name="linearity",
         doc="Output linearity measurements.",
@@ -122,6 +131,16 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
         doc="Ignore the expIdMask set by the PTC solver?",
         default=False,
     )
+    usePhotodiode = pexConfig.Field(
+        dtype=bool,
+        doc="Use the photodiode info instead of the raw expTimes?",
+        default=False,
+    )
+    applyPhotodiodeCorrection = pexConfig.Field(
+        dtype=bool,
+        doc="Calculate and apply a correction to the photodiode readings?",
+        default=False,
+    )
 
 
 class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
@@ -151,7 +170,7 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         outputs = self.run(**inputs)
         butlerQC.put(outputs, outputRefs)
 
-    def run(self, inputPtc, dummy, camera, inputDims):
+    def run(self, inputPtc, dummy, camera, inputDims, inputPhotodiodeCorrection=None):
         """Fit non-linearity to PTC data, returning the correct Linearizer
         object.
 
@@ -211,6 +230,9 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         # Initialize the linearizer.
         linearizer = Linearizer(detector=detector, table=table, log=self.log)
 
+        if self.config.usePhotodiode and self.config.applyPhotodiodeCorrection:
+            abscissaCorrections = inputPhotodiodeCorrection.abscissaCorrections
+
         for i, amp in enumerate(detector):
             ampName = amp.getName()
             if ampName in inputPtc.badAmps:
@@ -234,6 +256,8 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
                 linearizer.fitParams[ampName] = np.zeros(pEntries)
                 linearizer.fitParamsErr[ampName] = np.zeros(pEntries)
                 linearizer.fitChiSq[ampName] = np.nan
+                linearizer.fitResiduals[ampName] = np.zeros(len(inputPtc.expIdMask[ampName]))
+                linearizer.linearFit[ampName] = np.zeros(2)
                 self.log.warning("Amp %s has no usable PTC information.  Skipping!", ampName)
                 continue
 
@@ -243,7 +267,52 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
             else:
                 mask = np.array(inputPtc.expIdMask[ampName], dtype=bool)
 
-            inputAbscissa = np.array(inputPtc.rawExpTimes[ampName])[mask]
+            if self.config.usePhotodiode:
+                # Lage - here's the real meat of adding the photodiode.
+                DATA_DIR = '/lsstdata/offline/teststand/BOT/storage/'
+                modExpTimes = []
+                for i, pair in enumerate(inputPtc.inputExpIdPairs[ampName]):
+                    pair = pair[0]
+                    modExpTime = 0.0
+                    nExps = 0
+                    for j in range(2):
+                        expId = pair[j]
+                        try:
+                            date = int(expId/100000)
+                            seq = expId - date * 100000
+                            date = date - 10000000
+                            filename = DATA_DIR + \
+                                '%d/MC_C_%d_%06d/Photodiode_Readings_%d_%06d.txt'\
+                                % (date, date, seq, date, seq)
+                            photodiodeCalib = PhotodiodeCalib.readTwoColumnPhotodiodeData(filename)
+                            photodiodeCalib.integrationMethod = 'TRIMMED_SUM'
+                            monDiodeCharge = photodiodeCalib.integrate()
+                            modExpTime += monDiodeCharge
+                            nExps += 1
+                        except (RuntimeError, OSError):
+                            continue
+                    if nExps > 0:
+                        # The 5E8 factor bring the modExpTimes back to about
+                        # the same order as the expTimes.
+                        # Probably a better way to do this.
+                        modExpTime = 5.0E8 * modExpTime / nExps
+                    else:
+                        mask[i] = False
+
+                    # Get the photodiode correction
+                    if self.config.applyPhotodiodeCorrection:
+                        try:
+                            correction = abscissaCorrections[str(pair)]
+                        except KeyError:
+                            correction = 0.0
+                    else:
+                        correction = 0.0
+                    modExpTimes.append(modExpTime + correction)
+                    print(detector.getName(), ampName, pair, modExpTime, correction)
+                inputAbscissa = np.array(modExpTimes)[mask]
+            else:
+                inputAbscissa = np.array(inputPtc.rawExpTimes[ampName])[mask]
+
             inputOrdinate = np.array(inputPtc.rawMeans[ampName])[mask]
 
             # Determine proxy-to-linear-flux transformation
@@ -354,7 +423,25 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
             linearizer.fitParams[ampName] = np.array(polyFit)
             linearizer.fitParamsErr[ampName] = np.array(polyFitErr)
             linearizer.fitChiSq[ampName] = chiSq
+            linearizer.linearFit[ampName] = linearFit
+            residuals = inputOrdinate - modelOrdinate
+            """
+            The residuals only include flux values which are not masked out.
+            To be able to access this later and associate it with the PTC flux
+            values, we need to fill out the residuals with NaNs where the flux
+            value is masked.  I'm sure there is a more "Pythonic" way to do
+            this, but this works.
+            """
+            fullResiduals = []
+            maskCounter = 0
+            for ii, pair in enumerate(inputPtc.inputExpIdPairs[ampName]):
+                if mask[ii]:
+                    fullResiduals.append(residuals[ii - maskCounter])
+                else:
+                    fullResiduals.append(np.nan)
+                    maskCounter += 1
 
+            linearizer.fitResiduals[ampName] = fullResiduals
             image = afwImage.ImageF(len(inputOrdinate), 1)
             image.getArray()[:, :] = inputOrdinate
             linearizeFunction = linearizer.getLinearityTypeByName(linearizer.linearityType[ampName])
