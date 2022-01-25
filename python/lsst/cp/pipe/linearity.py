@@ -62,15 +62,15 @@ class LinearitySolveConnections(pipeBase.PipelineTaskConnections,
         dimensions=("instrument", "detector"),
         isCalibration=True,
     )
-    """
-    inputPhotodiodeCorrection = cT.PrerequisiteInput(
+
+    inputPhotodiodeCorrection = cT.Input(
         name="pdCorrection",
         doc="Input photodiode correction.",
         storageClass="IsrCalib",
         dimensions=("instrument", "exposure"),
         isCalibration=True,
     )
-    """
+
     outputLinearizer = cT.Output(
         name="linearity",
         doc="Output linearity measurements.",
@@ -79,8 +79,14 @@ class LinearitySolveConnections(pipeBase.PipelineTaskConnections,
         isCalibration=True,
     )
 
+    def __init__(self, *, config=None):
+        super().__init__(config=config)
 
-class LinearitySolveConfig(pipeBase.PipelineTaskConfig, 
+        if config.applyPhotodiodeCorrection is not True:
+            self.inputs.discard("inputPhotodiodeCorrection")
+
+
+class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
                            pipelineConnections=LinearitySolveConnections):
     """Configuration for solving the linearity from PTC dataset.
     """

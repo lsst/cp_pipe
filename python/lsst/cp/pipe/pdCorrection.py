@@ -62,7 +62,7 @@ class PhotodiodeCorrectionConnections(pipeBase.PipelineTaskConnections,
         isCalibration=True,
     )
 
-    inputLinearizer = cT.PrerequisiteInput(
+    inputLinearizer = cT.Input(
         name="unCorrLinearizer",
         doc="Raw linearizers that have not been corrected.",
         storageClass="Linearizer",
