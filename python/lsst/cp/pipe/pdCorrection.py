@@ -30,8 +30,9 @@ from ._lookupStaticCalibration import lookupStaticCalibration
 
 __all__ = ["PhotodiodeCorrectionTask", "PhotodiodeCorrectionConfig"]
 
-# I really want to get all of the ptcs and linearizers, not just for one detector.
-# Don't know how to do this.
+# I really want to get all of the ptcs and linearizers, not just for
+# one detector.  Don't know how to do this.
+
 
 class PhotodiodeCorrectionConnections(pipeBase.PipelineTaskConnections,
                                       dimensions=("instrument", "exposure")):
@@ -114,9 +115,10 @@ class PhotodiodeCorrectionTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         # Use the dimensions to set calib/provenance information.
         inputs['inputDims'] = inputRefs.inputPtc[0].dataId.byName()
 
-        # Need to generate a joint list of detectors present in both inputPtc
-        # and inputLinearizer.  We do this here because the detector info is
-        # not present in inputPtc metadata.  We could move it when that is fixed.
+        # Need to generate a joint list of detectors present in both
+        # inputPtc and inputLinearizer.  We do this here because the
+        # detector info is not present in inputPtc metadata.  We could
+        # move it when that is fixed.
         self.detectorList = []
         for i, lin in enumerate(inputRefs.inputLinearizer):
             linDetector = lin.dataId["detector"]

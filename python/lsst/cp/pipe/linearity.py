@@ -20,7 +20,6 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 import numpy as np
-import sys
 import lsst.afw.image as afwImage
 import lsst.afw.math as afwMath
 import lsst.pipe.base as pipeBase
@@ -589,4 +588,3 @@ class MeasureLinearityTask(pipeBase.CmdLineTask):
         butler = dataRef.getButler()
         butler.put(linearityResults.outputLinearizer, "linearizer", inputDims)
         return linearityResults
-
