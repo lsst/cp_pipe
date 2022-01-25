@@ -20,7 +20,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 import numpy as np
-
+import sys
 import lsst.afw.image as afwImage
 import lsst.afw.math as afwMath
 import lsst.pipe.base as pipeBase
@@ -46,6 +46,7 @@ class LinearitySolveConnections(pipeBase.PipelineTaskConnections,
         multiple=True,
         deferLoad=True,
     )
+
     camera = cT.PrerequisiteInput(
         name="camera",
         doc="Camera Geometry definition.",
@@ -54,6 +55,7 @@ class LinearitySolveConnections(pipeBase.PipelineTaskConnections,
         isCalibration=True,
         lookupFunction=lookupStaticCalibration,
     )
+
     inputPtc = cT.PrerequisiteInput(
         name="ptc",
         doc="Input PTC dataset.",
@@ -63,12 +65,11 @@ class LinearitySolveConnections(pipeBase.PipelineTaskConnections,
     )
     """
     inputPhotodiodeCorrection = cT.PrerequisiteInput(
-        name="correction",
-        doc="Input Photodiode Correction.",
-        storageClass="PhotodiodeCorrection",
-        dimensions=("instrument", ),
+        name="pdCorrection",
+        doc="Input photodiode correction.",
+        storageClass="IsrCalib",
+        dimensions=("instrument", "exposure"),
         isCalibration=True,
-        deferLoad=True,
     )
     """
     outputLinearizer = cT.Output(
@@ -80,7 +81,7 @@ class LinearitySolveConnections(pipeBase.PipelineTaskConnections,
     )
 
 
-class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
+class LinearitySolveConfig(pipeBase.PipelineTaskConfig, 
                            pipelineConnections=LinearitySolveConnections):
     """Configuration for solving the linearity from PTC dataset.
     """
@@ -176,8 +177,11 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
 
         Parameters
         ----------
-        inputPtc : `lsst.cp.pipe.PtcDataset`
+        inputPtc : `lsst.ip.isr.PtcDataset`
             Pre-measured PTC dataset.
+        inputPhotodiodeCorrection : `lsst.ip.isr.PhotodiodeCorrection`
+            Pre-measured photodiode correction used in the case when
+            applyPhotodiodeCorrection=True.
         dummy : `lsst.afw.image.Exposure`
             The exposure used to select the appropriate PTC dataset.
             In almost all circumstances, one of the input exposures
@@ -585,3 +589,4 @@ class MeasureLinearityTask(pipeBase.CmdLineTask):
         butler = dataRef.getButler()
         butler.put(linearityResults.outputLinearizer, "linearizer", inputDims)
         return linearityResults
+
