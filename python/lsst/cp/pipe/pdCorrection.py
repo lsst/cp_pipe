@@ -60,8 +60,9 @@ class PhotodiodeCorrectionConnections(pipeBase.PipelineTaskConnections,
         multiple=True,
         isCalibration=True,
     )
+
     inputLinearizer = cT.PrerequisiteInput(
-        name="linearizer",
+        name="unCorrLinearizer",
         doc="Raw linearizers that have not been corrected.",
         storageClass="Linearizer",
         dimensions=("instrument", "detector"),
@@ -72,7 +73,7 @@ class PhotodiodeCorrectionConnections(pipeBase.PipelineTaskConnections,
     outputPhotodiodeCorrection = cT.Output(
         name="pdCorrection",
         doc="Correction of photodiode systematic error.",
-        storageClass="PhotodiodeCorrection",
+        storageClass="IsrCalib",
         dimensions=("instrument", "exposure"),
         isCalibration=True,
     )
@@ -111,7 +112,19 @@ class PhotodiodeCorrectionTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         inputs = butlerQC.get(inputRefs)
 
         # Use the dimensions to set calib/provenance information.
-        inputs['inputDims'] = inputRefs.inputPtc.dataId.byName()
+        inputs['inputDims'] = inputRefs.inputPtc[0].dataId.byName()
+
+        # Need to generate a joint list of detectors present in both inputPtc
+        # and inputLinearizer.  We do this here because the detector info is
+        # not present in inputPtc metadata.  We could move it when that is fixed.
+        self.detectorList = []
+        for i, lin in enumerate(inputRefs.inputLinearizer):
+            linDetector = lin.dataId["detector"]
+            for j, ptc in enumerate(inputRefs.inputPtc):
+                ptcDetector = ptc.dataId["detector"]
+                if ptcDetector == linDetector:
+                    self.detectorList.append((linDetector, i, j))
+                    break
 
         outputs = self.run(**inputs)
         butlerQC.put(outputs, outputRefs)
@@ -121,9 +134,9 @@ class PhotodiodeCorrectionTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
 
         Parameters
         ----------
-        inputPtc : `lsst.cp.pipe.PtcDataset`
+        inputPtc : `lsst.ip.isr.PtcDataset`
             Pre-measured PTC dataset.
-        inputLinearizer : `lsst.cp.pipe.Linearizer`
+        inputLinearizer : `lsst.ip.isr.Linearizer`
             Previously measured linearizer.
         dummy : `lsst.afw.image.Exposure`
             The exposure used to select the appropriate PTC dataset.
@@ -150,30 +163,24 @@ class PhotodiodeCorrectionTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         -----
 
         """
-        # This is just for debug
-        print(f"Starting task. len(ptcs) = {len(inputPtc)}, len(lin) = {len(inputLinearizers)}")
+
         # Initialize photodiodeCorrection.
         photodiodeCorrection = PhotodiodeCorrection(log=self.log)
 
         abscissaCorrections = {}
         # Load all of the corrections, keyed by exposure pair
-
-        # Need to loop through all of the detectors.  This should work, but it would
-        # be better to get a list of detectors from inputPtc and inputLinearizers.
-        for detector in camera:
-            if detector.getType().name != 'SCIENCE':
-                continue
+        for (detector, linIndex, ptcIndex) in self.detectorList:
             try:
-                thisLinearizer = inputLinearizer[detector]
-                thisPtc = inputPtc[detector]
+                thisLinearizer = inputLinearizer[linIndex]
+                thisPtc = inputPtc[ptcIndex]
             except (RuntimeError, OSError):
                 continue
 
-            for amp in detector:
+            for amp in camera[detector].getAmplifiers():
                 ampName = amp.getName()
-                fluxResidual = thisLinearizer[ampName].fitResidual
-                linearSlope = thisLinearizer[ampName].linearFit[1]
-                abscissaCorrection = fluxResidual / linearSlope
+                fluxResidual = thisLinearizer.fitResiduals[ampName]
+                linearSlope = thisLinearizer.linearFit[ampName]
+                abscissaCorrection = fluxResidual / linearSlope[1]
                 for i, pair in enumerate(thisPtc.inputExpIdPairs[ampName]):
                     key = str(pair[0])
                     try:
@@ -184,10 +191,13 @@ class PhotodiodeCorrectionTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         # Now the correction is the median correction
         # across the whole focal plane.
         for key in abscissaCorrections.keys():
-            abscissaCorrections[key] = np.nanmedian(abscissaCorrections[key])
+            correction = np.nanmedian(abscissaCorrections[key])
+            if np.isnan(correction):
+                correction = 0.0
+            abscissaCorrections[key] = correction
 
         photodiodeCorrection.abscissaCorrections = abscissaCorrections
-        # Is all of the part below right?
+
         photodiodeCorrection.validate()
         photodiodeCorrection.updateMetadata(camera=camera, filterName='NONE')
         photodiodeCorrection.updateMetadata(setDate=True, setCalibId=True)
