@@ -317,7 +317,8 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
                     else:
                         correction = 0.0
                     modExpTimes.append(modExpTime + correction)
-                    print(detector.getName(), ampName, pair, modExpTime, correction)
+                    # Debug
+                    #print(detector.getName(), ampName, pair, modExpTime, correction)
                 inputAbscissa = np.array(modExpTimes)[mask]
             else:
                 inputAbscissa = np.array(inputPtc.rawExpTimes[ampName])[mask]

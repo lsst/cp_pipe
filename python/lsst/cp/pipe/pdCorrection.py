@@ -30,10 +30,6 @@ from ._lookupStaticCalibration import lookupStaticCalibration
 
 __all__ = ["PhotodiodeCorrectionTask", "PhotodiodeCorrectionConfig"]
 
-# I really want to get all of the ptcs and linearizers, not just for
-# one detector.  Don't know how to do this.
-
-
 class PhotodiodeCorrectionConnections(pipeBase.PipelineTaskConnections,
                                       dimensions=("instrument", "exposure")):
     dummy = cT.Input(
@@ -197,7 +193,6 @@ class PhotodiodeCorrectionTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
             if np.isnan(correction):
                 correction = 0.0
             abscissaCorrections[key] = correction
-
         photodiodeCorrection.abscissaCorrections = abscissaCorrections
 
         photodiodeCorrection.validate()
