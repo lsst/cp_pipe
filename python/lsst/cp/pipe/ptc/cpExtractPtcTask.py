@@ -361,7 +361,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                     expIdMask = False
 
                 if covAstier is not None:
-                    # Turn the tuples with teh measured information
+                    # Turn the tuples with the measured information
                     # into covariance arrays.
                     tupleRows = [(muDiff, varDiff) + covRow + (ampNumber, expTime,
                                                                ampName) for covRow in covAstier]
@@ -617,7 +617,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
 
         maxRangeCov = self.config.maximumRangeCovariancesAstier
 
-        # Calculate covariances via FFT (default).
+        # Calculate covariances via FFT.
         shapeDiff = np.array(diffIm.image.array.shape)
         # Calculate the sizes of FFT dimensions.
         s = shapeDiff + maxRangeCov

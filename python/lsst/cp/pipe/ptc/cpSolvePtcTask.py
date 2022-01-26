@@ -426,18 +426,13 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
                 c = params[lenParams:2*lenParams].reshape((matrixSide, matrixSide))
                 noise = params[2*lenParams:3*lenParams].reshape((matrixSide, matrixSide))
                 gain = params[-1]
-                if key == 'fullModel':
-                    fitResults['fullModel']['a'] = a
-                    fitResults['fullModel']['c'] = c
-                    fitResults['fullModel']['noise'] = noise
-                    fitResults['fullModel']['gain'] = gain
-                    fitResults['fullModel']['paramsErr'] = paramsErr
-                else:
-                    fitResults['fullModelNoB']['a'] = a
-                    fitResults['fullModelNoB']['c'] = c
-                    fitResults['fullModelNoB']['noise'] = noise
-                    fitResults['fullModelNoB']['gain'] = gain
-                    fitResults['fullModelNoB']['paramsErr'] = paramsErr
+
+                fitResults[key]['a'] = a
+                fitResults[key]['c'] = c
+                fitResults[key]['noise'] = noise
+                fitResults[key]['gain'] = gain
+                fitResults[key]['paramsErr'] = paramsErr
+
             # Put the information in the PTC dataset
 
             # Not used when ptcFitType is 'FULLCOVARIANCE'
