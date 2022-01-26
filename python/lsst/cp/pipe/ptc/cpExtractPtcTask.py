@@ -26,7 +26,7 @@ import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 from lsst.cp.pipe.utils import (arrangeFlatsByExpTime, arrangeFlatsByExpId,
                                 sigmaClipCorrection, CovFastFourierTransform,
-                                computeCovDirect, makeCovArray)
+                                makeCovArray)
 
 import lsst.pipe.base.connectionTypes as cT
 
@@ -72,11 +72,6 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
         dtype=int,
         doc="Maximum range of covariances as in Astier+19",
         default=8,
-    )
-    covAstierRealSpace = pexConfig.Field(
-        dtype=bool,
-        doc="Calculate covariances in real space or via FFT? (see appendix A of Astier+19).",
-        default=False,
     )
     binSize = pexConfig.Field(
         dtype=int,
@@ -328,7 +323,6 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                 ampName = amp.getName()
                 # covAstier: [(i, j, var (cov[0,0]), cov, npix) for
                 # (i,j) in {maxLag, maxLag}^2]
-                doRealSpace = self.config.covAstierRealSpace
                 if self.config.detectorMeasurementRegion == 'AMP':
                     region = amp.getBBox()
                 elif self.config.detectorMeasurementRegion == 'FULL':
@@ -340,8 +334,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                 # returned is of the form:
                 # [(i, j, var (cov[0,0]), cov, npix) for (i,j) in
                 # {maxLag, maxLag}^2].
-                muDiff, varDiff, covAstier = self.measureMeanVarCov(exp1, exp2, region=region,
-                                                                    covAstierRealSpace=doRealSpace)
+                muDiff, varDiff, covAstier = self.measureMeanVarCov(exp1, exp2, region=region)
                 # Correction factor for bias introduced by sigma
                 # clipping.
                 # Function returns 1/sqrt(varFactor), so it needs
@@ -414,7 +407,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
             outputCovariances=partialPtcDatasetList,
         )
 
-    def measureMeanVarCov(self, exposure1, exposure2, region=None, covAstierRealSpace=False):
+    def measureMeanVarCov(self, exposure1, exposure2, region=None):
         """Calculate the mean of each of two exposures and the variance
         and covariance of their difference. The variance is calculated
         via afwMath, and the covariance via the methods in Astier+19
@@ -431,9 +424,6 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         region : `lsst.geom.Box2I`, optional
             Region of each exposure where to perform the calculations
             (e.g, an amplifier).
-        covAstierRealSpace : `bool`, optional
-            Should the covariannces in Astier+19 be calculated in real
-            space or via FFT?  See Appendix A of Astier+19.
 
         Returns
         -------
@@ -533,20 +523,17 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
             return np.nan, np.nan, None
 
         maxRangeCov = self.config.maximumRangeCovariancesAstier
-        if covAstierRealSpace:
-            # Calculate  covariances in real space.
-            covDiffAstier = computeCovDirect(diffIm.image.array, w, maxRangeCov)
-        else:
-            # Calculate covariances via FFT (default).
-            shapeDiff = np.array(diffIm.image.array.shape)
-            # Calculate the sizes of FFT dimensions.
-            s = shapeDiff + maxRangeCov
-            tempSize = np.array(np.log(s)/np.log(2.)).astype(int)
-            fftSize = np.array(2**(tempSize+1)).astype(int)
-            fftShape = (fftSize[0], fftSize[1])
 
-            c = CovFastFourierTransform(diffIm.image.array, w, fftShape, maxRangeCov)
-            covDiffAstier = c.reportCovFastFourierTransform(maxRangeCov)
+        # Calculate covariances via FFT (default).
+        shapeDiff = np.array(diffIm.image.array.shape)
+        # Calculate the sizes of FFT dimensions.
+        s = shapeDiff + maxRangeCov
+        tempSize = np.array(np.log(s)/np.log(2.)).astype(int)
+        fftSize = np.array(2**(tempSize+1)).astype(int)
+        fftShape = (fftSize[0], fftSize[1])
+
+        c = CovFastFourierTransform(diffIm.image.array, w, fftShape, maxRangeCov)
+        covDiffAstier = c.reportCovFastFourierTransform(maxRangeCov)
 
         # Compare Cov[0,0] and afwMath.VARIANCECLIP covDiffAstier[0]
         # is the Cov[0,0] element, [3] is the variance, and there's a

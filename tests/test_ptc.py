@@ -154,14 +154,6 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                 muDiff, varDiff, covAstier = task.extract.measureMeanVarCov(mockExp1, mockExp2)
                 muStandard.setdefault(ampName, []).append(muDiff)
                 varStandard.setdefault(ampName, []).append(varDiff)
-                # Calculate covariances in an independent way: direct space
-                _, _, covsDirect = task.extract.measureMeanVarCov(mockExp1, mockExp2, covAstierRealSpace=True)
-
-                # Test that the arrays "covs" (FFT) and "covDirect"
-                # (direct space) are the same
-                for row1, row2 in zip(covAstier, covsDirect):
-                    for a, b in zip(row1, row2):
-                        self.assertAlmostEqual(a, b)
             idCounter += 2
         resultsExtract = extractTask.run(inputExp=expDict, inputDims=expIds)
         resultsSolve = solveTask.run(resultsExtract.outputCovariances)
