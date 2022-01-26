@@ -183,10 +183,10 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
     The number of partially-filled
     `~lsst.ip.isr.PhotonTransferCurveDataset` objects will be less
     than the number of input exposures because the task combines
-    input flats in pairs. However, it is required at this mioment
+    input flats in pairs. However, it is required at this moment
     that the number of input dimensions matches
     bijectively the number of output dimensions. Therefore, a number
-    of "dummy" PTC dataset are inserted in the output list.  This
+    of "dummy" PTC datasets are inserted in the output list.  This
     output list will then be used as input of the next task in the
     PTC-measurement pipeline, `PhotonTransferCurveSolveTask`,
     which will assemble the multiple `PhotonTransferCurveDataset`

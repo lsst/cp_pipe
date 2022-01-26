@@ -147,7 +147,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
     before this task), produced a list of
     `~lsst.ip.isr.PhotonTransferCurveDataset` objects. Each dataset
     contains the mean signal and covariances of the
-    difference image of to flat-field images taken at
+    difference image of the flat-field images taken at
     the same exposure time. The list also contains dummy
     datasets (with no measurements), whose purpose is to have
     the input and output dimensions of ``PhotonTransferCurveMeasureTask``
