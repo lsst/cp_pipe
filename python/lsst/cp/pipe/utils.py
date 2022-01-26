@@ -725,10 +725,6 @@ def getFitDataFromCovariances(i, j, mu, fullCov, fullCovModel, fullCovSqrtWeight
     maskFromWeights : `numpy.array`, optional
         Boolean mask of the covariance at (i,j), where the weights
         differ from 0.
-
-    Notes
-    -----
-    This function is a method of the `CovFit` class.
     """
     mu = np.array(mu)
     fullCov = np.array(fullCov)
@@ -750,100 +746,6 @@ def getFitDataFromCovariances(i, j, mu, fullCov, fullCovModel, fullCovSqrtWeight
         covarianceModel /= mu
         weights *= mu
     return mu, covariance, covarianceModel, weights, maskFromWeights
-
-
-def makeCovArray(inputTuple, maxRangeFromTuple=8):
-    """Make covariances array from tuple.
-
-    Parameters
-    ----------
-    inputTuple : `numpy.ndarray`
-        Structured array with rows with at least
-        (mu, afwVar, cov, var, i, j, npix), where:
-
-        mu : `float`
-            0.5*(m1 + m2), where mu1 is the mean value of flat1
-            and mu2 is the mean value of flat2.
-        afwVar : `float`
-            Variance of difference flat, calculated with afw.
-        cov : `float`
-            Covariance value at lag(i, j)
-        var : `float`
-            Variance(covariance value at lag(0, 0))
-        i : `int`
-            Lag in dimension "x".
-        j : `int`
-            Lag in dimension "y".
-        npix : `int`
-            Number of pixels used for covariance calculation.
-
-    maxRangeFromTuple : `int`
-        Maximum range to select from tuple.
-
-    Returns
-    -------
-    cov : `numpy.array`
-        Covariance arrays, indexed by mean signal mu.
-
-    vCov : `numpy.array`
-        Variance arrays, indexed by mean signal mu.
-
-    muVals : `numpy.array`
-        List of mean signal values.
-
-    Notes
-    -----
-
-    The input tuple should contain  the following rows:
-    (mu, cov, var, i, j, npix), with one entry per lag, and image pair.
-    Different lags(i.e. different i and j) from the same
-    image pair have the same values of mu1 and mu2. When i==j==0, cov
-    = var.
-
-    If the input tuple contains several video channels, one should
-    select the data of a given channel *before* entering this
-    routine, as well as apply(e.g.) saturation cuts.
-
-    The routine returns cov[k_mu, j, i], vcov[(same indices)], and mu[k]
-    where the first index of cov matches the one in mu.
-
-    This routine implements the loss of variance due to clipping cuts
-    when measuring variances and covariance, but this should happen
-    inside the measurement code, where the cuts are readily available.
-    """
-    if maxRangeFromTuple is not None:
-        cut = (inputTuple['i'] < maxRangeFromTuple) & (inputTuple['j'] < maxRangeFromTuple)
-        cutTuple = inputTuple[cut]
-    else:
-        cutTuple = inputTuple
-    # increasing mu order, so that we can group measurements with the same mu
-    muTemp = cutTuple['mu']
-    ind = np.argsort(muTemp)
-
-    cutTuple = cutTuple[ind]
-    # should group measurements on the same image pairs(same average)
-    mu = cutTuple['mu']
-    xx = np.hstack(([mu[0]], mu))
-    delta = xx[1:] - xx[:-1]
-    steps, = np.where(delta > 0)
-    ind = np.zeros_like(mu, dtype=int)
-    ind[steps] = 1
-    ind = np.cumsum(ind)  # this acts as an image pair index.
-    # now fill the 3-d cov array(and variance)
-    muVals = np.array(np.unique(mu))
-    i = cutTuple['i'].astype(int)
-    j = cutTuple['j'].astype(int)
-    c = 0.5*cutTuple['cov']
-    n = cutTuple['npix']
-    v = 0.5*cutTuple['var']
-    # book and fill
-    cov = np.ndarray((len(muVals), np.max(i)+1, np.max(j)+1))
-    var = np.zeros_like(cov)
-    cov[ind, i, j] = c
-    var[ind, i, j] = v**2/n
-    var[:, 0, 0] *= 2  # var(v) = 2*v**2/N
-
-    return cov, var, muVals
 
 
 def symmetrize(inputArray):
