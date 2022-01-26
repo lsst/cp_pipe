@@ -31,9 +31,7 @@ import numpy as np
 import lsst.utils
 import lsst.utils.tests
 
-import lsst.afw.image as afwImage
 from lsst.geom import Box2I, Point2I, Extent2I
-import lsst.ip.isr as ipIsr
 from lsst.ip.isr import isrMock
 
 import lsst.cp.pipe.utils as cpUtils
@@ -75,72 +73,6 @@ class UtilsTestCase(lsst.utils.tests.TestCase):
 
         mi.mask[noDataBox] ^= NODATABIT  # XOR to reset what we did
         self.assertEqual(cpUtils.countMaskedPixels(mi, 'NO_DATA'), 0)
-
-    def test_parseCmdlineNumberString(self):
-        parsed = cpUtils.parseCmdlineNumberString('1..5')
-        self.assertEqual(parsed, [1, 2, 3, 4, 5])
-
-        parsed = cpUtils.parseCmdlineNumberString('1..5:2^123..126')
-        self.assertEqual(parsed, [1, 3, 5, 123, 124, 125, 126])
-
-        parsed = cpUtils.parseCmdlineNumberString('12^23^34^43^987')
-        self.assertEqual(parsed, [12, 23, 34, 43, 987])
-
-        parsed = cpUtils.parseCmdlineNumberString('12^23^34^43^987..990')
-        self.assertEqual(parsed, [12, 23, 34, 43, 987, 988, 989, 990])
-
-    def test_checkExpLengthEqual(self):
-        exp1 = self.flatExp.clone()
-        exp2 = self.flatExp.clone()
-
-        self.assertTrue(cpUtils.checkExpLengthEqual(exp1, exp2))
-
-        visitInfo = afwImage.VisitInfo(exposureTime=-1, darkTime=1)
-        exp2.getInfo().setVisitInfo(visitInfo)
-        self.assertFalse(cpUtils.checkExpLengthEqual(exp1, exp2))
-
-        with self.assertRaises(RuntimeError):
-            cpUtils.checkExpLengthEqual(exp1, exp2, raiseWithMessage=True)
-
-    def test_validateIsrConfig(self):
-
-        # heavily abbreviated for the sake of the line lengths later
-        mandatory = ['doAssembleCcd']  # the mandatory options
-        forbidden = ['doFlat', 'doFringe']  # the forbidden options
-        desirable = ['doBias', 'doDark']  # the desirable options
-        undesirable = ['doLinearize', 'doBrighterFatter']  # the undesirable options
-
-        passingConfig = ipIsr.IsrTask.ConfigClass()
-        for item in (mandatory + desirable):
-            setattr(passingConfig, item, True)
-        for item in (forbidden + undesirable):
-            setattr(passingConfig, item, False)
-
-        task = ipIsr.IsrTask(config=passingConfig)
-
-        with self.assertRaises(TypeError):
-            cpUtils.validateIsrConfig(None, mandatory, forbidden, desirable, undesirable)
-            cpUtils.validateIsrConfig(passingConfig, mandatory, forbidden, desirable, undesirable)
-
-        with self.assertRaises(RuntimeError):  # mandatory/forbidden swapped
-            cpUtils.validateIsrConfig(task, forbidden, mandatory, desirable, undesirable)
-
-        with self.assertRaises(RuntimeError):  # raise for missing mandatory
-            cpUtils.validateIsrConfig(task, mandatory + ['test'], forbidden, desirable, undesirable)
-
-        logName = 'testLogger'
-        with self.assertLogs(logName, level='INFO'):  # not found info-logs for (un)desirable
-            cpUtils.validateIsrConfig(task, mandatory, forbidden,
-                                      desirable + ['test'], undesirable, logName=logName)
-            cpUtils.validateIsrConfig(task, mandatory, forbidden,
-                                      desirable, undesirable + ['test'], logName=logName)
-
-        with self.assertLogs(logName, "WARN"):  # not found warnings for forbidden
-            cpUtils.validateIsrConfig(task, mandatory, forbidden + ['test'],
-                                      desirable, undesirable, logName=logName)
-        with self.assertLogs("lsst", "WARN"):  # not found warnings for forbidden
-            cpUtils.validateIsrConfig(task, mandatory, forbidden + ['test'],
-                                      desirable, undesirable, logName=None)
 
 
 class TestMemory(lsst.utils.tests.MemoryTestCase):
