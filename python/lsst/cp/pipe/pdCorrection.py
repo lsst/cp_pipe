@@ -30,6 +30,7 @@ from ._lookupStaticCalibration import lookupStaticCalibration
 
 __all__ = ["PhotodiodeCorrectionTask", "PhotodiodeCorrectionConfig"]
 
+
 class PhotodiodeCorrectionConnections(pipeBase.PipelineTaskConnections,
                                       dimensions=("instrument", "exposure")):
     dummy = cT.Input(
