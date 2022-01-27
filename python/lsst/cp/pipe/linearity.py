@@ -246,11 +246,13 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
             ampName = amp.getName()
             if ampName in inputPtc.badAmps:
                 linearizer = self.fillBadAmp(linearizer, fitOrder, inputPtc, amp)
-                self.log.warning("Amp %s in detector %s has no usable PTC information.  Skipping!", ampName, detector.getName())
+                self.log.warning("Amp %s in detector %s has no usable PTC information. Skipping!",
+                                 ampName, detector.getName())
                 continue
 
             if (len(inputPtc.expIdMask[ampName]) == 0) or self.config.ignorePtcMask:
-                self.log.warning("Mask not found for %s in detector %s in non-linearity fit. Using all points.", ampName, detector.getName())
+                self.log.warning("Mask not found for %s in detector %s in fit.Using all points.",
+                                 ampName, detector.getName())
                 mask = np.repeat(True, len(inputPtc.expIdMask[ampName]))
             else:
                 mask = np.array(inputPtc.expIdMask[ampName], dtype=bool)
@@ -296,8 +298,7 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
                     else:
                         correction = 0.0
                     modExpTimes.append(modExpTime + correction)
-                    # Debug
-                    #print(detector.getName(), ampName, pair, modExpTime, correction)
+
                 inputAbscissa = np.array(modExpTimes)[mask]
             else:
                 inputAbscissa = np.array(inputPtc.rawExpTimes[ampName])[mask]
@@ -311,11 +312,12 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
             linearOrdinate = inputOrdinate[fluxMask]
             if len(linearAbscissa) < 2:
                 linearizer = self.fillBadAmp(linearizer, fitOrder, inputPtc, amp)
-                self.log.warning("Amp %s in detector %s has not enough points for linear fit.  Skipping!", ampName, detector.getName())
+                self.log.warning("Amp %s in detector %s has not enough points for linear fit. Skipping!",
+                                 ampName, detector.getName())
                 continue
-            #print(f"Amp:{ampName}, len(abs)={len(linearAbscissa)}, len(ord)={len(linearAbscissa)}")
+
             linearFit, linearFitErr, chiSq, weights = irlsFit([0.0, 100.0], linearAbscissa,
-                                                                  linearOrdinate, funcPolynomial)
+                                                              linearOrdinate, funcPolynomial)
             # Convert this proxy-to-flux fit into an expected linear flux
             linearOrdinate = linearFit[0] + linearFit[1] * inputAbscissa
 
@@ -326,7 +328,8 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
             fitOrdinate = inputOrdinate[fluxMask]
             if len(linearOrdinate) < 2:
                 linearizer = self.fillBadAmp(linearizer, fitOrder, inputPtc, amp)
-                self.log.warning("Amp %s in detector %s has not enough points in linear ordinate.  Skipping!", ampName, detector.getName())
+                self.log.warning("Amp %s in detector %s has not enough points in linear ordinate. Skipping!",
+                                 ampName, detector.getName())
                 continue
 
             self.debugFit('linearFit', inputAbscissa, inputOrdinate, linearOrdinate, fluxMask, ampName)
@@ -423,9 +426,10 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
             linearizer.linearFit[ampName] = linearFit
             residuals = inputOrdinate[fluxMask] - modelOrdinate
 
-            # The residuals only include flux values which are not masked out.
-            # To be able to access this later and associate it with the PTC flux
-            # values, we need to fill out the residuals with NaNs where the flux
+            # The residuals only include flux values which are
+            # not masked out. To be able to access this later and
+            # associate it with the PTC flux values, we need to
+            # fill out the residuals with NaNs where the flux
             # value is masked.
 
             # First convert mask to a composite of the two masks:
@@ -457,7 +461,8 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         )
 
     def fillBadAmp(self, linearizer, fitOrder, inputPtc, amp):
-        # Need to fill linearizer with empty values if the amp is non-functional
+        # Need to fill linearizer with empty values
+        # if the amp is non-functional
         ampName = amp.getName()
         nEntries = 1
         pEntries = 1
