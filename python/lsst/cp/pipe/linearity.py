@@ -245,33 +245,12 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         for i, amp in enumerate(detector):
             ampName = amp.getName()
             if ampName in inputPtc.badAmps:
-                nEntries = 1
-                pEntries = 1
-                if self.config.linearityType in ['Polynomial']:
-                    nEntries = fitOrder + 1
-                    pEntries = fitOrder + 1
-                elif self.config.linearityType in ['Spline']:
-                    nEntries = fitOrder * 2
-                elif self.config.linearityType in ['Squared', 'None']:
-                    nEntries = 1
-                    pEntries = fitOrder + 1
-                elif self.config.linearityType in ['LookupTable']:
-                    nEntries = 2
-                    pEntries = fitOrder + 1
-
-                linearizer.linearityType[ampName] = "None"
-                linearizer.linearityCoeffs[ampName] = np.zeros(nEntries)
-                linearizer.linearityBBox[ampName] = amp.getBBox()
-                linearizer.fitParams[ampName] = np.zeros(pEntries)
-                linearizer.fitParamsErr[ampName] = np.zeros(pEntries)
-                linearizer.fitChiSq[ampName] = np.nan
-                linearizer.fitResiduals[ampName] = np.zeros(len(inputPtc.expIdMask[ampName]))
-                linearizer.linearFit[ampName] = np.zeros(2)
-                self.log.warning("Amp %s has no usable PTC information.  Skipping!", ampName)
+                linearizer = self.fillBadAmp(linearizer, fitOrder, inputPtc, amp)
+                self.log.warning("Amp %s in detector %s has no usable PTC information.  Skipping!", ampName, detector.getName())
                 continue
 
             if (len(inputPtc.expIdMask[ampName]) == 0) or self.config.ignorePtcMask:
-                self.log.warning("Mask not found for %s in non-linearity fit. Using all points.", ampName)
+                self.log.warning("Mask not found for %s in detector %s in non-linearity fit. Using all points.", ampName, detector.getName())
                 mask = np.repeat(True, len(inputPtc.expIdMask[ampName]))
             else:
                 mask = np.array(inputPtc.expIdMask[ampName], dtype=bool)
@@ -324,24 +303,32 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
                 inputAbscissa = np.array(inputPtc.rawExpTimes[ampName])[mask]
 
             inputOrdinate = np.array(inputPtc.rawMeans[ampName])[mask]
-
             # Determine proxy-to-linear-flux transformation
             fluxMask = inputOrdinate < self.config.maxLinearAdu
             lowMask = inputOrdinate > self.config.minLinearAdu
             fluxMask = fluxMask & lowMask
             linearAbscissa = inputAbscissa[fluxMask]
             linearOrdinate = inputOrdinate[fluxMask]
-
+            if len(linearAbscissa) < 2:
+                linearizer = self.fillBadAmp(linearizer, fitOrder, inputPtc, amp)
+                self.log.warning("Amp %s in detector %s has not enough points for linear fit.  Skipping!", ampName, detector.getName())
+                continue
+            #print(f"Amp:{ampName}, len(abs)={len(linearAbscissa)}, len(ord)={len(linearAbscissa)}")
             linearFit, linearFitErr, chiSq, weights = irlsFit([0.0, 100.0], linearAbscissa,
-                                                              linearOrdinate, funcPolynomial)
+                                                                  linearOrdinate, funcPolynomial)
             # Convert this proxy-to-flux fit into an expected linear flux
             linearOrdinate = linearFit[0] + linearFit[1] * inputAbscissa
 
             # Exclude low end outliers
-            threshold = self.config.nSigmaClipLinear * np.sqrt(linearOrdinate)
+            threshold = self.config.nSigmaClipLinear * np.sqrt(abs(linearOrdinate))
             fluxMask = np.abs(inputOrdinate - linearOrdinate) < threshold
             linearOrdinate = linearOrdinate[fluxMask]
             fitOrdinate = inputOrdinate[fluxMask]
+            if len(linearOrdinate) < 2:
+                linearizer = self.fillBadAmp(linearizer, fitOrder, inputPtc, amp)
+                self.log.warning("Amp %s in detector %s has not enough points in linear ordinate.  Skipping!", ampName, detector.getName())
+                continue
+
             self.debugFit('linearFit', inputAbscissa, inputOrdinate, linearOrdinate, fluxMask, ampName)
             # Do fits
             if self.config.linearityType in ['Polynomial', 'Squared', 'LookupTable']:
@@ -434,23 +421,17 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
             linearizer.fitParamsErr[ampName] = np.array(polyFitErr)
             linearizer.fitChiSq[ampName] = chiSq
             linearizer.linearFit[ampName] = linearFit
-            residuals = inputOrdinate - modelOrdinate
-            """
-            The residuals only include flux values which are not masked out.
-            To be able to access this later and associate it with the PTC flux
-            values, we need to fill out the residuals with NaNs where the flux
-            value is masked.  I'm sure there is a more "Pythonic" way to do
-            this, but this works.
-            """
-            fullResiduals = []
-            maskCounter = 0
-            for ii, pair in enumerate(inputPtc.inputExpIdPairs[ampName]):
-                if mask[ii]:
-                    fullResiduals.append(residuals[ii - maskCounter])
-                else:
-                    fullResiduals.append(np.nan)
-                    maskCounter += 1
+            residuals = inputOrdinate[fluxMask] - modelOrdinate
 
+            # The residuals only include flux values which are not masked out.
+            # To be able to access this later and associate it with the PTC flux
+            # values, we need to fill out the residuals with NaNs where the flux
+            # value is masked.
+
+            # First convert mask to a composite of the two masks:
+            mask[mask] = fluxMask
+            fullResiduals = np.full(len(mask), np.nan)
+            fullResiduals[mask] = residuals
             linearizer.fitResiduals[ampName] = fullResiduals
             image = afwImage.ImageF(len(inputOrdinate), 1)
             image.getArray()[:, :] = inputOrdinate
@@ -474,6 +455,33 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
             outputLinearizer=linearizer,
             outputProvenance=provenance,
         )
+
+    def fillBadAmp(self, linearizer, fitOrder, inputPtc, amp):
+        # Need to fill linearizer with empty values if the amp is non-functional
+        ampName = amp.getName()
+        nEntries = 1
+        pEntries = 1
+        if self.config.linearityType in ['Polynomial']:
+            nEntries = fitOrder + 1
+            pEntries = fitOrder + 1
+        elif self.config.linearityType in ['Spline']:
+            nEntries = fitOrder * 2
+        elif self.config.linearityType in ['Squared', 'None']:
+            nEntries = 1
+            pEntries = fitOrder + 1
+        elif self.config.linearityType in ['LookupTable']:
+            nEntries = 2
+            pEntries = fitOrder + 1
+
+        linearizer.linearityType[ampName] = "None"
+        linearizer.linearityCoeffs[ampName] = np.zeros(nEntries)
+        linearizer.linearityBBox[ampName] = amp.getBBox()
+        linearizer.fitParams[ampName] = np.zeros(pEntries)
+        linearizer.fitParamsErr[ampName] = np.zeros(pEntries)
+        linearizer.fitChiSq[ampName] = np.nan
+        linearizer.fitResiduals[ampName] = np.zeros(len(inputPtc.expIdMask[ampName]))
+        linearizer.linearFit[ampName] = np.zeros(2)
+        return linearizer
 
     def debugFit(self, stepname, xVector, yVector, yModel, mask, ampName):
         """Debug method for linearity fitting.
