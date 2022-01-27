@@ -178,7 +178,12 @@ class PhotodiodeCorrectionTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
                 ampName = amp.getName()
                 fluxResidual = thisLinearizer.fitResiduals[ampName]
                 linearSlope = thisLinearizer.linearFit[ampName]
-                abscissaCorrection = fluxResidual / linearSlope[1]
+                if np.isnan(linearSlope[1]):
+                    abscissaCorrection = np.zeros(len(fluxResidual))
+                elif linearSlope[1] < 1.0E-12:
+                    abscissaCorrection = np.zeros(len(fluxResidual))
+                else:
+                    abscissaCorrection = fluxResidual / linearSlope[1]
                 for i, pair in enumerate(thisPtc.inputExpIdPairs[ampName]):
                     key = str(pair[0])
                     try:
