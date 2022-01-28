@@ -67,7 +67,7 @@ class LinearitySolveConnections(pipeBase.PipelineTaskConnections,
         name="pdCorrection",
         doc="Input photodiode correction.",
         storageClass="IsrCalib",
-        dimensions=("instrument", "exposure"),
+        dimensions=("instrument", ),
         isCalibration=True,
     )
 
@@ -258,7 +258,8 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
                 mask = np.array(inputPtc.expIdMask[ampName], dtype=bool)
 
             if self.config.usePhotodiode:
-                # Lage - here's the real meat of adding the photodiode.
+                # Here's where we bring in the photodiode data
+                # TODO: replace when pd data is ingested.
                 DATA_DIR = '/lsstdata/offline/teststand/BOT/storage/'
                 modExpTimes = []
                 for i, pair in enumerate(inputPtc.inputExpIdPairs[ampName]):
@@ -352,7 +353,7 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
                 if self.config.linearityType == 'Squared':
                     linearityFit = [linearityFit[2]]
                 elif self.config.linearityType == 'LookupTable':
-                    # Use linear part to get time at wich signal is
+                    # Use linear part to get time at which signal is
                     # maxAduForLookupTableLinearizer DN
                     tMax = (self.config.maxLookupTableAdu - polyFit[0])/polyFit[1]
                     timeRange = np.linspace(0, tMax, self.config.maxLookupTableAdu)

@@ -1,0 +1,27 @@
+description: linearizer with photodiode correction
+tasks:
+  linearityInitial:
+    class: lsst.cp.pipe.LinearitySolveTask
+    config:
+      connections.inputPtc: ptc
+      connections.outputLinearizer: unCorrectedLinearizer
+      linearityType: Spline
+      ignorePtcMask: false
+      applyPhotodiodeCorrection: false
+      usePhotodiode: true
+  photodiodeCorrection:
+    class: lsst.cp.pipe.PhotodiodeCorrectionTask
+    config:
+      connections.inputPtc: ptc
+      connections.inputLinearizer: unCorrectedLinearizer
+      connections.outputPhotodiodeCorrection: pdCorrection
+  linearityFinal:
+    class: lsst.cp.pipe.LinearitySolveTask
+    config:
+      connections.inputPtc: ptc
+      connections.inputPhotodiodeCorrection: pdCorrection
+      connections.outputLinearizer: linearizer
+      linearityType: Spline
+      ignorePtcMask: false
+      applyPhotodiodeCorrection: true
+      usePhotodiode: true
