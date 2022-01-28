@@ -32,15 +32,7 @@ __all__ = ["PhotodiodeCorrectionTask", "PhotodiodeCorrectionConfig"]
 
 
 class PhotodiodeCorrectionConnections(pipeBase.PipelineTaskConnections,
-                                      dimensions=("instrument", "exposure")):
-    dummy = cT.Input(
-        name="raw",
-        doc="Dummy exposure.",
-        storageClass='Exposure',
-        dimensions=("instrument", "exposure", "detector"),
-        multiple=True,
-        deferLoad=True,
-    )
+                                      dimensions=("instrument", )):
 
     camera = cT.PrerequisiteInput(
         name="camera",
@@ -50,6 +42,7 @@ class PhotodiodeCorrectionConnections(pipeBase.PipelineTaskConnections,
         isCalibration=True,
         lookupFunction=lookupStaticCalibration,
     )
+
     inputPtc = cT.PrerequisiteInput(
         name="ptc",
         doc="Input PTC dataset.",
@@ -60,7 +53,7 @@ class PhotodiodeCorrectionConnections(pipeBase.PipelineTaskConnections,
     )
 
     inputLinearizer = cT.Input(
-        name="unCorrLinearizer",
+        name="unCorrectedLinearizer",
         doc="Raw linearizers that have not been corrected.",
         storageClass="Linearizer",
         dimensions=("instrument", "detector"),
@@ -72,7 +65,7 @@ class PhotodiodeCorrectionConnections(pipeBase.PipelineTaskConnections,
         name="pdCorrection",
         doc="Correction of photodiode systematic error.",
         storageClass="IsrCalib",
-        dimensions=("instrument", "exposure"),
+        dimensions=("instrument", ),
         isCalibration=True,
     )
 
@@ -81,12 +74,6 @@ class PhotodiodeCorrectionConfig(pipeBase.PipelineTaskConfig,
                                  pipelineConnections=PhotodiodeCorrectionConnections):
     """Configuration for calculating the photodiode corrections.
     """
-    dummyParameter = pexConfig.Field(
-        dtype=bool,
-        doc="Dummy parameter",
-        default=False,
-    )
-
 
 class PhotodiodeCorrectionTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
     """Calculate the photodiode corrections.
@@ -116,6 +103,7 @@ class PhotodiodeCorrectionTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         # inputPtc and inputLinearizer.  We do this here because the
         # detector info is not present in inputPtc metadata.  We could
         # move it when that is fixed.
+
         self.detectorList = []
         for i, lin in enumerate(inputRefs.inputLinearizer):
             linDetector = lin.dataId["detector"]
@@ -128,7 +116,7 @@ class PhotodiodeCorrectionTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         outputs = self.run(**inputs)
         butlerQC.put(outputs, outputRefs)
 
-    def run(self, inputPtc, inputLinearizer, dummy, camera, inputDims):
+    def run(self, inputPtc, inputLinearizer, camera, inputDims):
         """Calculate the systematic photodiode correction.
 
         Parameters
@@ -137,10 +125,6 @@ class PhotodiodeCorrectionTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
             Pre-measured PTC dataset.
         inputLinearizer : `lsst.ip.isr.Linearizer`
             Previously measured linearizer.
-        dummy : `lsst.afw.image.Exposure`
-            The exposure used to select the appropriate PTC dataset.
-            In almost all circumstances, one of the input exposures
-            used to generate the PTC dataset is the best option.
         camera : `lsst.afw.cameraGeom.Camera`
             Camera geometry.
         inputDims : `lsst.daf.butler.DataCoordinate` or `dict`
@@ -160,9 +144,7 @@ class PhotodiodeCorrectionTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
 
         Notes
         -----
-
         """
-
         # Initialize photodiodeCorrection.
         photodiodeCorrection = PhotodiodeCorrection(log=self.log)
 
