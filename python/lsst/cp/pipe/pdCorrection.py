@@ -23,7 +23,6 @@ import numpy as np
 
 import lsst.pipe.base as pipeBase
 import lsst.pipe.base.connectionTypes as cT
-import lsst.pex.config as pexConfig
 
 from lsst.ip.isr import (PhotodiodeCorrection, IsrProvenance)
 from ._lookupStaticCalibration import lookupStaticCalibration
@@ -74,6 +73,7 @@ class PhotodiodeCorrectionConfig(pipeBase.PipelineTaskConfig,
                                  pipelineConnections=PhotodiodeCorrectionConnections):
     """Configuration for calculating the photodiode corrections.
     """
+
 
 class PhotodiodeCorrectionTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
     """Calculate the photodiode corrections.
