@@ -406,7 +406,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
             outputCovariances=partialPtcDatasetList,
         )
 
-    def makeCovArray(self, inputTuple, maxRangeFromTuple=8):
+    def makeCovArray(self, inputTuple, maxRangeFromTuple):
         """Make covariances array from tuple.
 
         Parameters
@@ -444,26 +444,6 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
 
         muVals : `numpy.array`
             List of mean signal values.
-
-        Notes
-        -----
-
-        The input tuple should contain  the following rows:
-        (mu, cov, var, i, j, npix), with one entry per lag, and image pair.
-        Different lags(i.e. different i and j) from the same
-        image pair have the same values of mu1 and mu2. When i==j==0, cov
-        = var.
-
-        If the input tuple contains several video channels, one should
-        select the data of a given channel *before* entering this
-        routine, as well as apply(e.g.) saturation cuts.
-
-        The routine returns cov[k_mu, j, i], vcov[(same indices)], and mu[k]
-        where the first index of cov matches the one in mu.
-
-        This routine implements the loss of variance due to clipping cuts
-        when measuring variances and covariance, but this should happen
-        inside the measurement code, where the cuts are readily available.
         """
         if maxRangeFromTuple is not None:
             cut = (inputTuple['i'] < maxRangeFromTuple) & (inputTuple['j'] < maxRangeFromTuple)

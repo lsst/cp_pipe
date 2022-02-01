@@ -409,7 +409,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             covSqrtWeightsAtAmp = np.nan_to_num(dataset.covariancesSqrtWeights[ampName])[maskAtAmp]
 
             # Initial fit, to approximate parameters, with c=0
-            a0, c0, noise0, gain0 = self.initialFitFullcovariance(muAtAmp, covAtAmp, covSqrtWeightsAtAmp)
+            a0, c0, noise0, gain0 = self.initialFitFullCovariance(muAtAmp, covAtAmp, covSqrtWeightsAtAmp)
 
             # Fit full model (Eq. 20 of Astier+19) and same model with
             # b=0 (c=0 in this code)
@@ -471,10 +471,37 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
 
         return dataset
 
-    def initialFitFullcovariance(self, mu, cov, sqrtW):
+    def initialFitFullCovariance(self, mu, cov, sqrtW):
         """ Performs a crude parabolic fit of the data in order to start
         the full fit close to the solution, setting b=0 (c=0) in Eq. 20
         of Astier+19.
+
+        Parameters
+        ----------
+        mu : `numpy.array`, (N,)
+            Signal `mu` (ADU)
+
+        cov : `numpy.array`, (N, M, M)
+            Covariance arrays of size `(M, M)` (with
+            `M = config.maximumRangeCovariancesAstier`),
+            indexed by mean signal `mu`.
+
+        sqrtW : `numpy.array`, (N,)
+            Covariance weights, defined as 1./sqrt(Variances)
+
+        Returns
+        -------
+        a : `numpy.array`, (M, M)
+            "a" parameter per flux in Eq. 20 of Astier+19.
+
+        c : `numpy.array`, (M, M)
+            "c"="ab" parameter per flux in Eq. 20 of Astier+19.
+
+        noise : `numpy.array`, (M, M)
+            "noise" parameter per flux in Eq. 20 of Astier+19.
+
+        gain : `float`
+            Amplifier gain (e/ADU)
         """
         matrixSide = self.config.maximumRangeCovariancesAstier
 
@@ -520,7 +547,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             gain (e/ADU).
 
         x : `numpy.array`, (N,)
-            Signal mu (ADU)
+            Signal `mu` (ADU)
 
         Returns
         -------
