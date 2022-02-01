@@ -4,26 +4,26 @@ tasks:
     class: lsst.ip.isr.IsrTask
     config:
       connections.ccdExposure: 'raw'
-      connections.outputExposure: 'cpFlatProc'
-      doBias: True
-      doVariance: True
-      doLinearize: True
-      doCrosstalk: True
-      doDefect: True
-      doNanMasking: True
-      doInterpolate: True
-      doDark: True
+      connections.outputExposure: 'cpflatProc'
+      doBias: true
+      doVariance: true
+      doLinearize: true
+      doCrosstalk: true
+      doDefect: true
+      doNanMasking: true
+      doInterpolate: true
+      doDark: true
       doBrighterFatter: False
-      doFlat: False
+      doflat: False
       doFringe: False
       doApplyGains: False
-  cpFlatCombine:
+  cpflatCombine:
     class: lsst.cp.pipe.cpCombine.CalibCombineByFilterTask
     config:
-      connections.inputExps: 'cpFlatProc'
+      connections.inputExps: 'cpflatProc'
       connections.outputData: 'flat'
       calibrationType: 'flat'
       exposureScaling: MeanStats
 contracts:
-  - isr.doFlat == False
-  - cpFlatCombine.calibrationType == "flat"
+  - isr.doflat == False
+  - cpflatCombine.calibrationType == "flat"

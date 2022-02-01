@@ -6,6 +6,6 @@ tasks:
   isr:
     class: lsst.ip.isr.IsrTask
     config:
-      doLinearize: False
-      doCrosstalk: False
-      doDefect: False
+      doLinearize: false
+      doCrosstalk: false
+      doDefect: false

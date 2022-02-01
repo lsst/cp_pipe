@@ -5,21 +5,21 @@ tasks:
     config:
       connections.ccdExposure: 'raw'
       connections.outputExposure: 'cpCrosstalkProc'
-      doWrite: True
-      doOverscan: True
-      doAssembleCcd: True
-      doBias: True
-      doVariance: False
-      doLinearize: True
-      doCrosstalk: False
-      doBrighterFatter: False
-      doDark: False
-      doStrayLight: False
-      doFlat: False
-      doFringe: False
-      doApplyGains: False
-      doDefect: True
-      doSaturationInterpolation: False
+      doWrite: true
+      doOverscan: true
+      doAssembleCcd: true
+      doBias: true
+      doVariance: false
+      doLinearize: true
+      doCrosstalk: false
+      doBrighterFatter: false
+      doDark: false
+      doStrayLight: false
+      doFlat: false
+      doFringe: false
+      doApplyGains: false
+      doDefect: true
+      doSaturationInterpolation: false
       growSaturationFootprintSize: 0
   crosstalkExtract:
     class: lsst.cp.pipe.measureCrosstalk.CrosstalkExtractTask

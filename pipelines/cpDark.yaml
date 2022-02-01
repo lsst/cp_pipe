@@ -5,18 +5,18 @@ tasks:
     config:
       connections.ccdExposure: 'raw'
       connections.outputExposure: 'cpDarkIsr'
-      doBias: True
-      doVariance: True
-      doLinearize: True
-      doCrosstalk: True
-      doDefect: True
-      doNanMasking: True
-      doInterpolate: True
-      doBrighterFatter: False
-      doDark: False
-      doFlat: False
-      doApplyGains: False
-      doFringe: False
+      doBias: true
+      doVariance: true
+      doLinearize: true
+      doCrosstalk: true
+      doDefect: true
+      doNanMasking: true
+      doInterpolate: true
+      doBrighterFatter: false
+      doDark: false
+      doFlat: false
+      doApplyGains: false
+      doFringe: false
   cpDark:
     class: lsst.cp.pipe.cpDarkTask.CpDarkTask
     config:
@@ -31,6 +31,6 @@ tasks:
       exposureScaling: "DarkTime"
       python: config.mask.append("CR")
 contracts:
-  - isr.doDark == False
+  - isr.doDark == false
   - cpDarkCombine.calibrationType == "dark"
   - cpDarkCombine.exposureScaling == "DarkTime"

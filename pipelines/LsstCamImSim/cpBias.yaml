@@ -6,4 +6,4 @@ tasks:
   isr:
     class: lsst.ip.isr.IsrTask
     config:
-      doDefect: False
+      doDefect: false
