@@ -25,12 +25,9 @@ import lsst.afw.math as afwMath
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 from lsst.cp.pipe.utils import (arrangeFlatsByExpTime, arrangeFlatsByExpId,
-                                sigmaClipCorrection)
+                                sigmaClipCorrection, CovFastFourierTransform)
 
 import lsst.pipe.base.connectionTypes as cT
-
-from .astierCovPtcUtils import (CovFastFourierTransform, computeCovDirect)
-from .astierCovPtcFit import makeCovArray
 
 from lsst.ip.isr import PhotonTransferCurveDataset
 from lsst.ip.isr import IsrTask
@@ -75,11 +72,6 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
         doc="Maximum range of covariances as in Astier+19",
         default=8,
     )
-    covAstierRealSpace = pexConfig.Field(
-        dtype=bool,
-        doc="Calculate covariances in real space or via FFT? (see appendix A of Astier+19).",
-        default=False,
-    )
     binSize = pexConfig.Field(
         dtype=int,
         doc="Bin the image by this factor in both dimensions.",
@@ -88,8 +80,8 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
     minMeanSignal = pexConfig.DictField(
         keytype=str,
         itemtype=float,
-        doc="Minimum values (inclusive) of mean signal (in ADU) above which to consider, per amp."
-            " The same cut is applied to all amps if this dictionary is of the form"
+        doc="Minimum values (inclusive) of mean signal (in ADU) per amp to use."
+            " The same cut is applied to all amps if this parameter [`dict`] is passed as "
             " {'ALL_AMPS': value}",
         default={'ALL_AMPS': 0.0},
     )
@@ -160,31 +152,43 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
 
     This task receives as input a list of flat-field images
     (flats), and sorts these flats in pairs taken at the
-    same time (if there's a different number of flats,
-    those flats are discarded). The mean, variance, and
-    covariances are measured from the difference of the flat
-    pairs at a given time. The variance is calculated
-    via afwMath, and the covariance via the methods in Astier+19
-    (appendix A). In theory, var = covariance[0,0]. This should
-    be validated, and in the future, we may decide to just keep
-    one (covariance).
+    same time (the task will raise if there is one one flat
+    at a given exposure time, and it will discard extra flats if
+    there are more than two per exposure time). This task measures
+    the  mean, variance, and covariances from a region (e.g.,
+    an amplifier) of the difference image of the two flats with
+    the same exposure time.
 
-    The measured covariances at a particular time (along with other
-    quantities such as the mean) are stored in a PTC dataset object
-    (`~lsst.ip.isr.PhotonTransferCurveDataset`), which gets
-    partially filled. The number of partially-filled PTC dataset
-    objects will be less than the number of input exposures, but gen3
-    requires/assumes that the number of input dimensions matches
+    The variance is calculated via afwMath, and the covariance
+    via the methods in Astier+19 (appendix A). In theory,
+    var = covariance[0,0].  This should be validated, and in the
+    future, we may decide to just keep one (covariance).
+    At this moment, if the two values differ by more than the value
+    of `thresholdDiffAfwVarVsCov00` (default: 1%), a warning will
+    be issued.
+
+    The measured covariances at a given exposure time (along with
+    other quantities such as the mean) are stored in a PTC dataset
+    object (`~lsst.ip.isr.PhotonTransferCurveDataset`), which gets
+    partially filled at this stage (the remainder of the attributes
+    of the dataset will be filled after running the second task of
+    the PTC-measurement pipeline, `~PhotonTransferCurveSolveTask`).
+
+    The number of partially-filled
+    `~lsst.ip.isr.PhotonTransferCurveDataset` objects will be less
+    than the number of input exposures because the task combines
+    input flats in pairs. However, it is required at this moment
+    that the number of input dimensions matches
     bijectively the number of output dimensions. Therefore, a number
-    of "dummy" PTC dataset are inserted in the output list that has
-    the partially-filled PTC datasets with the covariances.  This
-    output list will be used as input of
-    ``PhotonTransferCurveSolveTask``, which will assemble the multiple
-    ``PhotonTransferCurveDataset`` into a single one in order to fit
-    the measured covariances as a function of flux to a particular
-    model.
+    of "dummy" PTC datasets are inserted in the output list.  This
+    output list will then be used as input of the next task in the
+    PTC-measurement pipeline, `PhotonTransferCurveSolveTask`,
+    which will assemble the multiple `PhotonTransferCurveDataset`
+    objects into a single one in order to fit the measured covariances
+    as a function of flux to one of three models
+    (see `PhotonTransferCurveSolveTask` for details).
 
-    Astier+19: "The Shape of the Photon Transfer Curve of CCD
+    Reference: Astier+19: "The Shape of the Photon Transfer Curve of CCD
     sensors", arXiv:1905.08677.
     """
 
@@ -267,7 +271,9 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         # These are the column names for `tupleRows` below.
         tags = [('mu', '<f8'), ('afwVar', '<f8'), ('i', '<i8'), ('j', '<i8'), ('var', '<f8'),
                 ('cov', '<f8'), ('npix', '<i8'), ('ext', '<i8'), ('expTime', '<f8'), ('ampName', '<U3')]
-        # Create a dummy ptcDataset
+        # Create a dummy ptcDataset. Dummy datasets will be
+        # used to ensure that the number of output and input
+        # dimensions match.
         dummyPtcDataset = PhotonTransferCurveDataset(ampNames, 'DUMMY',
                                                      self.config.maximumRangeCovariancesAstier)
         # Initialize amps of `dummyPtcDatset`.
@@ -316,53 +322,59 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                 ampName = amp.getName()
                 # covAstier: [(i, j, var (cov[0,0]), cov, npix) for
                 # (i,j) in {maxLag, maxLag}^2]
-                doRealSpace = self.config.covAstierRealSpace
                 if self.config.detectorMeasurementRegion == 'AMP':
                     region = amp.getBBox()
                 elif self.config.detectorMeasurementRegion == 'FULL':
                     region = None
                 # `measureMeanVarCov` is the function that measures
-                # the variance and covariances from the difference
-                # image of two flats at the same exposure time.  The
-                # variable `covAstier` is of the form: [(i, j, var
-                # (cov[0,0]), cov, npix) for (i,j) in {maxLag,
-                # maxLag}^2]
-                muDiff, varDiff, covAstier = self.measureMeanVarCov(exp1, exp2, region=region,
-                                                                    covAstierRealSpace=doRealSpace)
-                # Correction factor for sigma clipping. Function
-                # returns 1/sqrt(varFactor), so it needs to be
-                # squared. varDiff is calculated via
+                # the variance and covariances from a region of
+                # the difference image of two flats at the same
+                # exposure time.  The variable `covAstier` that is
+                # returned is of the form:
+                # [(i, j, var (cov[0,0]), cov, npix) for (i,j) in
+                # {maxLag, maxLag}^2].
+                muDiff, varDiff, covAstier = self.measureMeanVarCov(exp1, exp2, region=region)
+                # Correction factor for bias introduced by sigma
+                # clipping.
+                # Function returns 1/sqrt(varFactor), so it needs
+                # to be squared. varDiff is calculated via
                 # afwMath.VARIANCECLIP.
                 varFactor = sigmaClipCorrection(self.config.nSigmaClipPtc)**2
                 varDiff *= varFactor
 
                 expIdMask = True
+                # Mask data point at this mean signal level if
+                # the signal, variance, or covariance calculations
+                # from `measureMeanVarCov` resulted in NaNs.
                 if np.isnan(muDiff) or np.isnan(varDiff) or (covAstier is None):
-                    msg = ("NaN mean or var, or None cov in amp %s in exposure pair %d, %d of detector %d.",
-                           ampName, expId1, expId2, detNum)
-                    self.log.warning(msg)
+                    self.log.warning("NaN mean or var, or None cov in amp %s in exposure pair %d, %d of "
+                                     "detector %d.", ampName, expId1, expId2, detNum)
                     nAmpsNan += 1
                     expIdMask = False
                     covArray = np.full((1, self.config.maximumRangeCovariancesAstier,
                                         self.config.maximumRangeCovariancesAstier), np.nan)
                     covSqrtWeights = np.full_like(covArray, np.nan)
 
+                # Mask data point if it is outside of the
+                # specified mean signal range.
                 if (muDiff <= minMeanSignalDict[ampName]) or (muDiff >= maxMeanSignalDict[ampName]):
                     expIdMask = False
 
                 if covAstier is not None:
+                    # Turn the tuples with the measured information
+                    # into covariance arrays.
                     tupleRows = [(muDiff, varDiff) + covRow + (ampNumber, expTime,
                                                                ampName) for covRow in covAstier]
                     tempStructArray = np.array(tupleRows, dtype=tags)
-                    covArray, vcov, _ = makeCovArray(tempStructArray,
-                                                     self.config.maximumRangeCovariancesAstier)
+                    covArray, vcov, _ = self.makeCovArray(tempStructArray,
+                                                          self.config.maximumRangeCovariancesAstier)
                     covSqrtWeights = np.nan_to_num(1./np.sqrt(vcov))
 
                 # Correct covArray for sigma clipping:
                 # 1) Apply varFactor twice for the whole covariance matrix
                 covArray *= varFactor**2
                 # 2) But, only once for the variance element of the
-                # matrix, covArray[0,0]
+                # matrix, covArray[0,0] (so divide one factor out).
                 covArray[0, 0] /= varFactor
 
                 partialPtcDataset.setAmpValues(ampName, rawExpTime=[expTime], rawMean=[muDiff],
@@ -370,10 +382,21 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                                                expIdMask=[expIdMask], covArray=covArray,
                                                covSqrtWeights=covSqrtWeights)
             # Use location of exp1 to save PTC dataset from (exp1, exp2) pair.
-            # Below, np.where(expId1 == np.array(inputDims))  returns a tuple
+            # Below, np.where(expId1 == np.array(inputDims)) returns a tuple
             # with a single-element array, so [0][0]
             # is necessary to extract the required index.
             datasetIndex = np.where(expId1 == np.array(inputDims))[0][0]
+            # `partialPtcDatasetList` is a list of
+            # `PhotonTransferCurveDataset` objects. Some of them
+            # will be dummy datasets (to match length of input
+            # and output references), and the rest will have
+            # datasets with the mean signal, variance, and
+            # covariance measurements at a given exposure
+            # time. The next ppart of the PTC-measurement
+            # pipeline, `solve`, will take this list as input,
+            # and assemble the measurements in the datasets
+            # in an addecuate manner for fitting a PTC
+            # model.
             partialPtcDatasetList[datasetIndex] = partialPtcDataset
 
             if nAmpsNan == len(ampNames):
@@ -383,7 +406,101 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
             outputCovariances=partialPtcDatasetList,
         )
 
-    def measureMeanVarCov(self, exposure1, exposure2, region=None, covAstierRealSpace=False):
+    def makeCovArray(self, inputTuple, maxRangeFromTuple=8):
+        """Make covariances array from tuple.
+
+        Parameters
+        ----------
+        inputTuple : `numpy.ndarray`
+            Structured array with rows with at least
+            (mu, afwVar, cov, var, i, j, npix), where:
+
+            mu : `float`
+                0.5*(m1 + m2), where mu1 is the mean value of flat1
+                and mu2 is the mean value of flat2.
+            afwVar : `float`
+                Variance of difference flat, calculated with afw.
+            cov : `float`
+                Covariance value at lag(i, j)
+            var : `float`
+                Variance(covariance value at lag(0, 0))
+            i : `int`
+                Lag in dimension "x".
+            j : `int`
+                Lag in dimension "y".
+            npix : `int`
+                Number of pixels used for covariance calculation.
+
+        maxRangeFromTuple : `int`
+            Maximum range to select from tuple.
+
+        Returns
+        -------
+        cov : `numpy.array`
+            Covariance arrays, indexed by mean signal mu.
+
+        vCov : `numpy.array`
+            Variance arrays, indexed by mean signal mu.
+
+        muVals : `numpy.array`
+            List of mean signal values.
+
+        Notes
+        -----
+
+        The input tuple should contain  the following rows:
+        (mu, cov, var, i, j, npix), with one entry per lag, and image pair.
+        Different lags(i.e. different i and j) from the same
+        image pair have the same values of mu1 and mu2. When i==j==0, cov
+        = var.
+
+        If the input tuple contains several video channels, one should
+        select the data of a given channel *before* entering this
+        routine, as well as apply(e.g.) saturation cuts.
+
+        The routine returns cov[k_mu, j, i], vcov[(same indices)], and mu[k]
+        where the first index of cov matches the one in mu.
+
+        This routine implements the loss of variance due to clipping cuts
+        when measuring variances and covariance, but this should happen
+        inside the measurement code, where the cuts are readily available.
+        """
+        if maxRangeFromTuple is not None:
+            cut = (inputTuple['i'] < maxRangeFromTuple) & (inputTuple['j'] < maxRangeFromTuple)
+            cutTuple = inputTuple[cut]
+        else:
+            cutTuple = inputTuple
+        # increasing mu order, so that we can group measurements with the
+        # same mu
+        muTemp = cutTuple['mu']
+        ind = np.argsort(muTemp)
+
+        cutTuple = cutTuple[ind]
+        # should group measurements on the same image pairs(same average)
+        mu = cutTuple['mu']
+        xx = np.hstack(([mu[0]], mu))
+        delta = xx[1:] - xx[:-1]
+        steps, = np.where(delta > 0)
+        ind = np.zeros_like(mu, dtype=int)
+        ind[steps] = 1
+        ind = np.cumsum(ind)  # this acts as an image pair index.
+        # now fill the 3-d cov array(and variance)
+        muVals = np.array(np.unique(mu))
+        i = cutTuple['i'].astype(int)
+        j = cutTuple['j'].astype(int)
+        c = 0.5*cutTuple['cov']
+        n = cutTuple['npix']
+        v = 0.5*cutTuple['var']
+        # book and fill
+        cov = np.ndarray((len(muVals), np.max(i)+1, np.max(j)+1))
+        var = np.zeros_like(cov)
+        cov[ind, i, j] = c
+        var[ind, i, j] = v**2/n
+        var[:, 0, 0] *= 2  # var(v) = 2*v**2/N
+
+        return cov, var, muVals
+
+    def measureMeanVarCov(self, exposure1, exposure2, region=None):
         """Calculate the mean of each of two exposures and the variance
         and covariance of their difference. The variance is calculated
         via afwMath, and the covariance via the methods in Astier+19
@@ -400,9 +517,6 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         region : `lsst.geom.Box2I`, optional
             Region of each exposure where to perform the calculations
             (e.g, an amplifier).
-        covAstierRealSpace : `bool`, optional
-            Should the covariannces in Astier+19 be calculated in real
-            space or via FFT?  See Appendix A of Astier+19.
 
         Returns
         -------
@@ -502,20 +616,17 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
             return np.nan, np.nan, None
 
         maxRangeCov = self.config.maximumRangeCovariancesAstier
-        if covAstierRealSpace:
-            # Calculate  covariances in real space.
-            covDiffAstier = computeCovDirect(diffIm.image.array, w, maxRangeCov)
-        else:
-            # Calculate covariances via FFT (default).
-            shapeDiff = np.array(diffIm.image.array.shape)
-            # Calculate the sizes of FFT dimensions.
-            s = shapeDiff + maxRangeCov
-            tempSize = np.array(np.log(s)/np.log(2.)).astype(int)
-            fftSize = np.array(2**(tempSize+1)).astype(int)
-            fftShape = (fftSize[0], fftSize[1])
 
-            c = CovFastFourierTransform(diffIm.image.array, w, fftShape, maxRangeCov)
-            covDiffAstier = c.reportCovFastFourierTransform(maxRangeCov)
+        # Calculate covariances via FFT.
+        shapeDiff = np.array(diffIm.image.array.shape)
+        # Calculate the sizes of FFT dimensions.
+        s = shapeDiff + maxRangeCov
+        tempSize = np.array(np.log(s)/np.log(2.)).astype(int)
+        fftSize = np.array(2**(tempSize+1)).astype(int)
+        fftShape = (fftSize[0], fftSize[1])
+
+        c = CovFastFourierTransform(diffIm.image.array, w, fftShape, maxRangeCov)
+        covDiffAstier = c.reportCovFastFourierTransform(maxRangeCov)
 
         # Compare Cov[0,0] and afwMath.VARIANCECLIP covDiffAstier[0]
         # is the Cov[0,0] element, [3] is the variance, and there's a

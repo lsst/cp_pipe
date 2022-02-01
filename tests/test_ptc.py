@@ -154,14 +154,6 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                 muDiff, varDiff, covAstier = task.extract.measureMeanVarCov(mockExp1, mockExp2)
                 muStandard.setdefault(ampName, []).append(muDiff)
                 varStandard.setdefault(ampName, []).append(varDiff)
-                # Calculate covariances in an independent way: direct space
-                _, _, covsDirect = task.extract.measureMeanVarCov(mockExp1, mockExp2, covAstierRealSpace=True)
-
-                # Test that the arrays "covs" (FFT) and "covDirect"
-                # (direct space) are the same
-                for row1, row2 in zip(covAstier, covsDirect):
-                    for a, b in zip(row1, row2):
-                        self.assertAlmostEqual(a, b)
             idCounter += 2
         resultsExtract = extractTask.run(inputExp=expDict, inputDims=expIds)
         resultsSolve = solveTask.run(resultsExtract.outputCovariances)
@@ -223,7 +215,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             numberAmps = len(self.ampNames)
             # localDataset: PTC dataset
             # (`lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`)
-            localDataset = solveTask.fitPtc(localDataset)
+            localDataset = solveTask.fitMeasurementsToModel(localDataset)
             # linDataset here is a lsst.pipe.base.Struct
             linDataset = linearityTask.run(localDataset,
                                            dummy=[1.0],
@@ -231,7 +223,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                                            inputDims={'detector': 0})
             linDataset = linDataset.outputLinearizer
         else:
-            localDataset = solveTask.fitPtc(localDataset)
+            localDataset = solveTask.fitMeasurementsToModel(localDataset)
             linDataset = linearityTask.run(localDataset,
                                            dummy=[1.0],
                                            camera=FakeCamera([self.flatExp1.getDetector()]),

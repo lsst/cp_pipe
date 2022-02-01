@@ -33,9 +33,9 @@ from matplotlib.backends.backend_pdf import PdfPages
 import lsst.ip.isr as isr
 
 from lsst.cp.pipe.utils import (funcAstier, funcPolynomial,
-                                calculateWeightedReducedChi2)
+                                calculateWeightedReducedChi2,
+                                getFitDataFromCovariances)
 from matplotlib.ticker import MaxNLocator
-from lsst.cp.pipe.ptc.astierCovPtcUtils import getFitDataFromCovariances
 from lsst.ip.isr import PhotonTransferCurveDataset
 
 
@@ -67,17 +67,6 @@ class PlotPhotonTransferCurveTask():
     plotNormalizedCovariancesNumberOfBins : `float`, optional
         Number of bins in `plotNormalizedCovariancesNumber` function
         (Fig. 8, 10., of Astier+19).
-
-    Notes
-    -----
-    The plotting code in this file is almost identical to the code in
-    `plotPtcGen2.py`. If further changes are implemented in this file,
-    `plotPtcGen2.py` needs to be updated accordingly, and vice versa.
-    The file `plotPtcGen2.py` helps with maintaining backwards
-    compatibility with gen2 as we transition to gen3; the code
-    duplication is meant to only last for few month from now
-    (Jan, 2021). At that point only this file, `plotPtc.py`, will
-    remain.
     """
 
     def __init__(self, datasetFilename, linearizerFileName=None,
