@@ -251,7 +251,7 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
                 continue
 
             if (len(inputPtc.expIdMask[ampName]) == 0) or self.config.ignorePtcMask:
-                self.log.warning("Mask not found for %s in detector %s in fit.Using all points.",
+                self.log.warning("Mask not found for %s in detector %s in fit. Using all points.",
                                  ampName, detector.getName())
                 mask = np.repeat(True, len(inputPtc.expIdMask[ampName]))
             else:
@@ -259,7 +259,7 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
 
             if self.config.usePhotodiode:
                 # Here's where we bring in the photodiode data
-                # TODO: replace when pd data is ingested.
+                # TODO: DM-33585. Replace when pd data is ingested.
                 DATA_DIR = '/lsstdata/offline/teststand/BOT/storage/'
                 modExpTimes = []
                 for i, pair in enumerate(inputPtc.inputExpIdPairs[ampName]):
