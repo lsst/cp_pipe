@@ -1,7 +1,7 @@
 description: ComCam Photon-Transfer Curve calibration construction.
 instrument: lsst.obs.lsst.LsstComCam
 imports:
-  - location: $CP_PIPE_DIR/pipelines/measurePhotonTransferCurve.yaml
+  - location: $CP_PIPE_DIR/pipelines/cpPtc.yaml
 tasks:
   isr:
     class: lsst.ip.isr.IsrTask
