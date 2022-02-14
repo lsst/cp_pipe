@@ -9,6 +9,8 @@ tasks:
       doBias: true
       doCalculateStatistics: true
       isrStats.doCtiStatistics: true
+      doSaturation: false
+      doSuspect: false
       doVariance: true
       doLinearize: true
       doCrosstalk: false
@@ -18,7 +20,7 @@ tasks:
       doBrighterFatter: false
       doDark: false
       doFlat: false
-      doApplyGains: false
+      doApplyGains: true
       doFringe: false
   solveCti:
     class: lsst.cp.pipe.CpCtiSolveTask

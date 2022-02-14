@@ -22,8 +22,6 @@
 import copy
 import numpy as np
 
-import lsst.afw.image as afwImage
-import lsst.afw.math as afwMath
 import lsst.pipe.base as pipeBase
 import lsst.pipe.base.connectionTypes as cT
 import lsst.pex.config as pexConfig
@@ -158,7 +156,7 @@ class CpCtiSolveTask(pipeBase.PipelineTask,
             for exposureEntry in inputMeasurements:
                 exposureDict = exposureEntry['CTI']
                 if exposureDict[ampName]['IMAGE_MEAN'] < self.config.maxImageMean:
-                    data.append(np.flip(exposureDict[ampName]['OVERSCAN_VALUES'])[start:stop+1])
+                    data.append(exposureDict[ampName]['OVERSCAN_VALUES'][start:stop+1])
                     signal.append(exposureDict[ampName]['IMAGE_MEAN'])
 
             signal = np.array(signal)
@@ -210,22 +208,25 @@ class CpCtiSolveTask(pipeBase.PipelineTask,
 
             signal = []
             data = []
+            lastPixels = []
             for exposureEntry in inputMeasurements:
                 exposureDict = exposureEntry['CTI']
                 if exposureDict[ampName]['IMAGE_MEAN'] < self.config.maxSignalForCti:
                     signal.append(exposureDict[ampName]['IMAGE_MEAN'])
-                    data.append(np.flip(exposureDict[ampName]['OVERSCAN_VALUES'])[start:stop+1])
-
+                    data.append(exposureDict[ampName]['OVERSCAN_VALUES'][start:stop+1])
+                    lastPixels.append(exposureDict[ampName]['LAST_MEAN'])
             signal = np.array(signal)
             data = np.array(data)
+            lastPixels = np.array(lastPixels)
 
             ind = signal.argsort()
             signal = signal[ind]
             data = data[ind]
 
-            # CTI test
-            overscan1 = data[:, 0]
-            overscan2 = data[:, 1]
+            # CTI test.  This looks at the drop over the
+            # image-overscan boundary.
+            overscan1 = lastPixels
+            overscan2 = data[:, 0]
             test = (np.array(overscan1) + np.array(overscan2))/(nCols*np.array(signal))
             testResult = np.median(test) > 5.E-6
             self.debugView(ampName, signal, test)
@@ -303,8 +304,8 @@ class CpCtiSolveTask(pipeBase.PipelineTask,
                 exposureDict = exposureEntry['CTI']
                 if exposureDict[ampName]['IMAGE_MEAN'] < self.config.maxImageMean:
                     signal.append(exposureDict[ampName]['IMAGE_MEAN'])
-                    data.append(np.flip(exposureDict[ampName]['OVERSCAN_VALUES'])[start:stop+1])
-                    new_signal.append(np.flip(exposureDict[ampName]['OVERSCAN_VALUES'])[0])
+                    data.append(exposureDict[ampName]['OVERSCAN_VALUES'][start:stop+1])
+                    new_signal.append(exposureDict[ampName]['OVERSCAN_VALUES'][0])
 
             signal = np.array(signal)
             data = np.array(data)
@@ -345,7 +346,7 @@ class CpCtiSolveTask(pipeBase.PipelineTask,
             # Pad right with constant
             y = np.pad(y, (1, 1), 'constant', constant_values=(0, y[-1]))
             x = np.pad(x, (1, 1), 'constant', constant_values=(-1, 200000.))
-            import pdb; pdb.set_trace()
+            # import pdb; pdb.set_trace()
             trap = SerialTrap(20000.0, 0.4, 1, 'spline', np.concatenate((x, y)).tolist())
             calib.serialTraps[ampName] = trap
 
