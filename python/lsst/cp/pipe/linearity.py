@@ -321,12 +321,12 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
                                                               linearOrdinate, funcPolynomial)
             # Convert this proxy-to-flux fit into an expected linear flux
             linearOrdinate = linearFit[0] + linearFit[1] * inputAbscissa
-
             # Exclude low end outliers
             threshold = self.config.nSigmaClipLinear * np.sqrt(abs(linearOrdinate))
             fluxMask = np.abs(inputOrdinate - linearOrdinate) < threshold
             linearOrdinate = linearOrdinate[fluxMask]
             fitOrdinate = inputOrdinate[fluxMask]
+            fitAbscissa = inputAbscissa[fluxMask]
             if len(linearOrdinate) < 2:
                 linearizer = self.fillBadAmp(linearizer, fitOrder, inputPtc, amp)
                 self.log.warning("Amp %s in detector %s has not enough points in linear ordinate. Skipping!",
@@ -347,7 +347,8 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
                 significant = np.where(np.abs(linearityFit) > 1e-10, True, False)
                 self.log.info("Significant polynomial fits: %s", significant)
 
-                modelOrdinate = funcPolynomial(polyFit, linearAbscissa)
+                modelOrdinate = funcPolynomial(polyFit, fitAbscissa)
+
                 self.debugFit('polyFit', linearAbscissa, fitOrdinate, modelOrdinate, None, ampName)
 
                 if self.config.linearityType == 'Squared':
@@ -425,7 +426,7 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
             linearizer.fitParamsErr[ampName] = np.array(polyFitErr)
             linearizer.fitChiSq[ampName] = chiSq
             linearizer.linearFit[ampName] = linearFit
-            residuals = inputOrdinate[fluxMask] - modelOrdinate
+            residuals = fitOrdinate - modelOrdinate
 
             # The residuals only include flux values which are
             # not masked out. To be able to access this later and
