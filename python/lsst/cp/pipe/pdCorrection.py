@@ -142,7 +142,8 @@ class PhotodiodeCorrectionTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
                 Provenance data for the new calibration
                 (`lsst.ip.isr.IsrProvenance`).
 
-        Notes:
+        Notes
+        -----
         Basic correction algorithm (due to Aaron Roodman) is
         as follows:
         (1) Run the spline fit to the flux vs monitor diode.
