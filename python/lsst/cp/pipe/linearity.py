@@ -20,7 +20,6 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 import numpy as np
-
 import lsst.afw.image as afwImage
 import lsst.afw.math as afwMath
 import lsst.pipe.base as pipeBase
@@ -28,7 +27,7 @@ import lsst.pipe.base.connectionTypes as cT
 import lsst.pex.config as pexConfig
 
 from lsstDebug import getDebugFrame
-from lsst.ip.isr import (Linearizer, IsrProvenance)
+from lsst.ip.isr import (Linearizer, IsrProvenance, PhotodiodeCalib)
 
 from .utils import (funcPolynomial, irlsFit)
 from ._lookupStaticCalibration import lookupStaticCalibration
@@ -46,6 +45,7 @@ class LinearitySolveConnections(pipeBase.PipelineTaskConnections,
         multiple=True,
         deferLoad=True,
     )
+
     camera = cT.PrerequisiteInput(
         name="camera",
         doc="Camera Geometry definition.",
@@ -54,11 +54,20 @@ class LinearitySolveConnections(pipeBase.PipelineTaskConnections,
         isCalibration=True,
         lookupFunction=lookupStaticCalibration,
     )
+
     inputPtc = cT.PrerequisiteInput(
         name="ptc",
         doc="Input PTC dataset.",
         storageClass="PhotonTransferCurveDataset",
         dimensions=("instrument", "detector"),
+        isCalibration=True,
+    )
+
+    inputPhotodiodeCorrection = cT.Input(
+        name="pdCorrection",
+        doc="Input photodiode correction.",
+        storageClass="IsrCalib",
+        dimensions=("instrument", ),
         isCalibration=True,
     )
 
@@ -69,6 +78,12 @@ class LinearitySolveConnections(pipeBase.PipelineTaskConnections,
         dimensions=("instrument", "detector"),
         isCalibration=True,
     )
+
+    def __init__(self, *, config=None):
+        super().__init__(config=config)
+
+        if config.applyPhotodiodeCorrection is not True:
+            self.inputs.discard("inputPhotodiodeCorrection")
 
 
 class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
@@ -122,6 +137,16 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
         doc="Ignore the expIdMask set by the PTC solver?",
         default=False,
     )
+    usePhotodiode = pexConfig.Field(
+        dtype=bool,
+        doc="Use the photodiode info instead of the raw expTimes?",
+        default=False,
+    )
+    applyPhotodiodeCorrection = pexConfig.Field(
+        dtype=bool,
+        doc="Calculate and apply a correction to the photodiode readings?",
+        default=False,
+    )
 
 
 class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
@@ -151,14 +176,17 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         outputs = self.run(**inputs)
         butlerQC.put(outputs, outputRefs)
 
-    def run(self, inputPtc, dummy, camera, inputDims):
+    def run(self, inputPtc, dummy, camera, inputDims, inputPhotodiodeCorrection=None):
         """Fit non-linearity to PTC data, returning the correct Linearizer
         object.
 
         Parameters
         ----------
-        inputPtc : `lsst.cp.pipe.PtcDataset`
+        inputPtc : `lsst.ip.isr.PtcDataset`
             Pre-measured PTC dataset.
+        inputPhotodiodeCorrection : `lsst.ip.isr.PhotodiodeCorrection`
+            Pre-measured photodiode correction used in the case when
+            applyPhotodiodeCorrection=True.
         dummy : `lsst.afw.image.Exposure`
             The exposure used to select the appropriate PTC dataset.
             In almost all circumstances, one of the input exposures
@@ -211,58 +239,100 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         # Initialize the linearizer.
         linearizer = Linearizer(detector=detector, table=table, log=self.log)
 
+        if self.config.usePhotodiode and self.config.applyPhotodiodeCorrection:
+            abscissaCorrections = inputPhotodiodeCorrection.abscissaCorrections
+
         for i, amp in enumerate(detector):
             ampName = amp.getName()
             if ampName in inputPtc.badAmps:
-                nEntries = 1
-                pEntries = 1
-                if self.config.linearityType in ['Polynomial']:
-                    nEntries = fitOrder + 1
-                    pEntries = fitOrder + 1
-                elif self.config.linearityType in ['Spline']:
-                    nEntries = fitOrder * 2
-                elif self.config.linearityType in ['Squared', 'None']:
-                    nEntries = 1
-                    pEntries = fitOrder + 1
-                elif self.config.linearityType in ['LookupTable']:
-                    nEntries = 2
-                    pEntries = fitOrder + 1
-
-                linearizer.linearityType[ampName] = "None"
-                linearizer.linearityCoeffs[ampName] = np.zeros(nEntries)
-                linearizer.linearityBBox[ampName] = amp.getBBox()
-                linearizer.fitParams[ampName] = np.zeros(pEntries)
-                linearizer.fitParamsErr[ampName] = np.zeros(pEntries)
-                linearizer.fitChiSq[ampName] = np.nan
-                self.log.warning("Amp %s has no usable PTC information.  Skipping!", ampName)
+                linearizer = self.fillBadAmp(linearizer, fitOrder, inputPtc, amp)
+                self.log.warning("Amp %s in detector %s has no usable PTC information. Skipping!",
+                                 ampName, detector.getName())
                 continue
 
             if (len(inputPtc.expIdMask[ampName]) == 0) or self.config.ignorePtcMask:
-                self.log.warning("Mask not found for %s in non-linearity fit. Using all points.", ampName)
+                self.log.warning("Mask not found for %s in detector %s in fit. Using all points.",
+                                 ampName, detector.getName())
                 mask = np.repeat(True, len(inputPtc.expIdMask[ampName]))
             else:
                 mask = np.array(inputPtc.expIdMask[ampName], dtype=bool)
 
-            inputAbscissa = np.array(inputPtc.rawExpTimes[ampName])[mask]
-            inputOrdinate = np.array(inputPtc.rawMeans[ampName])[mask]
+            if self.config.usePhotodiode:
+                # Here's where we bring in the photodiode data
+                # TODO: DM-33585. Replace when pd data is ingested.
+                DATA_DIR = '/lsstdata/offline/teststand/BOT/storage/'
+                modExpTimes = []
+                for i, pair in enumerate(inputPtc.inputExpIdPairs[ampName]):
+                    pair = pair[0]
+                    modExpTime = 0.0
+                    nExps = 0
+                    for j in range(2):
+                        expId = pair[j]
+                        try:
+                            date = int(expId/100000)
+                            seq = expId - date * 100000
+                            date = date - 10000000
+                            filename = DATA_DIR + \
+                                '%d/MC_C_%d_%06d/Photodiode_Readings_%d_%06d.txt'\
+                                % (date, date, seq, date, seq)
+                            photodiodeCalib = PhotodiodeCalib.readTwoColumnPhotodiodeData(filename)
+                            photodiodeCalib.integrationMethod = 'TRIMMED_SUM'
+                            monDiodeCharge = photodiodeCalib.integrate()
+                            modExpTime += monDiodeCharge
+                            nExps += 1
+                        except (RuntimeError, OSError):
+                            continue
+                    if nExps > 0:
+                        # The 5E8 factor bring the modExpTimes back to about
+                        # the same order as the expTimes.
+                        # Probably a better way to do this.
+                        modExpTime = 5.0E8 * modExpTime / nExps
+                    else:
+                        mask[i] = False
 
+                    # Get the photodiode correction
+                    if self.config.applyPhotodiodeCorrection:
+                        try:
+                            correction = abscissaCorrections[str(pair)]
+                        except KeyError:
+                            correction = 0.0
+                    else:
+                        correction = 0.0
+                    modExpTimes.append(modExpTime + correction)
+
+                inputAbscissa = np.array(modExpTimes)[mask]
+            else:
+                inputAbscissa = np.array(inputPtc.rawExpTimes[ampName])[mask]
+
+            inputOrdinate = np.array(inputPtc.rawMeans[ampName])[mask]
             # Determine proxy-to-linear-flux transformation
             fluxMask = inputOrdinate < self.config.maxLinearAdu
             lowMask = inputOrdinate > self.config.minLinearAdu
             fluxMask = fluxMask & lowMask
             linearAbscissa = inputAbscissa[fluxMask]
             linearOrdinate = inputOrdinate[fluxMask]
+            if len(linearAbscissa) < 2:
+                linearizer = self.fillBadAmp(linearizer, fitOrder, inputPtc, amp)
+                self.log.warning("Amp %s in detector %s has not enough points for linear fit. Skipping!",
+                                 ampName, detector.getName())
+                continue
 
             linearFit, linearFitErr, chiSq, weights = irlsFit([0.0, 100.0], linearAbscissa,
                                                               linearOrdinate, funcPolynomial)
             # Convert this proxy-to-flux fit into an expected linear flux
             linearOrdinate = linearFit[0] + linearFit[1] * inputAbscissa
-
             # Exclude low end outliers
-            threshold = self.config.nSigmaClipLinear * np.sqrt(linearOrdinate)
+            threshold = self.config.nSigmaClipLinear * np.sqrt(abs(linearOrdinate))
             fluxMask = np.abs(inputOrdinate - linearOrdinate) < threshold
             linearOrdinate = linearOrdinate[fluxMask]
             fitOrdinate = inputOrdinate[fluxMask]
+            fitAbscissa = inputAbscissa[fluxMask]
+            if len(linearOrdinate) < 2:
+                linearizer = self.fillBadAmp(linearizer, fitOrder, inputPtc, amp)
+                self.log.warning("Amp %s in detector %s has not enough points in linear ordinate. Skipping!",
+                                 ampName, detector.getName())
+                continue
+
             self.debugFit('linearFit', inputAbscissa, inputOrdinate, linearOrdinate, fluxMask, ampName)
             # Do fits
             if self.config.linearityType in ['Polynomial', 'Squared', 'LookupTable']:
@@ -277,13 +347,14 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
                 significant = np.where(np.abs(linearityFit) > 1e-10, True, False)
                 self.log.info("Significant polynomial fits: %s", significant)
 
-                modelOrdinate = funcPolynomial(polyFit, linearAbscissa)
+                modelOrdinate = funcPolynomial(polyFit, fitAbscissa)
+
                 self.debugFit('polyFit', linearAbscissa, fitOrdinate, modelOrdinate, None, ampName)
 
                 if self.config.linearityType == 'Squared':
                     linearityFit = [linearityFit[2]]
                 elif self.config.linearityType == 'LookupTable':
-                    # Use linear part to get time at wich signal is
+                    # Use linear part to get time at which signal is
                     # maxAduForLookupTableLinearizer DN
                     tMax = (self.config.maxLookupTableAdu - polyFit[0])/polyFit[1]
                     timeRange = np.linspace(0, tMax, self.config.maxLookupTableAdu)
@@ -354,7 +425,20 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
             linearizer.fitParams[ampName] = np.array(polyFit)
             linearizer.fitParamsErr[ampName] = np.array(polyFitErr)
             linearizer.fitChiSq[ampName] = chiSq
+            linearizer.linearFit[ampName] = linearFit
+            residuals = fitOrdinate - modelOrdinate
 
+            # The residuals only include flux values which are
+            # not masked out. To be able to access this later and
+            # associate it with the PTC flux values, we need to
+            # fill out the residuals with NaNs where the flux
+            # value is masked.
+
+            # First convert mask to a composite of the two masks:
+            mask[mask] = fluxMask
+            fullResiduals = np.full(len(mask), np.nan)
+            fullResiduals[mask] = residuals
+            linearizer.fitResiduals[ampName] = fullResiduals
             image = afwImage.ImageF(len(inputOrdinate), 1)
             image.getArray()[:, :] = inputOrdinate
             linearizeFunction = linearizer.getLinearityTypeByName(linearizer.linearityType[ampName])
@@ -377,6 +461,34 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
             outputLinearizer=linearizer,
             outputProvenance=provenance,
         )
+
+    def fillBadAmp(self, linearizer, fitOrder, inputPtc, amp):
+        # Need to fill linearizer with empty values
+        # if the amp is non-functional
+        ampName = amp.getName()
+        nEntries = 1
+        pEntries = 1
+        if self.config.linearityType in ['Polynomial']:
+            nEntries = fitOrder + 1
+            pEntries = fitOrder + 1
+        elif self.config.linearityType in ['Spline']:
+            nEntries = fitOrder * 2
+        elif self.config.linearityType in ['Squared', 'None']:
+            nEntries = 1
+            pEntries = fitOrder + 1
+        elif self.config.linearityType in ['LookupTable']:
+            nEntries = 2
+            pEntries = fitOrder + 1
+
+        linearizer.linearityType[ampName] = "None"
+        linearizer.linearityCoeffs[ampName] = np.zeros(nEntries)
+        linearizer.linearityBBox[ampName] = amp.getBBox()
+        linearizer.fitParams[ampName] = np.zeros(pEntries)
+        linearizer.fitParamsErr[ampName] = np.zeros(pEntries)
+        linearizer.fitChiSq[ampName] = np.nan
+        linearizer.fitResiduals[ampName] = np.zeros(len(inputPtc.expIdMask[ampName]))
+        linearizer.linearFit[ampName] = np.zeros(2)
+        return linearizer
 
     def debugFit(self, stepname, xVector, yVector, yModel, mask, ampName):
         """Debug method for linearity fitting.
