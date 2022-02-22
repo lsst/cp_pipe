@@ -168,8 +168,8 @@ class CpCtiSolveTask(pipeBase.PipelineTask,
 
             params = Parameters()
             params.add('ctiexp', value=-6, min=-7, max=-5, vary=False)
-            params.add('trapsize', value=0.0, min=0., max=10., vary=False)
-            params.add('scaling', value=0.08, min=0, max=1.0, vary=False)
+            params.add('trapsize', value=0.0, min=0.0, max=10., vary=False)
+            params.add('scaling', value=0.08, min=0.0, max=1.0, vary=False)
             params.add('emissiontime', value=0.4, min=0.1, max=1.0, vary=False)
             params.add('driftscale', value=0.00022, min=0., max=0.001)
             params.add('decaytime', value=2.4, min=0.1, max=4.0)
@@ -186,8 +186,8 @@ class CpCtiSolveTask(pipeBase.PipelineTask,
                 self.log("Electronics fitting failure for amplifier %s.", ampName)
 
             calib.globalCti[ampName] = 10**result.params['ctiexp']
-            calib.decayTime[ampName] = result.params['driftscale'].value if result.success else 2.4
-            calib.driftScale[ampName] = result.params['decaytime'].value if result.success else 0.0
+            calib.driftScale[ampName] = result.params['driftscale'].value if result.success else 2.4
+            calib.decayTime[ampName] = result.params['decaytime'].value if result.success else 0.0
             self.log.info("CTI Local Fit %s: cti: %g decayTime: %g driftScale %g",
                           ampName, calib.globalCti[ampName], calib.decayTime[ampName],
                           calib.driftScale[ampName])
@@ -232,9 +232,10 @@ class CpCtiSolveTask(pipeBase.PipelineTask,
             self.debugView(ampName, signal, test)
 
             params = Parameters()
-            params.add('ctiexp', value=-6, min=-7, max=np.log10(1E-5), vary=True)
-            params.add('trapsize', value=5.0, min=0., max=30., vary=True if testResult else False)
-            params.add('scaling', value=0.08, min=0, max=1.0, vary=True if testResult else False)
+            params.add('ctiexp', value=-6, min=-7, max=-5, vary=True)
+            params.add('trapsize', value=5.0 if testResult else 0.0,
+                       min=0.0, max=30., vary=True if testResult else False)
+            params.add('scaling', value=0.08, min=0.0, max=1.0, vary=True if testResult else False)
             params.add('emissiontime', value=0.35, min=0.1, max=1.0, vary=True if testResult else False)
             params.add('driftscale', value=calib.driftScale[ampName], min=0., max=0.001, vary=False)
             params.add('decaytime', value=calib.decayTime[ampName], min=0.1, max=4.0, vary=False)
@@ -320,11 +321,11 @@ class CpCtiSolveTask(pipeBase.PipelineTask,
             params = Parameters()
             params.add('ctiexp', value=np.log10(calib.globalCti[ampName]),
                        min=-7, max=-5, vary=False)
-            params.add('trapsize', value=0.0, min=0., max=10., vary=False)
-            params.add('scaling', value=0.08, min=0, max=1.0, vary=False)
+            params.add('trapsize', value=0.0, min=0.0, max=10., vary=False)
+            params.add('scaling', value=0.08, min=0.0, max=1.0, vary=False)
             params.add('emissiontime', value=0.35, min=0.1, max=1.0, vary=False)
             params.add('driftscale', value=calib.driftScale[ampName],
-                       min=0., max=0.001, vary=False)
+                       min=0.0, max=0.001, vary=False)
             params.add('decaytime', value=calib.decayTime[ampName],
                        min=0.1, max=4.0, vary=False)
 
