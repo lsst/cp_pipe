@@ -249,6 +249,8 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
             # This should duplicate Coulton et al. 2017 Equation 22-29
             # (arxiv:1711.06273)
             scaledCorrList = list()
+            corrList = list()
+            truncatedFluxes = list()
             for xcorrNum, (xcorr, flux, var) in enumerate(zip(xCorrList, fluxes, variances), 1):
                 q = np.array(xcorr) * gain * gain  # xcorr now in e^-
                 q *= 2.0  # Remove factor of 1/2 applied in PTC.
@@ -267,24 +269,28 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
                     # If we drop an element of ``scaledCorrList``
                     # (which is what this does), we need to ensure we
                     # drop the flux entry as well.
-                    fluxes = np.delete(fluxes, xcorrNum)
                     continue
 
                 # This removes the "t (I_a^2 + I_b^2)" factor in
                 # Coulton et al. 2017 equation 29.
-                q /= -2.0*(flux**2)
+                # The quadratic fit option needs the correlations unscaled
+                q /= -2.0
+                unscaled = self._tileArray(q)
+                q /= flux**2
                 scaled = self._tileArray(q)
-
                 xcorrCheck = np.abs(np.sum(scaled))/np.sum(np.abs(scaled))
                 if (xcorrCheck > self.config.xcorrCheckRejectLevel) or not (np.isfinite(xcorrCheck)):
                     self.log.warning("Amp: %s %d skipped due to value of triangle-inequality sum %f",
                                      ampName, xcorrNum, xcorrCheck)
-                    fluxes = np.delete(fluxes, xcorrNum)
                     continue
 
                 scaledCorrList.append(scaled)
+                corrList.append(unscaled)
+                truncatedFluxes.append(flux)
                 self.log.info("Amp: %s %d/%d  Final: %g  XcorrCheck: %f",
                               ampName, xcorrNum, len(xCorrList), q[0][0], xcorrCheck)
+
+            fluxes = np.array(truncatedFluxes)
 
             if len(scaledCorrList) == 0:
                 self.log.warning("Amp: %s All inputs rejected for amp!", ampName)
@@ -299,7 +305,7 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
             elif self.config.correlationQuadraticFit:
                 # Use a quadratic fit to the correlations as a
                 # function of flux.
-                preKernel = self.quadraticCorrelations(scaledCorrList, fluxes, f"Amp: {ampName}")
+                preKernel = self.quadraticCorrelations(corrList, fluxes, f"Amp: {ampName}")
             else:
                 # Use a simple average of the measured correlations.
                 preKernel = self.averageCorrelations(scaledCorrList, f"Amp: {ampName}")
