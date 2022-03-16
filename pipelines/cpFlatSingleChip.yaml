@@ -13,10 +13,10 @@ tasks:
       doNanMasking: true
       doInterpolate: true
       doDark: true
-      doBrighterFatter: False
-      doflat: False
-      doFringe: False
-      doApplyGains: False
+      doBrighterFatter: false
+      doflat: false
+      doFringe: false
+      doApplyGains: false
   cpflatCombine:
     class: lsst.cp.pipe.cpCombine.CalibCombineByFilterTask
     config:
