@@ -25,6 +25,6 @@ tasks:
       calibrationType: 'bias'
       exposureScaling: "Unity"
 contracts:
-  - isr.doBias == false
+  - isr.doBias == False
   - cpBiasCombine.calibrationType == "bias"
   - cpBiasCombine.exposureScaling == "Unity"

@@ -37,4 +37,4 @@ tasks:
       exposureScaling: InputList
       scalingLevel: AMP
 contracts:
-  - isr.doFlat == false
+  - isr.doFlat == False

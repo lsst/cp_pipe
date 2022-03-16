@@ -29,6 +29,6 @@ tasks:
       calibrationType: 'fringe'
       exposureScaling: "Unity"
 contracts:
-  - isr.doFringe == false
+  - isr.doFringe == False
   - cpFringeCombine.calibrationType == "fringe"
   - cpFringeCombine.exposureScaling == "Unity"
