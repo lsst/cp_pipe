@@ -6,13 +6,6 @@ tasks:
       connections.ccdExposure: 'raw'
       connections.outputExposure: 'cpDarkIsr'
       doWrite: true
-      doBias: true
-      doVariance: true
-      doLinearize: true
-      doCrosstalk: true
-      doDefect: true
-      doNanMasking: true
-      doInterpolate: true
       doBrighterFatter: false
       doDark: false
       doFlat: false

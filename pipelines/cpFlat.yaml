@@ -6,14 +6,6 @@ tasks:
       connections.ccdExposure: 'raw'
       connections.outputExposure: 'cpFlatProc'
       doWrite: true
-      doBias: true
-      doVariance: true
-      doLinearize: true
-      doCrosstalk: true
-      doDefect: true
-      doNanMasking: true
-      doInterpolate: true
-      doDark: true
       doBrighterFatter: false
       doFlat: false
       doFringe: false
