@@ -58,12 +58,9 @@ class PretendRef():
 
 
 class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
-    """A test case for the PTC task."""
+    """A test case for the PTC tasks."""
 
     def setUp(self):
-        self.defaultConfig = cpPipe.ptc.MeasurePhotonTransferCurveTask.ConfigClass()
-        self.defaultTask = cpPipe.ptc.MeasurePhotonTransferCurveTask(config=self.defaultConfig)
-
         self.defaultConfigExtract = cpPipe.ptc.PhotonTransferCurveExtractTask.ConfigClass()
         self.defaultTaskExtract = cpPipe.ptc.PhotonTransferCurveExtractTask(config=self.defaultConfigExtract)
 
@@ -124,7 +121,6 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         with the standard method (when doCovariancesAstier=false),
 
         """
-        task = self.defaultTask
         extractConfig = self.defaultConfigExtract
         extractConfig.minNumberGoodPixelsForCovariance = 5000
         extractConfig.detectorMeasurementRegion = 'FULL'
@@ -151,7 +147,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             expIds.append(idCounter+1)
             for ampNumber, ampName in enumerate(self.ampNames):
                 # cov has (i, j, var, cov, npix)
-                muDiff, varDiff, covAstier = task.extract.measureMeanVarCov(mockExp1, mockExp2)
+                muDiff, varDiff, covAstier = extractTask.measureMeanVarCov(mockExp1, mockExp2)
                 muStandard.setdefault(ampName, []).append(muDiff)
                 varStandard.setdefault(ampName, []).append(varDiff)
             idCounter += 2
