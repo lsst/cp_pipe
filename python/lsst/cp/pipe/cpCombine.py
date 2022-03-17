@@ -260,7 +260,7 @@ class CalibCombineTask(pipeBase.PipelineTask,
         results : `lsst.pipe.base.Struct`
             The results struct containing:
 
-            ``combinedExp``
+            ``outputData``
                 Final combined exposure generated from the inputs
                 (`lsst.afw.image.Exposure`).
 
