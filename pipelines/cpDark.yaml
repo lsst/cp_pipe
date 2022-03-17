@@ -5,6 +5,7 @@ tasks:
     config:
       connections.ccdExposure: 'raw'
       connections.outputExposure: 'cpDarkIsr'
+      doWrite: true
       doBias: true
       doVariance: true
       doLinearize: true
