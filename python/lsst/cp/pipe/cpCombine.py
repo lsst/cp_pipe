@@ -571,12 +571,11 @@ class CalibCombineTask(pipeBase.PipelineTask,
         """
         array = exp.getImage().getArray()
         bad = np.isnan(array)
-
-        median = np.median(array[np.logical_not(bad)])
-        count = np.sum(np.logical_not(bad))
-        array[bad] = median
-        if count > 0:
-            self.log.warning("Found %s NAN pixels", count)
+        if np.any(bad):
+            median = np.median(array[np.logical_not(bad)])
+            count = np.sum(bad)
+            array[bad] = median
+            self.log.warning("Found and fixed %s NAN pixels", count)
 
 
 # Create versions of the Connections, Config, and Task that support
