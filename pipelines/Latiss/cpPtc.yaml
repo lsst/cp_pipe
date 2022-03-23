@@ -6,12 +6,12 @@ tasks:
   isr:
     class: lsst.ip.isr.IsrTask
     config:
-      doCrosstalk: False
-      doDefect: False
+      doCrosstalk: false
+      doDefect: false
   ptcExtract:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
     config:
-      matchByExposureId: True
+      matchByExposureId: true
   ptcSolve:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
     config:
