@@ -1,7 +1,7 @@
 description: cp_pipe Photon-Transfer Curve calibration construction, with Linearity enabled on inputs.
 instrument: lsst.obs.lsst.Latiss
 imports:
-  - location: $CP_PIPE_DIR/pipelines/measurePhotonTransferCurve.yaml
+  - location: $CP_PIPE_DIR/pipelines/cpPtc.yaml
 tasks:
   isr:
     class: lsst.ip.isr.IsrTask

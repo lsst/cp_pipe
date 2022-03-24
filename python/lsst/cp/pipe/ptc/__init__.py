@@ -23,5 +23,4 @@
 
 from .cpExtractPtcTask import *
 from .cpSolvePtcTask import *
-from .measurePtcGen2Task import *
 from .plotPtc import *

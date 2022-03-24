@@ -5,18 +5,18 @@ tasks:
     config:
       connections.ccdExposure: 'raw'
       connections.outputExposure: 'cpFlatProc'
-      doBias: True
-      doVariance: True
-      doLinearize: True
-      doCrosstalk: True
-      doDefect: True
-      doNanMasking: True
-      doInterpolate: True
-      doDark: True
-      doBrighterFatter: False
-      doFlat: False
-      doFringe: False
-      doApplyGains: False
+      doBias: true
+      doVariance: true
+      doLinearize: true
+      doCrosstalk: true
+      doDefect: true
+      doNanMasking: true
+      doInterpolate: true
+      doDark: true
+      doBrighterFatter: false
+      doFlat: false
+      doFringe: false
+      doApplyGains: false
   cpFlatCombine:
     class: lsst.cp.pipe.cpCombine.CalibCombineByFilterTask
     config:

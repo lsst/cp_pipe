@@ -8,6 +8,6 @@ tasks:
     config:
       connections.outputExposure: cpSkyIsr
       overscan.fitType: 'MEDIAN_PER_ROW'
-      doLinearize: False
-      doCrosstalk: True
-      doBrighterFatter: False
+      doLinearize: false
+      doCrosstalk: true
+      doBrighterFatter: false

@@ -10,8 +10,8 @@ tasks:
     config:
       connections.crosstalkSources: 'overscanRaw'
       connections.bias: 'bias'
-      doDark: False
+      doDark: false
   cpFlatMeasure:
     class: lsst.cp.pipe.cpFlatNormTask.CpFlatMeasureTask
     config:
-      doVignette: False
+      doVignette: false

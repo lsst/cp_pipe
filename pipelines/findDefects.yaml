@@ -5,21 +5,21 @@ tasks:
     config:
       connections.ccdExposure: 'raw'
       connections.outputExposure: 'cpDefectsProc'
-      doWrite: True
-      doOverscan: True
-      doAssembleCcd: True
-      doBias: True
-      doVariance: False
-      doLinearize: False
-      doCrosstalk: False
-      doBrighterFatter: False
-      doDark: False
-      doStrayLight: False
-      doFlat: False
-      doFringe: False
-      doApplyGains: False
-      doDefect: False
-      doSaturationInterpolation: False
+      doWrite: true
+      doOverscan: true
+      doAssembleCcd: true
+      doBias: true
+      doVariance: false
+      doLinearize: false
+      doCrosstalk: false
+      doBrighterFatter: false
+      doDark: false
+      doStrayLight: false
+      doFlat: false
+      doFringe: false
+      doApplyGains: false
+      doDefect: false
+      doSaturationInterpolation: false
       growSaturationFootprintSize: 0
   measureDefects:
     class: lsst.cp.pipe.defects.MeasureDefectsTask

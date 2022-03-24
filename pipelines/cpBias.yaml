@@ -5,18 +5,18 @@ tasks:
     config:
       connections.ccdExposure: 'raw'
       connections.outputExposure: 'cpBiasProc'
-      doBias: False
-      doVariance: True
-      doLinearize: False
-      doCrosstalk: False
-      doDefect: True
-      doNanMasking: True
-      doInterpolate: True
-      doBrighterFatter: False
-      doDark: False
-      doFlat: False
-      doApplyGains: False
-      doFringe: False
+      doBias: false
+      doVariance: true
+      doLinearize: false
+      doCrosstalk: false
+      doDefect: true
+      doNanMasking: true
+      doInterpolate: true
+      doBrighterFatter: false
+      doDark: false
+      doFlat: false
+      doApplyGains: false
+      doFringe: false
   cpBiasCombine:
     class: lsst.cp.pipe.cpCombine.CalibCombineTask
     config:

@@ -7,7 +7,7 @@ tasks:
     class: lsst.ip.isr.IsrTask
     config:
       overscan.fitType: 'MEDIAN_PER_ROW'
-      doDefect: False
+      doDefect: false
       # Disable these until useful calibrations exist.
-      doLinearize: False
-      doCrosstalk: False
+      doLinearize: false
+      doCrosstalk: false

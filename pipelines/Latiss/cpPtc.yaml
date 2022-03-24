@@ -1,17 +1,17 @@
 description: Latiss Photon-Transfer Curve calibration construction.
 instrument: lsst.obs.lsst.Latiss
 imports:
-  - location: $CP_PIPE_DIR/pipelines/measurePhotonTransferCurve.yaml
+  - location: $CP_PIPE_DIR/pipelines/cpPtc.yaml
 tasks:
   isr:
     class: lsst.ip.isr.IsrTask
     config:
-      doCrosstalk: False
-      doDefect: False
+      doCrosstalk: false
+      doDefect: false
   ptcExtract:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
     config:
-      matchByExposureId: True
+      matchByExposureId: false
   ptcSolve:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
     config:

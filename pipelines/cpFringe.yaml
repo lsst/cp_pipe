@@ -5,17 +5,17 @@ tasks:
     config:
       connections.ccdExposure: 'raw'
       connections.outputExposure: 'cpFringeIsr'
-      doBias: True
-      doVariance: True
-      doLinearize: True
-      doCrosstalk: True
-      doDefect: True
-      doNanMasking: True
-      doInterpolate: True
-      doDark: True
-      doFlat: True
-      doApplyGains: False
-      doFringe: False
+      doBias: true
+      doVariance: true
+      doLinearize: true
+      doCrosstalk: true
+      doDefect: true
+      doNanMasking: true
+      doInterpolate: true
+      doDark: true
+      doFlat: true
+      doApplyGains: false
+      doFringe: false
   cpFringe:
     class: lsst.cp.pipe.cpFringeTask.CpFringeTask
     config:
