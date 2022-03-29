@@ -371,6 +371,16 @@ class CrosstalkSolveConfig(pipeBase.PipelineTaskConfig,
         default=0,
         doc="Polynomial order in source flux to fit crosstalk.",
     )
+    significanceLimit = Field(
+        dtype=float,
+        default=3.0,
+        doc="Sigma significance level to use in marking a coefficient valid.",
+    )
+    doSignificanceScaling = Field(
+        dtype=bool,
+        default=True,
+        doc="Scale error by 1/sqrt(N) in calculating significant coefficients.",
+    )
     doFiltering = Field(
         dtype=bool,
         default=False,
@@ -574,10 +584,11 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
                 values = np.array(ratios[ordering[ii]][ordering[jj]])
                 values = values[np.abs(values) < 1.0]  # Discard unreasonable values
 
-            calib.coeffNum[ii][jj] = len(values)
-
+            # Sigma clip.
             if ii != jj:
                 for rej in range(rejIter):
+                    if len(values) == 0:
+                        break
                     lo, med, hi = np.percentile(values, [25.0, 50.0, 75.0])
                     sigma = 0.741*(hi - lo)
                     good = np.abs(values - med) < rejSigma*sigma
@@ -585,6 +596,8 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
                         break
                     values = values[good]
 
+            calib.coeffNum[ii][jj] = len(values)
+            significanceThreshold = 0.0
             if len(values) == 0:
                 self.log.warning("No values for matrix element %d,%d" % (ii, jj))
                 calib.coeffs[ii][jj] = np.nan
@@ -598,10 +611,18 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
                 else:
                     correctionFactor = sigmaClipCorrection(rejSigma)
                     calib.coeffErr[ii][jj] = np.std(values) * correctionFactor
-                    calib.coeffValid[ii][jj] = (np.abs(calib.coeffs[ii][jj])
-                                                > calib.coeffErr[ii][jj] / np.sqrt(calib.coeffNum[ii][jj]))
+
+                    # Use sample stdev.
+                    significanceThreshold = self.config.significanceLimit * calib.coeffErr[ii][jj]
+                    if self.config.doSignificanceScaling is True:
+                        # Enabling this calculates the stdev of the mean.
+                        significanceThreshold /= np.sqrt(calib.coeffNum[ii][jj])
+                    calib.coeffValid[ii][jj] = np.abs(calib.coeffs[ii][jj]) > significanceThreshold
                     self.debugRatios('measure', ratios, ordering[ii], ordering[jj],
                                      calib.coeffs[ii][jj], calib.coeffValid[ii][jj])
+            self.log.info("Measured %s -> %s Coeff: %e Err: %e N: %d Valid: %s Limit: %e",
+                          ordering[jj], ordering[ii], calib.coeffs[ii][jj], calib.coeffErr[ii][jj],
+                          calib.coeffNum[ii][jj], calib.coeffValid[ii][jj], significanceThreshold)
 
         return calib
 
