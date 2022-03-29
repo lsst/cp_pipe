@@ -26,8 +26,16 @@ tasks:
     config:
       connections.inputExp: 'cpCrosstalkProc'
       connections.outputRatios: 'cpCrosstalkRatio'
+      threshold: 100000
+      ignoreSaturatedPixels: false
   crosstalkSolve:
     class: lsst.cp.pipe.measureCrosstalk.CrosstalkSolveTask
     config:
       connections.inputRatios: 'cpCrosstalkRatio'
       connections.outputCrosstalk: 'crosstalk'
+subsets:
+  crosstalk:
+    subset:
+      - crosstalkExtract
+      - crosstalkSolve
+    description: Just the extract and solve.
