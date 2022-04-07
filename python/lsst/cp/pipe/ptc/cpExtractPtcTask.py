@@ -144,6 +144,21 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
             'AMP': 'Mask edges of each amplifier.',
         },
     )
+    doGain = pexConfig.Field(
+        dtype=bool,
+        doc="Calculate a gain per input flat pair.",
+        default=True,
+    )
+    gainCorrectionType = pexConfig.ChoiceField(
+        dtype=str,
+        doc="Correction type for the gain.",
+        default='NONE',
+        allowed={
+            'NONE': 'No correction.',
+            'SIMPLE': 'First order correction.',
+            'FULL': 'Second order correction.'
+        }
+    )
 
 
 class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
@@ -333,7 +348,11 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                 # returned is of the form:
                 # [(i, j, var (cov[0,0]), cov, npix) for (i,j) in
                 # {maxLag, maxLag}^2].
-                muDiff, varDiff, covAstier = self.measureMeanVarCov(exp1, exp2, region=region)
+                muDiff, varDiff, covAstier, muArray = self.measureMeanVarCov(exp1, exp2, region=region)
+                if self.config.doGain:
+                    gain = self.getGainFromFlatPair(muArray[0], muArray[1])
+                else:
+                    gain = np.nan
                 # Correction factor for bias introduced by sigma
                 # clipping.
                 # Function returns 1/sqrt(varFactor), so it needs
@@ -380,7 +399,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                 partialPtcDataset.setAmpValues(ampName, rawExpTime=[expTime], rawMean=[muDiff],
                                                rawVar=[varDiff], inputExpIdPair=[(expId1, expId2)],
                                                expIdMask=[expIdMask], covArray=covArray,
-                                               covSqrtWeights=covSqrtWeights)
+                                               covSqrtWeights=covSqrtWeights, gain=gain)
             # Use location of exp1 to save PTC dataset from (exp1, exp2) pair.
             # Below, np.where(expId1 == np.array(inputDims)) returns a tuple
             # with a single-element array, so [0][0]
@@ -492,8 +511,10 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         ----------
         exposure1 : `lsst.afw.image.exposure.ExposureF`
             First exposure of flat field pair.
+
         exposure2 : `lsst.afw.image.exposure.ExposureF`
             Second exposure of flat field pair.
+
         region : `lsst.geom.Box2I`, optional
             Region of each exposure where to perform the calculations
             (e.g, an amplifier).
@@ -504,10 +525,12 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
             0.5*(mu1 + mu2), where mu1, and mu2 are the clipped means
             of the regions in both exposures. If either mu1 or m2 are
             NaN's, the returned value is NaN.
+
         varDiff : `float` or `NaN`
             Half of the clipped variance of the difference of the
             regions inthe two input exposures. If either mu1 or m2 are
             NaN's, the returned value is NaN.
+
         covDiffAstier : `list` or `NaN`
             List with tuples of the form (dx, dy, var, cov, npix), where:
                 dx : `int`
@@ -522,6 +545,9 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                     Number of pixel pairs used to evaluate var and cov.
 
             If either mu1 or m2 are NaN's, the returned value is NaN.
+
+        muArray : `list` [`float`,`float`]
+            List with mu1 and mu2
         """
         if region is not None:
             im1Area = exposure1.maskedImage[region]
@@ -553,7 +579,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         mu2 = afwMath.makeStatistics(im2Area, afwMath.MEANCLIP, im2StatsCtrl).getValue()
         if np.isnan(mu1) or np.isnan(mu2):
             self.log.warning("Mean of amp in image 1 or 2 is NaN: %f, %f.", mu1, mu2)
-            return np.nan, np.nan, None
+            return np.nan, np.nan, None, [mu1, mu2]
         mu = 0.5*(mu1 + mu2)
 
         # Take difference of pairs
@@ -593,7 +619,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         if np.sum(w) < self.config.minNumberGoodPixelsForCovariance:
             self.log.warning("Number of good points for covariance calculation (%s) is less "
                              "(than threshold %s)", np.sum(w), self.config.minNumberGoodPixelsForCovariance)
-            return np.nan, np.nan, None
+            return np.nan, np.nan, None, [mu1, mu2]
 
         maxRangeCov = self.config.maximumRangeCovariancesAstier
 
@@ -617,4 +643,81 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
             self.log.warning("Absolute fractional difference between afwMatch.VARIANCECLIP and Cov[0,0] "
                              "is more than %f%%: %f", thresholdPercentage, fractionalDiff)
 
-        return mu, varDiff, covDiffAstier
+        return mu, varDiff, covDiffAstier, [mu1, mu2]
+
+    def getGainFromFlatPair(self, mu1, mu2, correctionType='NONE', readNoise=None):
+        """Calculate the gain from a pair of flats.
+
+        The basic premise is 1/g = <(mu1 - mu2)^2/(mu1 + mu2)>,
+        for mu1 and mu2 the mean signal levels of flats 1 and 2,
+        repesctively.
+
+        Corrections for the variable QE and the read-noise are then made
+        following the derivation in Robert Lupton's forthcoming book,
+        which gets
+
+        1/g = <(mu1 - mu2)^2/(mu1 + mu2)> - 1/mu(sigma^2 - 1/2g^2)
+
+        See below for the full solution.
+        https://www.wolframalpha.com/input/?i=solve+1%2Fy+%3D+c+-+(1%2Fm)*(s^2+-+1%2F(2y^2))+for+y
+        where mu is the average signal level, and sigma is the
+        amplifier's readnoise. The way the correction is applied depends on
+        the value supplied for correctionType.
+
+        correctionType is one of ['NONE', 'SIMPLE' or 'FULL']
+            'NONE' : uses the 1/g = <(mu1 - mu2)^2/(mu1 + mu2)> formula
+            'SIMPLE' : uses the gain from the 'NONE' method for the 1/2g^2 term
+            'FULL'   : solves the full equation for g, discarding the
+                       non-physical solution to the resulting quadratic.
+
+        Parameters
+        ----------
+        mu1 : `float`
+            Mean signal of the first of the flat pairs.
+
+        mu2 : `lsst.afw.image.exposure`
+            Mean signal of the first of the flat pairs.
+
+        correctionType : `str`, optional
+            The correction applied, one of ['NONE', 'SIMPLE', 'FULL']
+
+        readnoise : `float`, optional
+            Amplifier readout noise.
+
+        Returns
+        -------
+        gain : `float`
+            Gain, in e/ADU.
+
+        Raises
+        ------
+            RuntimeError: if `correctionType` is not one of 'NONE',
+                'SIMPLE', or 'FULL'.
+
+            RuntimeError: if a readout noise value is not provided
+                when `correctionType` is different from 'NONE'.
+        """
+        if correctionType not in ['NONE', 'SIMPLE', 'FULL']:
+            raise RuntimeError("Unknown correction type %s" % correctionType)
+
+        if correctionType != 'NONE' and readNoise is None:
+            raise RuntimeError("Must supply a readout noise value if "
+                               "performing gain correction.")
+
+        const = np.mean((mu1 - mu2)**2 / (mu1 + mu2))
+        gain = 1. / const
+
+        mu = 0.5*(mu1 + mu2)
+
+        if correctionType == 'SIMPLE':
+            gain = 1/(const - (1/mu)*(readNoise**2 - (1/2*gain**2)))
+        elif correctionType == 'FULL':
+            root = np.sqrt(mu**2 - 2*mu*const + 2*readNoise**2)
+            denom = (2*const*mu - 2*readNoise**2)
+
+            positiveSolution = (root + mu)/denom
+            negativeSolution = (mu - root)/denom  # noqa: F841 unused, but the other solution
+
+            gain = positiveSolution
+
+        return gain

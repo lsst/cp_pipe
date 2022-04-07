@@ -147,7 +147,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             expIds.append(idCounter+1)
             for ampNumber, ampName in enumerate(self.ampNames):
                 # cov has (i, j, var, cov, npix)
-                muDiff, varDiff, covAstier = extractTask.measureMeanVarCov(mockExp1, mockExp2)
+                muDiff, varDiff, covAstier, _ = extractTask.measureMeanVarCov(mockExp1, mockExp2)
                 muStandard.setdefault(ampName, []).append(muDiff)
                 varStandard.setdefault(ampName, []).append(varDiff)
             idCounter += 2
@@ -291,7 +291,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
     def test_meanVarMeasurement(self):
         task = self.defaultTaskExtract
-        mu, varDiff, _ = task.measureMeanVarCov(self.flatExp1, self.flatExp2)
+        mu, varDiff, _, _ = task.measureMeanVarCov(self.flatExp1, self.flatExp2)
 
         self.assertLess(self.flatWidth - np.sqrt(varDiff), 1)
         self.assertLess(self.flatMean - mu, 1)
@@ -301,7 +301,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         self.flatExp1.image.array[20:30, :] = np.nan
         self.flatExp2.image.array[20:30, :] = np.nan
 
-        mu, varDiff, _ = task.measureMeanVarCov(self.flatExp1, self.flatExp2)
+        mu, varDiff, _, _ = task.measureMeanVarCov(self.flatExp1, self.flatExp2)
 
         expectedMu1 = np.nanmean(self.flatExp1.image.array)
         expectedMu2 = np.nanmean(self.flatExp2.image.array)
@@ -332,7 +332,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         self.flatExp1.image.array[:, :] = np.nan
         self.flatExp2.image.array[:, :] = np.nan
 
-        mu, varDiff, covDiff = task.measureMeanVarCov(self.flatExp1, self.flatExp2)
+        mu, varDiff, covDiff, _ = task.measureMeanVarCov(self.flatExp1, self.flatExp2)
 
         self.assertTrue(np.isnan(mu))
         self.assertTrue(np.isnan(varDiff))
