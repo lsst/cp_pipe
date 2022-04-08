@@ -47,7 +47,13 @@ class PhotonTransferCurveExtractConnections(pipeBase.PipelineTaskConnections,
         multiple=True,
         deferLoad=True,
     )
-
+    taskMetadata = cT.Input(
+        name="isrTask_metadata",
+        doc="Input task metadata to extract statistics from.",
+        storageClass="TaskMetadata",
+        dimensions=("instrument", "exposure", "detector"),
+        multiple=True,
+    )
     outputCovariances = cT.Output(
         name="ptcCovariances",
         doc="Extracted flat (co)variances.",
@@ -225,7 +231,6 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         inputs = butlerQC.get(inputRefs)
         # Ids of input list of exposure references
         # (deferLoad=True in the input connections)
-
         inputs['inputDims'] = [expRef.datasetRef.dataId['exposure'] for expRef in inputRefs.inputExp]
 
         # Dictionary, keyed by expTime, with tuples containing flat
@@ -238,7 +243,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         outputs = self.run(**inputs)
         butlerQC.put(outputs, outputRefs)
 
-    def run(self, inputExp, inputDims):
+    def run(self, inputExp, inputDims, taskMetadata):
         """Measure covariances from difference of flat pairs
 
         Parameters
@@ -251,6 +256,9 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
 
         inputDims : `list`
             List of exposure IDs.
+
+        taskMetadata : `list`[`lsst.pipe.base.TaskMetadata`]
+            List of exposures metadata from ISR.
 
         Returns
         -------
@@ -314,7 +322,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                 continue
             else:
                 # Only use the first two exposures at expTime. Each
-                # elements is a tuple (exposure, expId)
+                # element is a tuple (exposure, expId)
                 expRef1, expId1 = exposures[0]
                 expRef2, expId2 = exposures[1]
                 # use get() to obtain `lsst.afw.image.Exposure`
@@ -349,8 +357,14 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                 # [(i, j, var (cov[0,0]), cov, npix) for (i,j) in
                 # {maxLag, maxLag}^2].
                 muDiff, varDiff, covAstier, muArray = self.measureMeanVarCov(exp1, exp2, region=region)
+
+                # Estimate the gain from the flat pair
+                # Overscan readnoise from post-ISR exposure metadata
+                readNoise = self.getReadNoiseFromMetadata(taskMetadata, ampName)
                 if self.config.doGain:
-                    gain = self.getGainFromFlatPair(muArray[0], muArray[1])
+                    gain = self.getGainFromFlatPair(muArray[0], muArray[1],
+                                                    correctionType=self.config.gainCorrectionType,
+                                                    readNoise=readNoise)
                 else:
                     gain = np.nan
                 # Correction factor for bias introduced by sigma
@@ -399,7 +413,8 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                 partialPtcDataset.setAmpValues(ampName, rawExpTime=[expTime], rawMean=[muDiff],
                                                rawVar=[varDiff], inputExpIdPair=[(expId1, expId2)],
                                                expIdMask=[expIdMask], covArray=covArray,
-                                               covSqrtWeights=covSqrtWeights, gain=gain)
+                                               covSqrtWeights=covSqrtWeights, gain=gain,
+                                               noise=readNoise)
             # Use location of exp1 to save PTC dataset from (exp1, exp2) pair.
             # Below, np.where(expId1 == np.array(inputDims)) returns a tuple
             # with a single-element array, so [0][0]
@@ -721,3 +736,33 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
             gain = positiveSolution
 
         return gain
+
+    def getReadNoiseFromMetadata(self, taskMetadata, ampName):
+        """Gets readout noise for an amp from ISR metadata.
+
+        Parameters
+        ----------
+        taskMetadata : `list`[`lsst.pipe.base.TaskMetadata`]
+                    List of exposures metadata from ISR.
+
+        ampName : `str`
+            Amplifier name.
+
+        Returns
+        -------
+        readNoise : `float`
+            Median of the overscan readnoise in the
+            post-ISR metadata of the input exposures.
+        """
+        # Empirical readout noise measured from an
+        # overscan-subtracted overscan during ISR.
+        expectedKey = f"RESIDUAL STDEV {ampName}"
+
+        readNoises = []
+        for expMetadata in taskMetadata:
+            overscanNoise = expMetadata['isr'][expectedKey]
+            readNoises.append(overscanNoise)
+
+        readNoise = np.median(np.array(readNoises))
+
+        return readNoise
