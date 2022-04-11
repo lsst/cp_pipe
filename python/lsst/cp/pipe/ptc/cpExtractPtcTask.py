@@ -591,7 +591,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         mu2 = afwMath.makeStatistics(im2Area, afwMath.MEANCLIP, im2StatsCtrl).getValue()
         if np.isnan(mu1) or np.isnan(mu2):
             self.log.warning("Mean of amp in image 1 or 2 is NaN: %f, %f.", mu1, mu2)
-            return np.nan, np.nan, None, [mu1, mu2]
+            return np.nan, np.nan, None
         mu = 0.5*(mu1 + mu2)
 
         # Take difference of pairs

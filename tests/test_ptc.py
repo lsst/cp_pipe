@@ -37,6 +37,8 @@ import lsst.ip.isr.isrMock as isrMock
 from lsst.ip.isr import PhotonTransferCurveDataset
 from lsst.cp.pipe.utils import (funcPolynomial, makeMockFlats)
 
+from lsst.pipe.base import TaskMetadata
+
 
 class FakeCamera(list):
     def getName(self):
@@ -110,6 +112,13 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             self.dataset.rawExpTimes[ampName] = self.timeVec
             self.dataset.rawMeans[ampName] = muVec
 
+        # ISR metadata
+        self.metadataContents = TaskMetadata()
+        self.metadataContents["isr"] = {}
+        # Overscan readout noise
+        for amp in self.ampNames:
+            self.metadataContents["isr"][f"RESIDUAL STDEV {amp}"] = np.sqrt(self.noiseSq)
+
     def test_covAstier(self):
         """Test to check getCovariancesAstier
 
@@ -147,11 +156,13 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             expIds.append(idCounter+1)
             for ampNumber, ampName in enumerate(self.ampNames):
                 # cov has (i, j, var, cov, npix)
-                muDiff, varDiff, covAstier, _ = extractTask.measureMeanVarCov(mockExp1, mockExp2)
+                muDiff, varDiff, covAstier = extractTask.measureMeanVarCov(mockExp1, mockExp2)
                 muStandard.setdefault(ampName, []).append(muDiff)
                 varStandard.setdefault(ampName, []).append(varDiff)
             idCounter += 2
-        resultsExtract = extractTask.run(inputExp=expDict, inputDims=expIds)
+
+        resultsExtract = extractTask.run(inputExp=expDict, inputDims=expIds,
+                                         taskMetadata=[self.metadataContents])
         resultsSolve = solveTask.run(resultsExtract.outputCovariances)
 
         for amp in self.ampNames:
@@ -291,7 +302,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
     def test_meanVarMeasurement(self):
         task = self.defaultTaskExtract
-        mu, varDiff, _, _ = task.measureMeanVarCov(self.flatExp1, self.flatExp2)
+        mu, varDiff, _ = task.measureMeanVarCov(self.flatExp1, self.flatExp2)
 
         self.assertLess(self.flatWidth - np.sqrt(varDiff), 1)
         self.assertLess(self.flatMean - mu, 1)
@@ -301,7 +312,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         self.flatExp1.image.array[20:30, :] = np.nan
         self.flatExp2.image.array[20:30, :] = np.nan
 
-        mu, varDiff, _, _ = task.measureMeanVarCov(self.flatExp1, self.flatExp2)
+        mu, varDiff, _ = task.measureMeanVarCov(self.flatExp1, self.flatExp2)
 
         expectedMu1 = np.nanmean(self.flatExp1.image.array)
         expectedMu2 = np.nanmean(self.flatExp2.image.array)
@@ -332,7 +343,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         self.flatExp1.image.array[:, :] = np.nan
         self.flatExp2.image.array[:, :] = np.nan
 
-        mu, varDiff, covDiff, _ = task.measureMeanVarCov(self.flatExp1, self.flatExp2)
+        mu, varDiff, covDiff = task.measureMeanVarCov(self.flatExp1, self.flatExp2)
 
         self.assertTrue(np.isnan(mu))
         self.assertTrue(np.isnan(varDiff))
@@ -393,6 +404,38 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         self.assertTrue(dataset.ampNames == self.ampNames)
         dataset.badAmps.append("C:0,1")
         self.assertTrue(dataset.getGoodAmps() == [amp for amp in self.ampNames if amp != "C:0,1"])
+
+    def runGetGainFromFlatPair(self, correctionType='NONE'):
+        extractConfig = self.defaultConfigExtract
+        extractConfig.gainCorrectionType = correctionType
+        extractConfig.minNumberGoodPixelsForCovariance = 5000
+        extractTask = cpPipe.ptc.PhotonTransferCurveExtractTask(config=extractConfig)
+
+        expDict = {}
+        expIds = []
+        idCounter = 0
+        inputGain = self.gain  # 1.5 e/ADU
+        for expTime in self.timeVec:
+            mockExp1, mockExp2 = makeMockFlats(expTime, gain=inputGain,
+                                               readNoiseElectrons=np.sqrt(self.noiseSq),
+                                               expId1=idCounter, expId2=idCounter+1)
+            mockExpRef1 = PretendRef(mockExp1)
+            mockExpRef2 = PretendRef(mockExp2)
+            expDict[expTime] = ((mockExpRef1, idCounter), (mockExpRef2, idCounter+1))
+            expIds.append(idCounter)
+            expIds.append(idCounter+1)
+            idCounter += 2
+
+        resultsExtract = extractTask.run(inputExp=expDict, inputDims=expIds,
+                                         taskMetadata=[self.metadataContents])
+
+        for exposurePair in resultsExtract.outputCovariances:
+            for ampName in self.ampNames:
+                self.assertAlmostEqual(exposurePair.gain[ampName], inputGain, places=1)
+
+    def test_getGainFromFlatPair(self):
+        for gainCorrectionType in ['NONE', 'SIMPLE', 'FULL', ]:
+            self.runGetGainFromFlatPair(gainCorrectionType)
 
 
 class MeasurePhotonTransferCurveDatasetTestCase(lsst.utils.tests.TestCase):
