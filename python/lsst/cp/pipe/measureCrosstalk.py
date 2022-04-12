@@ -93,7 +93,7 @@ class CrosstalkExtractConfig(pipeBase.PipelineTaskConfig,
     )
     threshold = Field(
         dtype=float,
-        default=10000,
+        default=30000,
         doc="Minimum level of source pixels for which to measure crosstalk."
     )
     ignoreSaturatedPixels = Field(
