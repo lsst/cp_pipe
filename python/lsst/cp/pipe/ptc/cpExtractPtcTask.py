@@ -158,7 +158,7 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
     gainCorrectionType = pexConfig.ChoiceField(
         dtype=str,
         doc="Correction type for the gain.",
-        default='NONE',
+        default='FULL',
         allowed={
             'NONE': 'No correction.',
             'SIMPLE': 'First order correction.',
@@ -693,8 +693,8 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         correctionType : `str`, optional
             The correction applied, one of ['NONE', 'SIMPLE', 'FULL']
 
-        readnoise : `float`, optional
-            Amplifier readout noise.
+        readNoise : `float`, optional
+            Amplifier readout noise (ADU).
 
         region : `lsst.geom.Box2I`, optional
             Region of each exposure where to perform the calculations
@@ -760,9 +760,9 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         -------
         readNoise : `float`
             Median of the overscan readnoise in the
-            post-ISR metadata of the input exposures.
+            post-ISR metadata of the input exposures (ADU).
         """
-        # Empirical readout noise measured from an
+        # Empirical readout noise [ADU] measured from an
         # overscan-subtracted overscan during ISR.
         expectedKey = f"RESIDUAL STDEV {ampName}"
 

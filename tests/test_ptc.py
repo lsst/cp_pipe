@@ -115,9 +115,9 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         # ISR metadata
         self.metadataContents = TaskMetadata()
         self.metadataContents["isr"] = {}
-        # Overscan readout noise
+        # Overscan readout noise [in ADU]
         for amp in self.ampNames:
-            self.metadataContents["isr"][f"RESIDUAL STDEV {amp}"] = np.sqrt(self.noiseSq)
+            self.metadataContents["isr"][f"RESIDUAL STDEV {amp}"] = np.sqrt(self.noiseSq/self.gain)
 
     def test_covAstier(self):
         """Test to check getCovariancesAstier
@@ -431,7 +431,9 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
         for exposurePair in resultsExtract.outputCovariances:
             for ampName in self.ampNames:
-                self.assertAlmostEqual(exposurePair.gain[ampName], inputGain, places=1)
+                if exposurePair.gain[ampName] is np.nan:
+                    continue
+                self.assertAlmostEqual(exposurePair.gain[ampName], inputGain, delta=0.1)
 
     def test_getGainFromFlatPair(self):
         for gainCorrectionType in ['NONE', 'SIMPLE', 'FULL', ]:
