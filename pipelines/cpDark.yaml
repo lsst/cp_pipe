@@ -25,7 +25,7 @@ tasks:
   cpDarkCombine:
     class: lsst.cp.pipe.cpCombine.CalibCombineTask
     config:
-      connections.inputExps: 'cpDarkProc'
+      connections.inputExpHandles: 'cpDarkProc'
       connections.outputData: 'dark'
       calibrationType: 'dark'
       exposureScaling: "DarkTime"

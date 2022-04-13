@@ -20,7 +20,7 @@ tasks:
   cpFlatCombine:
     class: lsst.cp.pipe.cpCombine.CalibCombineByFilterTask
     config:
-      connections.inputExps: 'cpFlatProc'
+      connections.inputExpHandles: 'cpFlatProc'
       connections.outputData: 'flat'
       calibrationType: 'flat'
       exposureScaling: MeanStats

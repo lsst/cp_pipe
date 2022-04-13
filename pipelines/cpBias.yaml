@@ -20,7 +20,7 @@ tasks:
   cpBiasCombine:
     class: lsst.cp.pipe.cpCombine.CalibCombineTask
     config:
-      connections.inputExps: 'cpBiasProc'
+      connections.inputExpHandles: 'cpBiasProc'
       connections.outputData: 'bias'
       calibrationType: 'bias'
       exposureScaling: "Unity"
