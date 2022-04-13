@@ -349,12 +349,13 @@ class CpSkyCombineConnections(pipeBase.PipelineTaskConnections,
         dimensions=("instrument", "exposure", "detector"),
         multiple=True,
     )
-    inputExps = cT.Input(
+    inputExpHandles = cT.Input(
         name="cpSkyMaskedIsr",
         doc="Masked post-ISR image.",
         storageClass="Exposure",
         dimensions=("instrument", "exposure", "detector"),
         multiple=True,
+        deferLoad=True,
     )
 
     outputCalib = cT.Output(
@@ -391,15 +392,15 @@ class CpSkyCombineTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         super().__init__(**kwargs)
         self.makeSubtask("sky")
 
-    def run(self, inputBkgs, inputExps):
+    def run(self, inputBkgs, inputExpHandles):
         """Merge per-exposure measurements into a detector level calibration.
 
         Parameters
         ----------
         inputBkgs : `list` [`lsst.afw.math.BackgroundList`]
             Remnant backgrounds from each exposure.
-        inputExps : `list` [`lsst.afw.image.Exposure`]
-            The ISR processed, detection masked images.
+        inputHandles : `list` [`lsst.daf.butler.DeferredDatasetHandles`]
+            The Butler handles to the ISR processed, detection masked images.
 
         Returns
         -------
@@ -410,9 +411,9 @@ class CpSkyCombineTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
                 The final sky calibration product.
         """
         skyCalib = self.sky.averageBackgrounds(inputBkgs)
-        skyCalib.setDetector(inputExps[0].getDetector())
+        skyCalib.setDetector(inputExpHandles[0].get(component='detector'))
 
-        CalibCombineTask().combineHeaders(inputExps, skyCalib, calibType='SKY')
+        CalibCombineTask().combineHeaders(inputExpHandles, skyCalib, calibType='SKY')
 
         return pipeBase.Struct(
             outputCalib=skyCalib,
