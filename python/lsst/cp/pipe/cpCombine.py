@@ -329,8 +329,6 @@ class CalibCombineTask(pipeBase.PipelineTask,
 
             expScales.append(scale)
             self.log.info("Scaling input %d by %s", index, scale)
-            # CZW: Cannot apply scale when image isn't in memory.
-            # self.applyScale(exp, scale)
 
         self.combine(combinedExp, inputExpHandles, expScales, stats)
 
@@ -417,12 +415,14 @@ class CalibCombineTask(pipeBase.PipelineTask,
     @staticmethod
     def _subBBoxIter(bbox, subregionSize):
         """Iterate over subregions of a bbox.
+
         Parameters
         ----------
         bbox : `lsst.geom.Box2I`
             Bounding box over which to iterate.
         subregionSize: `lsst.geom.Extent2I`
             Size of sub-bboxes.
+
         Yields
         ------
         subBBox : `lsst.geom.Box2I`
@@ -454,9 +454,9 @@ class CalibCombineTask(pipeBase.PipelineTask,
         target : `lsst.afw.image.Exposure`
             Output exposure to construct.
         expHandleList : `list` [`lsst.daf.butler.DeferredDatasetHandle`]
-            Input exposures to combine.
-        expScaleList : CZW
-            CZW
+            Input exposure handles to combine.
+        expScaleList : `list` [`float`]
+            List of scales to apply to each input image.
         stats : `lsst.afw.math.StatisticsControl`
             Control explaining how to combine the input images.
         """
@@ -480,8 +480,8 @@ class CalibCombineTask(pipeBase.PipelineTask,
 
         Parameters
         ----------
-        expHandleList : `list` [`lsst.afw.image.Exposure`] #CZW
-            Input list of exposures to combine.
+        expHandleList : `list` [`lsst.daf.butler.DeferredDatasetHandle`]
+            Input list of exposure handles to combine.
         calib : `lsst.afw.image.Exposure`
             Output calibration to construct headers for.
         calibType : `str`, optional
@@ -516,11 +516,13 @@ class CalibCombineTask(pipeBase.PipelineTask,
 
         # Merge input headers
         inputHeaders = [expHandle.get(component='metadata') for expHandle in expHandleList]
-
         merged = merge_headers(inputHeaders, mode='drop')
+
+        # Scan the first header for items that were dropped due to
+        # conflict, and replace them.
         for k, v in merged.items():
             if k not in header:
-                md = inputHeaders[0]  # CZW: Why do we do this?
+                md = inputHeaders[0]
                 comment = md.getComment(k) if k in md else None
                 header.set(k, v, comment=comment)
 
