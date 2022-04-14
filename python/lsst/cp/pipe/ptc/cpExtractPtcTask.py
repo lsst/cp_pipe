@@ -253,18 +253,15 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
             Dictionary that groups references to flat-field exposures that
             have the same exposure time (seconds), or that groups them
             sequentially by their exposure id.
-
         inputDims : `list`
             List of exposure IDs.
-
-        taskMetadata : `list`[`lsst.pipe.base.TaskMetadata`]
+        taskMetadata : `list` [`lsst.pipe.base.TaskMetadata`]
             List of exposures metadata from ISR.
 
         Returns
         -------
         results : `lsst.pipe.base.Struct`
-            The results struct containing:
-
+            The resulting Struct contains:
             ``outputCovariances``
                 A list containing the per-pair PTC measurements (`list`
                 [`lsst.ip.isr.PhotonTransferCurveDataset`])
@@ -448,7 +445,6 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         inputTuple : `numpy.ndarray`
             Structured array with rows with at least
             (mu, afwVar, cov, var, i, j, npix), where:
-
             mu : `float`
                 0.5*(m1 + m2), where mu1 is the mean value of flat1
                 and mu2 is the mean value of flat2.
@@ -464,7 +460,6 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                 Lag in dimension "y".
             npix : `int`
                 Number of pixels used for covariance calculation.
-
         maxRangeFromTuple : `int`
             Maximum range to select from tuple.
 
@@ -472,10 +467,8 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         -------
         cov : `numpy.array`
             Covariance arrays, indexed by mean signal mu.
-
         vCov : `numpy.array`
             Variance arrays, indexed by mean signal mu.
-
         muVals : `numpy.array`
             List of mean signal values.
         """
@@ -526,10 +519,8 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         ----------
         exposure1 : `lsst.afw.image.exposure.ExposureF`
             First exposure of flat field pair.
-
         exposure2 : `lsst.afw.image.exposure.ExposureF`
             Second exposure of flat field pair.
-
         region : `lsst.geom.Box2I`, optional
             Region of each exposure where to perform the calculations
             (e.g, an amplifier).
@@ -540,12 +531,10 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
             0.5*(mu1 + mu2), where mu1, and mu2 are the clipped means
             of the regions in both exposures. If either mu1 or m2 are
             NaN's, the returned value is NaN.
-
         varDiff : `float` or `NaN`
             Half of the clipped variance of the difference of the
             regions inthe two input exposures. If either mu1 or m2 are
             NaN's, the returned value is NaN.
-
         covDiffAstier : `list` or `NaN`
             List with tuples of the form (dx, dy, var, cov, npix), where:
                 dx : `int`
@@ -661,24 +650,29 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                             readNoise=None, region=None):
         """Estimate the gain from a single pair of flats.
 
-        The basic premise is 1/g = <(I1 - I2)^2/(I1 + I2)>,
+        The basic premise is 1/g = <(I1 - I2)^2/(I1 + I2)> = 1/const,
         where I1 and I2 correspond to flats 1 and 2, respectively.
 
-        Corrections for the variable QE and the read-noise are then made
-        following the derivation in Robert Lupton's forthcoming book,
-        which gets
+        Corrections for the variable QE and the read-noise are then
+        made following the derivation in Robert Lupton's forthcoming
+        book, which gets
 
-        1/g = <(I1 - I2)^2/(I1 + I2)> - 1/mu(sigma^2 - 1/2g^2)
+        1/g = <(I1 - I2)^2/(I1 + I2)> - 1/mu(sigma^2 - 1/2g^2).
 
-        See below for the full solution.
-        https://www.wolframalpha.com/input/?i=solve+1%2Fy+%3D+c+-+(1%2Fm)*(s^2+-+1%2F(2y^2))+for+y
-        where mu is the average signal level, and sigma is the
-        amplifier's readnoise. The way the correction is applied depends on
-        the value supplied for correctionType.
+        This is a quadratic equation, whose solutions are given by:
+
+        g = mu +/- sqrt(2*sigma^2 - 2*const*mu + mu^2)/(2*const*mu*2
+            - 2*sigma^2)
+
+        where 'mu' is the average signal level and 'sigma' is the
+        amplifier's readnoise. The positive solution will be used.
+        The way the correction is applied depends on the value
+        supplied for correctionType.
 
         correctionType is one of ['NONE', 'SIMPLE' or 'FULL']
-            'NONE' : uses the 1/g = <(I1 - I2)^2/(I1 + I2)> formula
-            'SIMPLE' : uses the gain from the 'NONE' method for the 1/2g^2 term
+            'NONE' : uses the 1/g = <(I1 - I2)^2/(I1 + I2)> formula.
+            'SIMPLE' : uses the gain from the 'NONE' method for the
+                       1/2g^2 term.
             'FULL'   : solves the full equation for g, discarding the
                        non-physical solution to the resulting quadratic.
 
@@ -686,16 +680,12 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         ----------
         exposure1 : `lsst.afw.image.exposure.ExposureF`
             First exposure of flat field pair.
-
         exposure2 : `lsst.afw.image.exposure.ExposureF`
             Second exposure of flat field pair.
-
         correctionType : `str`, optional
             The correction applied, one of ['NONE', 'SIMPLE', 'FULL']
-
         readNoise : `float`, optional
             Amplifier readout noise (ADU).
-
         region : `lsst.geom.Box2I`, optional
             Region of each exposure where to perform the calculations
             (e.g, an amplifier).
@@ -709,7 +699,6 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         ------
             RuntimeError: if `correctionType` is not one of 'NONE',
                 'SIMPLE', or 'FULL'.
-
             RuntimeError: if a readout noise value is not provided
                 when `correctionType` is different from 'NONE'.
         """
@@ -737,10 +726,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         elif correctionType == 'FULL':
             root = np.sqrt(mu**2 - 2*mu*const + 2*readNoise**2)
             denom = (2*const*mu - 2*readNoise**2)
-
             positiveSolution = (root + mu)/denom
-            negativeSolution = (mu - root)/denom  # noqa: F841 unused, but the other solution
-
             gain = positiveSolution
 
         return gain
@@ -752,7 +738,6 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         ----------
         taskMetadata : `list`[`lsst.pipe.base.TaskMetadata`]
                     List of exposures metadata from ISR.
-
         ampName : `str`
             Amplifier name.
 

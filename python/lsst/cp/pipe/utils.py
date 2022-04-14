@@ -64,25 +64,19 @@ def calculateWeightedReducedChi2(measured, model, weightsMeasured, nData, nParsM
 
     Parameters
     ----------
-
     measured : `list`
         List with measured data.
-
     model : `list`
         List with modeled data.
-
     weightsMeasured : `list`
         List with weights for the measured data.
-
     nData : `int`
         Number of data points.
-
     nParsModel : `int`
         Number of parameters in the model.
 
     Returns
     -------
-
     redWeightedChi2 : `float`
         Reduced weighted chi2.
     """
@@ -99,40 +93,30 @@ def makeMockFlats(expTime, gain=1.0, readNoiseElectrons=5, fluxElectrons=1000,
     ----------
     expTime : `float`
         Exposure time of the flats.
-
     gain : `float`, optional
         Gain, in e/ADU.
-
     readNoiseElectrons : `float`, optional
         Read noise rms, in electrons.
-
     fluxElectrons : `float`, optional
         Flux of flats, in electrons per second.
-
     randomSeedFlat1 : `int`, optional
         Random seed for the normal distrubutions for the mean signal
         and noise (flat1).
-
     randomSeedFlat2 : `int`, optional
         Random seed for the normal distrubutions for the mean signal
         and noise (flat2).
-
     powerLawBfParams : `list`, optional
         Parameters for `galsim.cdmodel.PowerLawCD` to simulate the
         brightter-fatter effect.
-
     expId1 : `int`, optional
         Exposure ID for first flat.
-
     expId2 : `int`, optional
         Exposure ID for second flat.
 
     Returns
     -------
-
     flatExp1 : `lsst.afw.image.exposure.ExposureF`
         First exposure of flat field pair.
-
     flatExp2 : `lsst.afw.image.exposure.ExposureF`
         Second exposure of flat field pair.
 
@@ -326,16 +310,12 @@ def fitLeastSq(initialParams, dataX, dataY, function, weightsY=None):
     initialParams : `list` [`float`]
         initial values for fit parameters. For ptcFitType=POLYNOMIAL,
         its length determines the degree of the polynomial.
-
     dataX : `numpy.array`, (N,)
         Data in the abscissa axis.
-
     dataY : `numpy.array`, (N,)
         Data in the ordinate axis.
-
     function : callable object (function)
         Function to fit the data with.
-
     weightsY : `numpy.array`, (N,)
         Weights of the data in the ordinate axis.
 
@@ -343,7 +323,6 @@ def fitLeastSq(initialParams, dataX, dataY, function, weightsY=None):
     ------
     pFitSingleLeastSquares : `list` [`float`]
         List with fitted parameters.
-
     pErrSingleLeastSquares : `list` [`float`]
         List with errors for fitted parameters.
 
@@ -391,19 +370,14 @@ def fitBootstrap(initialParams, dataX, dataY, function, weightsY=None, confidenc
     initialParams : `list` [`float`]
         initial values for fit parameters. For ptcFitType=POLYNOMIAL,
         its length determines the degree of the polynomial.
-
     dataX : `numpy.array`, (N,)
         Data in the abscissa axis.
-
     dataY : `numpy.array`, (N,)
         Data in the ordinate axis.
-
     function : callable object (function)
         Function to fit the data with.
-
     weightsY : `numpy.array`, (N,), optional.
         Weights of the data in the ordinate axis.
-
     confidenceSigma : `float`, optional.
         Number of sigmas that determine confidence interval for the
         bootstrap errors.
@@ -412,10 +386,8 @@ def fitBootstrap(initialParams, dataX, dataY, function, weightsY=None, confidenc
     ------
     pFitBootstrap : `list` [`float`]
         List with fitted parameters.
-
     pErrBootstrap : `list` [`float`]
         List with errors for fitted parameters.
-
     reducedChiSqBootstrap : `float`
         Reduced chi squared, unweighted if weightsY is not provided.
     """
@@ -481,7 +453,6 @@ def funcAstier(pars, x):
     params : `list`
         Parameters of the model: a00 (brightter-fatter), gain (e/ADU),
         and noise (e^2).
-
     x : `numpy.array`, (N,)
         Signal mu (ADU).
 
@@ -501,7 +472,6 @@ def arrangeFlatsByExpTime(exposureList, exposureIdList):
     ----------
     exposureList : `list` [`lsst.pipe.base.connections.DeferredDatasetRef`]
         Input list of exposure references.
-
     exposureIdList : `list` [`int`]
         List of exposure ids as obtained by dataId[`exposure`].
 
@@ -534,7 +504,6 @@ def arrangeFlatsByExpId(exposureList, exposureIdList):
     ----------
     exposureList : `list`[`lsst.pipe.base.connections.DeferredDatasetRef`]
         Input list of exposure references.
-
     exposureIdList : `list`[`int`]
         List of exposure ids as obtained by dataId[`exposure`].
 
@@ -584,14 +553,11 @@ class CovFastFourierTransform:
     diff : `numpy.array`
         Image where to calculate the covariances (e.g., the difference
         image of two flats).
-
     w : `numpy.array`
         Weight image (mask): it should consist of 1's (good pixel) and
         0's (bad pixels).
-
     fftShape : `tuple`
         2d-tuple with the shape of the FFT
-
     maxRangeCov : `int`
         Maximum range for the covariances.
     """
@@ -623,7 +589,6 @@ class CovFastFourierTransform:
         ----------
         dx : `int`
            Lag in x
-
         dy : `int
            Lag in y
 
@@ -631,7 +596,6 @@ class CovFastFourierTransform:
         -------
         0.5*(cov1+cov2) : `float`
             Covariance at (dx, dy) lag
-
         npix1+npix2 : `int`
             Number of pixels used in covariance calculation.
         """
@@ -679,31 +643,23 @@ def getFitDataFromCovariances(i, j, mu, fullCov, fullCovModel, fullCovSqrtWeight
     ----------
     i :  `int`
         Lag for covariance matrix.
-
     j : `int`
         Lag for covariance matrix.
-
     mu : `list`
         Mean signal values.
-
     fullCov : `list` of `numpy.array`
         Measured covariance matrices at each mean signal level in mu.
-
     fullCovSqrtWeights : `list` of `numpy.array`
         List of square root of measured covariances at each mean
         signal level in mu.
-
     fullCovModel : `list` of `numpy.array`
         List of modeled covariances at each mean signal level in mu.
-
     gain : `float`, optional
         Gain, in e-/ADU. If other than 1.0 (default), the returned
         quantities will be in electrons or powers of electrons.
-
     divideByMu : `bool`, optional
         Divide returned covariance, model, and weights by the mean
         signal mu?
-
     returnMasked : `bool`, optional
         Use mask (based on weights) in returned arrays (mu,
         covariance, and model)?
@@ -712,16 +668,12 @@ def getFitDataFromCovariances(i, j, mu, fullCov, fullCovModel, fullCovSqrtWeight
     -------
     mu : `numpy.array`
         list of signal values at (i, j).
-
     covariance : `numpy.array`
         Covariance at (i, j) at each mean signal mu value (fullCov[:, i, j]).
-
     covarianceModel : `numpy.array`
         Covariance model at (i, j).
-
     weights : `numpy.array`
         Weights at (i, j).
-
     maskFromWeights : `numpy.array`, optional
         Boolean mask of the covariance at (i,j), where the weights
         differ from 0.
