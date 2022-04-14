@@ -47,7 +47,13 @@ class PhotonTransferCurveExtractConnections(pipeBase.PipelineTaskConnections,
         multiple=True,
         deferLoad=True,
     )
-
+    taskMetadata = cT.Input(
+        name="isrTask_metadata",
+        doc="Input task metadata to extract statistics from.",
+        storageClass="TaskMetadata",
+        dimensions=("instrument", "exposure", "detector"),
+        multiple=True,
+    )
     outputCovariances = cT.Output(
         name="ptcCovariances",
         doc="Extracted flat (co)variances.",
@@ -144,6 +150,21 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
             'AMP': 'Mask edges of each amplifier.',
         },
     )
+    doGain = pexConfig.Field(
+        dtype=bool,
+        doc="Calculate a gain per input flat pair.",
+        default=True,
+    )
+    gainCorrectionType = pexConfig.ChoiceField(
+        dtype=str,
+        doc="Correction type for the gain.",
+        default='FULL',
+        allowed={
+            'NONE': 'No correction.',
+            'SIMPLE': 'First order correction.',
+            'FULL': 'Second order correction.'
+        }
+    )
 
 
 class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
@@ -210,7 +231,6 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         inputs = butlerQC.get(inputRefs)
         # Ids of input list of exposure references
         # (deferLoad=True in the input connections)
-
         inputs['inputDims'] = [expRef.datasetRef.dataId['exposure'] for expRef in inputRefs.inputExp]
 
         # Dictionary, keyed by expTime, with tuples containing flat
@@ -223,7 +243,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         outputs = self.run(**inputs)
         butlerQC.put(outputs, outputRefs)
 
-    def run(self, inputExp, inputDims):
+    def run(self, inputExp, inputDims, taskMetadata):
         """Measure covariances from difference of flat pairs
 
         Parameters
@@ -233,15 +253,15 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
             Dictionary that groups references to flat-field exposures that
             have the same exposure time (seconds), or that groups them
             sequentially by their exposure id.
-
         inputDims : `list`
             List of exposure IDs.
+        taskMetadata : `list` [`lsst.pipe.base.TaskMetadata`]
+            List of exposures metadata from ISR.
 
         Returns
         -------
         results : `lsst.pipe.base.Struct`
-            The results struct containing:
-
+            The resulting Struct contains:
             ``outputCovariances``
                 A list containing the per-pair PTC measurements (`list`
                 [`lsst.ip.isr.PhotonTransferCurveDataset`])
@@ -276,9 +296,15 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         # dimensions match.
         dummyPtcDataset = PhotonTransferCurveDataset(ampNames, 'DUMMY',
                                                      self.config.maximumRangeCovariancesAstier)
-        # Initialize amps of `dummyPtcDatset`.
+
+        readNoiseDict = {ampName: 0.0 for ampName in ampNames}
         for ampName in ampNames:
+            # Initialize amps of `dummyPtcDatset`.
             dummyPtcDataset.setAmpValues(ampName)
+            # Overscan readnoise from post-ISR exposure metadata.
+            # It will be used to estimate the gain from a pair of flats.
+            readNoiseDict[ampName] = self.getReadNoiseFromMetadata(taskMetadata, ampName)
+
         # Output list with PTC datasets.
         partialPtcDatasetList = []
         # The number of output references needs to match that of input
@@ -299,7 +325,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                 continue
             else:
                 # Only use the first two exposures at expTime. Each
-                # elements is a tuple (exposure, expId)
+                # element is a tuple (exposure, expId)
                 expRef1, expId1 = exposures[0]
                 expRef2, expId2 = exposures[1]
                 # use get() to obtain `lsst.afw.image.Exposure`
@@ -334,6 +360,14 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                 # [(i, j, var (cov[0,0]), cov, npix) for (i,j) in
                 # {maxLag, maxLag}^2].
                 muDiff, varDiff, covAstier = self.measureMeanVarCov(exp1, exp2, region=region)
+
+                # Estimate the gain from the flat pair
+                if self.config.doGain:
+                    gain = self.getGainFromFlatPair(exp1, exp2,
+                                                    correctionType=self.config.gainCorrectionType,
+                                                    readNoise=readNoiseDict[ampName], region=region)
+                else:
+                    gain = np.nan
                 # Correction factor for bias introduced by sigma
                 # clipping.
                 # Function returns 1/sqrt(varFactor), so it needs
@@ -380,7 +414,8 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                 partialPtcDataset.setAmpValues(ampName, rawExpTime=[expTime], rawMean=[muDiff],
                                                rawVar=[varDiff], inputExpIdPair=[(expId1, expId2)],
                                                expIdMask=[expIdMask], covArray=covArray,
-                                               covSqrtWeights=covSqrtWeights)
+                                               covSqrtWeights=covSqrtWeights, gain=gain,
+                                               noise=readNoiseDict[ampName])
             # Use location of exp1 to save PTC dataset from (exp1, exp2) pair.
             # Below, np.where(expId1 == np.array(inputDims)) returns a tuple
             # with a single-element array, so [0][0]
@@ -414,7 +449,6 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         inputTuple : `numpy.ndarray`
             Structured array with rows with at least
             (mu, afwVar, cov, var, i, j, npix), where:
-
             mu : `float`
                 0.5*(m1 + m2), where mu1 is the mean value of flat1
                 and mu2 is the mean value of flat2.
@@ -430,7 +464,6 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                 Lag in dimension "y".
             npix : `int`
                 Number of pixels used for covariance calculation.
-
         maxRangeFromTuple : `int`
             Maximum range to select from tuple.
 
@@ -438,10 +471,8 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         -------
         cov : `numpy.array`
             Covariance arrays, indexed by mean signal mu.
-
         vCov : `numpy.array`
             Variance arrays, indexed by mean signal mu.
-
         muVals : `numpy.array`
             List of mean signal values.
         """
@@ -618,3 +649,127 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                              "is more than %f%%: %f", thresholdPercentage, fractionalDiff)
 
         return mu, varDiff, covDiffAstier
+
+    def getGainFromFlatPair(self, exposure1, exposure2, correctionType='NONE',
+                            readNoise=None, region=None):
+        """Estimate the gain from a single pair of flats.
+
+        The basic premise is 1/g = <(I1 - I2)^2/(I1 + I2)> = 1/const,
+        where I1 and I2 correspond to flats 1 and 2, respectively.
+        Corrections for the variable QE and the read-noise are then
+        made following the derivation in Robert Lupton's forthcoming
+        book, which gets
+
+        1/g = <(I1 - I2)^2/(I1 + I2)> - 1/mu(sigma^2 - 1/2g^2).
+
+        This is a quadratic equation, whose solutions are given by:
+
+        g = mu +/- sqrt(2*sigma^2 - 2*const*mu + mu^2)/(2*const*mu*2
+            - 2*sigma^2)
+
+        where 'mu' is the average signal level and 'sigma' is the
+        amplifier's readnoise. The positive solution will be used.
+        The way the correction is applied depends on the value
+        supplied for correctionType.
+
+        correctionType is one of ['NONE', 'SIMPLE' or 'FULL']
+            'NONE' : uses the 1/g = <(I1 - I2)^2/(I1 + I2)> formula.
+            'SIMPLE' : uses the gain from the 'NONE' method for the
+                       1/2g^2 term.
+            'FULL'   : solves the full equation for g, discarding the
+                       non-physical solution to the resulting quadratic.
+
+        Parameters
+        ----------
+        exposure1 : `lsst.afw.image.exposure.ExposureF`
+            First exposure of flat field pair.
+        exposure2 : `lsst.afw.image.exposure.ExposureF`
+            Second exposure of flat field pair.
+        correctionType : `str`, optional
+            The correction applied, one of ['NONE', 'SIMPLE', 'FULL']
+        readNoise : `float`, optional
+            Amplifier readout noise (ADU).
+        region : `lsst.geom.Box2I`, optional
+            Region of each exposure where to perform the calculations
+            (e.g, an amplifier).
+
+        Returns
+        -------
+        gain : `float`
+            Gain, in e/ADU.
+
+        Raises
+        ------
+            RuntimeError: if `correctionType` is not one of 'NONE',
+                'SIMPLE', or 'FULL'.
+            RuntimeError: if a readout noise value is not provided
+                when `correctionType` is different from 'NONE'.
+        """
+        if correctionType not in ['NONE', 'SIMPLE', 'FULL']:
+            raise RuntimeError("Unknown correction type: %s" % correctionType)
+
+        if correctionType != 'NONE' and readNoise is None:
+            self.log.warning("'correctionType' in 'getGainFromFlatPair' is %s, "
+                             "but 'readNoise' is 'None'. Setting 'correctionType' "
+                             "to 'NONE', so a gain value will be estimated without "
+                             "corrections." % correctionType)
+            correctionType = 'NONE'
+        if region is not None:
+            im1Area = exposure1.getImage()[region].getArray()
+            im2Area = exposure2.getImage()[region].getArray()
+        else:
+            im1Area = exposure1.getImage().getArray()
+            im2Area = exposure2.getImage().getArray()
+
+        const = np.mean((im1Area - im2Area)**2 / (im1Area + im2Area))
+        gain = 1. / const
+
+        mu = 0.5*(np.mean(im1Area) + np.mean(im2Area))
+
+        if correctionType == 'SIMPLE':
+            gain = 1/(const - (1/mu)*(readNoise**2 - (1/2*gain**2)))
+        elif correctionType == 'FULL':
+            root = np.sqrt(mu**2 - 2*mu*const + 2*readNoise**2)
+            denom = (2*const*mu - 2*readNoise**2)
+            positiveSolution = (root + mu)/denom
+            gain = positiveSolution
+
+        return gain
+
+    def getReadNoiseFromMetadata(self, taskMetadata, ampName):
+        """Gets readout noise for an amp from ISR metadata.
+
+        Parameters
+        ----------
+        taskMetadata : `list` [`lsst.pipe.base.TaskMetadata`]
+                    List of exposures metadata from ISR.
+        ampName : `str`
+            Amplifier name.
+
+        Returns
+        -------
+        readNoise : `float`
+            Median of the overscan readnoise in the
+            post-ISR metadata of the input exposures (ADU).
+            Returns 'None' if the median could not be calculated.
+        """
+        # Empirical readout noise [ADU] measured from an
+        # overscan-subtracted overscan during ISR.
+        expectedKey = f"RESIDUAL STDEV {ampName}"
+
+        readNoises = []
+        for expMetadata in taskMetadata:
+            if 'isr' in expMetadata:
+                overscanNoise = expMetadata['isr'][expectedKey]
+            else:
+                continue
+            readNoises.append(overscanNoise)
+
+        if len(readNoises):
+            readNoise = np.median(np.array(readNoises))
+        else:
+            self.log.warning("Median readout noise from ISR metadata for amp %s "
+                             "could not be calculated." % ampName)
+            readNoise = None
+
+        return readNoise

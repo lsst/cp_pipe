@@ -31,6 +31,7 @@ tasks:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
     config:
       connections.inputExp: parameters.exposureName
+      connections.taskMetadata: 'isr_metadata'
       connections.outputCovariances: parameters.measuredCovariances
   ptcSolve:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
@@ -40,3 +41,9 @@ tasks:
       ptcFitType: EXPAPPROXIMATION
 contracts:
   - ptcSolve.maximumRangeCovariancesAstier == ptcExtract.maximumRangeCovariancesAstier
+subsets:
+  gainFromFlatPairs:
+      subset:
+          - isr
+          - ptcExtract
+      description: gain estimation from pairs of flats at the same exposure time.

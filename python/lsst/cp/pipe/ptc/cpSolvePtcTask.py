@@ -197,18 +197,15 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         ----------
         inputCovariances : `list` [`lsst.ip.isr.PhotonTransferCurveDataset`]
             List of lsst.ip.isr.PhotonTransferCurveDataset datasets.
-
         camera : `lsst.afw.cameraGeom.Camera`, optional
             Input camera.
-
         inputExpList : `list` [`~lsst.afw.image.ExposureF`], optional
             List of exposures.
 
         Returns
         -------
         results : `lsst.pipe.base.Struct`
-            The results struct containing:
-
+            The resultins structure contains:
             ``outputPtcDatset``
                 Final PTC dataset, containing information such as the
                 means, variances, and exposure times
@@ -480,12 +477,10 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         ----------
         mu : `numpy.array`, (N,)
             Signal `mu` (ADU)
-
         cov : `numpy.array`, (N, M, M)
             Covariance arrays of size `(M, M)` (with
             `M = config.maximumRangeCovariancesAstier`),
             indexed by mean signal `mu`.
-
         sqrtW : `numpy.array`, (N,)
             Covariance weights, defined as 1./sqrt(Variances)
 
@@ -493,13 +488,10 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         -------
         a : `numpy.array`, (M, M)
             "a" parameter per flux in Eq. 20 of Astier+19.
-
         c : `numpy.array`, (M, M)
             "c"="ab" parameter per flux in Eq. 20 of Astier+19.
-
         noise : `numpy.array`, (M, M)
             "noise" parameter per flux in Eq. 20 of Astier+19.
-
         gain : `float`
             Amplifier gain (e/ADU)
         """
@@ -545,7 +537,6 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         params : `list`
             Parameters of the model: aMatrix, CMatrix, noiseMatrix,
             gain (e/ADU).
-
         x : `numpy.array`, (N,)
             Signal `mu` (ADU)
 
@@ -572,7 +563,6 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         params : `list`
             Parameters of the model: aMatrix, CMatrix, noiseMatrix,
             gain (e/ADU).
-
         x : `numpy.array`, (N,)
             Signal mu (ADU)
 
@@ -597,19 +587,14 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         ----------
         mu : `numpy.array`, (N,)
             List of mean signals.
-
         aMatrix : `numpy.array`, (M, M)
             "a" parameter per flux in Eq. 20 of Astier+19.
-
         cMatrix : `numpy.array`, (M, M)
             "c"="ab" parameter per flux in Eq. 20 of Astier+19.
-
         noiseMatrix : `numpy.array`, (M, M)
             "noise" parameter per flux in Eq. 20 of Astier+19.
-
         gain : `float`
             Amplifier gain (e/ADU)
-
         setBtoZero=False : `bool`, optional
             Set "b" parameter in full model (see Astier+19) to zero.
 
