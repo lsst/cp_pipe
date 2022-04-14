@@ -100,7 +100,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         muVec = self.flux*self.timeVec + self.k2NonLinearity*self.timeVec**2
         self.gain = 1.5  # e-/ADU
         self.c1 = 1./self.gain
-        self.noiseSq = 5*self.gain  # 7.5 (e-)^2
+        self.noiseSq = 2*self.gain  # 7.5 (e-)^2
         self.a00 = -1.2e-6
         self.c2 = -1.5e-6
         self.c3 = -4.7e-12  # tuned so that it turns over for 200k mean
@@ -433,7 +433,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             for ampName in self.ampNames:
                 if exposurePair.gain[ampName] is np.nan:
                     continue
-                self.assertAlmostEqual(exposurePair.gain[ampName], inputGain, delta=0.1)
+                self.assertAlmostEqual(exposurePair.gain[ampName], inputGain, delta=0.075)
 
     def test_getGainFromFlatPair(self):
         for gainCorrectionType in ['NONE', 'SIMPLE', 'FULL', ]:
