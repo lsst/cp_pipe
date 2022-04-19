@@ -34,9 +34,9 @@ from astro_metadata_translator import merge_headers, ObservationGroup
 from astro_metadata_translator.serialize import dates_to_fits
 
 
-__all__ = ['CalibStatsConfig', 'CalibStatsTask',
-           'CalibCombineConfig', 'CalibCombineConnections', 'CalibCombineTask',
-           'CalibCombineByFilterConfig', 'CalibCombineByFilterConnections', 'CalibCombineByFilterTask']
+__all__ = ["CalibStatsConfig", "CalibStatsTask",
+           "CalibCombineConfig", "CalibCombineConnections", "CalibCombineTask",
+           "CalibCombineByFilterConfig", "CalibCombineByFilterConnections", "CalibCombineByFilterTask"]
 
 
 # CalibStatsConfig/CalibStatsTask from pipe_base/constructCalibs.py
@@ -47,7 +47,7 @@ class CalibStatsConfig(pexConfig.Config):
 
     stat = pexConfig.Field(
         dtype=str,
-        default='MEANCLIP',
+        default="MEANCLIP",
         doc="Statistic name to use to estimate background (from `~lsst.afw.math.Property`)",
     )
     clip = pexConfig.Field(
@@ -133,7 +133,7 @@ class CalibCombineConnections(pipeBase.PipelineTaskConnections,
     def __init__(self, *, config=None):
         super().__init__(config=config)
 
-        if config and config.exposureScaling != 'InputList':
+        if config and config.exposureScaling != "InputList":
             self.inputs.discard("inputScales")
 
 
@@ -196,7 +196,7 @@ class CalibCombineConfig(pipeBase.PipelineTaskConfig,
     )
     combine = pexConfig.Field(
         dtype=str,
-        default='MEANCLIP',
+        default="MEANCLIP",
         doc="Statistic name to use for combination (from `~lsst.afw.math.Property`)",
     )
     clip = pexConfig.Field(
@@ -220,7 +220,7 @@ class CalibCombineTask(pipeBase.PipelineTask,
     """Task to combine calib exposures."""
 
     ConfigClass = CalibCombineConfig
-    _DefaultName = 'cpCombine'
+    _DefaultName = "cpCombine"
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -230,7 +230,7 @@ class CalibCombineTask(pipeBase.PipelineTask,
         inputs = butlerQC.get(inputRefs)
 
         dimensions = [expHandle.dataId.byName() for expHandle in inputRefs.inputExpHandles]
-        inputs['inputDims'] = dimensions
+        inputs["inputDims"] = dimensions
 
         outputs = self.run(**inputs)
         butlerQC.put(outputs, outputRefs)
@@ -280,7 +280,7 @@ class CalibCombineTask(pipeBase.PipelineTask,
         if numExps < self.config.maxVisitsToCalcErrorFromInputVariance:
             stats.setCalcErrorFromInputVariance(True)
 
-        inputDetector = inputExpHandles[0].get(component='detector')
+        inputDetector = inputExpHandles[0].get(component="detector")
 
         # Create output exposure for combined data.
         combined = afwImage.MaskedImageF(width, height)
@@ -293,7 +293,7 @@ class CalibCombineTask(pipeBase.PipelineTask,
 
         for index, (expHandle, dims) in enumerate(zip(inputExpHandles, inputDims)):
             scale = 1.0
-            visitInfo = expHandle.get(component='visitInfo')
+            visitInfo = expHandle.get(component="visitInfo")
             if self.config.exposureScaling == "ExposureTime":
                 scale = visitInfo.getExposureTime()
             elif self.config.exposureScaling == "DarkTime":
@@ -304,25 +304,25 @@ class CalibCombineTask(pipeBase.PipelineTask,
                 scale = self.stats.run(exp)
                 del exp
             elif self.config.exposureScaling == "InputList":
-                visitId = dims.get('exposure', None)
-                detectorId = dims.get('detector', None)
+                visitId = dims.get("exposure", None)
+                detectorId = dims.get("detector", None)
                 if visitId is None or detectorId is None:
                     raise RuntimeError(f"Could not identify scaling for input {index} ({dims})")
-                if detectorId not in inputScales['expScale']:
+                if detectorId not in inputScales["expScale"]:
                     raise RuntimeError(f"Could not identify a scaling for input {index}"
                                        f" detector {detectorId}")
 
                 if self.config.scalingLevel == "DETECTOR":
-                    if visitId not in inputScales['expScale'][detectorId]:
+                    if visitId not in inputScales["expScale"][detectorId]:
                         raise RuntimeError(f"Could not identify a scaling for input {index}"
                                            f"detector {detectorId} visit {visitId}")
-                    scale = inputScales['expScale'][detectorId][visitId]
-                elif self.config.scalingLevel == 'AMP':
-                    scale = [inputScales['expScale'][detectorId][amp.getName()][visitId]
+                    scale = inputScales["expScale"][detectorId][visitId]
+                elif self.config.scalingLevel == "AMP":
+                    scale = [inputScales["expScale"][detectorId][amp.getName()][visitId]
                              for amp in inputDetector]
                 else:
                     raise RuntimeError(f"Unknown scaling level: {self.config.scalingLevel}")
-            elif self.config.exposureScaling == 'Unity':
+            elif self.config.exposureScaling == "Unity":
                 scale = 1.0
             else:
                 raise RuntimeError(f"Unknown scaling type: {self.config.exposureScaling}.")
@@ -335,7 +335,7 @@ class CalibCombineTask(pipeBase.PipelineTask,
         self.interpolateNans(combined)
 
         if self.config.doVignette:
-            polygon = inputExpHandles[0].get(component='validPolygon')
+            polygon = inputExpHandles[0].get(component="validPolygon")
             maskVignettedRegion(combined, polygon=polygon, vignetteValue=0.0)
 
         # Combine headers
@@ -363,7 +363,7 @@ class CalibCombineTask(pipeBase.PipelineTask,
         width, height : `int`
             Unique set of input dimensions.
         """
-        dimList = [expHandle.get(component='bbox').getDimensions() for expHandle in expHandleList]
+        dimList = [expHandle.get(component="bbox").getDimensions() for expHandle in expHandleList]
 
         return self.getSize(dimList)
 
@@ -467,7 +467,7 @@ class CalibCombineTask(pipeBase.PipelineTask,
         for subBbox in self._subBBoxIter(target.getBBox(), subregionSize):
             images = []
             for expHandle, expScale in zip(expHandleList, expScaleList):
-                inputExp = expHandle.get(parameters={'bbox': subBbox})
+                inputExp = expHandle.get(parameters={"bbox": subBbox})
                 self.applyScale(inputExp, expScale)
                 images.append(inputExp.getMaskedImage())
 
@@ -515,8 +515,8 @@ class CalibCombineTask(pipeBase.PipelineTask,
         header.set("CALIB_CREATE_TIME", calibTime)
 
         # Merge input headers
-        inputHeaders = [expHandle.get(component='metadata') for expHandle in expHandleList]
-        merged = merge_headers(inputHeaders, mode='drop')
+        inputHeaders = [expHandle.get(component="metadata") for expHandle in expHandleList]
+        merged = merge_headers(inputHeaders, mode="drop")
 
         # Scan the first header for items that were dropped due to
         # conflict, and replace them.
@@ -527,7 +527,7 @@ class CalibCombineTask(pipeBase.PipelineTask,
                 header.set(k, v, comment=comment)
 
         # Construct list of visits
-        visitInfoList = [expHandle.get(component='visitInfo') for expHandle in expHandleList]
+        visitInfoList = [expHandle.get(component="visitInfo") for expHandle in expHandleList]
         for i, visit in enumerate(visitInfoList):
             if visit is None:
                 continue
@@ -602,7 +602,7 @@ class CalibCombineByFilterConnections(CalibCombineConnections,
     def __init__(self, *, config=None):
         super().__init__(config=config)
 
-        if config and config.exposureScaling != 'InputList':
+        if config and config.exposureScaling != "InputList":
             self.inputs.discard("inputScales")
 
 
@@ -615,5 +615,5 @@ class CalibCombineByFilterTask(CalibCombineTask):
     """Task to combine calib exposures."""
 
     ConfigClass = CalibCombineByFilterConfig
-    _DefaultName = 'cpFilterCombine'
+    _DefaultName = "cpFilterCombine"
     pass
