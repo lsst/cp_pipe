@@ -6,7 +6,7 @@ tasks:
       connections.ccdExposure: 'raw'
       connections.outputExposure: 'cpCtiProc'
       connections.outputStatistics: 'cpCtiStats'
-      doBias: true
+      doBias: false
       doCalculateStatistics: true
       isrStats.doCtiStatistics: true
       doSaturation: false
