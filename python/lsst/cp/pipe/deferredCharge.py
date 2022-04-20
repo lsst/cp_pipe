@@ -142,6 +142,8 @@ class CpCtiSolveTask(pipeBase.PipelineTask,
     def localOffsets(self, inputMeasurements, calib, detector):
         # Range to fit.
         start, stop = self.config.localOffsetColumnRange
+        start -= 1
+        stop -= 1
 
         # Loop over amps/inputs, fitting those columns from
         # "non-saturated" inputs.
@@ -163,8 +165,8 @@ class CpCtiSolveTask(pipeBase.PipelineTask,
             data = np.array(data)
 
             ind = signal.argsort()
-            signal = signal[ind]
-            data = data[ind]
+            signal = signal[ind].astype(np.float32)
+            data = data[ind].astype(np.float32)
 
             params = Parameters()
             params.add('ctiexp', value=-6, min=-7, max=-5, vary=False)
@@ -198,6 +200,8 @@ class CpCtiSolveTask(pipeBase.PipelineTask,
         # Range to fit.
         start, stop = self.config.globalCtiColumnRange
 
+        start -= 1
+        stop -= 1
         # Loop over amps/inputs, fitting those columns from
         # "non-saturated" inputs.
         for amp in detector.getAmplifiers():
@@ -225,8 +229,8 @@ class CpCtiSolveTask(pipeBase.PipelineTask,
 
             # CTI test.  This looks at the drop over the
             # image-overscan boundary.
-            overscan1 = lastPixels
-            overscan2 = data[:, 0]
+            overscan1 = data[:, 0]
+            overscan2 = data[:, 1]
             test = (np.array(overscan1) + np.array(overscan2))/(nCols*np.array(signal))
             testResult = np.median(test) > 5.E-6
             self.debugView(ampName, signal, test)
@@ -289,7 +293,8 @@ class CpCtiSolveTask(pipeBase.PipelineTask,
     def findTraps(self, inputMeasurements, calib, detector):
         """ XXX """
         start, stop = self.config.trapColumnRange
-
+        start -= 1
+        stop -= 1
         # Loop over amps/inputs, fitting those columns from
         # "non-saturated" inputs.
         for amp in detector.getAmplifiers():
@@ -306,7 +311,8 @@ class CpCtiSolveTask(pipeBase.PipelineTask,
                 if exposureDict[ampName]['IMAGE_MEAN'] < self.config.maxImageMean:
                     signal.append(exposureDict[ampName]['IMAGE_MEAN'])
                     data.append(exposureDict[ampName]['OVERSCAN_VALUES'][start:stop+1])
-                    new_signal.append(exposureDict[ampName]['OVERSCAN_VALUES'][0])
+                if exposureDict[ampName]['LAST_MEAN'] < self.config.maxImageMean:
+                    new_signal.append(exposureDict[ampName]['LAST_MEAN'])
 
             signal = np.array(signal)
             data = np.array(data)
@@ -335,9 +341,9 @@ class CpCtiSolveTask(pipeBase.PipelineTask,
             # Evaluating trap
             res = np.sum((data-model)[:, :3], axis=1)
 
-            rescale = calib.driftScale[ampName]*signal
-            new_signal = np.asarray(signal - rescale, dtype=np.float64)
-            x = signal
+            rescale = calib.driftScale[ampName]*new_signal
+            new_signal = np.asarray(new_signal - rescale, dtype=np.float64)
+            x = new_signal
             y = np.maximum(0, res)
 
             # Pad left with ramp
@@ -409,6 +415,9 @@ class SimpleModel(OverscanModel):
         except KeyError:
             pass
 
+        start += 1
+        stop += 1
+
         x = np.arange(start, stop+1)
         res = np.zeros((signal.shape[0], x.shape[0]))
 
@@ -428,8 +437,8 @@ class SimulatedModel(OverscanModel):
     def model_results(params, signal, num_transfers, amp, **kwargs):
         v = params.valuesdict()
 
-        start = kwargs.pop('start', 1)
-        stop = kwargs.pop('stop', 10)
+        start = kwargs.pop('start', 1) + 1
+        stop = kwargs.pop('stop', 10) + 1
         trap_type = kwargs.pop('trap_type', None)
 
         # Electronics effect optimization
