@@ -1,0 +1,11 @@
+description: Latiss bias calibration construction
+instrument: lsst.obs.lsst.LsstCam
+imports:
+  - location: $CP_PIPE_DIR/pipelines/cpDeferredCharge.yaml
+tasks:
+  isr:
+    class: lsst.ip.isr.IsrTask
+    config:
+      overscan.fitType: 'MEDIAN_PER_ROW'
+      overscanNumLeadingColumnsToSkip: 5
+      overscanNumTrailingColumnsToSkip: 2

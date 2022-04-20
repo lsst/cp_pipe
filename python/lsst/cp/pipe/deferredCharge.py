@@ -353,7 +353,7 @@ class CpCtiSolveTask(pipeBase.PipelineTask,
             # Pad right with constant
             y = np.pad(y, (1, 1), 'constant', constant_values=(0, y[-1]))
             x = np.pad(x, (1, 1), 'constant', constant_values=(-1, 200000.))
-            # import pdb; pdb.set_trace()
+
             trap = SerialTrap(20000.0, 0.4, 1, 'spline', np.concatenate((x, y)).tolist())
             calib.serialTraps[ampName] = trap
 
