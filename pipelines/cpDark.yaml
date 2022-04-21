@@ -5,13 +5,7 @@ tasks:
     config:
       connections.ccdExposure: 'raw'
       connections.outputExposure: 'cpDarkIsr'
-      doBias: true
-      doVariance: true
-      doLinearize: true
-      doCrosstalk: true
-      doDefect: true
-      doNanMasking: true
-      doInterpolate: true
+      doWrite: true
       doBrighterFatter: false
       doDark: false
       doFlat: false
