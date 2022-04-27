@@ -26,8 +26,6 @@ tasks:
     config:
       connections.inputExp: 'cpCrosstalkProc'
       connections.outputRatios: 'cpCrosstalkRatio'
-      threshold: 30000
-      ignoreSaturatedPixels: false
   crosstalkSolve:
     class: lsst.cp.pipe.measureCrosstalk.CrosstalkSolveTask
     config:

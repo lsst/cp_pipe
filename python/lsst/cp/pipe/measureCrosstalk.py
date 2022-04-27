@@ -379,12 +379,12 @@ class CrosstalkSolveConfig(pipeBase.PipelineTaskConfig,
     doSignificanceScaling = Field(
         dtype=bool,
         default=True,
-        doc="Scale error by 1/sqrt(N) in calculating significant coefficients.",
+        doc="Scale error by 1/sqrt(N) in calculating significant coefficients?",
     )
     doFiltering = Field(
         dtype=bool,
         default=False,
-        doc="Filter generated crosstalk to remove marginal measurements.",
+        doc="Filter generated crosstalk to remove marginal measurements?",
     )
 
 
@@ -557,10 +557,12 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
         ----------
         ratios : `dict` [`dict` [`numpy.ndarray`]]
            Catalog of arrays of ratios.  The ratio arrays are one-dimensional
-        ordering : `list` [`str`]
+        ordering : `list` [`str`] or None
            List to use as a mapping between amplifier names (the
            elements of the list) and their position in the output
-           calibration (the matching index of the list).
+           calibration (the matching index of the list).  If no
+           ordering is supplied, the order of the keys in the ratio
+           catalog is used.
         rejIter : `int`
            Number of rejection iterations.
         rejSigma : `float`
@@ -584,7 +586,8 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
                 values = np.array(ratios[ordering[ii]][ordering[jj]])
                 values = values[np.abs(values) < 1.0]  # Discard unreasonable values
 
-            # Sigma clip.
+            # Sigma clip using the inter-quartile distance and a
+            # normal distribution.
             if ii != jj:
                 for rej in range(rejIter):
                     if len(values) == 0:
