@@ -36,7 +36,7 @@ class CpCtiSolveConnections(pipeBase.PipelineTaskConnections,
                             dimensions=("instrument", "detector")):
     inputMeasurements = cT.Input(
         name="cpCtiMeas",
-        doc="Input measurements to fit.",
+        doc="Input overscan measurements to fit.",
         storageClass='StructuredDataDict',
         dimensions=("instrument", "exposure", "detector"),
         multiple=True,
@@ -52,7 +52,7 @@ class CpCtiSolveConnections(pipeBase.PipelineTaskConnections,
 
     outputCalib = cT.Output(
         name="cpCtiCalib",
-        doc="Output measurements.",
+        doc="Output CTI calibration.",
         storageClass="IsrCalib",
         dimensions=("instrument", "detector"),
     )
@@ -65,7 +65,7 @@ class CpCtiSolveConfig(pipeBase.PipelineTaskConfig,
     maxImageMean = pexConfig.Field(
         dtype=float,
         default=150000.0,
-        doc="Upper limit on acceptable image means.",
+        doc="Upper limit on acceptable image flux mean.",
     )
     localOffsetColumnRange = pexConfig.ListField(
         dtype=int,
@@ -76,7 +76,7 @@ class CpCtiSolveConfig(pipeBase.PipelineTaskConfig,
     maxSignalForCti = pexConfig.Field(
         dtype=float,
         default=10000.0,
-        doc="Upper limit to use for CTI fit.",
+        doc="Upper flux limit to use for CTI fit.",
     )
     globalCtiColumnRange = pexConfig.ListField(
         dtype=int,
@@ -100,7 +100,13 @@ class CpCtiSolveConfig(pipeBase.PipelineTaskConfig,
 class CpCtiSolveTask(pipeBase.PipelineTask,
                      pipeBase.CmdLineTask):
     """Combine CTI measurements to a final calibration.
+
+    This task uses the extended pixel edge response method as
+    described by Snyder et al. 2021, Journal of Astronimcal
+    Telescopes, Instruments, and Systems, 7,
+    048002. doi:10.1117/1.JATIS.7.4.048002
     """
+
     ConfigClass = CpCtiSolveConfig
     _DefaultName = 'cpCtiSolve'
 
@@ -118,7 +124,44 @@ class CpCtiSolveTask(pipeBase.PipelineTask,
         butlerQC.put(outputs, outputRefs)
 
     def run(self, inputMeasurements, camera, inputDims):
-        """
+        """Solve for charge transfer inefficiency from overscan measurements.
+
+        Parameters
+        ----------
+        inputMeasurements : `list` [`dict`]
+            List of overscan measurements from each input exposure.
+            Each dictionary is nested within a top level 'CTI' key,
+            with measurements organized by amplifier name, containing
+            keys:
+
+            ``"FIRST_MEAN"``
+                Mean value of first image column (`float`).
+            ``"LAST_MEAN"``
+                Mean value of last image column (`float`).
+            ``"IMAGE_MEAN"``
+                Mean value of the entire image region (`float`).
+            ``"OVERSCAN_COLUMNS"``
+                List of overscan column indicies (`list` [`int`]).
+            ``"OVERSCAN_VALUES"``
+                List of overscan column means (`list` [`float`]).
+        camera : `lsst.afw.cameraGeom.Camera`
+            Camera geometry to use to find detectors.
+        inputDims : `list` [`dict`]
+            List of input dimensions from each input exposure.
+
+        Returns
+        -------
+        results : `lsst.pipe.base.Struct`
+            Result struct containing:
+
+            ``outputCalib``
+                Final CTI calibration data
+                (`lsst.ip.isr.DeferredChargeCalib`).
+
+        Raises
+        ------
+        RuntimeError
+            Raised if data from multiple detectors are passed in.
         """
         detectorSet = sorted(set([d['detector'] for d in inputDims]))
         if len(detectorSet) != 1:
@@ -140,7 +183,41 @@ class CpCtiSolveTask(pipeBase.PipelineTask,
         )
 
     def localOffsets(self, inputMeasurements, calib, detector):
-        # Range to fit.
+        """Solve for local (pixel-to-pixel) electronic offsets.
+
+        This method fits for \tau_L, the local electronic offset decay
+        time constant, and A_L, the local electronic offset constant
+        of proportionality.
+
+        Parameters
+        ----------
+        inputMeasurements : `list` [`dict`]
+            List of overscan measurements from each input exposure.
+            Each dictionary is nested within a top level 'CTI' key,
+            with measurements organized by amplifier name, containing
+            keys:
+
+            ``"FIRST_MEAN"``
+                Mean value of first image column (`float`).
+            ``"LAST_MEAN"``
+                Mean value of last image column (`float`).
+            ``"IMAGE_MEAN"``
+                Mean value of the entire image region (`float`).
+            ``"OVERSCAN_COLUMNS"``
+                List of overscan column indicies (`list` [`int`]).
+            ``"OVERSCAN_VALUES"``
+                List of overscan column means (`list` [`float`]).
+        calib : `lsst.ip.isr.DeferredChargeCalib`
+            Calibration to populate with values.
+        detector : `lsst.afw.cameraGeom.Detector`
+
+        Returns
+        -------
+        calib : `lsst.ip.isr.DeferredChargeCalib`
+            Populated calibration.
+        """
+        # Range to fit.  These are in "camera" coordinates, and so
+        # need to have the count for last image column removed.
         start, stop = self.config.localOffsetColumnRange
         start -= 1
         stop -= 1
@@ -153,39 +230,41 @@ class CpCtiSolveTask(pipeBase.PipelineTask,
             # Number of serial shifts.
             nCols = amp.getRawDataBBox().getWidth() + amp.getRawSerialPrescanBBox().getWidth()
 
+            # The signal is the mean intensity of each input, and the
+            # data are the overscan columns to fit.  For detectors
+            # with non-zero CTI, the charge from the imaging region
+            # leaks into the overscan region.
             signal = []
             data = []
             for exposureEntry in inputMeasurements:
                 exposureDict = exposureEntry['CTI']
                 if exposureDict[ampName]['IMAGE_MEAN'] < self.config.maxImageMean:
-                    data.append(exposureDict[ampName]['OVERSCAN_VALUES'][start:stop+1])
                     signal.append(exposureDict[ampName]['IMAGE_MEAN'])
-
+                    data.append(exposureDict[ampName]['OVERSCAN_VALUES'][start:stop+1])
             signal = np.array(signal)
             data = np.array(data)
 
             ind = signal.argsort()
-            signal = signal[ind].astype(np.float32)
-            data = data[ind].astype(np.float32)
+            signal = signal[ind]
+            data = data[ind]
 
             params = Parameters()
             params.add('ctiexp', value=-6, min=-7, max=-5, vary=False)
             params.add('trapsize', value=0.0, min=0.0, max=10., vary=False)
             params.add('scaling', value=0.08, min=0.0, max=1.0, vary=False)
             params.add('emissiontime', value=0.4, min=0.1, max=1.0, vary=False)
-            params.add('driftscale', value=0.00022, min=0., max=0.001)
-            params.add('decaytime', value=2.4, min=0.1, max=4.0)
+            params.add('driftscale', value=0.00022, min=0., max=0.001, vary=True)
+            params.add('decaytime', value=2.4, min=0.1, max=4.0, vary=True)
 
             model = SimpleModel()
-
             minner = Minimizer(model.difference, params,
                                fcn_args=(signal, data, self.config.fitError, nCols),
                                fcn_kws={'start': start, 'stop': stop})
             result = minner.minimize()
 
-            # Save results
+            # Save results for the drift scale and decay time.
             if not result.success:
-                self.log("Electronics fitting failure for amplifier %s.", ampName)
+                self.log.warning("Electronics fitting failure for amplifier %s.", ampName)
 
             calib.globalCti[ampName] = 10**result.params['ctiexp']
             calib.driftScale[ampName] = result.params['driftscale'].value if result.success else 2.4
@@ -196,12 +275,43 @@ class CpCtiSolveTask(pipeBase.PipelineTask,
         return calib
 
     def globalCti(self, inputMeasurements, calib, detector):
-        """ XXX """
-        # Range to fit.
-        start, stop = self.config.globalCtiColumnRange
+        """Solve for global CTI constant.
 
+        This method solves for the mean global CTI, b.
+
+        Parameters
+        ----------
+        inputMeasurements : `list` [`dict`]
+            List of overscan measurements from each input exposure.
+            Each dictionary is nested within a top level 'CTI' key,
+            with measurements organized by amplifier name, containing
+            keys:
+
+            ``"FIRST_MEAN"``
+                Mean value of first image column (`float`).
+            ``"LAST_MEAN"``
+                Mean value of last image column (`float`).
+            ``"IMAGE_MEAN"``
+                Mean value of the entire image region (`float`).
+            ``"OVERSCAN_COLUMNS"``
+                List of overscan column indicies (`list` [`int`]).
+            ``"OVERSCAN_VALUES"``
+                List of overscan column means (`list` [`float`]).
+        calib : `lsst.ip.isr.DeferredChargeCalib`
+            Calibration to populate with values.
+        detector : `lsst.afw.cameraGeom.Detector`
+
+        Returns
+        -------
+        calib : `lsst.ip.isr.DeferredChargeCalib`
+            Populated calibration.
+        """
+        # Range to fit.  These are in "camera" coordinates, and so
+        # need to have the count for last image column removed.
+        start, stop = self.config.globalCtiColumnRange
         start -= 1
         stop -= 1
+
         # Loop over amps/inputs, fitting those columns from
         # "non-saturated" inputs.
         for amp in detector.getAmplifiers():
@@ -210,25 +320,26 @@ class CpCtiSolveTask(pipeBase.PipelineTask,
             # Number of serial shifts.
             nCols = amp.getRawDataBBox().getWidth() + amp.getRawSerialPrescanBBox().getWidth()
 
+            # The signal is the mean intensity of each input, and the
+            # data are the overscan columns to fit.  For detectors
+            # with non-zero CTI, the charge from the imaging region
+            # leaks into the overscan region.
             signal = []
             data = []
-            lastPixels = []
             for exposureEntry in inputMeasurements:
                 exposureDict = exposureEntry['CTI']
                 if exposureDict[ampName]['IMAGE_MEAN'] < self.config.maxSignalForCti:
                     signal.append(exposureDict[ampName]['IMAGE_MEAN'])
                     data.append(exposureDict[ampName]['OVERSCAN_VALUES'][start:stop+1])
-                    lastPixels.append(exposureDict[ampName]['LAST_MEAN'])
             signal = np.array(signal)
             data = np.array(data)
-            lastPixels = np.array(lastPixels)
 
             ind = signal.argsort()
             signal = signal[ind]
             data = data[ind]
 
-            # CTI test.  This looks at the drop over the
-            # image-overscan boundary.
+            # CTI test.  This looks at the charge that has leaked into
+            # the first few columns of the overscan.
             overscan1 = data[:, 0]
             overscan2 = data[:, 1]
             test = (np.array(overscan1) + np.array(overscan2))/(nCols*np.array(signal))
@@ -237,10 +348,12 @@ class CpCtiSolveTask(pipeBase.PipelineTask,
 
             params = Parameters()
             params.add('ctiexp', value=-6, min=-7, max=-5, vary=True)
-            params.add('trapsize', value=5.0 if testResult else 0.0,
-                       min=0.0, max=30., vary=True if testResult else False)
-            params.add('scaling', value=0.08, min=0.0, max=1.0, vary=True if testResult else False)
-            params.add('emissiontime', value=0.35, min=0.1, max=1.0, vary=True if testResult else False)
+            params.add('trapsize', value=5.0 if testResult else 0.0, min=0.0, max=30.,
+                       vary=True if testResult else False)
+            params.add('scaling', value=0.08, min=0.0, max=1.0,
+                       vary=True if testResult else False)
+            params.add('emissiontime', value=0.35, min=0.1, max=1.0,
+                       vary=True if testResult else False)
             params.add('driftscale', value=calib.driftScale[ampName], min=0., max=0.001, vary=False)
             params.add('decaytime', value=calib.decayTime[ampName], min=0.1, max=4.0, vary=False)
 
@@ -250,6 +363,7 @@ class CpCtiSolveTask(pipeBase.PipelineTask,
                                fcn_kws={'start': start, 'stop': stop, 'trap_type': 'linear'})
             result = minner.minimize()
 
+            # Only the global CTI term is retained from this fit.
             calib.globalCti[ampName] = 10**result.params['ctiexp'].value
             self.log.info("CTI Global Cti %s: cti: %g decayTime: %g driftScale %g",
                           ampName, calib.globalCti[ampName], calib.decayTime[ampName],
@@ -258,6 +372,17 @@ class CpCtiSolveTask(pipeBase.PipelineTask,
         return calib
 
     def debugView(self, ampName, signal, test):
+        """Debug method for global CTI test value.
+
+        Parameters
+        ----------
+        ampName : `str`
+            Name of the amp for plot title.
+        signal : `list` [`float`]
+            Image means for the input exposures.
+        test : `list` [`float`]
+            CTI test value to plot.
+        """
         import lsstDebug
         if not lsstDebug.Info(__name__).display:
             return
@@ -291,10 +416,41 @@ class CpCtiSolveTask(pipeBase.PipelineTask,
         plot.close()
 
     def findTraps(self, inputMeasurements, calib, detector):
-        """ XXX """
+        """Solve for serial trap parameters.
+
+        Parameters
+        ----------
+        inputMeasurements : `list` [`dict`]
+            List of overscan measurements from each input exposure.
+            Each dictionary is nested within a top level 'CTI' key,
+            with measurements organized by amplifier name, containing
+            keys:
+
+            ``"FIRST_MEAN"``
+                Mean value of first image column (`float`).
+            ``"LAST_MEAN"``
+                Mean value of last image column (`float`).
+            ``"IMAGE_MEAN"``
+                Mean value of the entire image region (`float`).
+            ``"OVERSCAN_COLUMNS"``
+                List of overscan column indicies (`list` [`int`]).
+            ``"OVERSCAN_VALUES"``
+                List of overscan column means (`list` [`float`]).
+        calib : `lsst.ip.isr.DeferredChargeCalib`
+            Calibration to populate with values.
+        detector : `lsst.afw.cameraGeom.Detector`
+
+        Returns
+        -------
+        calib : `lsst.ip.isr.DeferredChargeCalib`
+            Populated calibration.
+        """
+        # Range to fit.  These are in "camera" coordinates, and so
+        # need to have the count for last image column removed.
         start, stop = self.config.trapColumnRange
         start -= 1
         stop -= 1
+
         # Loop over amps/inputs, fitting those columns from
         # "non-saturated" inputs.
         for amp in detector.getAmplifiers():
@@ -303,6 +459,11 @@ class CpCtiSolveTask(pipeBase.PipelineTask,
             # Number of serial shifts.
             nCols = amp.getRawDataBBox().getWidth() + amp.getRawSerialPrescanBBox().getWidth()
 
+            # The signal is the mean intensity of each input, and the
+            # data are the overscan columns to fit.  The new_signal is
+            # the mean in the last image column.  Any serial trap will
+            # take charge from this column, and deposit it into the
+            # overscan columns.
             signal = []
             data = []
             new_signal = []
@@ -313,7 +474,6 @@ class CpCtiSolveTask(pipeBase.PipelineTask,
                     data.append(exposureDict[ampName]['OVERSCAN_VALUES'][start:stop+1])
                 if exposureDict[ampName]['LAST_MEAN'] < self.config.maxImageMean:
                     new_signal.append(exposureDict[ampName]['LAST_MEAN'])
-
             signal = np.array(signal)
             data = np.array(data)
             new_signal = np.array(new_signal)
@@ -323,7 +483,9 @@ class CpCtiSolveTask(pipeBase.PipelineTask,
             data = data[ind]
             new_signal = new_signal[ind]
 
-            # Second model: model with electronics
+            # In the absense of any trap, the model results using the
+            # parameters already determined will match the observed
+            # overscan results.
             params = Parameters()
             params.add('ctiexp', value=np.log10(calib.globalCti[ampName]),
                        min=-7, max=-5, vary=False)
@@ -338,11 +500,14 @@ class CpCtiSolveTask(pipeBase.PipelineTask,
             model = SimpleModel.model_results(params, signal, nCols,
                                               start=start, stop=stop)
 
-            # Evaluating trap
+            # Evaluating trap: the difference between the model and
+            # observed data.
             res = np.sum((data-model)[:, :3], axis=1)
 
-            rescale = calib.driftScale[ampName]*new_signal
-            new_signal = np.asarray(new_signal - rescale, dtype=np.float64)
+            # Create spline model for the trap, using the residual
+            # between data and model as a function of the last image
+            # column mean (new_signal) scaled by (1 - A_L).
+            new_signal = np.asarray((1 - calib.driftScale[ampName])*new_signal, dtype=np.float64)
             x = new_signal
             y = np.maximum(0, res)
 
@@ -361,68 +526,208 @@ class CpCtiSolveTask(pipeBase.PipelineTask,
 
 
 class OverscanModel:
-    """Base object handling model/data fit comparisons."""
+    """Base class for handling model/data fit comparisons.
 
-    def loglikelihood(self, params, signal, data, error,
-                      *args, **kwargs):
-        """Calculate log likelihood of the model."""
+    This handles all of the methods needed for the lmfit Minimizer to
+    run.
+    """
 
-        model_results = self.model_results(params, signal,
-                                           *args, **kwargs)
+    @staticmethod
+    def model_results(params, signal, num_transfers, start=1, stop=10):
+        """Generate a realization of the overscan model, using the specified
+        fit parameters and input signal.
 
-        inv_sigma2 = 1./(error**2.)
-        diff = model_results-data
+        Parameters
+        ----------
+        params : `lmfit.Parameters`
+            Object containing the model parameters.
+        signal : `np.ndarray`, (nMeasurements)
+            Array of image means.
+        num_transfers : `int`
+            Number of serial transfers that the charge undergoes.
+        start : `int`, optional
+            First overscan column to fit. This number includes the
+            last imaging column, and needs to be adjusted by one when
+            using the overscan bounding box.
+        stop : `int`, optional
+            Last overscan column to fit. This number includes the
+            last imaging column, and needs to be adjusted by one when
+            using the overscan bounding box.
+
+        Returns
+        -------
+        results : `np.ndarray`, (nMeasurements, nCols)
+            Model results.
+        """
+        raise NotImplementedError("Subclasses must implement the model calculation.")
+
+    def loglikelihood(self, params, signal, data, error, *args, **kwargs):
+        """Calculate log likelihood of the model.
+
+        Parameters
+        ----------
+        params : `lmfit.Parameters`
+            Object containing the model parameters.
+        signal : `np.ndarray`, (nMeasurements)
+            Array of image means.
+        data : `np.ndarray`, (nMeasurements, nCols)
+            Array of overscan column means from each measurement.
+        error : `float`
+            Fixed error value.
+        *args :
+            Additional position arguments.
+        **kwargs :
+            Additional keyword arguments.
+
+        Returns
+        -------
+        logL : `float`
+            The log-likelihood of the observed data given the model
+            parameters.
+        """
+        model_results = self.model_results(params, signal, *args, **kwargs)
+
+        inv_sigma2 = 1.0/(error**2.0)
+        diff = model_results - data
 
         return -0.5*(np.sum(inv_sigma2*(diff)**2.))
 
-    def negative_loglikelihood(self, params, signal, data, error,
-                               *args, **kwargs):
-        """Calculate negative log likelihood of the model."""
+    def negative_loglikelihood(self, params, signal, data, error, *args, **kwargs):
+        """Calculate negative log likelihood of the model.
 
+        Parameters
+        ----------
+        params : `lmfit.Parameters`
+            Object containing the model parameters.
+        signal : `np.ndarray`, (nMeasurements)
+            Array of image means.
+        data : `np.ndarray`, (nMeasurements, nCols)
+            Array of overscan column means from each measurement.
+        error : `float`
+            Fixed error value.
+        *args :
+            Additional position arguments.
+        **kwargs :
+            Additional keyword arguments.
+
+        Returns
+        -------
+        negativelogL : `float`
+            The negative log-likelihood of the observed data given the
+            model parameters.
+        """
         ll = self.loglikelihood(params, signal, data, error, *args, **kwargs)
 
         return -ll
 
     def rms_error(self, params, signal, data, error, *args, **kwargs):
-        """Calculate RMS error between model and data."""
+        """Calculate RMS error between model and data.
 
+        Parameters
+        ----------
+        params : `lmfit.Parameters`
+            Object containing the model parameters.
+        signal : `np.ndarray`, (nMeasurements)
+            Array of image means.
+        data : `np.ndarray`, (nMeasurements, nCols)
+            Array of overscan column means from each measurement.
+        error : `float`
+            Fixed error value.
+        *args :
+            Additional position arguments.
+        **kwargs :
+            Additional keyword arguments.
+
+        Returns
+        -------
+        rms : `float`
+            The rms error between the model and input data.
+        """
         model_results = self.model_results(params, signal, *args, **kwargs)
 
         diff = model_results - data
-
         rms = np.sqrt(np.mean(np.square(diff)))
 
         return rms
 
     def difference(self, params, signal, data, error, *args, **kwargs):
-        """Calculate the flattened difference array between model and data."""
+        """Calculate the flattened difference array between model and data.
 
+        Parameters
+        ----------
+        params : `lmfit.Parameters`
+            Object containing the model parameters.
+        signal : `np.ndarray`, (nMeasurements)
+            Array of image means.
+        data : `np.ndarray`, (nMeasurements, nCols)
+            Array of overscan column means from each measurement.
+        error : `float`
+            Fixed error value.
+        *args :
+            Additional position arguments.
+        **kwargs :
+            Additional keyword arguments.
+
+        Returns
+        -------
+        difference : `np.ndarray`, (nMeasurements*nCols)
+            The rms error between the model and input data.
+        """
         model_results = self.model_results(params, signal, *args, **kwargs)
-
         diff = (model_results-data).flatten()
 
         return diff
 
 
 class SimpleModel(OverscanModel):
-    """Simple analytic overscan model."""
+    """Simple analytic overscan model.
+
+    """
 
     @staticmethod
     def model_results(params, signal, num_transfers, start=1, stop=10):
+        """Generate a realization of the overscan model, using the specified
+        fit parameters and input signal.
+
+        Parameters
+        ----------
+        params : `lmfit.Parameters`
+            Object containing the model parameters.
+        signal : `np.ndarray`, (nMeasurements)
+            Array of image means.
+        num_transfers : `int`
+            Number of serial transfers that the charge undergoes.
+        start : `int`, optional
+            First overscan column to fit. This number includes the
+            last imaging column, and needs to be adjusted by one when
+            using the overscan bounding box.
+        stop : `int`, optional
+            Last overscan column to fit. This number includes the
+            last imaging column, and needs to be adjusted by one when
+            using the overscan bounding box.
+
+        Returns
+        -------
+        results : `np.ndarray`, (nMeasurements, nCols)
+            Model results.
+        """
         v = params.valuesdict()
         try:
             v['cti'] = 10**v['ctiexp']
         except KeyError:
             pass
 
+        # Adjust column numbering to match DM overscan bbox.
         start += 1
         stop += 1
 
         x = np.arange(start, stop+1)
         res = np.zeros((signal.shape[0], x.shape[0]))
 
+        # This doesn't seem to directly match any equation in the paper.  (14) + X
         for i, s in enumerate(signal):
-            res[i, :] = (np.minimum(v['trapsize'], s*v['scaling'])*(np.exp(1/v['emissiontime']) - 1.)
+            res[i, :] = (np.minimum(v['trapsize'], s*v['scaling'])
+                         * (np.exp(1/v['emissiontime']) - 1.0)
                          * np.exp(-x/v['emissiontime'])
                          + s*num_transfers*v['cti']**x
                          + v['driftscale']*s*np.exp(-x/float(v['decaytime'])))
@@ -434,11 +739,42 @@ class SimulatedModel(OverscanModel):
     """Simulated overscan model."""
 
     @staticmethod
-    def model_results(params, signal, num_transfers, amp, **kwargs):
+    def model_results(params, signal, num_transfers, amp, start=1, stop=10, **kwargs):
+        """Generate a realization of the overscan model, using the specified
+        fit parameters and input signal.
+
+        Parameters
+        ----------
+        params : `lmfit.Parameters`
+            Object containing the model parameters.
+        signal : `np.ndarray`, (nMeasurements)
+            Array of image means.
+        num_transfers : `int`
+            Number of serial transfers that the charge undergoes.
+        amp : `lsst.afw.cameraGeom.Amplifier`
+            Amplifier to use for geometry information.
+        start : `int`, optional
+            First overscan column to fit. This number includes the
+            last imaging column, and needs to be adjusted by one when
+            using the overscan bounding box.
+        stop : `int`, optional
+            Last overscan column to fit. This number includes the
+            last imaging column, and needs to be adjusted by one when
+            using the overscan bounding box.
+        **kwargs :
+            Other keyword arguments
+
+        Returns
+        -------
+        results : `np.ndarray`, (nMeasurements, nCols)
+            Model results.
+        """
         v = params.valuesdict()
 
-        start = kwargs.pop('start', 1) + 1
-        stop = kwargs.pop('stop', 10) + 1
+        # Adjust column numbering to match DM overscan bbox.
+        start += 1
+        stop += 1
+
         trap_type = kwargs.pop('trap_type', None)
 
         # Electronics effect optimization
@@ -499,15 +835,21 @@ class SimulatedModel(OverscanModel):
 class SegmentSimulator:
     """Controls the creation of simulated segment images.
 
-    Attributes:
-        nrows (int): Number of rows.
-        ncols (int): Number of columns.
-        num_serial_prescan (int): Number of serial prescan pixels.
-        image (numpy.array): NumPy array containg the image pixels.
+    Parameters
+    ----------
+    imarr : `np.ndarray` (nx, ny)
+        Image data array.
+    prescan_width : `int`
+        Number of serial prescan columns.
+    output_amplifier : `lsst.cp.pipe.BaseOutputAmplifier`
+        An object holding the gain, read noise, and global_offset.
+    cti : `float`
+        Global CTI value.
+    traps : `list` [`lsst.ip.isr.SerialTrap`]
+        Serial traps to simulate.
     """
 
     def __init__(self, imarr, prescan_width, output_amplifier, cti=0.0, traps=None):
-
         # Image array geometry
         self.prescan_width = prescan_width
         self.ny, self.nx = imarr.shape
@@ -532,11 +874,11 @@ class SegmentSimulator:
     def add_trap(self, serial_trap):
         """Add a trap to the serial register.
 
-        Args: serial_trap (SerialTrap): Serial trap to include in
-            serial register.
-
+        Parameters
+        ----------
+        serial_trap : `lsst.ip.isr.SerialTrap`
+            The trap to add.
         """
-
         try:
             self.serial_traps.append(serial_trap)
         except AttributeError:
@@ -550,20 +892,25 @@ class SegmentSimulator:
         increases along the horizontal direction, according to the
         provided list of signal levels.
 
-        Args:
-            signal_list ('list' of 'float'): List of signal levels.
+        Parameters
+        ----------
+        signal_list : `list` [`float`]
+            List of signal levels.
 
-        Raises: ValueError: If number of signal levels does not equal
-            the number of rows.
-
+        Raises
+        ------
+        ValueError
+            Raised if the length of the signal list does not equal the
+            number of rows.
         """
         if len(signal_list) != self.ny:
-            raise ValueError
+            raise ValueError("Signal list does not match row count.")
 
         ramp = np.tile(signal_list, (self.nx, 1)).T
         self.segarr[:, self.prescan_width:] += ramp
 
-    def readout(self, serial_overscan_width=10, parallel_overscan_width=0, **kwargs):
+    def readout(self, serial_overscan_width=10, parallel_overscan_width=0,
+                do_trapping=False, do_local_offset=False, no_cti=False):
         """Simulate serial readout of the segment image.
 
         This method performs the serial readout of a segment image
@@ -572,16 +919,24 @@ class SegmentSimulator:
         to account for the number of desired overscan transfers The
         result is a simulated final segment image, in ADU.
 
-        Args:
-            segment (SegmentSimulator): Simulated segment image to process.
-            serial_register (SerialRegister): Serial register to use during
-                readout.
-            num_serial_overscan (int): Number of serial overscan pixels.
-            num_parallel_overscan (int): Number of parallel overscan pixels.
+        Parameters
+        ----------
+        serial_overscan_width : `int`, optional
+            Number of serial overscan columns.
+        parallel_overscan_width : `int`, optional
+            Number of parallel overscan rows.
+        do_trapping : `bool`, optional
+            Should traps be simulated?
+        do_local_offset : `bool`, optional
+            Should the local offset be used?
+        no_cti : `bool`, optional
+            Should the CTI be ignored?
 
-        Returns:
-            NumPy array.
-
+        Returns
+        -------
+        result : `np.ndarray` (nx, ny)
+            Simulated image, including serial prescan, serial
+            overscan, and parallel overscan regions.
         """
         # Create output array
         iy = int(self.ny + parallel_overscan_width)
@@ -592,6 +947,7 @@ class SegmentSimulator:
         free_charge = copy.deepcopy(self.segarr)
 
         # Keyword override toggles
+        #CZW: This is a mess.
         if kwargs.get('no_trapping', False):
             do_trapping = False
         else:
@@ -642,6 +998,17 @@ class SegmentSimulator:
 
 
 class BaseOutputAmplifier:
+    """Simulated amplifier.
+
+    Parameters
+    ----------
+    gain : `float`
+        Amplifier gain.
+    noise : `float`, optional
+        Amplifier read noise.
+    global_offset : `float`, optional
+        Global CTI offset.
+    """
 
     do_local_offset = False
 
@@ -655,13 +1022,18 @@ class BaseOutputAmplifier:
 class FloatingOutputAmplifier(BaseOutputAmplifier):
     """Object representing the readout amplifier of a single channel.
 
-    Attributes:
-        noise (float): Value of read noise [e-].
-        offset (float): Bias offset level [e-].
-        gain (float): Value of amplifier gain [e-/ADU].
-        do_bias_drift (bool): Specifies inclusion of bias drift.
-        drift_size (float): Strength of bias drift exponential.
-        drift_tau (float): Decay time constant for bias drift.
+    Parameters
+    ----------
+    gain : `float`
+        Amplifier gain.
+    scale : `float`
+        Drift scale for the amplifier.
+    decay_time : `float`
+        Decay time for the bias drift.
+    noise : `float`, optional
+        Amplifier read noise.
+    offset : `float`, optional
+        Global CTI offset.
     """
     do_local_offset = True
 
@@ -671,15 +1043,39 @@ class FloatingOutputAmplifier(BaseOutputAmplifier):
         self.update_parameters(scale, decay_time)
 
     def local_offset(self, old, signal):
-        """Calculate local offset hysteresis."""
+        """Calculate local offset hysteresis.
 
+        Parameters
+        ----------
+        old : `np.ndarray`, (,)
+            Previous iteration?
+        signal : `np.ndarray`, (,)
+            Current column measurements.
+
+        Returns
+        -------
+        offset : `np.ndarray`
+            Local offset.
+        """
         new = self.scale*signal
 
         return np.maximum(new, old*np.exp(-1/self.decay_time))
 
     def update_parameters(self, scale, decay_time):
-        """Update parameter values, if within acceptable values."""
+        """Update parameter values, if within acceptable values.
 
+        Parameters
+        ----------
+        scale : `float`
+            Drift scale for the amplifier.
+        decay_time : `float`
+            Decay time for the bias drift.
+
+        Raises
+        ------
+        ValueError
+            Raised if the input parameters are out of range.
+        """
         if scale < 0.0:
             raise ValueError("Scale must be greater than or equal to 0.")
         self.scale = scale
@@ -693,31 +1089,63 @@ class FloatingOutputAmplifier(BaseOutputAmplifier):
 class FloatingOutputAmplifier2(BaseOutputAmplifier):
     """Object representing the readout amplifier of a single channel.
 
-    Attributes:
-        noise (float): Value of read noise [e-].
-        offset (float): Bias offset level [e-].
-        gain (float): Value of amplifier gain [e-/ADU].
-        do_bias_drift (bool): Specifies inclusion of bias drift.
-        drift_size (float): Strength of bias drift exponential.
-        drift_tau (float): Decay time constant for bias drift.
+    Parameters
+    ----------
+    gain : `float`
+        Amplifier gain.
+    scale : `float`
+        Drift scale for the amplifier.
+    decay_time : `float`
+        Decay time for the bias drift.
+    beta : `float`
+        CZW: ??
+    noise : `float`, optional
+        Amplifier read noise.
+    offset : `float`, optional
+        Global CTI offset.
     """
     do_local_offset = True
 
     def __init__(self, gain, scale, decay_time, beta, noise=0.0, offset=0.0):
-
         super().__init__(gain, noise, offset)
         self.update_parameters(scale, decay_time, beta)
 
     def local_offset(self, old, signal):
-        """Calculate local offset hysteresis."""
+        """Calculate local offset hysteresis.
 
+        Parameters
+        ----------
+        old : `np.ndarray`, (,)
+            Previous iteration?
+        signal : `np.ndarray`, (,)
+            Current column measurements.
+
+        Returns
+        -------
+        offset : `np.ndarray`
+            Local offset.
+        """
         new = self.scale*(signal**self.beta)
 
         return np.maximum(new, old*np.exp(-1/self.decay_time))
 
     def update_parameters(self, scale, decay_time, beta):
-        """Update parameter values, if within acceptable values."""
+        """Update parameter values, if within acceptable values.
 
+        Parameters
+        ----------
+        scale : `float`
+            Drift scale for the amplifier.
+        decay_time : `float`
+            Decay time for the bias drift.
+        beta : `float`
+            ???
+
+        Raises
+        ------
+        ValueError
+            Raised if the input parameters are out of range.
+        """
         if scale < 0.0:
             raise ValueError("Scale must be greater than or equal to 0.")
         self.scale = scale
