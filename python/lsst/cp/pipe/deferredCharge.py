@@ -739,7 +739,7 @@ class SimulatedModel(OverscanModel):
     """Simulated overscan model."""
 
     @staticmethod
-    def model_results(params, signal, num_transfers, amp, start=1, stop=10, **kwargs):
+    def model_results(params, signal, num_transfers, amp, start=1, stop=10, trap_type=None):
         """Generate a realization of the overscan model, using the specified
         fit parameters and input signal.
 
@@ -761,8 +761,8 @@ class SimulatedModel(OverscanModel):
             Last overscan column to fit. This number includes the
             last imaging column, and needs to be adjusted by one when
             using the overscan bounding box.
-        **kwargs :
-            Other keyword arguments
+        trap_type : `str`, optional
+            Type of trap model to use.
 
         Returns
         -------
@@ -775,27 +775,11 @@ class SimulatedModel(OverscanModel):
         start += 1
         stop += 1
 
-        trap_type = kwargs.pop('trap_type', None)
-
         # Electronics effect optimization
-        if 'beta' in v.keys():
-            output_amplifier = FloatingOutputAmplifier2(1.0,
-                                                        v['driftscale'],
-                                                        v['decaytime'],
-                                                        v['beta'])
-
-        elif 'driftscale' in v.keys():
-            output_amplifier = FloatingOutputAmplifier(1.0,
-                                                       v['driftscale'],
-                                                       v['decaytime'])
-        else:
-            output_amplifier = BaseOutputAmplifier(1.0)
+        output_amplifier = FloatingOutputAmplifier(1.0, v['driftscale'], v['decaytime'])
 
         # CTI optimization
-        try:
-            v['cti'] = 10**v['ctiexp']
-        except KeyError:
-            pass
+        v['cti'] = 10**v['ctiexp']
 
         # Trap type for optimization
         if trap_type is None:
@@ -809,23 +793,13 @@ class SimulatedModel(OverscanModel):
         else:
             raise ValueError('Trap type must be linear or logistic or None')
 
-        # Optional fixed traps
-        try:
-            fixed_traps = kwargs['fixed_traps']
-            if isinstance(trap, list):
-                trap.append(fixed_traps)
-            else:
-                trap = [fixed_traps, trap]
-        except KeyError:
-            trap = trap
-
         # Simulate ramp readout
         imarr = np.zeros((signal.shape[0], amp.getRawDataBBox().getWidth()))
         ramp = SegmentSimulator(imarr, amp.getRawSerialPrescanBBox().getWidth(), output_amplifier,
                                 cti=v['cti'], traps=trap)
         ramp.ramp_exp(signal)
         model_results = ramp.readout(serial_overscan_width=amp.getRawSerialOverscanBBox().getWidth(),
-                                     parallel_overscan_width=0, **kwargs)
+                                     parallel_overscan_width=0)
 
         ncols = amp.getRawSerialPrescanBBox().getWidth() + amp.getRawDataBBox().getWidth()
 
@@ -909,8 +883,7 @@ class SegmentSimulator:
         ramp = np.tile(signal_list, (self.nx, 1)).T
         self.segarr[:, self.prescan_width:] += ramp
 
-    def readout(self, serial_overscan_width=10, parallel_overscan_width=0,
-                do_trapping=False, do_local_offset=False, no_cti=False):
+    def readout(self, serial_overscan_width=10, parallel_overscan_width=0):
         """Simulate serial readout of the segment image.
 
         This method performs the serial readout of a segment image
@@ -925,12 +898,6 @@ class SegmentSimulator:
             Number of serial overscan columns.
         parallel_overscan_width : `int`, optional
             Number of parallel overscan rows.
-        do_trapping : `bool`, optional
-            Should traps be simulated?
-        do_local_offset : `bool`, optional
-            Should the local offset be used?
-        no_cti : `bool`, optional
-            Should the CTI be ignored?
 
         Returns
         -------
@@ -946,20 +913,9 @@ class SegmentSimulator:
                                  size=(iy, ix))
         free_charge = copy.deepcopy(self.segarr)
 
-        # Keyword override toggles
-        #CZW: This is a mess.
-        if kwargs.get('no_trapping', False):
-            do_trapping = False
-        else:
-            do_trapping = self.do_trapping
-        if kwargs.get('no_local_offset', False):
-            do_local_offset = False
-        else:
-            do_local_offset = self.output_amplifier.do_local_offset
-        if kwargs.get('no_cti', False):
-            cti = 0.0
-        else:
-            cti = self.cti
+        # Set flow control parameters
+        do_trapping = self.do_trapping
+        cti = self.cti
 
         offset = np.zeros(self.ny)
         cte = 1 - cti
@@ -979,12 +935,10 @@ class SegmentSimulator:
             deferred_charge = free_charge*cti
 
             # Pixel transfer and readout
-            if do_local_offset:
-                offset = self.output_amplifier.local_offset(offset,
-                                                            transferred_charge[:, 0])
-                image[:iy-parallel_overscan_width, i] += transferred_charge[:, 0] + offset
-            else:
-                image[:iy-parallel_overscan_width, i] += transferred_charge[:, 0]
+            offset = self.output_amplifier.local_offset(offset,
+                                                        transferred_charge[:, 0])
+            image[:iy-parallel_overscan_width, i] += transferred_charge[:, 0] + offset
+
             free_charge = np.pad(transferred_charge, ((0, 0), (0, 1)),
                                  mode='constant')[:, 1:] + deferred_charge
 
@@ -997,29 +951,7 @@ class SegmentSimulator:
         return image/float(self.output_amplifier.gain)
 
 
-class BaseOutputAmplifier:
-    """Simulated amplifier.
-
-    Parameters
-    ----------
-    gain : `float`
-        Amplifier gain.
-    noise : `float`, optional
-        Amplifier read noise.
-    global_offset : `float`, optional
-        Global CTI offset.
-    """
-
-    do_local_offset = False
-
-    def __init__(self, gain, noise=0.0, global_offset=0.0):
-
-        self.gain = gain
-        self.noise = noise
-        self.global_offset = global_offset
-
-
-class FloatingOutputAmplifier(BaseOutputAmplifier):
+class FloatingOutputAmplifier:
     """Object representing the readout amplifier of a single channel.
 
     Parameters
@@ -1035,11 +967,13 @@ class FloatingOutputAmplifier(BaseOutputAmplifier):
     offset : `float`, optional
         Global CTI offset.
     """
-    do_local_offset = True
 
     def __init__(self, gain, scale, decay_time, noise=0.0, offset=0.0):
 
-        super().__init__(gain, noise, offset)
+        self.gain = gain
+        self.noise = noise
+        self.global_offset = offset
+
         self.update_parameters(scale, decay_time)
 
     def local_offset(self, old, signal):
@@ -1084,76 +1018,3 @@ class FloatingOutputAmplifier(BaseOutputAmplifier):
         if np.isnan(decay_time):
             raise ValueError("Decay time must be real-valued number, not NaN.")
         self.decay_time = decay_time
-
-
-class FloatingOutputAmplifier2(BaseOutputAmplifier):
-    """Object representing the readout amplifier of a single channel.
-
-    Parameters
-    ----------
-    gain : `float`
-        Amplifier gain.
-    scale : `float`
-        Drift scale for the amplifier.
-    decay_time : `float`
-        Decay time for the bias drift.
-    beta : `float`
-        CZW: ??
-    noise : `float`, optional
-        Amplifier read noise.
-    offset : `float`, optional
-        Global CTI offset.
-    """
-    do_local_offset = True
-
-    def __init__(self, gain, scale, decay_time, beta, noise=0.0, offset=0.0):
-        super().__init__(gain, noise, offset)
-        self.update_parameters(scale, decay_time, beta)
-
-    def local_offset(self, old, signal):
-        """Calculate local offset hysteresis.
-
-        Parameters
-        ----------
-        old : `np.ndarray`, (,)
-            Previous iteration?
-        signal : `np.ndarray`, (,)
-            Current column measurements.
-
-        Returns
-        -------
-        offset : `np.ndarray`
-            Local offset.
-        """
-        new = self.scale*(signal**self.beta)
-
-        return np.maximum(new, old*np.exp(-1/self.decay_time))
-
-    def update_parameters(self, scale, decay_time, beta):
-        """Update parameter values, if within acceptable values.
-
-        Parameters
-        ----------
-        scale : `float`
-            Drift scale for the amplifier.
-        decay_time : `float`
-            Decay time for the bias drift.
-        beta : `float`
-            ???
-
-        Raises
-        ------
-        ValueError
-            Raised if the input parameters are out of range.
-        """
-        if scale < 0.0:
-            raise ValueError("Scale must be greater than or equal to 0.")
-        self.scale = scale
-        if decay_time <= 0.0:
-            raise ValueError("Decay time must be greater than 0.")
-        if np.isnan(decay_time):
-            raise ValueError("Decay time must be real-valued number, not NaN.")
-        self.decay_time = decay_time
-        if beta <= 0.0:
-            raise ValueError("Beta must be greater than 0.")
-        self.beta = beta
