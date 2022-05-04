@@ -708,7 +708,7 @@ class SimpleModel(OverscanModel):
 
         Returns
         -------
-        results : `np.ndarray`, (nMeasurements, nCols)
+        res : `np.ndarray`, (nMeasurements, nCols)
             Model results.
         """
         v = params.valuesdict()
@@ -724,7 +724,6 @@ class SimpleModel(OverscanModel):
         x = np.arange(start, stop+1)
         res = np.zeros((signal.shape[0], x.shape[0]))
 
-        # This doesn't seem to directly match any equation in the paper.  (14) + X
         for i, s in enumerate(signal):
             res[i, :] = (np.minimum(v['trapsize'], s*v['scaling'])
                          * (np.exp(1/v['emissiontime']) - 1.0)
