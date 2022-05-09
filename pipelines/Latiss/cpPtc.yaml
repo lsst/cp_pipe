@@ -7,7 +7,7 @@ tasks:
     class: lsst.ip.isr.IsrTask
     config:
       doCrosstalk: false
-      doDefect: false
+      doDefect: true
   ptcExtract:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
     config:
