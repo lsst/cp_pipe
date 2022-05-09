@@ -8,7 +8,6 @@ tasks:
     config:
       doCrosstalk: false
       doDefect: false
-      doFlat: false
   ptcExtract:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
     config:
