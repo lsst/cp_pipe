@@ -31,3 +31,9 @@ tasks:
     config:
       connections.inputRatios: 'cpCrosstalkRatio'
       connections.outputCrosstalk: 'crosstalk'
+subsets:
+  crosstalk:
+    subset:
+      - crosstalkExtract
+      - crosstalkSolve
+    description: Just the extract and solve.

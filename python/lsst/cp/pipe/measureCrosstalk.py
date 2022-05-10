@@ -98,7 +98,7 @@ class CrosstalkExtractConfig(pipeBase.PipelineTaskConfig,
     )
     ignoreSaturatedPixels = Field(
         dtype=bool,
-        default=True,
+        default=False,
         doc="Should saturated pixels be ignored?"
     )
     badMask = ListField(
@@ -225,7 +225,7 @@ class CrosstalkExtractTask(pipeBase.PipelineTask,
                     # iterate over targetExposure
                     targetAmpName = targetAmp.getName()
                     if sourceAmpName == targetAmpName and sourceChip == targetChip:
-                        ratioDict[sourceAmpName][targetAmpName] = []
+                        ratioDict[targetAmpName][sourceAmpName] = []
                         continue
                     self.log.debug("    Target amplifier: %s", targetAmpName)
 
@@ -371,10 +371,20 @@ class CrosstalkSolveConfig(pipeBase.PipelineTaskConfig,
         default=0,
         doc="Polynomial order in source flux to fit crosstalk.",
     )
+    significanceLimit = Field(
+        dtype=float,
+        default=3.0,
+        doc="Sigma significance level to use in marking a coefficient valid.",
+    )
+    doSignificanceScaling = Field(
+        dtype=bool,
+        default=True,
+        doc="Scale error by 1/sqrt(N) in calculating significant coefficients?",
+    )
     doFiltering = Field(
         dtype=bool,
         default=False,
-        doc="Filter generated crosstalk to remove marginal measurements.",
+        doc="Filter generated crosstalk to remove marginal measurements?",
     )
 
 
@@ -450,10 +460,12 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
             calibChip = None
             instrument = None
 
-        if camera and calibChip:
+        if camera and calibChip is not None:
             calibDetector = camera[calibChip]
+            ordering = [amp.getName() for amp in calibDetector]
         else:
             calibDetector = None
+            ordering = None
 
         self.log.info("Combining measurements from %d ratios and %d fluxes",
                       len(inputRatios), len(inputFluxes) if inputFluxes else 0)
@@ -492,7 +504,8 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
 
         if self.config.fluxOrder == 0:
             self.log.info("Fitting crosstalk coefficients.")
-            calib = self.measureCrosstalkCoefficients(combinedRatios,
+
+            calib = self.measureCrosstalkCoefficients(combinedRatios, ordering,
                                                       self.config.rejIter, self.config.rejSigma)
         else:
             raise NotImplementedError("Non-linear crosstalk terms are not yet supported.")
@@ -531,7 +544,7 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
             outputProvenance=provenance,
         )
 
-    def measureCrosstalkCoefficients(self, ratios, rejIter, rejSigma):
+    def measureCrosstalkCoefficients(self, ratios, ordering, rejIter, rejSigma):
         """Measure crosstalk coefficients from the ratios.
 
         Given a list of ratios for each target/source amp combination,
@@ -544,6 +557,12 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
         ----------
         ratios : `dict` [`dict` [`numpy.ndarray`]]
            Catalog of arrays of ratios.  The ratio arrays are one-dimensional
+        ordering : `list` [`str`] or None
+           List to use as a mapping between amplifier names (the
+           elements of the list) and their position in the output
+           calibration (the matching index of the list).  If no
+           ordering is supplied, the order of the keys in the ratio
+           catalog is used.
         rejIter : `int`
            Number of rejection iterations.
         rejSigma : `float`
@@ -556,8 +575,10 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
         """
         calib = CrosstalkCalib(nAmp=len(ratios))
 
+        if ordering is None:
+            ordering = list(ratios.keys())
+
         # Calibration stores coefficients as a numpy ndarray.
-        ordering = list(ratios.keys())
         for ii, jj in itertools.product(range(calib.nAmp), range(calib.nAmp)):
             if ii == jj:
                 values = [0.0]
@@ -565,35 +586,46 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
                 values = np.array(ratios[ordering[ii]][ordering[jj]])
                 values = values[np.abs(values) < 1.0]  # Discard unreasonable values
 
-            calib.coeffNum[ii][jj] = len(values)
+            # Sigma clip using the inter-quartile distance and a
+            # normal distribution.
+            if ii != jj:
+                for rej in range(rejIter):
+                    if len(values) == 0:
+                        break
+                    lo, med, hi = np.percentile(values, [25.0, 50.0, 75.0])
+                    sigma = 0.741*(hi - lo)
+                    good = np.abs(values - med) < rejSigma*sigma
+                    if good.sum() == len(good) or good.sum() == 0:
+                        break
+                    values = values[good]
 
+            calib.coeffNum[ii][jj] = len(values)
+            significanceThreshold = 0.0
             if len(values) == 0:
                 self.log.warning("No values for matrix element %d,%d" % (ii, jj))
                 calib.coeffs[ii][jj] = np.nan
                 calib.coeffErr[ii][jj] = np.nan
                 calib.coeffValid[ii][jj] = False
             else:
-                if ii != jj:
-                    for rej in range(rejIter):
-                        lo, med, hi = np.percentile(values, [25.0, 50.0, 75.0])
-                        sigma = 0.741*(hi - lo)
-                        good = np.abs(values - med) < rejSigma*sigma
-                        if good.sum() == len(good):
-                            break
-                        values = values[good]
-
                 calib.coeffs[ii][jj] = np.mean(values)
                 if calib.coeffNum[ii][jj] == 1:
                     calib.coeffErr[ii][jj] = np.nan
+                    calib.coeffValid[ii][jj] = False
                 else:
                     correctionFactor = sigmaClipCorrection(rejSigma)
                     calib.coeffErr[ii][jj] = np.std(values) * correctionFactor
-                calib.coeffValid[ii][jj] = (np.abs(calib.coeffs[ii][jj])
-                                            > calib.coeffErr[ii][jj] / np.sqrt(calib.coeffNum[ii][jj]))
 
-            if calib.coeffNum[ii][jj] > 1:
-                self.debugRatios('measure', ratios, ordering[ii], ordering[jj],
-                                 calib.coeffs[ii][jj], calib.coeffValid[ii][jj])
+                    # Use sample stdev.
+                    significanceThreshold = self.config.significanceLimit * calib.coeffErr[ii][jj]
+                    if self.config.doSignificanceScaling is True:
+                        # Enabling this calculates the stdev of the mean.
+                        significanceThreshold /= np.sqrt(calib.coeffNum[ii][jj])
+                    calib.coeffValid[ii][jj] = np.abs(calib.coeffs[ii][jj]) > significanceThreshold
+                    self.debugRatios('measure', ratios, ordering[ii], ordering[jj],
+                                     calib.coeffs[ii][jj], calib.coeffValid[ii][jj])
+            self.log.info("Measured %s -> %s Coeff: %e Err: %e N: %d Valid: %s Limit: %e",
+                          ordering[jj], ordering[ii], calib.coeffs[ii][jj], calib.coeffErr[ii][jj],
+                          calib.coeffNum[ii][jj], calib.coeffValid[ii][jj], significanceThreshold)
 
         return calib
 
