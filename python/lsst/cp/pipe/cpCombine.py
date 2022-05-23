@@ -345,6 +345,10 @@ class CalibCombineTask(pipeBase.PipelineTask,
         # Set the detector
         combinedExp.setDetector(inputDetector)
 
+        # Do we need to set a filter?
+        filterLabel = inputExpHandles[0].get(component="filterLabel")
+        self.setFilterLabel(combinedExp, filterLabel)
+
         # Return
         return pipeBase.Struct(
             outputData=combinedExp,
@@ -577,6 +581,19 @@ class CalibCombineTask(pipeBase.PipelineTask,
             array[bad] = median
             self.log.warning("Found and fixed %s NAN pixels", count)
 
+    @staticmethod
+    def setFilterLabel(exp, filterLabel):
+        """Dummy function that will not assign a filter.
+
+        Parameters
+        ----------
+        exp : `lsst.afw.image.Exposure`
+            Exposure to assign filter to.
+        filterLabel : `lsst.afw.image.FilterLabel`
+            Filter to assign.
+        """
+        pass
+
 
 # Create versions of the Connections, Config, and Task that support
 # filter constraints.
@@ -615,4 +632,17 @@ class CalibCombineByFilterTask(CalibCombineTask):
 
     ConfigClass = CalibCombineByFilterConfig
     _DefaultName = "cpFilterCombine"
-    pass
+
+    @staticmethod
+    def setFilterLabel(exp, filterLabel):
+        """Dummy function that will not assign a filter.
+
+        Parameters
+        ----------
+        exp : `lsst.afw.image.Exposure`
+            Exposure to assign filter to.
+        filterLabel : `lsst.afw.image.FilterLabel`
+            Filter to assign.
+        """
+        if filterLabel:
+            exp.setFilterLabel(filterLabel)
