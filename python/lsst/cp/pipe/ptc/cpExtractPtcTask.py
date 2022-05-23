@@ -654,9 +654,6 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
             im1Area = exposure1.maskedImage
             im2Area = exposure2.maskedImage
 
-        resultsDict['im1Area'] = im1Area
-        resultsDict['im2Area'] = im2Area
-
         if self.config.binSize > 1:
             im1Area = afwMath.binImage(im1Area, self.config.binSize)
             im2Area = afwMath.binImage(im2Area, self.config.binSize)
@@ -668,9 +665,6 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         im1StatsCtrl.setNanSafe(True)
         im1StatsCtrl.setAndMask(im1MaskVal)
 
-        resultsDict['im1MaskVal'] = im1MaskVal
-        resultsDict['im1StatsCtrl'] = im1StatsCtrl
-
         im2MaskVal = exposure2.getMask().getPlaneBitMask(self.config.maskNameList)
         im2StatsCtrl = afwMath.StatisticsControl(self.config.nSigmaClipPtc,
                                                  self.config.nIterSigmaClipPtc,
@@ -678,14 +672,17 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         im2StatsCtrl.setNanSafe(True)
         im2StatsCtrl.setAndMask(im2MaskVal)
 
-        resultsDict['im2MaskVal'] = im2MaskVal
-        resultsDict['im2StatsCtrl'] = im2StatsCtrl
-
         mu1 = afwMath.makeStatistics(im1Area, afwMath.MEANCLIP, im1StatsCtrl).getValue()
         mu2 = afwMath.makeStatistics(im2Area, afwMath.MEANCLIP, im2StatsCtrl).getValue()
 
+        resultsDict['im1Area'] = im1Area
+        resultsDict['im1MaskVal'] = im1MaskVal
+        resultsDict['im1StatsCtrl'] = im1StatsCtrl
+        resultsDict['im2Area'] = im2Area
+        resultsDict['im2MaskVal'] = im2MaskVal
+        resultsDict['im2StatsCtrl'] = im2StatsCtrl
         resultsDict['mu1'] = mu1
-        resultsDict['mu1'] = mu2
+        resultsDict['mu2'] = mu2
 
         return resultsDict
 
