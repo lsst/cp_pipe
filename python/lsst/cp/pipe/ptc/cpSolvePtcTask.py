@@ -831,6 +831,12 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             goodPoints = self._getInitialGoodPoints(meanVecOriginal, varVecOriginal,
                                                     self.config.minVarPivotSearch,
                                                     self.config.consecutivePointsVarDecreases)
+
+            # Save the point where the variance starts decreasing as the
+            # PTC turnoff point
+            ptcTurnoff = meanVecOriginal[goodPoints][-1]
+            dataset.ptcTurnoff[ampName] = ptcTurnoff
+
             # Check if all points are bad from the 'cpExtractPtcTask'
             initialExpIdMask = np.ravel(np.array(dataset.expIdMask[ampName]))
 
