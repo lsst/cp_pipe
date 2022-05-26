@@ -356,7 +356,8 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                 # Get masked image regions, masking planes, statistic control
                 # objects, and clipped means. Calculate once to reuse in
                 # `measureMeanVarCov` and `getGainFromFlatPair`.
-                imageProps = self.getImageAreasMasksStats(exp1, exp2, region=region)
+                im1Area, im2Area, imStatsCtrl, mu1, mu2 = self.getImageAreasMasksStats(exp1, exp2,
+                                                                                       region=region)
 
                 # `measureMeanVarCov` is the function that measures
                 # the variance and covariances from a region of
@@ -365,11 +366,11 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                 # returned is of the form:
                 # [(i, j, var (cov[0,0]), cov, npix) for (i,j) in
                 # {maxLag, maxLag}^2].
-                muDiff, varDiff, covAstier = self.measureMeanVarCov(imageProps)
+                muDiff, varDiff, covAstier = self.measureMeanVarCov(im1Area, im2Area, imStatsCtrl, mu1, mu2)
 
                 # Estimate the gain from the flat pair
                 if self.config.doGain:
-                    gain = self.getGainFromFlatPair(imageProps,
+                    gain = self.getGainFromFlatPair(im1Area, im2Area, imStatsCtrl, mu1, mu2,
                                                     correctionType=self.config.gainCorrectionType,
                                                     readNoise=readNoiseDict[ampName])
                 else:
@@ -518,7 +519,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
 
         return cov, var, muVals
 
-    def measureMeanVarCov(self, imageProperties):
+    def measureMeanVarCov(self, im1Area, im2Area, imStatsCtrl, mu1, mu2):
         """Calculate the mean of each of two exposures and the variance
         and covariance of their difference. The variance is calculated
         via afwMath, and the covariance via the methods in Astier+19
@@ -528,9 +529,16 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
 
         Parameters
         ----------
-        imageProperties : `dict`
-            Dictionary with masked image regions, mask planes, statistic
-            control objects, and clipped means.
+        im1Area : `lsst.afw.image.maskedImage.MaskedImageF`
+            Masked image from exposure 1.
+        im2Area : `lsst.afw.image.maskedImage.MaskedImageF`
+            Masked image from exposure 2.
+        imStatsCtrl : `lsst.afw.math.StatisticsControl`
+            Statistics control object.
+        mu1: `float`
+            Clipped mean of im1Area (ADU).
+        mu2: `float`
+            Clipped mean of im2Area (ADU).
 
         Returns
         -------
@@ -557,8 +565,6 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
 
             If either mu1 or m2 are NaN's, the returned value is NaN.
         """
-        (im1Area, im1MaskVal, im1StatsCtrl, im2Area,
-            im2MaskVal, im2StatsCtrl, mu1, mu2) = imageProperties.values()
         if np.isnan(mu1) or np.isnan(mu2):
             self.log.warning("Mean of amp in image 1 or 2 is NaN: %f, %f.", mu1, mu2)
             return np.nan, np.nan, None
@@ -573,20 +579,13 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         diffIm -= temp
         diffIm /= mu
 
-        diffImMaskVal = diffIm.getMask().getPlaneBitMask(self.config.maskNameList)
-        diffImStatsCtrl = afwMath.StatisticsControl(self.config.nSigmaClipPtc,
-                                                    self.config.nIterSigmaClipPtc,
-                                                    diffImMaskVal)
-        diffImStatsCtrl.setNanSafe(True)
-        diffImStatsCtrl.setAndMask(diffImMaskVal)
-
         # Variance calculation via afwMath
-        varDiff = 0.5*(afwMath.makeStatistics(diffIm, afwMath.VARIANCECLIP, diffImStatsCtrl).getValue())
+        varDiff = 0.5*(afwMath.makeStatistics(diffIm, afwMath.VARIANCECLIP, imStatsCtrl).getValue())
 
         # Covariances calculations
         # Get the pixels that were not clipped
-        varClip = afwMath.makeStatistics(diffIm, afwMath.VARIANCECLIP, diffImStatsCtrl).getValue()
-        meanClip = afwMath.makeStatistics(diffIm, afwMath.MEANCLIP, diffImStatsCtrl).getValue()
+        varClip = afwMath.makeStatistics(diffIm, afwMath.VARIANCECLIP, imStatsCtrl).getValue()
+        meanClip = afwMath.makeStatistics(diffIm, afwMath.MEANCLIP, imStatsCtrl).getValue()
         cut = meanClip + self.config.nSigmaClipPtc*np.sqrt(varClip)
         unmasked = np.where(np.fabs(diffIm.image.array) <= cut, 1, 0)
 
@@ -642,11 +641,17 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
 
         Returns
         -------
-        resultsDict : `dict`
-            Dictionary with masked image regions, mask planes, statistic
-            control objects, and clipped means.
+        im1Area : `lsst.afw.image.maskedImage.MaskedImageF`
+            Masked image from exposure 1.
+        im2Area : `lsst.afw.image.maskedImage.MaskedImageF`
+            Masked image from exposure 2.
+        imStatsCtrl : `lsst.afw.math.StatisticsControl`
+            Statistics control object.
+        mu1: `float`
+            Clipped mean of im1Area (ADU).
+        mu2: `float`
+            Clipped mean of im2Area (ADU).
         """
-        resultsDict = {}
         if region is not None:
             im1Area = exposure1.maskedImage[region]
             im2Area = exposure2.maskedImage[region]
@@ -658,36 +663,22 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
             im1Area = afwMath.binImage(im1Area, self.config.binSize)
             im2Area = afwMath.binImage(im2Area, self.config.binSize)
 
-        im1MaskVal = exposure1.getMask().getPlaneBitMask(self.config.maskNameList)
-        im1StatsCtrl = afwMath.StatisticsControl(self.config.nSigmaClipPtc,
-                                                 self.config.nIterSigmaClipPtc,
-                                                 im1MaskVal)
-        im1StatsCtrl.setNanSafe(True)
-        im1StatsCtrl.setAndMask(im1MaskVal)
+        # Get mask planes and construct statistics control object from one
+        # of the exposures
+        imMaskVal = exposure1.getMask().getPlaneBitMask(self.config.maskNameList)
+        imStatsCtrl = afwMath.StatisticsControl(self.config.nSigmaClipPtc,
+                                                self.config.nIterSigmaClipPtc,
+                                                imMaskVal)
+        imStatsCtrl.setNanSafe(True)
+        imStatsCtrl.setAndMask(imMaskVal)
 
-        im2MaskVal = exposure2.getMask().getPlaneBitMask(self.config.maskNameList)
-        im2StatsCtrl = afwMath.StatisticsControl(self.config.nSigmaClipPtc,
-                                                 self.config.nIterSigmaClipPtc,
-                                                 im2MaskVal)
-        im2StatsCtrl.setNanSafe(True)
-        im2StatsCtrl.setAndMask(im2MaskVal)
+        mu1 = afwMath.makeStatistics(im1Area, afwMath.MEANCLIP, imStatsCtrl).getValue()
+        mu2 = afwMath.makeStatistics(im2Area, afwMath.MEANCLIP, imStatsCtrl).getValue()
 
-        mu1 = afwMath.makeStatistics(im1Area, afwMath.MEANCLIP, im1StatsCtrl).getValue()
-        mu2 = afwMath.makeStatistics(im2Area, afwMath.MEANCLIP, im2StatsCtrl).getValue()
+        return (im1Area, im2Area, imStatsCtrl, mu1, mu2)
 
-        resultsDict['im1Area'] = im1Area
-        resultsDict['im1MaskVal'] = im1MaskVal
-        resultsDict['im1StatsCtrl'] = im1StatsCtrl
-        resultsDict['im2Area'] = im2Area
-        resultsDict['im2MaskVal'] = im2MaskVal
-        resultsDict['im2StatsCtrl'] = im2StatsCtrl
-        resultsDict['mu1'] = mu1
-        resultsDict['mu2'] = mu2
-
-        return resultsDict
-
-    def getGainFromFlatPair(self, imageProperties, correctionType='NONE',
-                            readNoise=None):
+    def getGainFromFlatPair(self, im1Area, im2Area, imStatsCtrl, mu1, mu2,
+                            correctionType='NONE', readNoise=None):
         """Estimate the gain from a single pair of flats.
 
         The basic premise is 1/g = <(I1 - I2)^2/(I1 + I2)> = 1/const,
@@ -717,9 +708,16 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
 
         Parameters
         ----------
-        imageProperties : `dict`
-            Dictionary with masked image regions, mask planes, statistic
-            control objects, and clipped means.
+        im1Area : `lsst.afw.image.maskedImage.MaskedImageF`
+            Masked image from exposure 1.
+        im2Area : `lsst.afw.image.maskedImage.MaskedImageF`
+            Masked image from exposure 2.
+        imStatsCtrl : `lsst.afw.math.StatisticsControl`
+            Statistics control object.
+        mu1: `float`
+            Clipped mean of im1Area (ADU).
+        mu2: `float`
+            Clipped mean of im2Area (ADU).
         correctionType : `str`, optional
             The correction applied, one of ['NONE', 'SIMPLE', 'FULL']
         readNoise : `float`, optional
@@ -745,8 +743,6 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
                              "corrections." % correctionType)
             correctionType = 'NONE'
 
-        (im1Area, im1MaskVal, im1StatsCtrl, im2Area,
-            im2MaskVal, im2StatsCtrl, mu1, mu2) = imageProperties.values()
         mu = 0.5*(mu1 + mu2)
 
         # ratioIm = (I1 - I2)^2 / (I1 + I2)
@@ -756,20 +752,12 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         ratioIm *= ratioIm
 
         # Sum of pairs
-        temp = im2Area.clone()
         sumIm = im1Area.clone()
         sumIm += temp
 
         ratioIm /= sumIm
 
-        ratioImMaskVal = ratioIm.getMask().getPlaneBitMask(self.config.maskNameList)
-        ratioImStatsCtrl = afwMath.StatisticsControl(self.config.nSigmaClipPtc,
-                                                     self.config.nIterSigmaClipPtc,
-                                                     ratioImMaskVal)
-        ratioImStatsCtrl.setNanSafe(True)
-        ratioImStatsCtrl.setAndMask(ratioImMaskVal)
-
-        const = afwMath.makeStatistics(ratioIm, afwMath.MEANCLIP, ratioImStatsCtrl).getValue()
+        const = afwMath.makeStatistics(ratioIm, afwMath.MEANCLIP, imStatsCtrl).getValue()
         gain = 1. / const
 
         if correctionType == 'SIMPLE':
