@@ -831,6 +831,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             goodPoints = self._getInitialGoodPoints(meanVecOriginal, varVecOriginal,
                                                     self.config.minVarPivotSearch,
                                                     self.config.consecutivePointsVarDecreases)
+
             # Check if all points are bad from the 'cpExtractPtcTask'
             initialExpIdMask = np.ravel(np.array(dataset.expIdMask[ampName]))
 
@@ -842,6 +843,11 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
                 # Fill entries with NaNs
                 self.fillBadAmp(dataset, ptcFitType, ampName)
                 continue
+
+            # Save the point where the variance starts decreasing as the
+            # PTC turnoff point
+            ptcTurnoff = meanVecOriginal[goodPoints][-1]
+            dataset.ptcTurnoff[ampName] = ptcTurnoff
 
             mask = goodPoints
 
@@ -987,6 +993,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         dataset.ptcFitParsError[ampName] = (np.repeat(np.nan, self.config.polynomialFitDegree + 1) if
                                             ptcFitType in ["POLYNOMIAL", ] else np.repeat(np.nan, 3))
         dataset.ptcFitChiSq[ampName] = np.nan
+        dataset.ptcTurnoff[ampName] = np.nan
         dataset.finalVars[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
         dataset.finalModelVars[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
         dataset.finalMeans[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
