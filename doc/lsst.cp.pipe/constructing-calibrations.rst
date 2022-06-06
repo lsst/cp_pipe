@@ -295,7 +295,7 @@ Constructing biases
 
 .. code:: bash
 
-    pipetask run -b $BUTLER_REPO -p $CP_VERIFY_DIR/pipelines/Latiss/verifyBias.yaml \
+    pipetask run -b $BUTLER_REPO -p $CP_VERIFY_DIR/pipelines/VerifyBias.yaml \
          -i u/czw/DM-28920/biasGen.$RERUN,LATISS/raw/all,LATISS/calib \
          -o u/czw/DM-28920/verifyBias.$RERUN \
           -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES)
@@ -338,7 +338,7 @@ Constructing defects
 
 .. code:: bash
 
-    pipetask --long-log run -b $BUTLER_REPO -p $CP_VERIFY_DIR/pipelines/verifyDefect.yaml \
+    pipetask --long-log run -b $BUTLER_REPO -p $CP_VERIFY_DIR/pipelines/VerifyDefect.yaml \
         -i LATISS/raw/all,u/czw/DM-28920/defectGen.$RERUN,u/czw/DM-28920/biasGen.20210702a,LATISS/calib \
         -o u/czw/DM-28920/verifyDefect.$RERUN \
         -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES)" >& ./defectVerify.$RERUN.log
@@ -351,7 +351,7 @@ Constructing defects
 
 .. code:: bash
 
-    pipetask --long-log run -b $BUTLER_REPO -p $CP_VERIFY_DIR/pipelines/verifyBias.yaml \
+    pipetask --long-log run -b $BUTLER_REPO -p $CP_VERIFY_DIR/pipelines/VerifyBias.yaml \
         -i LATISS/raw/all,u/czw/DM-28920/defectGen.20210702e,u/czw/DM-28920/biasGen.20210702a,LATISS/calib \
         -o u/czw/DM-28920/verifyBias.$RERUN \
         -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES)" \
@@ -405,7 +405,7 @@ Constructing darks
 .. code:: bash
 
     RERUN=20210707a
-    pipetask --long-log run -b $BUTLER_REPO -p $CP_PIPE_DIR/pipelines/LATISS/cpDark.yaml \
+    pipetask --long-log run -b $BUTLER_REPO -p $CP_PIPE_DIR/pipelines/Latiss/cpDark.yaml \
         -i LATISS/raw/all,u/czw/DM-28920/defectGen.20210706h,u/czw/DM-28920/biasGen.20210702a,LATISS/calib \
         -o u/czw/DM-28920/darkGen
         -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES) \
@@ -520,13 +520,13 @@ Constructing flats
 
 .. code:: bash
 
-    pipetask run -b $BUTLER_REPO -p $CP_VERIFY_DIR/pipelines/Latiss/verifyFlat.yaml \
+    pipetask run -b $BUTLER_REPO -p $CP_VERIFY_DIR/pipelines/VerifyFlat.yaml \
         -i LATISS/raw/all,u/czw/DM-28920/defectGen.20210706h,u/czw/DM-28920/flatGen.20210712a,u/czw/DM-28920/darkGen.20210707a,u/czw/DM-28920/biasGen.20210702a,LATISS/calib
         -o u/czw/DM-28920/verifyFlat.20210712a \
         -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES_RG610, $VERIFY_EXP_RG610) \
         -j 4 >& ./flatVerify.20210712a.log
 
-    pipetask run -b $BUTLER_REPO -p $CP_VERIFY_DIR/pipelines/Latiss/verifyFlat.yaml \
+    pipetask run -b $BUTLER_REPO -p $CP_VERIFY_DIR/pipelines/VerifyFlat.yaml \
         -i LATISS/raw/all,u/czw/DM-28920/defectGen.20210706h,u/czw/DM-28920/flatGen.20210712b,u/czw/DM-28920/darkGen.20210707a,u/czw/DM-28920/biasGen.20210702a,LATISS/calib
         -o u/czw/DM-28920/verifyFlat.20210712a \
         -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES_empty, $VERIFY_EXP_empty) \
@@ -591,13 +591,13 @@ Measuring the photon transfer curve
 .. code:: bash
 
     RERUN=20210712a
-    pipetask --long-log run -b $BUTLER_REPO -p $CP_PIPE_DIR/pipelines/measurePhotonTransferCurve.yaml \
+    pipetask --long-log run -b $BUTLER_REPO -p $CP_PIPE_DIR/pipelines/Latiss/cpPtc.yaml \
         -i LATISS/raw/all,u/czw/DM-28920/defectGen.20210712a,u/czw/DM-28920/flatGen.20210712b,u/czw/DM-28920/darkGen.20210707a,u/czw/DM-28920/biasGen.20210702a,LATISS/calib \
         -o u/czw/DM-28920/ptcGen.$RERUN -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES_RG610, $EXCLUDED_RG610)" \
         -c isr:doCrosstalk=False -j 4 >& ./ptc.$RERUN.log
 
     RERUN=20210712b
-    pipetask --long-log run -b $BUTLER_REPO -p $CP_PIPE_DIR/pipelines/measurePhotonTransferCurve.yaml \
+    pipetask --long-log run -b $BUTLER_REPO -p $CP_PIPE_DIR/pipelines/Latiss/cpPtc.yaml \
         -i LATISS/raw/all,u/czw/DM-28920/defectGen.20210712a,u/czw/DM-28920/flatGen.20210712b,u/czw/DM-28920/darkGen.20210707a,u/czw/DM-28920/biasGen.20210702a,LATISS/calib \
         -o u/czw/DM-28920/ptcGen.$RERUN -d "instrument='LATISS' AND detector=0 AND exposure IN ($VERIFY_EXP_RG610)" \
         -c isr:doCrosstalk=False -j 4 >& ./ptc.$RERUN.log
@@ -632,7 +632,7 @@ Constructing a linearity correction
 .. code:: bash
 
     RERUN=20210713a
-    pipetask --long-log run -b $BUTLER_REPO -p $CP_PIPE_DIR/pipelines/cpLinearitySolve.yaml \
+    pipetask --long-log run -b $BUTLER_REPO -p $CP_PIPE_DIR/pipelines/Latiss/cpLinearitySolve.yaml \
         -i u/czw/DM-28920/tempPtcA,LATISS/calib,LATISS/raw/all \
         -o u/czw/DM-28920/linearityGen.$RERUN \
         -d "instrument='LATISS' AND exposure=$EXPOSURES_A AND detector = 0" \
@@ -640,7 +640,7 @@ Constructing a linearity correction
         >& ./linearity.$RERUN.log
 
     RERUN=20210713b
-    pipetask --long-log run -b $BUTLER_REPO -p $CP_PIPE_DIR/pipelines/cpLinearitySolve.yaml \
+    pipetask --long-log run -b $BUTLER_REPO -p $CP_PIPE_DIR/pipelines/Latiss/cpLinearitySolve.yaml \
         -i u/czw/DM-28920/tempPtcB,LATISS/calib,LATISS/raw/all \
         -o u/czw/DM-28920/linearityGen.$RERUN \
         -d "instrument='LATISS' AND exposure=$EXPOSURES_B AND detector = 0" \
@@ -809,7 +809,7 @@ Constructing sky frames
 .. code:: bash
 
     RERUN=202107XXa
-    pipetask run -b $BUTLER_REPO -p $CP_PIPE_DIR/pipelines/Latiss/cpSkySolve.yaml \
+    pipetask run -b $BUTLER_REPO -p $CP_PIPE_DIR/pipelines/Latiss/cpSky.yaml \
         -i LATISS/raw/all,LATISS/calib,u/czw/DM-28920/calib \
         -o u/czw/DM-28920/skyGen.$RERUN \
         -d "instrument='LATISS' AND detector=0 AND exposure IN ($EXPOSURES)" \
