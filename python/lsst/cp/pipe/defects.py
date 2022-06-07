@@ -153,7 +153,7 @@ class MeasureDefectsTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         """
         detector = inputExp.getDetector()
 
-        filterName = inputExp.getFilterLabel().physicalLabel
+        filterName = inputExp.getFilter().physicalLabel
         datasetType = inputExp.getMetadata().get('IMGTYPE', 'UNKNOWN')
 
         if datasetType.lower() == 'dark':
