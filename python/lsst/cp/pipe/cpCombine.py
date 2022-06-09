@@ -394,7 +394,7 @@ class CalibCombineTask(pipeBase.PipelineTask,
             raise RuntimeError("Inconsistent dimensions: %s" % dim)
         return dim.pop()
 
-    def applyScale(self, exposure, scale=None):
+    def applyScale(self, exposure, bbox=None, scale=None):
         """Apply scale to input exposure.
 
         This implementation applies a flux scaling: the input exposure is
@@ -404,17 +404,24 @@ class CalibCombineTask(pipeBase.PipelineTask,
         ----------
         exposure : `lsst.afw.image.Exposure`
             Exposure to scale.
+        bbox : `lsst.geom.Box2I`
+            BBox matching the segment of the exposure passed in.
         scale : `float` or `list` [`float`], optional
             Constant scale to divide the exposure by.
         """
         if scale is not None:
             mi = exposure.getMaskedImage()
             if isinstance(scale, list):
+                # Create a realization of the per-amp scales as an
+                # image we can take a subset of.  This may be slightly
+                # slower than only populating the region we care
+                # about, but this avoids needing to do arbitrary
+                # numbers of offsets, etc.
+                scaleExp = afwImage.MaskedImageF(exposure.getDetector().getBBox())
                 for amp, ampScale in zip(exposure.getDetector(), scale):
-                    ampIm = mi[amp.getBBox()]
-                    ampIm /= ampScale
-            else:
-                mi /= scale
+                    scaleExp.image[amp.getBBox()] = ampScale
+                scale = scaleExp[bbox]
+            mi /= scale
 
     @staticmethod
     def _subBBoxIter(bbox, subregionSize):
@@ -472,7 +479,7 @@ class CalibCombineTask(pipeBase.PipelineTask,
             images = []
             for expHandle, expScale in zip(expHandleList, expScaleList):
                 inputExp = expHandle.get(parameters={"bbox": subBbox})
-                self.applyScale(inputExp, expScale)
+                self.applyScale(inputExp, subBbox, expScale)
                 images.append(inputExp.getMaskedImage())
 
             combinedSubregion = afwMath.statisticsStack(images, combineType, stats)
