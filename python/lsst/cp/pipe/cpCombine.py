@@ -347,7 +347,7 @@ class CalibCombineTask(pipeBase.PipelineTask,
 
         # Do we need to set a filter?
         filterLabel = inputExpHandles[0].get(component="filterLabel")
-        self.setFilterLabel(combinedExp, filterLabel)
+        self.setFilter(combinedExp, filterLabel)
 
         # Return
         return pipeBase.Struct(
@@ -582,7 +582,7 @@ class CalibCombineTask(pipeBase.PipelineTask,
             self.log.warning("Found and fixed %s NAN pixels", count)
 
     @staticmethod
-    def setFilterLabel(exp, filterLabel):
+    def setFilter(exp, filterLabel):
         """Dummy function that will not assign a filter.
 
         Parameters
@@ -634,7 +634,7 @@ class CalibCombineByFilterTask(CalibCombineTask):
     _DefaultName = "cpFilterCombine"
 
     @staticmethod
-    def setFilterLabel(exp, filterLabel):
+    def setFilter(exp, filterLabel):
         """Dummy function that will not assign a filter.
 
         Parameters
@@ -645,4 +645,4 @@ class CalibCombineByFilterTask(CalibCombineTask):
             Filter to assign.
         """
         if filterLabel:
-            exp.setFilterLabel(filterLabel)
+            exp.setFilter(filterLabel)

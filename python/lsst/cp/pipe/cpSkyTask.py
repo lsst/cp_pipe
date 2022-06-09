@@ -412,7 +412,7 @@ class CpSkyCombineTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         """
         skyCalib = self.sky.averageBackgrounds(inputBkgs)
         skyCalib.setDetector(inputExpHandles[0].get(component='detector'))
-        skyCalib.setFilterLabel(inputExpHandles[0].get(component='filterLabel'))
+        skyCalib.setFilter(inputExpHandles[0].get(component='filterLabel'))
 
         CalibCombineTask().combineHeaders(inputExpHandles, skyCalib, calibType='SKY')
 
