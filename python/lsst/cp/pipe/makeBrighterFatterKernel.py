@@ -203,8 +203,10 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
             detectorFluxes = list()
 
         bfk = BrighterFatterKernel(camera=camera, detectorId=detector.getId(), level=self.config.level)
-        bfk.means = inputPtc.finalMeans  # ADU
-        bfk.variances = inputPtc.finalVars  # ADU^2
+        bfk.rawMeans = inputPtc.rawMeans  # ADU
+        bfk.rawVariances = inputPtc.rawVars  # ADU^2
+        bfk.expIdMask = inputPtc.expIdMask
+
         # Use the PTC covariances as the cross-correlations.  These
         # are scaled before the kernel is generated, which performs
         # the conversion.
@@ -219,29 +221,22 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask)
         for amp in detector:
             ampName = amp.getName()
             gain = bfk.gain[ampName]
-
-            # Using the inputPtc.expIdMask works if the covariance
-            # array has the same length as the rawMeans/rawVars.  This
-            # isn't the case, as it's the same size as the
-            # finalMeans/finalVars.  However, these arrays (and the
-            # covariance) are padded with NAN values to match the
-            # longest amplifier vector.  We do not want to include
-            # these NAN values, so we construct a mask for all non-NAN
-            # values in finalMeans, and use that to filter finalVars
-            # and the covariances.
-            mask = np.isfinite(bfk.means[ampName])
-            fluxes = np.array(bfk.means[ampName])[mask]
-            variances = np.array(bfk.variances[ampName])[mask]
-            xCorrList = np.array([np.array(xcorr) for xcorr in bfk.rawXcorrs[ampName]])[mask]
-
+            mask = inputPtc.expIdMask[ampName]
             if gain <= 0:
                 # We've received very bad data.
-                self.log.warning("Impossible gain recieved from PTC for %s: %f.  Skipping amplifier.",
+                self.log.warning("Impossible gain recieved from PTC for %s: %f. Skipping bad amplifier.",
                                  ampName, gain)
                 bfk.meanXcorrs[ampName] = np.zeros(bfk.shape)
                 bfk.ampKernels[ampName] = np.zeros(bfk.shape)
+                bfk.rawXcorrs[ampName] = np.zeros((len(mask), inputPtc.covMatrixSide, inputPtc.covMatrixSide))
                 bfk.valid[ampName] = False
                 continue
+
+            # Use inputPtc.expIdMask to get the means, variances,
+            # and covariances that were not masked after PTC.
+            fluxes = np.array(bfk.rawMeans[ampName])[mask]
+            variances = np.array(bfk.rawVariances[ampName])[mask]
+            xCorrList = np.array([np.array(xcorr) for xcorr in bfk.rawXcorrs[ampName]])[mask]
 
             fluxes = np.array([flux*gain for flux in fluxes])  # Now in e^-
             variances = np.array([variance*gain*gain for variance in variances])  # Now in e^2-
