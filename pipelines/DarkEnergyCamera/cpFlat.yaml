@@ -1,6 +1,6 @@
 description: cp_pipe FLAT calibration construction for DECam
-# Use RunIsrForCrosstalkSources.yaml BEFORE running this pipeline
-# so the raw flat frames have inter-chip crosstalk corrected.
+# Correct for inter-chip crosstalk BEFORE running this pipeline, using, e.g.,
+# the isrForCrosstalkSources subset or RunIsrForCrosstalkSources.yaml.
 instrument: lsst.obs.decam.DarkEnergyCamera
 imports:
   - location: $CP_PIPE_DIR/pipelines/cpFlat.yaml
@@ -15,3 +15,7 @@ tasks:
     class: lsst.cp.pipe.cpFlatNormTask.CpFlatMeasureTask
     config:
       doVignette: false
+  cpFlatNorm:
+    class: lsst.cp.pipe.cpFlatNormTask.CpFlatNormalizationTask
+    config:
+      level: 'AMP'
