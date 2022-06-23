@@ -50,12 +50,13 @@ class BfkSolveTaskTestCase(lsst.utils.tests.TestCase):
         self.defaultConfig = cpPipe.BrighterFatterKernelSolveConfig()
         self.ptc = ipIsr.PhotonTransferCurveDataset(ampNames=['amp 1'], ptcFitType='FULLCOVARIANCE',
                                                     covMatrixSide=3)
-        self.ptc.expIdMask['amp 1'] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
-        self.ptc.finalMeans['amp 1'] = [1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000]
-        self.ptc.rawMeans['amp 1'] = self.ptc.finalMeans['amp 1']
-        self.ptc.finalVars['amp 1'] = 0.99 * np.array(self.ptc.finalMeans['amp 1'], dtype=float)
+        self.ptc.expIdMask['amp 1'] = np.array([False, True, True, True, True, True, True, True, True, True])
+        self.ptc.rawMeans['amp 1'] = np.array([1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000])
+        self.ptc.finalMeans['amp 1'] = self.ptc.rawMeans['amp 1'][self.ptc.expIdMask['amp 1']]
+        self.ptc.rawVars['amp 1'] = 0.99 * np.array(self.ptc.rawMeans['amp 1'], dtype=float)
+        self.ptc.finalVars['amp 1'] = self.ptc.rawVars['amp 1'][self.ptc.expIdMask['amp 1']]
         self.ptc.covariances['amp 1'] = []
-        for mean, variance in zip(self.ptc.finalMeans['amp 1'], self.ptc.finalVars['amp 1']):
+        for mean, variance in zip(self.ptc.rawMeans['amp 1'], self.ptc.rawVars['amp 1']):
             residual = mean - variance
             covariance = [[variance, 0.5 * residual, 0.1 * residual],
                           [0.2 * residual, 0.1 * residual, 0.05 * residual],
@@ -119,12 +120,13 @@ class BfkSolveTaskTestCase(lsst.utils.tests.TestCase):
 
         ptc = ipIsr.PhotonTransferCurveDataset(ampNames=['amp 1'], ptcFitType='FULLCOVARIANCE',
                                                covMatrixSide=3)
-        ptc.expIdMask['amp 1'] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
-        ptc.finalMeans['amp 1'] = [1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000]
-        ptc.rawMeans['amp 1'] = ptc.finalMeans['amp 1']
-        ptc.finalVars['amp 1'] = 9e-5 * np.square(np.array(ptc.finalMeans['amp 1'], dtype=float))
+        ptc.expIdMask['amp 1'] = np.array([False, True, True, True, True, True, True, True, True, True])
+        ptc.rawMeans['amp 1'] = np.array([1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000])
+        ptc.finalMeans['amp 1'] = ptc.rawMeans['amp 1'][ptc.expIdMask['amp 1']]
+        ptc.rawVars['amp 1'] = 9e-5 * np.square(np.array(ptc.rawMeans['amp 1'], dtype=float))
+        ptc.finalVars['amp 1'] = ptc.rawVars['amp 1'][ptc.expIdMask['amp 1']]
         ptc.covariances['amp 1'] = []
-        for mean, variance in zip(ptc.finalMeans['amp 1'], ptc.finalVars['amp 1']):
+        for mean, variance in zip(ptc.rawMeans['amp 1'], ptc.rawVars['amp 1']):
             residual = variance
             covariance = [[variance, 0.5 * residual, 0.1 * residual],
                           [0.2 * residual, 0.1 * residual, 0.05 * residual],
