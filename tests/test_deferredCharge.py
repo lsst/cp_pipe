@@ -32,7 +32,7 @@ from lsst.ip.isr import IsrMock
 
 
 class CpCtiSolveTaskTestCase(lsst.utils.tests.TestCase):
-    """A test case for the defect finding task."""
+    """A test case for the deferred charge/CTI solve task."""
 
     def setUp(self):
         self.camera = IsrMock().getCamera()

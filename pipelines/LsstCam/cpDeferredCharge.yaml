@@ -7,5 +7,7 @@ tasks:
     class: lsst.ip.isr.IsrTask
     config:
       overscan.fitType: 'MEDIAN_PER_ROW'
+      # Skip the first five columns to remove CTI effects.  Skip the
+      # last two in case those columns are noisy.
       overscanNumLeadingColumnsToSkip: 5
       overscanNumTrailingColumnsToSkip: 2

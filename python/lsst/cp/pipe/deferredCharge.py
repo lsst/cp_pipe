@@ -91,6 +91,8 @@ class CpCtiSolveConfig(pipeBase.PipelineTaskConfig,
     )
 
     fitError = pexConfig.Field(
+        # This gives the error on the mean in a given column, and so
+        # is expected to be $RN / sqrt(N_rows)$.
         dtype=float,
         default=7.0/np.sqrt(2000),
         doc="Error to use during parameter fitting.",
@@ -101,7 +103,7 @@ class CpCtiSolveTask(pipeBase.PipelineTask,
                      pipeBase.CmdLineTask):
     """Combine CTI measurements to a final calibration.
 
-    This task uses the extended pixel edge response method as
+    This task uses the extended pixel edge response (EPER) method as
     described by Snyder et al. 2021, Journal of Astronimcal
     Telescopes, Instruments, and Systems, 7,
     048002. doi:10.1117/1.JATIS.7.4.048002
@@ -210,11 +212,24 @@ class CpCtiSolveTask(pipeBase.PipelineTask,
         calib : `lsst.ip.isr.DeferredChargeCalib`
             Calibration to populate with values.
         detector : `lsst.afw.cameraGeom.Detector`
+            Detector object containing the geometry information for
+            the amplifiers.
 
         Returns
         -------
         calib : `lsst.ip.isr.DeferredChargeCalib`
             Populated calibration.
+
+        Notes
+        -----
+        The original CTISIM code uses a data model in which the
+        "overscan" consists of the standard serial overscan bbox with
+        the values for the last imaging data column prepended to that
+        list.  This version of the code keeps the overscan and imaging
+        sections separate, and so a -1 offset is needed to ensure that
+        the same columns are used for fitting between this code and
+        CTISIM.  This offset removes that last imaging data column
+        from the count.
         """
         # Range to fit.  These are in "camera" coordinates, and so
         # need to have the count for last image column removed.
@@ -300,11 +315,24 @@ class CpCtiSolveTask(pipeBase.PipelineTask,
         calib : `lsst.ip.isr.DeferredChargeCalib`
             Calibration to populate with values.
         detector : `lsst.afw.cameraGeom.Detector`
+            Detector object containing the geometry information for
+            the amplifiers.
 
         Returns
         -------
         calib : `lsst.ip.isr.DeferredChargeCalib`
             Populated calibration.
+
+        Notes
+        -----
+        The original CTISIM code uses a data model in which the
+        "overscan" consists of the standard serial overscan bbox with
+        the values for the last imaging data column prepended to that
+        list.  This version of the code keeps the overscan and imaging
+        sections separate, and so a -1 offset is needed to ensure that
+        the same columns are used for fitting between this code and
+        CTISIM.  This offset removes that last imaging data column
+        from the count.
         """
         # Range to fit.  These are in "camera" coordinates, and so
         # need to have the count for last image column removed.
@@ -439,11 +467,24 @@ class CpCtiSolveTask(pipeBase.PipelineTask,
         calib : `lsst.ip.isr.DeferredChargeCalib`
             Calibration to populate with values.
         detector : `lsst.afw.cameraGeom.Detector`
+            Detector object containing the geometry information for
+            the amplifiers.
 
         Returns
         -------
         calib : `lsst.ip.isr.DeferredChargeCalib`
             Populated calibration.
+
+        Notes
+        -----
+        The original CTISIM code uses a data model in which the
+        "overscan" consists of the standard serial overscan bbox with
+        the values for the last imaging data column prepended to that
+        list.  This version of the code keeps the overscan and imaging
+        sections separate, and so a -1 offset is needed to ensure that
+        the same columns are used for fitting between this code and
+        CTISIM.  This offset removes that last imaging data column
+        from the count.
         """
         # Range to fit.  These are in "camera" coordinates, and so
         # need to have the count for last image column removed.
@@ -680,9 +721,7 @@ class OverscanModel:
 
 
 class SimpleModel(OverscanModel):
-    """Simple analytic overscan model.
-
-    """
+    """Simple analytic overscan model."""
 
     @staticmethod
     def model_results(params, signal, num_transfers, start=1, stop=10):
@@ -725,6 +764,13 @@ class SimpleModel(OverscanModel):
         res = np.zeros((signal.shape[0], x.shape[0]))
 
         for i, s in enumerate(signal):
+            # This is largely equivalent to equation 2.  The minimum
+            # indicates that a trap cannot emit more charge than is
+            # available, nor can it emit more charge than it can hold.
+            # This scales the exponential release of charge from the
+            # trap.  The next term defines the contribution from the
+            # global CTI at each pixel transfer, and the final term
+            # includes the contribution from local CTI effects.
             res[i, :] = (np.minimum(v['trapsize'], s*v['scaling'])
                          * (np.exp(1/v['emissiontime']) - 1.0)
                          * np.exp(-x/v['emissiontime'])
@@ -814,7 +860,7 @@ class SegmentSimulator:
         Image data array.
     prescan_width : `int`
         Number of serial prescan columns.
-    output_amplifier : `lsst.cp.pipe.BaseOutputAmplifier`
+    output_amplifier : `lsst.cp.pipe.FloatingOutputAmplifier`
         An object holding the gain, read noise, and global_offset.
     cti : `float`
         Global CTI value.
@@ -888,7 +934,7 @@ class SegmentSimulator:
         This method performs the serial readout of a segment image
         given the appropriate SerialRegister object and the properties
         of the ReadoutAmplifier.  Additional arguments can be provided
-        to account for the number of desired overscan transfers The
+        to account for the number of desired overscan transfers. The
         result is a simulated final segment image, in ADU.
 
         Parameters
@@ -981,7 +1027,7 @@ class FloatingOutputAmplifier:
         Parameters
         ----------
         old : `np.ndarray`, (,)
-            Previous iteration?
+            Previous iteration.
         signal : `np.ndarray`, (,)
             Current column measurements.
 
