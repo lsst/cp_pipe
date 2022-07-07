@@ -165,18 +165,18 @@ class CpCtiSolveTask(pipeBase.PipelineTask,
         RuntimeError
             Raised if data from multiple detectors are passed in.
         """
-        detectorSet = sorted(set([d['detector'] for d in inputDims]))
+        detectorSet = set([d['detector'] for d in inputDims])
         if len(detectorSet) != 1:
             raise RuntimeError("Inputs for too many detectors passed.")
-        detectorId = detectorSet[0]
+        detectorId = detectorSet.pop()
         detector = camera[detectorId]
 
         # Initialize with detector.
         calib = DeferredChargeCalib(camera=camera, detector=detector)
 
-        localCalib = self.localOffsets(inputMeasurements, calib, detector)
+        localCalib = self.solveLocalOffsets(inputMeasurements, calib, detector)
 
-        globalCalib = self.globalCti(inputMeasurements, localCalib, detector)
+        globalCalib = self.solveGlobalCti(inputMeasurements, localCalib, detector)
 
         finalCalib = self.findTraps(inputMeasurements, globalCalib, detector)
 
@@ -184,7 +184,7 @@ class CpCtiSolveTask(pipeBase.PipelineTask,
             outputCalib=finalCalib,
         )
 
-    def localOffsets(self, inputMeasurements, calib, detector):
+    def solveLocalOffsets(self, inputMeasurements, calib, detector):
         """Solve for local (pixel-to-pixel) electronic offsets.
 
         This method fits for \tau_L, the local electronic offset decay
@@ -251,11 +251,16 @@ class CpCtiSolveTask(pipeBase.PipelineTask,
             # leaks into the overscan region.
             signal = []
             data = []
+            Nskipped = 0
             for exposureEntry in inputMeasurements:
                 exposureDict = exposureEntry['CTI']
                 if exposureDict[ampName]['IMAGE_MEAN'] < self.config.maxImageMean:
                     signal.append(exposureDict[ampName]['IMAGE_MEAN'])
                     data.append(exposureDict[ampName]['OVERSCAN_VALUES'][start:stop+1])
+                else:
+                    Nskipped += 1
+            self.log.info(f"Skipped {Nskipped} exposures brighter than {self.config.maxImageMean}.")
+
             signal = np.array(signal)
             data = np.array(data)
 
@@ -282,14 +287,14 @@ class CpCtiSolveTask(pipeBase.PipelineTask,
                 self.log.warning("Electronics fitting failure for amplifier %s.", ampName)
 
             calib.globalCti[ampName] = 10**result.params['ctiexp']
-            calib.driftScale[ampName] = result.params['driftscale'].value if result.success else 2.4
-            calib.decayTime[ampName] = result.params['decaytime'].value if result.success else 0.0
+            calib.driftScale[ampName] = result.params['driftscale'].value if result.success else 0.0
+            calib.decayTime[ampName] = result.params['decaytime'].value if result.success else 2.4
             self.log.info("CTI Local Fit %s: cti: %g decayTime: %g driftScale %g",
                           ampName, calib.globalCti[ampName], calib.decayTime[ampName],
                           calib.driftScale[ampName])
         return calib
 
-    def globalCti(self, inputMeasurements, calib, detector):
+    def solveGlobalCti(self, inputMeasurements, calib, detector):
         """Solve for global CTI constant.
 
         This method solves for the mean global CTI, b.
@@ -354,11 +359,16 @@ class CpCtiSolveTask(pipeBase.PipelineTask,
             # leaks into the overscan region.
             signal = []
             data = []
+            Nskipped = 0
             for exposureEntry in inputMeasurements:
                 exposureDict = exposureEntry['CTI']
                 if exposureDict[ampName]['IMAGE_MEAN'] < self.config.maxSignalForCti:
                     signal.append(exposureDict[ampName]['IMAGE_MEAN'])
                     data.append(exposureDict[ampName]['OVERSCAN_VALUES'][start:stop+1])
+                else:
+                    Nskipped += 1
+            self.log.info(f"Skipped {Nskipped} exposures brighter than {self.config.maxSignalForCti}.")
+
             signal = np.array(signal)
             data = np.array(data)
 
@@ -508,13 +518,17 @@ class CpCtiSolveTask(pipeBase.PipelineTask,
             signal = []
             data = []
             new_signal = []
+            Nskipped = 0
             for exposureEntry in inputMeasurements:
                 exposureDict = exposureEntry['CTI']
                 if exposureDict[ampName]['IMAGE_MEAN'] < self.config.maxImageMean:
                     signal.append(exposureDict[ampName]['IMAGE_MEAN'])
                     data.append(exposureDict[ampName]['OVERSCAN_VALUES'][start:stop+1])
-                if exposureDict[ampName]['LAST_MEAN'] < self.config.maxImageMean:
                     new_signal.append(exposureDict[ampName]['LAST_MEAN'])
+                else:
+                    Nskipped += 1
+            self.log.info(f"Skipped {Nskipped} exposures brighter than {self.config.maxSignalForCti}.")
+
             signal = np.array(signal)
             data = np.array(data)
             new_signal = np.array(new_signal)
@@ -751,10 +765,7 @@ class SimpleModel(OverscanModel):
             Model results.
         """
         v = params.valuesdict()
-        try:
-            v['cti'] = 10**v['ctiexp']
-        except KeyError:
-            pass
+        v['cti'] = 10**v['ctiexp']
 
         # Adjust column numbering to match DM overscan bbox.
         start += 1
@@ -1057,6 +1068,8 @@ class FloatingOutputAmplifier:
         """
         if scale < 0.0:
             raise ValueError("Scale must be greater than or equal to 0.")
+        if np.isnan(scale):
+            raise ValueError("Scale must be real-valued number, not NaN.")
         self.scale = scale
         if decay_time <= 0.0:
             raise ValueError("Decay time must be greater than 0.")
