@@ -213,8 +213,11 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         """
         # Assemble individual PTC datasets into a single PTC dataset.
         ampNames = np.unique(inputCovariances[0].ampNames)
-        datasetPtc = PhotonTransferCurveDataset(ampNames, self.config.ptcFitType,
-                                                self.config.maximumRangeCovariancesAstier)
+        detector = camera[0]
+        datasetPtc = PhotonTransferCurveDataset(ampNames=ampNames,
+                                                ptcFitType=self.config.ptcFitType,
+                                                covMatrixSide=self.config.maximumRangeCovariancesAstier,
+                                                detector=detector)
         for partialPtcDataset in inputCovariances:
             # Ignore dummy datasets
             if partialPtcDataset.ptcFitType == 'DUMMY':
@@ -281,11 +284,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             # approximation (Eq. 16).  Fill up
             # PhotonTransferCurveDataset object.
             datasetPtc = self.fitMeasurementsToModel(datasetPtc)
-        if inputExpList is not None:
-            # It should be a list of exposures, to get the detector.
-            detector = inputExpList[0].getDetector()
-        else:
-            detector = None
+
         datasetPtc.updateMetadata(setDate=True, camera=camera, detector=detector)
 
         return pipeBase.Struct(
