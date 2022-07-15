@@ -295,8 +295,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
         # used to ensure that the number of output and input
         # dimensions match.
         dummyPtcDataset = PhotonTransferCurveDataset(ampNames, 'DUMMY',
-                                                     self.config.maximumRangeCovariancesAstier,
-                                                     detector=detector)
+                                                     self.config.maximumRangeCovariancesAstier)
 
         readNoiseDict = {ampName: 0.0 for ampName in ampNames}
         for ampName in ampNames:
@@ -344,8 +343,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
 
             nAmpsNan = 0
             partialPtcDataset = PhotonTransferCurveDataset(ampNames, 'PARTIAL',
-                                                           self.config.maximumRangeCovariancesAstier,
-                                                           detector=detector)
+                                                           self.config.maximumRangeCovariancesAstier)
             for ampNumber, amp in enumerate(detector):
                 ampName = amp.getName()
                 # covAstier: [(i, j, var (cov[0,0]), cov, npix) for

@@ -216,8 +216,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         detector = camera[0]
         datasetPtc = PhotonTransferCurveDataset(ampNames=ampNames,
                                                 ptcFitType=self.config.ptcFitType,
-                                                covMatrixSide=self.config.maximumRangeCovariancesAstier,
-                                                detector=detector)
+                                                covMatrixSide=self.config.maximumRangeCovariancesAstier)
         for partialPtcDataset in inputCovariances:
             # Ignore dummy datasets
             if partialPtcDataset.ptcFitType == 'DUMMY':
