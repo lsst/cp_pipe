@@ -187,10 +187,11 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             Output data refs to persist.
         """
         inputs = butlerQC.get(inputRefs)
-        outputs = self.run(inputCovariances=inputs['inputCovariances'], camera=inputs['camera'])
+        detId = inputRefs.inputCovariances[0].dataId['detector']
+        outputs = self.run(inputCovariances=inputs['inputCovariances'], camera=inputs['camera'], detId=detId)
         butlerQC.put(outputs, outputRefs)
 
-    def run(self, inputCovariances, camera=None, inputExpList=None):
+    def run(self, inputCovariances, camera=None, inputExpList=None, detId=0):
         """Fit measured covariances to different models.
 
         Parameters
@@ -201,7 +202,10 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             Input camera.
         inputExpList : `list` [`~lsst.afw.image.ExposureF`], optional
             List of exposures.
-
+        detId : `int`
+            Detector ID to locate the detector in teh camera and
+            populate the `lsst.ip.isr.PhotonTransferCurveDataset`
+            metadata.
         Returns
         -------
         results : `lsst.pipe.base.Struct`
@@ -213,7 +217,6 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         """
         # Assemble individual PTC datasets into a single PTC dataset.
         ampNames = np.unique(inputCovariances[0].ampNames)
-        detector = camera[0]
         datasetPtc = PhotonTransferCurveDataset(ampNames=ampNames,
                                                 ptcFitType=self.config.ptcFitType,
                                                 covMatrixSide=self.config.maximumRangeCovariancesAstier)
@@ -284,6 +287,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             # PhotonTransferCurveDataset object.
             datasetPtc = self.fitMeasurementsToModel(datasetPtc)
 
+        detector = camera[detId]
         datasetPtc.updateMetadata(setDate=True, camera=camera, detector=detector)
 
         return pipeBase.Struct(
