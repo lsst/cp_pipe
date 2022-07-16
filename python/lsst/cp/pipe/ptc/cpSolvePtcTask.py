@@ -287,7 +287,10 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             # PhotonTransferCurveDataset object.
             datasetPtc = self.fitMeasurementsToModel(datasetPtc)
 
-        detector = camera[detId]
+        if camera:
+            detector = camera[detId]
+        else:
+            detector = None
         datasetPtc.updateMetadata(setDate=True, camera=camera, detector=detector)
 
         return pipeBase.Struct(
