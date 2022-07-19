@@ -191,7 +191,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
         outputs = self.run(inputCovariances=inputs['inputCovariances'], camera=inputs['camera'], detId=detId)
         butlerQC.put(outputs, outputRefs)
 
-    def run(self, inputCovariances, camera=None, inputExpList=None, detId=0):
+    def run(self, inputCovariances, camera=None, detId=0):
         """Fit measured covariances to different models.
 
         Parameters
@@ -200,10 +200,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             List of lsst.ip.isr.PhotonTransferCurveDataset datasets.
         camera : `lsst.afw.cameraGeom.Camera`, optional
             Input camera.
-        inputExpList : `list` [`~lsst.afw.image.ExposureF`], optional
-            List of exposures.
         detId : `int`
-            Detector ID to locate the detector in teh camera and
+            Detector ID to locate the detector in the camera and
             populate the `lsst.ip.isr.PhotonTransferCurveDataset`
             metadata.
         Returns
