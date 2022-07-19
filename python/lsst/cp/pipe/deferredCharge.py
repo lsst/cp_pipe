@@ -382,6 +382,10 @@ class CpCtiSolveTask(pipeBase.PipelineTask,
             overscan2 = data[:, 1]
             test = (np.array(overscan1) + np.array(overscan2))/(nCols*np.array(signal))
             testResult = np.median(test) > 5.E-6
+            self.log.info("Estimate of CTI test is %f for amp %s, %s.", np.median(test), ampName,
+                          "full fitting will be performed" if testResult else
+                          "only global CTI fitting will be performed")
+
             self.debugView(ampName, signal, test)
 
             params = Parameters()
