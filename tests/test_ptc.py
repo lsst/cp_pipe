@@ -166,7 +166,8 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
         resultsExtract = extractTask.run(inputExp=expDict, inputDims=expIds,
                                          taskMetadata=[self.metadataContents])
-        resultsSolve = solveTask.run(resultsExtract.outputCovariances)
+        resultsSolve = solveTask.run(resultsExtract.outputCovariances,
+                                     camera=FakeCamera([self.flatExp1.getDetector()]))
 
         for amp in self.ampNames:
             self.assertAlmostEqual(resultsSolve.outputPtcDataset.gain[amp], inputGain, places=2)

@@ -440,6 +440,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
             # and assemble the measurements in the datasets
             # in an addecuate manner for fitting a PTC
             # model.
+            partialPtcDataset.updateMetadata(setDate=True, detector=detector)
             partialPtcDatasetList[datasetIndex] = partialPtcDataset
 
             if nAmpsNan == len(ampNames):
