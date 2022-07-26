@@ -24,8 +24,8 @@ import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 import lsst.pipe.base.connectionTypes as cT
 
-from lsst.pipe.drivers.background import (FocalPlaneBackground, MaskObjectsTask, SkyMeasurementTask,
-                                          FocalPlaneBackgroundConfig)
+from lsst.pipe.tasks.background import (FocalPlaneBackground, MaskObjectsTask, SkyMeasurementTask,
+                                        FocalPlaneBackgroundConfig)
 from lsst.daf.base import PropertyList
 from ._lookupStaticCalibration import lookupStaticCalibration
 from .cpCombine import CalibCombineTask
@@ -136,7 +136,7 @@ class CpSkyImageTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
 
             ``maskedExp`` : `lsst.afw.image.Exposure`
                 The detection-masked version of the ``inputExp``.
-            ``maskedBkg`` : `lsst.pipe.drivers.FocalPlaneBackground.`
+            ``maskedBkg`` : `lsst.pipe.tasks.background.FocalPlaneBackground`
                 The partial focal plane background containing only
                 this exposure/detector's worth of data.
         """
@@ -206,7 +206,7 @@ class CpSkyScaleMeasureTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
 
         Parameters
         ----------
-        inputBkgs : `list` [`lsst.pipe.drivers.FocalPlaneBackground`]
+        inputBkgs : `list` [`lsst.pipe.tasks.background.FocalPlaneBackground`]
             A list of all of the partial focal plane backgrounds, one
             from each detector in this exposure.
 
@@ -215,7 +215,7 @@ class CpSkyScaleMeasureTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         results : `lsst.pipe.base.Struct`
             The results struct containing:
 
-            ``outputBkg`` : `lsst.pipe.drivers.FocalPlaneBackground`
+            ``outputBkg`` : `lsst.pipe.tasks.background.FocalPlaneBackground`
                 The full merged background for the entire focal plane.
             ``outputScale`` : `lsst.daf.base.PropertyList`
                 A metadata containing the median level of the
@@ -310,7 +310,7 @@ class CpSkySubtractBackgroundTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         ----------
         inputExp : `lsst.afw.image.Exposure`
             The ISR processed, detection masked image.
-        inputBkg : `lsst.pipe.drivers.FocalPlaneBackground.
+        inputBkg : `lsst.pipe.tasks.background.FocalPlaneBackground.
             Full focal plane background for this exposure.
         inputScale : `lsst.daf.base.PropertyList`
             Metadata containing the scale factor.
