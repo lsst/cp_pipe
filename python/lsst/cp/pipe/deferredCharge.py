@@ -31,6 +31,16 @@ from lmfit import Minimizer, Parameters
 
 from ._lookupStaticCalibration import lookupStaticCalibration
 
+__all__ = ('CpCtiSolveConnections',
+           'CpCtiSolveConfig',
+           'CpCtiSolveTask',
+           'OverscanModel',
+           'SimpleModel',
+           'SimulatedModel',
+           'SegmentSimulator',
+           'FloatingOutputAmplifier',
+           )
+
 
 class CpCtiSolveConnections(pipeBase.PipelineTaskConnections,
                             dimensions=("instrument", "detector")):
