@@ -758,7 +758,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
 
         ratioIm /= sumIm
 
-        const = afwMath.makeStatistics(ratioIm, afwMath.MEANCLIP, imStatsCtrl).getValue()
+        const = afwMath.makeStatistics(ratioIm, afwMath.MEAN, imStatsCtrl).getValue()
         gain = 1. / const
 
         if correctionType == 'SIMPLE':
