@@ -32,7 +32,7 @@ from lsst.ip.isr import (Linearizer, IsrProvenance, PhotodiodeCalib)
 from .utils import (funcPolynomial, irlsFit)
 from ._lookupStaticCalibration import lookupStaticCalibration
 
-__all__ = ["LinearitySolveTask", "LinearitySolveConfig", "MeasureLinearityTask"]
+__all__ = ["LinearitySolveTask", "LinearitySolveConfig"]
 
 
 class LinearitySolveConnections(pipeBase.PipelineTaskConnections,
@@ -149,7 +149,7 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
     )
 
 
-class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
+class LinearitySolveTask(pipeBase.PipelineTask):
     """Fit the linearity from the PTC dataset.
     """
 
@@ -559,54 +559,3 @@ class LinearitySolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
                 elif ans in ('x', ):
                     exit()
             plt.close()
-
-
-class MeasureLinearityConfig(pexConfig.Config):
-    solver = pexConfig.ConfigurableField(
-        target=LinearitySolveTask,
-        doc="Task to convert PTC data to linearity solutions.",
-    )
-
-
-class MeasureLinearityTask(pipeBase.CmdLineTask):
-    """Stand alone Gen2 linearity measurement.
-
-    This class wraps the Gen3 linearity task to allow it to be run as
-    a Gen2 CmdLineTask.
-    """
-
-    ConfigClass = MeasureLinearityConfig
-    _DefaultName = "measureLinearity"
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.makeSubtask("solver")
-
-    def runDataRef(self, dataRef):
-        """Run new linearity code for gen2.
-
-        Parameters
-        ----------
-        dataRef : `lsst.daf.persistence.ButlerDataRef`
-            Input dataref for the photon transfer curve data.
-
-        Returns
-        -------
-        results : `lsst.pipe.base.Struct`
-            The results struct containing:
-
-            ``outputLinearizer``
-                Final linearizer calibration (`lsst.ip.isr.Linearizer`).
-            ``outputProvenance``
-                Provenance data for the new calibration
-                (`lsst.ip.isr.IsrProvenance`).
-        """
-        ptc = dataRef.get('photonTransferCurveDataset')
-        camera = dataRef.get('camera')
-        inputDims = dataRef.dataId  # This is the closest gen2 has.
-        linearityResults = self.solver.run(ptc, camera=camera, inputDims=inputDims)
-
-        inputDims['calibDate'] = linearityResults.outputLinearizer.getMetadata().get('CALIBDATE')
-        butler = dataRef.getButler()
-        butler.put(linearityResults.outputLinearizer, "linearizer", inputDims)
-        return linearityResults

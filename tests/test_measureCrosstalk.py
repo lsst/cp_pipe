@@ -24,7 +24,8 @@ import unittest
 import numpy as np
 
 import lsst.utils.tests
-from lsst.cp.pipe.measureCrosstalk import MeasureCrosstalkTask, MeasureCrosstalkConfig
+from lsst.cp.pipe.measureCrosstalk import CrosstalkExtractTask, CrosstalkExtractConfig
+from lsst.cp.pipe.measureCrosstalk import CrosstalkSolveTask, CrosstalkSolveConfig
 import lsst.ip.isr.isrMock as isrMock
 
 
@@ -63,10 +64,10 @@ class MeasureCrosstalkTaskCases(lsst.utils.tests.TestCase):
         mockTask.config.biasLevel = 0.0
         mockTask.config.readNoise = 100.0
 
-        mcConfig = MeasureCrosstalkConfig()
-        mcConfig.extract.threshold = 4000
-        mcConfig.extract.isTrimmed = isTrimmed
-        mct = MeasureCrosstalkTask(config=mcConfig)
+        ctexConfig = CrosstalkExtractConfig()
+        ctexConfig.threshold = 4000
+        ctexConfig.isTrimmed = isTrimmed
+        ctex = CrosstalkExtractTask(config=ctexConfig)
         fullResult = []
 
         mockTask.config.isTrimmed = isTrimmed
@@ -82,11 +83,13 @@ class MeasureCrosstalkTaskCases(lsst.utils.tests.TestCase):
             mockTask.config.sourceY = ((np.random.random(size=nSources) * 50.0).tolist())
 
             exposure = mockTask.run()
-            result = mct.extract.run(exposure)
+            result = ctex.run(exposure)
             fullResult.append(result.outputRatios)
 
         # Generate the final measured CT ratios, uncertainties, pixel counts.
-        finalResult = mct.solver.run(fullResult)
+        ctsConfig = CrosstalkSolveConfig()
+        cts = CrosstalkSolveTask(config=ctsConfig)
+        finalResult = cts.run(fullResult)
         calib = finalResult.outputCrosstalk
 
         # Needed because measureCrosstalk cannot find coefficients equal to 0.0

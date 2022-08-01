@@ -34,16 +34,13 @@ import lsst.afw.display as afwDisplay
 from lsst.afw import cameraGeom
 from lsst.geom import Box2I, Point2I
 from lsst.meas.algorithms import SourceDetectionTask
-from lsst.ip.isr import IsrTask, Defects
+from lsst.ip.isr import Defects
 from .utils import countMaskedPixels
-from lsst.pipe.tasks.getRepositoryData import DataRefListRunner
-from lsst.utils.timer import timeMethod
 
 from ._lookupStaticCalibration import lookupStaticCalibration
 
 __all__ = ['MeasureDefectsTaskConfig', 'MeasureDefectsTask',
-           'MergeDefectsTaskConfig', 'MergeDefectsTask',
-           'FindDefectsTask', 'FindDefectsTaskConfig', ]
+           'MergeDefectsTaskConfig', 'MergeDefectsTask', ]
 
 
 class MeasureDefectsConnections(pipeBase.PipelineTaskConnections,
@@ -125,7 +122,7 @@ class MeasureDefectsTaskConfig(pipeBase.PipelineTaskConfig,
             raise ValueError("nSigmaDark must be below 0.0.")
 
 
-class MeasureDefectsTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
+class MeasureDefectsTask(pipeBase.PipelineTask):
     """Measure the defects from one exposure.
     """
 
@@ -613,7 +610,7 @@ class MergeDefectsTaskConfig(pipeBase.PipelineTaskConfig,
     )
 
 
-class MergeDefectsTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
+class MergeDefectsTask(pipeBase.PipelineTask):
     """Merge the defects from multiple exposures.
     """
 
@@ -709,167 +706,3 @@ class MergeDefectsTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
         return pipeBase.Struct(
             mergedDefects=merged,
         )
-
-
-class FindDefectsTaskConfig(pexConfig.Config):
-    measure = pexConfig.ConfigurableField(
-        target=MeasureDefectsTask,
-        doc="Task to measure single frame defects.",
-    )
-    merge = pexConfig.ConfigurableField(
-        target=MergeDefectsTask,
-        doc="Task to merge multiple defects together.",
-    )
-
-    isrForFlats = pexConfig.ConfigurableField(
-        target=IsrTask,
-        doc="Task to perform instrumental signature removal",
-    )
-    isrForDarks = pexConfig.ConfigurableField(
-        target=IsrTask,
-        doc="Task to perform instrumental signature removal",
-    )
-    isrMandatoryStepsFlats = pexConfig.ListField(
-        dtype=str,
-        doc=("isr operations that must be performed for valid results when using flats."
-             " Raises if any of these are False"),
-        default=['doAssembleCcd', 'doFringe']
-    )
-    isrMandatoryStepsDarks = pexConfig.ListField(
-        dtype=str,
-        doc=("isr operations that must be performed for valid results when using darks. "
-             "Raises if any of these are False"),
-        default=['doAssembleCcd', 'doFringe']
-    )
-    isrForbiddenStepsFlats = pexConfig.ListField(
-        dtype=str,
-        doc=("isr operations that must NOT be performed for valid results when using flats."
-             " Raises if any of these are True"),
-        default=['doBrighterFatter', 'doUseOpticsTransmission',
-                 'doUseFilterTransmission', 'doUseSensorTransmission', 'doUseAtmosphereTransmission']
-    )
-    isrForbiddenStepsDarks = pexConfig.ListField(
-        dtype=str,
-        doc=("isr operations that must NOT be performed for valid results when using darks."
-             " Raises if any of these are True"),
-        default=['doBrighterFatter', 'doUseOpticsTransmission',
-                 'doUseFilterTransmission', 'doUseSensorTransmission', 'doUseAtmosphereTransmission']
-    )
-    isrDesirableSteps = pexConfig.ListField(
-        dtype=str,
-        doc=("isr operations that it is advisable to perform, but are not mission-critical."
-             " WARNs are logged for any of these found to be False."),
-        default=['doBias']
-    )
-
-    ccdKey = pexConfig.Field(
-        dtype=str,
-        doc="The key by which to pull a detector from a dataId, e.g. 'ccd' or 'detector'",
-        default='ccd',
-    )
-    imageTypeKey = pexConfig.Field(
-        dtype=str,
-        doc="The key for the butler to use by which to check whether images are darks or flats",
-        default='imageType',
-    )
-
-
-class FindDefectsTask(pipeBase.CmdLineTask):
-    """Task for finding defects in sensors.
-
-    The task has two modes of operation, defect finding in raws and in
-    master calibrations, which work as follows.
-
-    **Master calib defect finding**
-
-    A single visit number is supplied, for which the corresponding
-    flat & dark will be used. This is because, at present at least,
-    there is no way to pass a calibration exposure ID from the command
-    line to a command line task.
-
-    The task retrieves the corresponding dark and flat exposures for
-    the supplied visit. If a flat is available the task will (be able
-    to) look for both bright and dark defects. If only a dark is found
-    then only bright defects will be sought.
-
-    All pixels above/below the specified nSigma which lie with the
-    specified borders for flats/darks are identified as defects.
-
-    **Raw visit defect finding**
-
-    A list of exposure IDs are supplied for defect finding. The task
-    will detect bright pixels in the dark frames, if supplied, and
-    bright & dark pixels in the flats, if supplied, i.e. if you only
-    supply darks you will only be given bright defects. This is done
-    automatically from the imageType of the exposure, so the input
-    exposure list can be a mix.
-
-    As with the master calib detection, all pixels above/below the
-    specified nSigma which lie with the specified borders for
-    flats/darks are identified as defects. Then, a post-processing
-    step is done to merge these detections, with pixels appearing in a
-    fraction [0..1] of the images are kept as defects and those
-    appearing below that occurrence-threshold are discarded.
-    """
-
-    ConfigClass = FindDefectsTaskConfig
-    _DefaultName = "findDefects"
-
-    RunnerClass = DataRefListRunner
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.makeSubtask("measure")
-        self.makeSubtask("merge")
-
-    @timeMethod
-    def runDataRef(self, dataRefList):
-        """Run the defect finding task.
-
-        Find the defects, as described in the main task docstring, from a
-        dataRef and a list of visit(s).
-
-        Parameters
-        ----------
-        dataRefList : `list` [`lsst.daf.persistence.ButlerDataRef`]
-            dataRefs for the data to be checked for defects.
-
-        Returns
-        -------
-        result : `lsst.pipe.base.Struct`
-            Result struct with Components:
-
-            ``defects``
-                  The defects found by the task (`lsst.ip.isr.Defects`).
-            ``exitStatus``
-                  The exit code (`int`).
-        """
-        dataRef = dataRefList[0]
-        camera = dataRef.get("camera")
-
-        singleExpDefects = []
-        activeChip = None
-        for dataRef in dataRefList:
-            exposure = dataRef.get("postISRCCD")
-            if activeChip:
-                if exposure.getDetector().getName() != activeChip:
-                    raise RuntimeError("Too many input detectors supplied!")
-            else:
-                activeChip = exposure.getDetector().getName()
-
-            result = self.measure.run(exposure, camera)
-            singleExpDefects.append(result.outputDefects)
-
-        finalResults = self.merge.run(singleExpDefects, camera)
-        metadata = finalResults.mergedDefects.getMetadata()
-        inputDims = {'calibDate': metadata['CALIBDATE'],
-                     'raftName': metadata['RAFTNAME'],
-                     'detectorName': metadata['SLOTNAME'],
-                     'detector': metadata['DETECTOR'],
-                     'ccd': metadata['DETECTOR'],
-                     'ccdnum': metadata['DETECTOR']}
-
-        butler = dataRef.getButler()
-        butler.put(finalResults.mergedDefects, "defects", inputDims)
-
-        return finalResults

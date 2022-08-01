@@ -29,16 +29,14 @@ import lsst.pipe.base.connectionTypes as cT
 from lsstDebug import getDebugFrame
 from lsst.afw.detection import FootprintSet, Threshold
 from lsst.afw.display import getDisplay
-from lsst.pex.config import Config, Field, ListField, ConfigurableField
+from lsst.pex.config import Field, ListField
 from lsst.ip.isr import CrosstalkCalib, IsrProvenance
-from lsst.pipe.tasks.getRepositoryData import DataRefListRunner
 from lsst.cp.pipe.utils import (ddict2dict, sigmaClipCorrection)
 
 from ._lookupStaticCalibration import lookupStaticCalibration
 
 __all__ = ["CrosstalkExtractConfig", "CrosstalkExtractTask",
-           "CrosstalkSolveTask", "CrosstalkSolveConfig",
-           "MeasureCrosstalkConfig", "MeasureCrosstalkTask"]
+           "CrosstalkSolveTask", "CrosstalkSolveConfig"]
 
 
 class CrosstalkExtractConnections(pipeBase.PipelineTaskConnections,
@@ -125,8 +123,7 @@ class CrosstalkExtractConfig(pipeBase.PipelineTaskConfig,
                 self.badMask = [mask for mask in self.badMask if mask != 'SAT']
 
 
-class CrosstalkExtractTask(pipeBase.PipelineTask,
-                           pipeBase.CmdLineTask):
+class CrosstalkExtractTask(pipeBase.PipelineTask):
     """Task to measure pixel ratios to find crosstalk.
     """
 
@@ -388,8 +385,7 @@ class CrosstalkSolveConfig(pipeBase.PipelineTaskConfig,
     )
 
 
-class CrosstalkSolveTask(pipeBase.PipelineTask,
-                         pipeBase.CmdLineTask):
+class CrosstalkSolveTask(pipeBase.PipelineTask):
     """Task to solve crosstalk from pixel ratios.
     """
 
@@ -716,117 +712,3 @@ class CrosstalkSolveTask(pipeBase.PipelineTask,
                     import pdb
                     pdb.set_trace()
             plt.close()
-
-
-class MeasureCrosstalkConfig(Config):
-    extract = ConfigurableField(
-        target=CrosstalkExtractTask,
-        doc="Task to measure pixel ratios.",
-    )
-    solver = ConfigurableField(
-        target=CrosstalkSolveTask,
-        doc="Task to convert ratio lists to crosstalk coefficients.",
-    )
-
-
-class MeasureCrosstalkTask(pipeBase.CmdLineTask):
-    """Measure intra-detector crosstalk.
-
-    See also
-    --------
-    lsst.ip.isr.crosstalk.CrosstalkCalib
-    lsst.cp.pipe.measureCrosstalk.CrosstalkExtractTask
-    lsst.cp.pipe.measureCrosstalk.CrosstalkSolveTask
-
-    Notes
-    -----
-    The crosstalk this method measures assumes that when a bright
-    pixel is found in one detector amplifier, all other detector
-    amplifiers may see a signal change in the same pixel location
-    (relative to the readout amplifier) as these other pixels are read
-    out at the same time.
-
-    After processing each input exposure through a limited set of ISR
-    stages, bright unmasked pixels above the threshold are identified.
-    The potential CT signal is found by taking the ratio of the
-    appropriate background-subtracted pixel value on the other
-    amplifiers to the input value on the source amplifier.  If the
-    source amplifier has a large number of bright pixels as well, the
-    background level may be elevated, leading to poor ratio
-    measurements.
-
-    The set of ratios found between each pair of amplifiers across all
-    input exposures is then gathered to produce the final CT
-    coefficients.  The sigma-clipped mean and sigma are returned from
-    these sets of ratios, with the coefficient to supply to the ISR
-    CrosstalkTask() being the multiplicative inverse of these values.
-
-    This Task simply calls the pipetask versions of the measure
-    crosstalk code.
-    """
-
-    ConfigClass = MeasureCrosstalkConfig
-    _DefaultName = "measureCrosstalk"
-
-    # Let's use this instead of messing with parseAndRun.
-    RunnerClass = DataRefListRunner
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.makeSubtask("extract")
-        self.makeSubtask("solver")
-
-    def runDataRef(self, dataRefList):
-        """Run extract task on each of inputs in the dataRef list, then pass
-        that to the solver task.
-
-        Parameters
-        ----------
-        dataRefList : `list` [`lsst.daf.peristence.ButlerDataRef`]
-            Data references for exposures for detectors to process.
-
-        Returns
-        -------
-        results : `lsst.pipe.base.Struct`
-            The results struct containing:
-
-            ``outputCrosstalk``
-                Final crosstalk calibration
-                (`lsst.ip.isr.CrosstalkCalib`).
-            ``outputProvenance``
-                Provenance data for the new calibration
-                (`lsst.ip.isr.IsrProvenance`).
-
-        Raises
-        ------
-        RuntimeError
-            Raised if multiple target detectors are supplied.
-        """
-        dataRef = dataRefList[0]
-        camera = dataRef.get("camera")
-
-        ratios = []
-        activeChip = None
-        for dataRef in dataRefList:
-            exposure = dataRef.get("postISRCCD")
-            if activeChip:
-                if exposure.getDetector().getName() != activeChip:
-                    raise RuntimeError("Too many input detectors supplied!")
-            else:
-                activeChip = exposure.getDetector().getName()
-
-            self.extract.debugView("extract", exposure)
-            result = self.extract.run(exposure)
-            ratios.append(result.outputRatios)
-
-        for detIter, detector in enumerate(camera):
-            if detector.getName() == activeChip:
-                detectorId = detIter
-        outputDims = {'instrument': camera.getName(),
-                      'detector': detectorId,
-                      }
-
-        finalResults = self.solver.run(ratios, camera=camera, outputDims=outputDims)
-        dataRef.put(finalResults.outputCrosstalk, "crosstalk")
-
-        return finalResults

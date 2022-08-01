@@ -22,21 +22,16 @@
 
 __all__ = ['PlotPhotonTransferCurveTask']
 
-import logging
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 from matplotlib import gridspec
-import os
 from matplotlib.backends.backend_pdf import PdfPages
-
-import lsst.ip.isr as isr
 
 from lsst.cp.pipe.utils import (funcAstier, funcPolynomial,
                                 calculateWeightedReducedChi2,
                                 getFitDataFromCovariances)
 from matplotlib.ticker import MaxNLocator
-from lsst.ip.isr import PhotonTransferCurveDataset
 
 
 class PlotPhotonTransferCurveTask():
@@ -78,28 +73,6 @@ class PlotPhotonTransferCurveTask():
         self.signalElectronsRelativeA = signalElectronsRelativeA
         self.plotNormalizedCovariancesNumberOfBins = plotNormalizedCovariancesNumberOfBins
         self.outDir = outDir
-
-    def runDataRef(self):
-        """Run the Photon Transfer Curve (PTC) plotting measurement task.
-        """
-        datasetFile = self.datasetFilename
-        datasetPtc = PhotonTransferCurveDataset.readFits(datasetFile)
-
-        dirname = self.outDir
-        if not os.path.exists(dirname):
-            os.makedirs(dirname)
-
-        detNum = self.detNum
-        filename = f"PTC_det{detNum}.pdf"
-        filenameFull = os.path.join(dirname, filename)
-
-        if self.linearizerFileName:
-            linearizer = isr.linearize.Linearizer.readFits(self.linearizerFileName)
-        else:
-            linearizer = None
-        self.run(filenameFull, datasetPtc, linearizer=linearizer, log=logging.getLogger(__name__))
-
-        return
 
     def run(self, filenameFull, datasetPtc, linearizer=None, log=None):
         """Make the plots for the PTC task"""
