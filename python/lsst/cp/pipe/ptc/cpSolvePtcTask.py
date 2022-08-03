@@ -389,7 +389,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
                 dataset.covariancesModelNoB[ampName] = listNanMatrix
                 dataset.aMatrixNoB[ampName] = nanMatrix
 
-                dataset.expIdMask[ampName] = np.repeat(np.nan, lenInputTimes)
+                dataset.expIdMask[ampName] = np.repeat(False, lenInputTimes)
                 dataset.gain[ampName] = np.nan
                 dataset.gainErr[ampName] = np.nan
                 dataset.noise[ampName] = np.nan
@@ -440,8 +440,10 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
             dataset.ptcFitParsError[ampName] = [np.nan]
             dataset.ptcFitChiSq[ampName] = np.nan
 
-            # Save full covariances, covariances models, and their weights
-            # dataset.expIdMask is already full
+            # Save full covariances, covariances models, and their weights.
+            # dataset.expIdMask is already full, but needs to be
+            # converted to bool.
+            dataset.expIdMask[ampName] = np.array(dataset.expIdMask[ampName], dtype=bool)
             dataset.covariances[ampName] = covAtAmp
             dataset.covariancesModel[ampName] = self.evalCovModel(muAtAmp,
                                                                   fitResults['fullModel']['a'],
