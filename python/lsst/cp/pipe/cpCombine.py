@@ -215,8 +215,7 @@ class CalibCombineConfig(pipeBase.PipelineTaskConfig,
     )
 
 
-class CalibCombineTask(pipeBase.PipelineTask,
-                       pipeBase.CmdLineTask):
+class CalibCombineTask(pipeBase.PipelineTask):
     """Task to combine calib exposures."""
 
     ConfigClass = CalibCombineConfig

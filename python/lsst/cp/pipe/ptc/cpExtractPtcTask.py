@@ -167,8 +167,7 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
     )
 
 
-class PhotonTransferCurveExtractTask(pipeBase.PipelineTask,
-                                     pipeBase.CmdLineTask):
+class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
     """Task to measure covariances from flat fields.
 
     This task receives as input a list of flat-field images

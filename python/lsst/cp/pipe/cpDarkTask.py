@@ -72,8 +72,7 @@ class CpDarkTaskConfig(pipeBase.PipelineTaskConfig,
     )
 
 
-class CpDarkTask(pipeBase.PipelineTask,
-                 pipeBase.CmdLineTask):
+class CpDarkTask(pipeBase.PipelineTask):
     """Combine pre-processed dark frames into a proposed master calibration.
     """
 
