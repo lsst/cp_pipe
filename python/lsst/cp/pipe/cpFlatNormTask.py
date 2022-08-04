@@ -75,8 +75,7 @@ class CpFlatMeasureTaskConfig(pipeBase.PipelineTaskConfig,
     )
 
 
-class CpFlatMeasureTask(pipeBase.PipelineTask,
-                        pipeBase.CmdLineTask):
+class CpFlatMeasureTask(pipeBase.PipelineTask):
     """Apply extra masking and measure image statistics.
     """
 
@@ -184,8 +183,7 @@ class CpFlatNormalizationTaskConfig(pipeBase.PipelineTaskConfig,
     )
 
 
-class CpFlatNormalizationTask(pipeBase.PipelineTask,
-                              pipeBase.CmdLineTask):
+class CpFlatNormalizationTask(pipeBase.PipelineTask):
     """Rescale merged flat frames to remove unequal screen illumination.
     """
 

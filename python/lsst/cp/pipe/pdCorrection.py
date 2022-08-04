@@ -75,7 +75,7 @@ class PhotodiodeCorrectionConfig(pipeBase.PipelineTaskConfig,
     """
 
 
-class PhotodiodeCorrectionTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
+class PhotodiodeCorrectionTask(pipeBase.PipelineTask):
     """Calculate the photodiode corrections.
     """
 

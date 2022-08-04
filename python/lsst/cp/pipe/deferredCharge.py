@@ -109,8 +109,7 @@ class CpCtiSolveConfig(pipeBase.PipelineTaskConfig,
     )
 
 
-class CpCtiSolveTask(pipeBase.PipelineTask,
-                     pipeBase.CmdLineTask):
+class CpCtiSolveTask(pipeBase.PipelineTask):
     """Combine CTI measurements to a final calibration.
 
     This task uses the extended pixel edge response (EPER) method as

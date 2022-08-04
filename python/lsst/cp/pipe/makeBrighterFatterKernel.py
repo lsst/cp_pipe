@@ -139,7 +139,7 @@ class BrighterFatterKernelSolveConfig(pipeBase.PipelineTaskConfig,
     )
 
 
-class BrighterFatterKernelSolveTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
+class BrighterFatterKernelSolveTask(pipeBase.PipelineTask):
     """Measure appropriate Brighter-Fatter Kernel from the PTC dataset.
     """
 

@@ -70,8 +70,7 @@ class CpFringeTaskConfig(pipeBase.PipelineTaskConfig,
         self.detection.reEstimateBackground = False
 
 
-class CpFringeTask(pipeBase.PipelineTask,
-                   pipeBase.CmdLineTask):
+class CpFringeTask(pipeBase.PipelineTask):
     """Combine pre-processed fringe frames into a proposed master calibration.
     """
 

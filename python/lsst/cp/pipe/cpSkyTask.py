@@ -102,7 +102,7 @@ class CpSkyImageConfig(pipeBase.PipelineTaskConfig,
                                           'EDGE', 'NO_DATA']
 
 
-class CpSkyImageTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
+class CpSkyImageTask(pipeBase.PipelineTask):
     """Mask the detections on the postISRCCD.
 
     This task maps the MaskObjectsTask across all of the initial ISR
@@ -190,7 +190,7 @@ class CpSkyScaleMeasureConfig(pipeBase.PipelineTaskConfig,
     pass
 
 
-class CpSkyScaleMeasureTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
+class CpSkyScaleMeasureTask(pipeBase.PipelineTask):
     """Measure per-exposure scale factors and merge focal plane backgrounds.
 
     Merge all the per-detector partial backgrounds to a full focal
@@ -282,7 +282,7 @@ class CpSkySubtractBackgroundConfig(pipeBase.PipelineTaskConfig,
     )
 
 
-class CpSkySubtractBackgroundTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
+class CpSkySubtractBackgroundTask(pipeBase.PipelineTask):
     """Subtract per-exposure background from individual detector masked images.
 
     The cpSkyMaskedIsr images constructed by CpSkyImageTask have the
@@ -375,7 +375,7 @@ class CpSkyCombineConfig(pipeBase.PipelineTaskConfig,
     )
 
 
-class CpSkyCombineTask(pipeBase.PipelineTask, pipeBase.CmdLineTask):
+class CpSkyCombineTask(pipeBase.PipelineTask):
     """Merge per-exposure measurements into a detector level calibration.
 
     Each of the per-detector results from all input exposures are

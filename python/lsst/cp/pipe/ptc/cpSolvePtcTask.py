@@ -138,8 +138,7 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
     )
 
 
-class PhotonTransferCurveSolveTask(pipeBase.PipelineTask,
-                                   pipeBase.CmdLineTask):
+class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
     """Task to fit the PTC from flat covariances.
 
     The first task of the PTC measurement pipeline,
