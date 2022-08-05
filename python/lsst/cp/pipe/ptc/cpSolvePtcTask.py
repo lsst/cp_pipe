@@ -930,18 +930,19 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 self.fillBadAmp(dataset, ptcFitType, ampName)
                 continue
             # Fit the PTC.
-            # The variance of the variance is Var(v)=2*v^2/Npix. This is already calculated
-            # in `makeCovArray` of CpPtcExtract. dataset.covariancesSqrtWeights[ampName][:,0,0] 
+            # The variance of the variance is Var(v)=2*v^2/Npix. This is
+            # already calculated in `makeCovArray` of CpPtcExtract.
+            # dataset.covariancesSqrtWeights[ampName][:,0,0]
             # has 1/sqrt(Var(v)).
-            weightsY = dataset.covariancesSqrtWeights[ampName][:,0,0][mask]
+            weightsY = dataset.covariancesSqrtWeights[ampName][:, 0, 0][mask]
             if self.config.doFitBootstrap:
                 parsFit, parsFitErr, reducedChiSqPtc = fitBootstrap(parsIniPtc, meanVecFinal,
                                                                     varVecFinal, ptcFunc,
-                                                                    weightsY=1./np.sqrt(varVecFinal))
+                                                                    weightsY=weightsY)
             else:
                 parsFit, parsFitErr, reducedChiSqPtc = fitLeastSq(parsIniPtc, meanVecFinal,
                                                                   varVecFinal, ptcFunc,
-                                                                  weightsY=1./np.sqrt(varVecFinal))
+                                                                  weightsY=weightsY)
             dataset.ptcFitPars[ampName] = parsFit
             dataset.ptcFitParsError[ampName] = parsFitErr
             dataset.ptcFitChiSq[ampName] = reducedChiSqPtc
