@@ -345,8 +345,6 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                                                            self.config.maximumRangeCovariancesAstier)
             for ampNumber, amp in enumerate(detector):
                 ampName = amp.getName()
-                # covAstier: [(i, j, var (cov[0,0]), cov, npix) for
-                # (i,j) in {maxLag, maxLag}^2]
                 if self.config.detectorMeasurementRegion == 'AMP':
                     region = amp.getBBox()
                 elif self.config.detectorMeasurementRegion == 'FULL':
