@@ -912,6 +912,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 dataset.expIdMask[ampName] &= mask  # bitwise_and if there is already a mask
             else:
                 dataset.expIdMask[ampName] = mask
+            # In case there was a previous mask stored
+            mask = dataset.expIdMask[ampName]
             parsIniPtc = pars
             meanVecFinal = meanVecOriginal[mask]
             varVecFinal = varVecOriginal[mask]
@@ -927,7 +929,11 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 # Fill entries with NaNs
                 self.fillBadAmp(dataset, ptcFitType, ampName)
                 continue
-            # Fit the PTC
+            # Fit the PTC.
+            # The variance of the variance is Var(v)=2*v^2/Npix. This is already calculated
+            # in `makeCovArray` of CpPtcExtract. dataset.covariancesSqrtWeights[ampName][:,0,0] 
+            # has 1/sqrt(Var(v)).
+            weightsY = dataset.covariancesSqrtWeights[ampName][:,0,0][mask]
             if self.config.doFitBootstrap:
                 parsFit, parsFitErr, reducedChiSqPtc = fitBootstrap(parsIniPtc, meanVecFinal,
                                                                     varVecFinal, ptcFunc,
