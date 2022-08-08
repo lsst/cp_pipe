@@ -98,7 +98,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         self.k2NonLinearity = -5e-6
         # quadratic signal-chain non-linearity
         muVec = self.flux*self.timeVec + self.k2NonLinearity*self.timeVec**2
-        self.gain = 1.5  # e-/ADU
+        self.gain = 0.75  # e-/ADU
         self.c1 = 1./self.gain
         self.noiseSq = 2*self.gain  # 7.5 (e-)^2
         self.a00 = -1.2e-6
@@ -107,10 +107,11 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
         self.ampNames = [amp.getName() for amp in self.flatExp1.getDetector().getAmplifiers()]
         self.dataset = PhotonTransferCurveDataset(self.ampNames, " ")  # pack raw data for fitting
-
+        self.covariancesSqrtWeights = {}
         for ampName in self.ampNames:  # just the expTimes and means here - vars vary per function
             self.dataset.rawExpTimes[ampName] = self.timeVec
             self.dataset.rawMeans[ampName] = muVec
+            self.covariancesSqrtWeights[ampName] = []
 
         # ISR metadata
         self.metadataContents = TaskMetadata()
@@ -139,7 +140,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         solveConfig.ptcFitType = 'FULLCOVARIANCE'
         solveTask = cpPipe.ptc.PhotonTransferCurveSolveTask(config=solveConfig)
 
-        inputGain = 0.75
+        inputGain = self.gain
 
         muStandard, varStandard = {}, {}
         expDict = {}
@@ -175,7 +176,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                 self.assertAlmostEqual(v1/v2, 1.0, places=1)
 
     def ptcFitAndCheckPtc(self, order=None, fitType=None, doTableArray=False, doFitBootstrap=False):
-        localDataset = copy.copy(self.dataset)
+        localDataset = copy.deepcopy(self.dataset)
         localDataset.ptcFitType = fitType
         configSolve = copy.copy(self.defaultConfigSolve)
         configLin = cpPipe.linearity.LinearitySolveTask.ConfigClass()
@@ -209,8 +210,24 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         else:
             RuntimeError("Enter a fit function type: 'POLYNOMIAL' or 'EXPAPPROXIMATION'")
 
+        # Initialize mask and covariance weights that will be used in fits.
+        # Covariance weights values empirically determined from one of
+        # the cases in test_covAstier.
+        matrixSize = localDataset.covMatrixSide
+        maskLength = len(localDataset.rawMeans[ampName])
         for ampName in self.ampNames:
-            localDataset.expIdMask[ampName] = np.repeat(True, len(localDataset.rawMeans[ampName]))
+            localDataset.expIdMask[ampName] = np.repeat(True, maskLength)
+            localDataset.covariancesSqrtWeights[ampName] = np.repeat(np.ones((matrixSize, matrixSize)),
+                                                                     maskLength).reshape((maskLength,
+                                                                                          matrixSize,
+                                                                                          matrixSize))
+            localDataset.covariancesSqrtWeights[ampName][:, 0, 0] = [0.07980188, 0.01339653, 0.0073118,
+                                                                     0.00502802, 0.00383132, 0.00309475,
+                                                                     0.00259572, 0.00223528, 0.00196273,
+                                                                     0.00174943, 0.00157794, 0.00143707,
+                                                                     0.00131929, 0.00121935, 0.0011334,
+                                                                     0.00105893, 0.00099357, 0.0009358,
+                                                                     0.00088439, 0.00083833]
         configLin.maxLookupTableAdu = 200000  # Max ADU in input mock flats
         configLin.maxLinearAdu = 100000
         configLin.minLinearAdu = 50000
@@ -440,12 +457,11 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
         resultsExtract = extractTask.run(inputExp=expDict, inputDims=expIds,
                                          taskMetadata=[self.metadataContents])
-
         for exposurePair in resultsExtract.outputCovariances:
             for ampName in self.ampNames:
                 if exposurePair.gain[ampName] is np.nan:
                     continue
-                self.assertAlmostEqual(exposurePair.gain[ampName], inputGain, delta=0.16)
+                self.assertAlmostEqual(exposurePair.gain[ampName], inputGain, delta=0.04)
 
     def test_getGainFromFlatPair(self):
         for gainCorrectionType in ['NONE', 'SIMPLE', 'FULL', ]:
