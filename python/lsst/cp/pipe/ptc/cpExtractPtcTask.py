@@ -345,8 +345,6 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                                                            self.config.maximumRangeCovariancesAstier)
             for ampNumber, amp in enumerate(detector):
                 ampName = amp.getName()
-                # covAstier: [(i, j, var (cov[0,0]), cov, npix) for
-                # (i,j) in {maxLag, maxLag}^2]
                 if self.config.detectorMeasurementRegion == 'AMP':
                     region = amp.getBBox()
                 elif self.config.detectorMeasurementRegion == 'FULL':
@@ -366,7 +364,6 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                 # [(i, j, var (cov[0,0]), cov, npix) for (i,j) in
                 # {maxLag, maxLag}^2].
                 muDiff, varDiff, covAstier = self.measureMeanVarCov(im1Area, im2Area, imStatsCtrl, mu1, mu2)
-
                 # Estimate the gain from the flat pair
                 if self.config.doGain:
                     gain = self.getGainFromFlatPair(im1Area, im2Area, imStatsCtrl, mu1, mu2,
@@ -404,6 +401,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                 if covAstier is not None:
                     # Turn the tuples with the measured information
                     # into covariance arrays.
+                    # covrow: (i, j, var (cov[0,0]), cov, npix)
                     tupleRows = [(muDiff, varDiff) + covRow + (ampNumber, expTime,
                                                                ampName) for covRow in covAstier]
                     tempStructArray = np.array(tupleRows, dtype=tags)
@@ -480,7 +478,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
         cov : `numpy.array`
             Covariance arrays, indexed by mean signal mu.
         vCov : `numpy.array`
-            Variance arrays, indexed by mean signal mu.
+            Variance of the [co]variance arrays, indexed by mean signal mu.
         muVals : `numpy.array`
             List of mean signal values.
         """
@@ -611,8 +609,8 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
         tempSize = np.array(np.log(s)/np.log(2.)).astype(int)
         fftSize = np.array(2**(tempSize+1)).astype(int)
         fftShape = (fftSize[0], fftSize[1])
-
         c = CovFastFourierTransform(diffIm.image.array, w, fftShape, maxRangeCov)
+        # np.sum(w) is the same as npix[0][0] returned in covDiffAstier
         covDiffAstier = c.reportCovFastFourierTransform(maxRangeCov)
 
         # Compare Cov[0,0] and afwMath.VARIANCECLIP covDiffAstier[0]
