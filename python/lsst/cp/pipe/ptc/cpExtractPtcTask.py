@@ -59,6 +59,7 @@ class PhotonTransferCurveExtractConnections(pipeBase.PipelineTaskConnections,
         doc="Extracted flat (co)variances.",
         storageClass="PhotonTransferCurveDataset",
         dimensions=("instrument", "exposure", "detector"),
+        isCalibration=True,
         multiple=True,
     )
 

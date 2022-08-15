@@ -1,7 +1,7 @@
 description: cp_pipe PTC calibration construction.
 parameters:
     exposureName: cpPtcProc
-    measuredCovariances: cpCovariances
+    measuredCovariances: cpPtcExtract
 tasks:
   isr:
     class: lsst.ip.isr.IsrTask

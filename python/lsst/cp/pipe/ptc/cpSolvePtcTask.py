@@ -50,6 +50,7 @@ class PhotonTransferCurveSolveConnections(pipeBase.PipelineTaskConnections,
         doc="Tuple with measured covariances from flats.",
         storageClass="PhotonTransferCurveDataset",
         dimensions=("instrument", "exposure", "detector"),
+        isCalibration=True,
         multiple=True,
     )
     camera = cT.PrerequisiteInput(
