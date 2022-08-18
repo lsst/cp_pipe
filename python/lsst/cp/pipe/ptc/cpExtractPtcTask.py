@@ -48,7 +48,7 @@ class PhotonTransferCurveExtractConnections(pipeBase.PipelineTaskConnections,
         deferLoad=True,
     )
     taskMetadata = cT.Input(
-        name="isrTask_metadata",
+        name="isr_metadata",
         doc="Input task metadata to extract statistics from.",
         storageClass="TaskMetadata",
         dimensions=("instrument", "exposure", "detector"),
