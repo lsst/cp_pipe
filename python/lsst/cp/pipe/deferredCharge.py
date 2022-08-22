@@ -229,6 +229,11 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
         calib : `lsst.ip.isr.DeferredChargeCalib`
             Populated calibration.
 
+        Raises
+        ------
+        RuntimeError
+            Raised if no data remains after flux filtering.
+
         Notes
         -----
         The original CTISIM code uses a data model in which the
@@ -269,6 +274,8 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
                 else:
                     Nskipped += 1
             self.log.info(f"Skipped {Nskipped} exposures brighter than {self.config.maxImageMean}.")
+            if len(signal) == 0 or len(data) == 0:
+                raise RuntimeError("All exposures brighter than config.maxImageMean and excluded.")
 
             signal = np.array(signal)
             data = np.array(data)
@@ -337,6 +344,11 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
         calib : `lsst.ip.isr.DeferredChargeCalib`
             Populated calibration.
 
+        Raises
+        ------
+        RuntimeError
+            Raised if no data remains after flux filtering.
+
         Notes
         -----
         The original CTISIM code uses a data model in which the
@@ -377,6 +389,8 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
                 else:
                     Nskipped += 1
             self.log.info(f"Skipped {Nskipped} exposures brighter than {self.config.maxSignalForCti}.")
+            if len(signal) == 0 or len(data) == 0:
+                raise RuntimeError("All exposures brighter than config.maxSignalForCti and excluded.")
 
             signal = np.array(signal)
             data = np.array(data)
@@ -498,6 +512,11 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
         calib : `lsst.ip.isr.DeferredChargeCalib`
             Populated calibration.
 
+        Raises
+        ------
+        RuntimeError
+            Raised if no data remains after flux filtering.
+
         Notes
         -----
         The original CTISIM code uses a data model in which the
@@ -540,7 +559,9 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
                     new_signal.append(exposureDict[ampName]['LAST_MEAN'])
                 else:
                     Nskipped += 1
-            self.log.info(f"Skipped {Nskipped} exposures brighter than {self.config.maxSignalForCti}.")
+            self.log.info(f"Skipped {Nskipped} exposures brighter than {self.config.maxImageMean}.")
+            if len(signal) == 0 or len(data) == 0:
+                raise RuntimeError("All exposures brighter than config.maxImageMean and excluded.")
 
             signal = np.array(signal)
             data = np.array(data)
