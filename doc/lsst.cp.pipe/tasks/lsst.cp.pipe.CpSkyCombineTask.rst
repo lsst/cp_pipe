@@ -13,7 +13,7 @@ Processing summary
 
 ``CpSkyCombineTask`` runs these operations:
 
-#. Average input backgrounds with :lsst-task:`~lsst.pipe.drivers.SkyMeasurementTask`.
+#. Average input backgrounds with :lsst-task:`~lsst.pipe.tasks.background.SkyMeasurementTask`.
 #. Combine input headers for the output calibration.
 
 .. _lsst.cp.pipe.cpSkyTask.CpSkyCombineTask-api:

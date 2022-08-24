@@ -84,11 +84,11 @@ class CalibStatsTask(pipeBase.Task):
         exposureOrImage : `lsst.afw.image.Exposure`,
                           `lsst.afw.image.MaskedImage`, or
                           `lsst.afw.image.Image`
-           Exposure or image to calculate statistics on.
+            Exposure or image to calculate statistics on.
 
         Returns
         -------
-        results : float
+        results : `float`
            Resulting statistic value.
         """
         stats = afwMath.StatisticsControl(self.config.clip, self.config.nIter,
@@ -374,7 +374,7 @@ class CalibCombineTask(pipeBase.PipelineTask):
         """Determine a consistent size, given a list of image sizes.
 
         Parameters
-        -----------
+        ----------
         dimList : `list` [`tuple` [`int`, `int`]]
             List of dimensions.
 
@@ -384,7 +384,7 @@ class CalibCombineTask(pipeBase.PipelineTask):
             If input dimensions are inconsistent.
 
         Returns
-        --------
+        -------
         width, height : `int`
             Common dimensions.
         """

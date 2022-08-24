@@ -262,6 +262,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
         -------
         results : `lsst.pipe.base.Struct`
             The resulting Struct contains:
+
             ``outputCovariances``
                 A list containing the per-pair PTC measurements (`list`
                 [`lsst.ip.isr.PhotonTransferCurveDataset`])
@@ -729,8 +730,9 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
 
         Raises
         ------
-            RuntimeError: if `correctionType` is not one of 'NONE',
-                'SIMPLE', or 'FULL'.
+        RuntimeError
+            Raise if `correctionType` is not one of 'NONE',
+            'SIMPLE', or 'FULL'.
         """
         if correctionType not in ['NONE', 'SIMPLE', 'FULL']:
             raise RuntimeError("Unknown correction type: %s" % correctionType)

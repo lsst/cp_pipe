@@ -208,6 +208,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         -------
         results : `lsst.pipe.base.Struct`
             The resultins structure contains:
+
             ``outputPtcDatset``
                 Final PTC dataset, containing information such as the
                 means, variances, and exposure times
@@ -353,10 +354,12 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         -----
         The parameters of the full model for C_ij(mu) ("C_ij" and "mu"
         in ADU^2 and ADU, respectively) in Astier+19 (Eq. 20) are:
-            "a" coefficients (r by r matrix), units: 1/e
-            "b" coefficients (r by r matrix), units: 1/e
-            noise matrix (r by r matrix), units: e^2
-            gain, units: e/ADU
+
+        - "a" coefficients (r by r matrix), units: 1/e
+        - "b" coefficients (r by r matrix), units: 1/e
+        - noise matrix (r by r matrix), units: e^2
+        - gain, units: e/ADU
+
         "b" appears in Eq. 20 only through the "ab" combination, which
         is defined in this code as "c=ab".
 
@@ -617,10 +620,12 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         implements the model in Astier+19 (1905.08677).
         The parameters of the full model for C_ij(mu) ("C_ij" and "mu"
         in ADU^2 and ADU, respectively) in Astier+19 (Eq. 20) are:
-        "a" coefficients (M by M matrix), units: 1/e
-        "b" coefficients (M by M matrix), units: 1/e
-        noise matrix (M by M matrix), units: e^2
-        gain, units: e/ADU
+
+        - "a" coefficients (M by M matrix), units: 1/e
+        - "b" coefficients (M by M matrix), units: 1/e
+        - noise matrix (M by M matrix), units: e^2
+        - gain, units: e/ADU
+
         "b" appears in Eq. 20 only through the "ab" combination, which
         is defined in this code as "c=ab".
         """
@@ -797,8 +802,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
 
         Raises
         ------
-        RuntimeError:
-            Raises if dataset.ptcFitType is None or empty.
+        RuntimeError
+            Raised if dataset.ptcFitType is None or empty.
         """
         if dataset.ptcFitType:
             ptcFitType = dataset.ptcFitType

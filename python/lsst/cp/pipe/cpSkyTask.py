@@ -320,9 +320,9 @@ class CpSkySubtractBackgroundTask(pipeBase.PipelineTask):
         results : `lsst.pipe.base.Struct`
             The results struct containing:
 
-            outputBkg : `lsst.afw.math.BackgroundList`
+            ``outputBkg``
                 Remnant sky background with the full-exposure
-                component removed.
+                component removed. (`lsst.afw.math.BackgroundList`)
         """
         # As constructCalibs.py SkyTask.processSingle()
         image = inputExp.getMaskedImage()
