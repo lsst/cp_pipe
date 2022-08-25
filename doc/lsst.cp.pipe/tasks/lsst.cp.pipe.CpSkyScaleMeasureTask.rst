@@ -4,7 +4,7 @@
 CpSkyScaleMeasureTask
 #####################
 
-``CpSkyScaleMeasureTask`` merges the `lsst.pipe.drivers.FocalPlaneBackground` models generated per-detector into a single full-focal plane model.
+``CpSkyScaleMeasureTask`` merges the `lsst.pipe.tasks.background.FocalPlaneBackground` models generated per-detector into a single full-focal plane model.
 
 .. _lsst.cp.pipe.cpSkyTask.CpSkyScaleMeasureTask-processing-summary:
 

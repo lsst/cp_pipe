@@ -589,7 +589,7 @@ class CovFastFourierTransform:
         ----------
         dx : `int`
            Lag in x
-        dy : `int
+        dy : `int`
            Lag in y
 
         Returns

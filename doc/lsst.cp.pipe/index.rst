@@ -42,14 +42,6 @@ Pipeline tasks
 .. lsst-pipelinetasks::
    :root: lsst.cp.pipe
 
-.. _lsst.cp.pipe-command-line-tasks:
-
-Command-line tasks
-------------------
-
-.. lsst-cmdlinetasks::
-   :root: lsst.cp.pipe
-
 Tasks
 -----
 

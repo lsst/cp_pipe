@@ -13,8 +13,8 @@ Processing summary
 
 ``CpSkyImageTask`` runs these operations:
 
-#. Run :lsst-task:`~lsst.pipe.drivers.background.MaskObjectsTask` to identify and mask sources in the image.
-#. Construct a single-detector `~lsst.pipe.drivers.background.FocalPlaneBackground` model from the detection clean image.
+#. Run :lsst-task:`~lsst.pipe.tasks.background.MaskObjectsTask` to identify and mask sources in the image.
+#. Construct a single-detector `~lsst.pipe.tasks.background.FocalPlaneBackground` model from the detection clean image.
 
 .. _lsst.cp.pipe.cpSkyTask.CpSkyImageTask-api:
 
