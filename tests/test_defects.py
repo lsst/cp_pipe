@@ -32,7 +32,8 @@ import lsst.utils.tests
 import lsst.afw.image as afwImage
 import lsst.ip.isr as ipIsr
 import lsst.cp.pipe as cpPipe
-from lsst.ip.isr import isrMock, countMaskedPixels
+import lsst.ip.isr.isrMock as isrMock
+
 from lsst.geom import Box2I, Point2I, Extent2I
 from lsst.daf.base import PropertyList
 
