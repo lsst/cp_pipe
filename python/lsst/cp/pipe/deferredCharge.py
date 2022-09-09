@@ -19,6 +19,16 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
+__all__ = ('CpCtiSolveConnections',
+           'CpCtiSolveConfig',
+           'CpCtiSolveTask',
+           'OverscanModel',
+           'SimpleModel',
+           'SimulatedModel',
+           'SegmentSimulator',
+           'FloatingOutputAmplifier',
+           )
+
 import copy
 import numpy as np
 
@@ -30,16 +40,6 @@ from lsst.ip.isr import DeferredChargeCalib, SerialTrap
 from lmfit import Minimizer, Parameters
 
 from ._lookupStaticCalibration import lookupStaticCalibration
-
-__all__ = ('CpCtiSolveConnections',
-           'CpCtiSolveConfig',
-           'CpCtiSolveTask',
-           'OverscanModel',
-           'SimpleModel',
-           'SimulatedModel',
-           'SegmentSimulator',
-           'FloatingOutputAmplifier',
-           )
 
 
 class CpCtiSolveConnections(pipeBase.PipelineTaskConnections,
@@ -229,16 +229,21 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
         calib : `lsst.ip.isr.DeferredChargeCalib`
             Populated calibration.
 
+        Raises
+        ------
+        RuntimeError
+            Raised if no data remains after flux filtering.
+
         Notes
         -----
-        The original CTISIM code uses a data model in which the
-        "overscan" consists of the standard serial overscan bbox with
-        the values for the last imaging data column prepended to that
-        list.  This version of the code keeps the overscan and imaging
-        sections separate, and so a -1 offset is needed to ensure that
-        the same columns are used for fitting between this code and
-        CTISIM.  This offset removes that last imaging data column
-        from the count.
+        The original CTISIM code (https://github.com/Snyder005/ctisim)
+        uses a data model in which the "overscan" consists of the
+        standard serial overscan bbox with the values for the last
+        imaging data column prepended to that list.  This version of
+        the code keeps the overscan and imaging sections separate, and
+        so a -1 offset is needed to ensure that the same columns are
+        used for fitting between this code and CTISIM.  This offset
+        removes that last imaging data column from the count.
         """
         # Range to fit.  These are in "camera" coordinates, and so
         # need to have the count for last image column removed.
@@ -269,6 +274,8 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
                 else:
                     Nskipped += 1
             self.log.info(f"Skipped {Nskipped} exposures brighter than {self.config.maxImageMean}.")
+            if len(signal) == 0 or len(data) == 0:
+                raise RuntimeError("All exposures brighter than config.maxImageMean and excluded.")
 
             signal = np.array(signal)
             data = np.array(data)
@@ -337,6 +344,11 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
         calib : `lsst.ip.isr.DeferredChargeCalib`
             Populated calibration.
 
+        Raises
+        ------
+        RuntimeError
+            Raised if no data remains after flux filtering.
+
         Notes
         -----
         The original CTISIM code uses a data model in which the
@@ -377,6 +389,8 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
                 else:
                     Nskipped += 1
             self.log.info(f"Skipped {Nskipped} exposures brighter than {self.config.maxSignalForCti}.")
+            if len(signal) == 0 or len(data) == 0:
+                raise RuntimeError("All exposures brighter than config.maxSignalForCti and excluded.")
 
             signal = np.array(signal)
             data = np.array(data)
@@ -498,6 +512,11 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
         calib : `lsst.ip.isr.DeferredChargeCalib`
             Populated calibration.
 
+        Raises
+        ------
+        RuntimeError
+            Raised if no data remains after flux filtering.
+
         Notes
         -----
         The original CTISIM code uses a data model in which the
@@ -540,7 +559,9 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
                     new_signal.append(exposureDict[ampName]['LAST_MEAN'])
                 else:
                     Nskipped += 1
-            self.log.info(f"Skipped {Nskipped} exposures brighter than {self.config.maxSignalForCti}.")
+            self.log.info(f"Skipped {Nskipped} exposures brighter than {self.config.maxImageMean}.")
+            if len(signal) == 0 or len(data) == 0:
+                raise RuntimeError("All exposures brighter than config.maxImageMean and excluded.")
 
             signal = np.array(signal)
             data = np.array(data)
