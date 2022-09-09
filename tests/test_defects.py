@@ -31,7 +31,7 @@ import lsst.utils.tests
 
 import lsst.ip.isr as ipIsr
 import lsst.cp.pipe as cpPipe
-from lsst.ip.isr import isrMock
+from lsst.ip.isr import isrMock, countMaskedPixels
 from lsst.geom import Box2I, Point2I, Extent2I
 
 
@@ -627,7 +627,7 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
         testImage = self.flatExp.clone()
         mi = testImage.maskedImage
 
-        self.assertEqual(cpPipe.utils.countMaskedPixels(mi, 'EDGE'), 0)
+        self.assertEqual(countMaskedPixels(mi, 'EDGE'), 0)
         self.defaultTask._setEdgeBits(mi)
 
         hEdge = self.defaultConfig.nPixBorderLeftRight
@@ -636,7 +636,7 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
 
         nEdge = xSize*vEdge*2 + ySize*hEdge*2 - hEdge*vEdge*4
 
-        self.assertEqual(cpPipe.utils.countMaskedPixels(mi, 'EDGE'), nEdge)
+        self.assertEqual(countMaskedPixels(mi, 'EDGE'), nEdge)
 
 
 class TestMemory(lsst.utils.tests.MemoryTestCase):

@@ -34,8 +34,7 @@ import lsst.afw.display as afwDisplay
 from lsst.afw import cameraGeom
 from lsst.geom import Box2I, Point2I
 from lsst.meas.algorithms import SourceDetectionTask
-from lsst.ip.isr import Defects
-from .utils import countMaskedPixels
+from lsst.ip.isr import Defects, countMaskedPixels
 
 from ._lookupStaticCalibration import lookupStaticCalibration
 
