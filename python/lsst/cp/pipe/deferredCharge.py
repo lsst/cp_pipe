@@ -19,6 +19,16 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
+__all__ = ('CpCtiSolveConnections',
+           'CpCtiSolveConfig',
+           'CpCtiSolveTask',
+           'OverscanModel',
+           'SimpleModel',
+           'SimulatedModel',
+           'SegmentSimulator',
+           'FloatingOutputAmplifier',
+           )
+
 import copy
 import numpy as np
 
@@ -30,16 +40,6 @@ from lsst.ip.isr import DeferredChargeCalib, SerialTrap
 from lmfit import Minimizer, Parameters
 
 from ._lookupStaticCalibration import lookupStaticCalibration
-
-__all__ = ('CpCtiSolveConnections',
-           'CpCtiSolveConfig',
-           'CpCtiSolveTask',
-           'OverscanModel',
-           'SimpleModel',
-           'SimulatedModel',
-           'SegmentSimulator',
-           'FloatingOutputAmplifier',
-           )
 
 
 class CpCtiSolveConnections(pipeBase.PipelineTaskConnections,
@@ -236,14 +236,14 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
 
         Notes
         -----
-        The original CTISIM code uses a data model in which the
-        "overscan" consists of the standard serial overscan bbox with
-        the values for the last imaging data column prepended to that
-        list.  This version of the code keeps the overscan and imaging
-        sections separate, and so a -1 offset is needed to ensure that
-        the same columns are used for fitting between this code and
-        CTISIM.  This offset removes that last imaging data column
-        from the count.
+        The original CTISIM code (https://github.com/Snyder005/ctisim)
+        uses a data model in which the "overscan" consists of the
+        standard serial overscan bbox with the values for the last
+        imaging data column prepended to that list.  This version of
+        the code keeps the overscan and imaging sections separate, and
+        so a -1 offset is needed to ensure that the same columns are
+        used for fitting between this code and CTISIM.  This offset
+        removes that last imaging data column from the count.
         """
         # Range to fit.  These are in "camera" coordinates, and so
         # need to have the count for last image column removed.
