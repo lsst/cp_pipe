@@ -20,7 +20,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 
-__all__ = ['countMaskedPixels', 'ddict2dict', 'CovFastFourierTransform']
+__all__ = ['ddict2dict', 'CovFastFourierTransform']
 
 import numpy as np
 from scipy.optimize import leastsq
@@ -178,26 +178,6 @@ def makeMockFlats(expTime, gain=1.0, readNoiseElectrons=5, fluxElectrons=1000,
     flatExp2.getInfo().setVisitInfo(visitInfoExp2)
 
     return flatExp1, flatExp2
-
-
-def countMaskedPixels(maskedIm, maskPlane):
-    """Count the number of pixels in a given mask plane.
-
-    Parameters
-    ----------
-    maskedIm : `~lsst.afw.image.MaskedImage`
-        Masked image to examine.
-    maskPlane : `str`
-        Name of the mask plane to examine.
-
-    Returns
-    -------
-    nPix : `int`
-        Number of pixels in the requested mask plane.
-    """
-    maskBit = maskedIm.mask.getPlaneBitMask(maskPlane)
-    nPix = np.where(np.bitwise_and(maskedIm.mask.array, maskBit))[0].flatten().size
-    return nPix
 
 
 def irlsFit(initialParams, dataX, dataY, function, weightsY=None, weightType='Cauchy', scaleResidual=True):
