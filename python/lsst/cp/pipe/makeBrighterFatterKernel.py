@@ -232,11 +232,15 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask):
                 bfk.valid[ampName] = False
                 continue
 
-            # Use inputPtc.expIdMask to get the means, variances,
-            # and covariances that were not masked after PTC.
+            # Use inputPtc.expIdMask to get the means, variances, and
+            # covariances that were not masked after PTC.  The
+            # covariances may now have the mask already applied.
             fluxes = np.array(bfk.rawMeans[ampName])[mask]
             variances = np.array(bfk.rawVariances[ampName])[mask]
-            xCorrList = np.array([np.array(xcorr) for xcorr in bfk.rawXcorrs[ampName]])[mask]
+            xCorrList = np.array([np.array(xcorr) for xcorr in bfk.rawXcorrs[ampName]])
+            if np.sum(mask) < len(xCorrList):
+                # Only apply the mask if needed.
+                xCorrList = xCorrList[mask]
 
             fluxes = np.array([flux*gain for flux in fluxes])  # Now in e^-
             variances = np.array([variance*gain*gain for variance in variances])  # Now in e^2-
