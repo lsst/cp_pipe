@@ -591,7 +591,6 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
     def test_getNumGoodPixels(self):
         """Test the the number of pixels in the image not masked is as
         expected.
-
         """
         testImage = self.flatExp.clone()
         mi = testImage.maskedImage
@@ -622,7 +621,6 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
     def test_edgeMasking(self):
         """Check that the right number of edge pixels are masked by
         _setEdgeBits().
-
         """
         testImage = self.flatExp.clone()
         mi = testImage.maskedImage
@@ -637,6 +635,26 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
         nEdge = xSize*vEdge*2 + ySize*hEdge*2 - hEdge*vEdge*4
 
         self.assertEqual(countMaskedPixels(mi, 'EDGE'), nEdge)
+
+    def test_badImage(self):
+        """Check that fully-bad images do not fail.
+        """
+        testImage = self.flatExp.clone()
+        testImage.image.array[:, :] = 125000
+
+        config = copy.copy(self.defaultConfig)
+        # Do not exclude any pixels, so the areas match.
+        config.nPixBorderUpDown = 0
+        config.nPixBorderLeftRight = 0
+
+        task = cpPipe.defects.MeasureDefectsTask(config=config)
+        defects = task.findHotAndColdPixels(testImage, [config.nSigmaBright,
+                                                        config.nSigmaDark])
+
+        defectArea = 0
+        for defect in defects:
+            defectArea += defect.getBBox().getArea()
+        self.assertEqual(defectArea, testImage.getBBox().getArea())
 
 
 class TestMemory(lsst.utils.tests.MemoryTestCase):
