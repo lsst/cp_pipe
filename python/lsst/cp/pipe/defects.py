@@ -35,6 +35,7 @@ from lsst.afw import cameraGeom
 from lsst.geom import Box2I, Point2I
 from lsst.meas.algorithms import SourceDetectionTask
 from lsst.ip.isr import Defects, countMaskedPixels
+from lsst.pex.exceptions import InvalidParameterError
 
 from ._lookupStaticCalibration import lookupStaticCalibration
 
@@ -246,7 +247,15 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
 
                 threshold = afwDetection.createThreshold(nSig, 'stdev', polarity=polarity)
 
-                footprintSet = afwDetection.FootprintSet(ampImg, threshold)
+                try:
+                    footprintSet = afwDetection.FootprintSet(ampImg, threshold)
+                except InvalidParameterError:
+                    # This occurs if the image sigma value is 0.0.
+                    # Let's mask the whole area.
+                    minValue = np.nanmin(ampImg.image.array) - 1.0
+                    threshold = afwDetection.createThreshold(minValue, 'value', polarity=True)
+                    footprintSet = afwDetection.FootprintSet(ampImg, threshold)
+
                 footprintSet.setMask(maskedIm.mask, ("DETECTED" if polarity else "DETECTED_NEGATIVE"))
 
                 if mergedSet is None:
