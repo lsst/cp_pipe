@@ -345,7 +345,7 @@ class CalibCombineTask(pipeBase.PipelineTask):
         combinedExp.setDetector(inputDetector)
 
         # Do we need to set a filter?
-        filterLabel = inputExpHandles[0].get(component="filterLabel")
+        filterLabel = inputExpHandles[0].get(component="filter")
         self.setFilter(combinedExp, filterLabel)
 
         # Return
