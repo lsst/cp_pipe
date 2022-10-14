@@ -65,6 +65,7 @@ class CpCtiSolveConnections(pipeBase.PipelineTaskConnections,
         doc="Output CTI calibration.",
         storageClass="IsrCalib",
         dimensions=("instrument", "detector"),
+        isCalibration=True,
     )
 
 
