@@ -626,7 +626,7 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
         testImage = self.flatExp.clone()
         mi = testImage.maskedImage
 
-        self.assertEqual(countMaskedPixels(mi, 'EDGE'), 0)
+        self.assertEqual(ipIsr.countMaskedPixels(mi, 'EDGE'), 0)
         self.defaultTask._setEdgeBits(mi)
 
         hEdge = self.defaultConfig.nPixBorderLeftRight
@@ -635,7 +635,7 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
 
         nEdge = xSize*vEdge*2 + ySize*hEdge*2 - hEdge*vEdge*4
 
-        self.assertEqual(countMaskedPixels(mi, 'EDGE'), nEdge)
+        self.assertEqual(ipIsr.countMaskedPixels(mi, 'EDGE'), nEdge)
 
     def test_badImage(self):
         """Check that fully-bad images do not fail.
