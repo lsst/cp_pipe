@@ -39,7 +39,7 @@ __all__ = ['CpSkyImageTask', 'CpSkyImageConfig',
 class CpSkyImageConnections(pipeBase.PipelineTaskConnections,
                             dimensions=("instrument", "physical_filter", "exposure", "detector")):
     inputExp = cT.Input(
-        name="cpSkyIsr",
+        name="postISRCCD",
         doc="Input pre-processed exposures to combine.",
         storageClass="Exposure",
         dimensions=("instrument", "exposure", "detector"),
