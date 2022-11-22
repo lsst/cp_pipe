@@ -19,6 +19,9 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
+
+__all__ = ["LinearitySolveTask", "LinearitySolveConfig"]
+
 import numpy as np
 import lsst.afw.image as afwImage
 import lsst.afw.math as afwMath
@@ -31,8 +34,6 @@ from lsst.ip.isr import (Linearizer, IsrProvenance)
 
 from .utils import (funcPolynomial, irlsFit)
 from ._lookupStaticCalibration import lookupStaticCalibration
-
-__all__ = ["LinearitySolveTask", "LinearitySolveConfig"]
 
 
 class LinearitySolveConnections(pipeBase.PipelineTaskConnections,
@@ -60,7 +61,8 @@ class LinearitySolveConnections(pipeBase.PipelineTaskConnections,
         storageClass="IsrCalib",
         dimensions=("instrument", "exposure"),
         multiple=True,
-        deferLoad=True)
+        deferLoad=True
+    )
 
     inputPhotodiodeCorrection = cT.Input(
         name="pdCorrection",
@@ -141,10 +143,17 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
         doc="Use the photodiode info instead of the raw expTimes?",
         default=False,
     )
-    photodiodeIntegrationMethod = pexConfig.Field(
+    photodiodeIntegrationMethod = pexConfig.ChoiceField(
         dtype=str,
         doc="Integration method for photodiode monitoring data.",
         default="DIRECT_SUM",
+        allowed={
+            "DIRECT_SUM": ("Use numpy's trapz integrator on all photodiode "
+                           "readout entries"),
+            "TRIMMED_SUM": ("Use numpy's trapz integrator, clipping the "
+                            "leading and trailing entries, which are "
+                            "nominally at zero baseline level."),
+        }
     )
     applyPhotodiodeCorrection = pexConfig.Field(
         dtype=bool,
@@ -197,7 +206,7 @@ class LinearitySolveTask(pipeBase.PipelineTask):
             applyPhotodiodeCorrection=True.
         camera : `lsst.afw.cameraGeom.Camera`
             Camera geometry.
-        inputPhotodiodeData : `List(lsst.ip.isr.IsrCalib)`
+        inputPhotodiodeData : `dict` [`str`, `lsst.ip.isr.PhotodiodeCalib`]
             Photodiode readings data.
         inputDims : `lsst.daf.butler.DataCoordinate` or `dict`
             DataIds to use to populate the output calibration.
@@ -243,7 +252,8 @@ class LinearitySolveTask(pipeBase.PipelineTask):
         linearizer = Linearizer(detector=detector, table=table, log=self.log)
 
         if self.config.usePhotodiode:
-            # Compute the photodiode integrals once, outside the loop over amps.
+            # Compute the photodiode integrals once, outside the loop
+            # over amps.
             monDiodeCharge = {}
             for expId, handle in inputPhotodiodeData.items():
                 pd_calib = handle.get()
@@ -275,16 +285,11 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                     nExps = 0
                     for j in range(2):
                         expId = pair[j]
-                        try:
+                        if expId in monDiodeCharge:
                             modExpTime += monDiodeCharge[expId]
                             nExps += 1
-                        except KeyError:
-                            continue
                     if nExps > 0:
-                        # The 5E8 factor bring the modExpTimes back to about
-                        # the same order as the expTimes.
-                        # Probably a better way to do this.
-                        modExpTime = 5.0E8 * modExpTime / nExps
+                        modExpTime = modExpTime / nExps
                     else:
                         mask[i] = False
 
