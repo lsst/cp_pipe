@@ -38,6 +38,15 @@ from ._lookupStaticCalibration import lookupStaticCalibration
 
 class LinearitySolveConnections(pipeBase.PipelineTaskConnections,
                                 dimensions=("instrument", "detector")):
+    dummy = cT.Input(
+        name="raw",
+        doc="Dummy exposure.",
+        storageClass='Exposure',
+        dimensions=("instrument", "exposure", "detector"),
+        multiple=True,
+        deferLoad=True,
+    )
+
     camera = cT.PrerequisiteInput(
         name="camera",
         doc="Camera Geometry definition.",
@@ -193,7 +202,7 @@ class LinearitySolveTask(pipeBase.PipelineTask):
         outputs = self.run(**inputs)
         butlerQC.put(outputs, outputRefs)
 
-    def run(self, inputPtc, camera, inputPhotodiodeData, inputDims, inputPhotodiodeCorrection=None):
+    def run(self, inputPtc, dummy, camera, inputPhotodiodeData, inputDims, inputPhotodiodeCorrection=None):
         """Fit non-linearity to PTC data, returning the correct Linearizer
         object.
 
@@ -201,6 +210,10 @@ class LinearitySolveTask(pipeBase.PipelineTask):
         ----------
         inputPtc : `lsst.ip.isr.PtcDataset`
             Pre-measured PTC dataset.
+        dummy : `lsst.afw.image.Exposure`
+            The exposure used to select the appropriate PTC dataset.
+            In almost all circumstances, one of the input exposures
+            used to generate the PTC dataset is the best option.
         inputPhotodiodeCorrection : `lsst.ip.isr.PhotodiodeCorrection`
             Pre-measured photodiode correction used in the case when
             applyPhotodiodeCorrection=True.
@@ -235,6 +248,9 @@ class LinearitySolveTask(pipeBase.PipelineTask):
         As :math:`k_0` and :math:`k_1` are degenerate with bias level and gain,
         they are not included in the non-linearity correction.
         """
+        if len(dummy) == 0:
+            self.log.warning("No dummy exposure found.")
+
         detector = camera[inputDims['detector']]
         if self.config.linearityType == 'LookupTable':
             table = np.zeros((len(detector), self.config.maxLookupTableAdu), dtype=np.float32)

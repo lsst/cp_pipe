@@ -248,6 +248,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             linDataset = linearityTask.run(localDataset,
                                            dummy=[1.0],
                                            camera=FakeCamera([self.flatExp1.getDetector()]),
+                                           inputPhotodiodeData={},
                                            inputDims={'detector': 0})
             linDataset = linDataset.outputLinearizer
         else:
@@ -255,6 +256,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             linDataset = linearityTask.run(localDataset,
                                            dummy=[1.0],
                                            camera=FakeCamera([self.flatExp1.getDetector()]),
+                                           inputPhotodiodeData={},
                                            inputDims={'detector': 0})
             linDataset = linDataset.outputLinearizer
         if doTableArray:
