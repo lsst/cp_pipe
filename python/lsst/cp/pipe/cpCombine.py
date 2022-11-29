@@ -521,8 +521,8 @@ class CalibCombineTask(pipeBase.PipelineTask):
         now = time.localtime()
         calibDate = time.strftime("%Y-%m-%d", now)
         calibTime = time.strftime("%X %Z", now)
-        header.set("CALIB_CREATE_DATE", calibDate)
-        header.set("CALIB_CREATE_TIME", calibTime)
+        header.set("CALIB_CREATION_DATE", calibDate)
+        header.set("CALIB_CREATION_TIME", calibTime)
 
         # Merge input headers
         inputHeaders = [expHandle.get(component="metadata") for expHandle in expHandleList]
