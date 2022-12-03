@@ -95,6 +95,9 @@ class LinearitySolveConnections(pipeBase.PipelineTaskConnections,
         if config.applyPhotodiodeCorrection is not True:
             self.inputs.discard("inputPhotodiodeCorrection")
 
+        if config.usePhotodiode is not True:
+            self.inputs.discard("inputPhotodiodeData")
+
 
 class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
                            pipelineConnections=LinearitySolveConnections):
@@ -192,17 +195,14 @@ class LinearitySolveTask(pipeBase.PipelineTask):
         """
         inputs = butlerQC.get(inputRefs)
 
-        # Repack the photodiode data into a dict keyed by exposure.
-        inputs['inputPhotodiodeData'] = {_.dataId['exposure']: _ for _ in
-                                         inputs['inputPhotodiodeData']}
-
         # Use the dimensions to set calib/provenance information.
         inputs['inputDims'] = inputRefs.inputPtc.dataId.byName()
 
         outputs = self.run(**inputs)
         butlerQC.put(outputs, outputRefs)
 
-    def run(self, inputPtc, dummy, camera, inputPhotodiodeData, inputDims, inputPhotodiodeCorrection=None):
+    def run(self, inputPtc, dummy, camera, inputDims, inputPhotodiodeData=None,
+            inputPhotodiodeCorrection=None):
         """Fit non-linearity to PTC data, returning the correct Linearizer
         object.
 
@@ -271,7 +271,8 @@ class LinearitySolveTask(pipeBase.PipelineTask):
             # Compute the photodiode integrals once, outside the loop
             # over amps.
             monDiodeCharge = {}
-            for expId, handle in inputPhotodiodeData.items():
+            for handle in inputPhotodiodeData:
+                expId = handle.dataId['exposure']
                 pd_calib = handle.get()
                 pd_calib.integrationMethod = self.config.photodiodeIntegrationMethod
                 monDiodeCharge[expId] = pd_calib.integrate()[0]
