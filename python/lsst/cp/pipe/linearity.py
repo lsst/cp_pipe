@@ -36,6 +36,45 @@ from .utils import (funcPolynomial, irlsFit)
 from ._lookupStaticCalibration import lookupStaticCalibration
 
 
+def ptcLookup(datasetType, registry, quantumDataId, collections):
+    """Butler lookup function to allow PTC to be found.
+
+    Parameters
+    ----------
+    datasetType : `lsst.daf.butler.DatasetType`
+        Dataset type to look up.
+    registry : `lsst.daf.butler.Registry`
+        Registry for the data repository being searched.
+    quantumDataId : `lsst.daf.butler.DataCoordinate`
+        Data ID for the quantum of the task this dataset will be passed to.
+        This must include an "instrument" key, and should also include any
+        keys that are present in ``datasetType.dimensions``.  If it has an
+        ``exposure`` or ``visit`` key, that's a sign that this function is
+        not actually needed, as those come with the temporal information that
+        would allow a real validity-range lookup.
+    collections : `lsst.daf.butler.registry.CollectionSearch`
+        Collections passed by the user when generating a QuantumGraph.  Ignored
+        by this function (see notes below).
+
+    Returns
+    -------
+    refs : `list` [ `DatasetRef` ]
+        A zero- or single-element list containing the matching
+        dataset, if one was found.
+
+    Raises
+    ------
+    RuntimeError
+        Raised if more than one PTC reference is found.
+    """
+    refs = list(registry.queryDatasets(datasetType, dataId=quantumDataId, collections=collections,
+                                       findFirst=False))
+    if len(refs) >= 2:
+        RuntimeError("Too many PTC connections found. Incorrect collections supplied?")
+
+    return refs
+
+
 class LinearitySolveConnections(pipeBase.PipelineTaskConnections,
                                 dimensions=("instrument", "detector")):
     dummy = cT.Input(
@@ -62,15 +101,17 @@ class LinearitySolveConnections(pipeBase.PipelineTaskConnections,
         storageClass="PhotonTransferCurveDataset",
         dimensions=("instrument", "detector"),
         isCalibration=True,
+        lookupFunction=ptcLookup,
     )
 
-    inputPhotodiodeData = cT.Input(
+    inputPhotodiodeData = cT.PrerequisiteInput(
         name="photodiode",
         doc="Photodiode readings data.",
         storageClass="IsrCalib",
         dimensions=("instrument", "exposure"),
         multiple=True,
-        deferLoad=True
+        deferLoad=True,
+        minimum=0,
     )
 
     inputPhotodiodeCorrection = cT.Input(
