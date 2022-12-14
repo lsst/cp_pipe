@@ -1,6 +1,6 @@
 description: linearizer with photodiode correction
 tasks:
-  linearityInitial:
+  linearityUncorrected:
     class: lsst.cp.pipe.LinearitySolveTask
     config:
       connections.inputPtc: ptc
@@ -15,7 +15,7 @@ tasks:
       connections.inputPtc: ptc
       connections.inputLinearizer: unCorrectedLinearizer
       connections.outputPhotodiodeCorrection: pdCorrection
-  linearityFinal:
+  linearityCorrected:
     class: lsst.cp.pipe.LinearitySolveTask
     config:
       connections.inputPtc: ptc

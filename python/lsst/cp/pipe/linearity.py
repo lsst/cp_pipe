@@ -19,6 +19,9 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
+
+__all__ = ["LinearitySolveTask", "LinearitySolveConfig"]
+
 import numpy as np
 import lsst.afw.image as afwImage
 import lsst.afw.math as afwMath
@@ -27,16 +30,53 @@ import lsst.pipe.base.connectionTypes as cT
 import lsst.pex.config as pexConfig
 
 from lsstDebug import getDebugFrame
-from lsst.ip.isr import (Linearizer, IsrProvenance, PhotodiodeCalib)
+from lsst.ip.isr import (Linearizer, IsrProvenance)
 
 from .utils import (funcPolynomial, irlsFit)
 from ._lookupStaticCalibration import lookupStaticCalibration
 
-__all__ = ["LinearitySolveTask", "LinearitySolveConfig"]
+
+def ptcLookup(datasetType, registry, quantumDataId, collections):
+    """Butler lookup function to allow PTC to be found.
+
+    Parameters
+    ----------
+    datasetType : `lsst.daf.butler.DatasetType`
+        Dataset type to look up.
+    registry : `lsst.daf.butler.Registry`
+        Registry for the data repository being searched.
+    quantumDataId : `lsst.daf.butler.DataCoordinate`
+        Data ID for the quantum of the task this dataset will be passed to.
+        This must include an "instrument" key, and should also include any
+        keys that are present in ``datasetType.dimensions``.  If it has an
+        ``exposure`` or ``visit`` key, that's a sign that this function is
+        not actually needed, as those come with the temporal information that
+        would allow a real validity-range lookup.
+    collections : `lsst.daf.butler.registry.CollectionSearch`
+        Collections passed by the user when generating a QuantumGraph.  Ignored
+        by this function (see notes below).
+
+    Returns
+    -------
+    refs : `list` [ `DatasetRef` ]
+        A zero- or single-element list containing the matching
+        dataset, if one was found.
+
+    Raises
+    ------
+    RuntimeError
+        Raised if more than one PTC reference is found.
+    """
+    refs = list(registry.queryDatasets(datasetType, dataId=quantumDataId, collections=collections,
+                                       findFirst=False))
+    if len(refs) >= 2:
+        RuntimeError("Too many PTC connections found. Incorrect collections supplied?")
+
+    return refs
 
 
 class LinearitySolveConnections(pipeBase.PipelineTaskConnections,
-                                dimensions=("instrument", "exposure", "detector")):
+                                dimensions=("instrument", "detector")):
     dummy = cT.Input(
         name="raw",
         doc="Dummy exposure.",
@@ -61,6 +101,17 @@ class LinearitySolveConnections(pipeBase.PipelineTaskConnections,
         storageClass="PhotonTransferCurveDataset",
         dimensions=("instrument", "detector"),
         isCalibration=True,
+        lookupFunction=ptcLookup,
+    )
+
+    inputPhotodiodeData = cT.PrerequisiteInput(
+        name="photodiode",
+        doc="Photodiode readings data.",
+        storageClass="IsrCalib",
+        dimensions=("instrument", "exposure"),
+        multiple=True,
+        deferLoad=True,
+        minimum=0,
     )
 
     inputPhotodiodeCorrection = cT.Input(
@@ -84,6 +135,9 @@ class LinearitySolveConnections(pipeBase.PipelineTaskConnections,
 
         if config.applyPhotodiodeCorrection is not True:
             self.inputs.discard("inputPhotodiodeCorrection")
+
+        if config.usePhotodiode is not True:
+            self.inputs.discard("inputPhotodiodeData")
 
 
 class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
@@ -125,7 +179,7 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
     minLinearAdu = pexConfig.Field(
         dtype=float,
         doc="Minimum DN value to use to estimate linear term.",
-        default=2000.0,
+        default=30.0,
     )
     nSigmaClipLinear = pexConfig.Field(
         dtype=float,
@@ -141,6 +195,18 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
         dtype=bool,
         doc="Use the photodiode info instead of the raw expTimes?",
         default=False,
+    )
+    photodiodeIntegrationMethod = pexConfig.ChoiceField(
+        dtype=str,
+        doc="Integration method for photodiode monitoring data.",
+        default="DIRECT_SUM",
+        allowed={
+            "DIRECT_SUM": ("Use numpy's trapz integrator on all photodiode "
+                           "readout entries"),
+            "TRIMMED_SUM": ("Use numpy's trapz integrator, clipping the "
+                            "leading and trailing entries, which are "
+                            "nominally at zero baseline level."),
+        }
     )
     applyPhotodiodeCorrection = pexConfig.Field(
         dtype=bool,
@@ -176,7 +242,8 @@ class LinearitySolveTask(pipeBase.PipelineTask):
         outputs = self.run(**inputs)
         butlerQC.put(outputs, outputRefs)
 
-    def run(self, inputPtc, dummy, camera, inputDims, inputPhotodiodeCorrection=None):
+    def run(self, inputPtc, dummy, camera, inputDims, inputPhotodiodeData=None,
+            inputPhotodiodeCorrection=None):
         """Fit non-linearity to PTC data, returning the correct Linearizer
         object.
 
@@ -184,15 +251,17 @@ class LinearitySolveTask(pipeBase.PipelineTask):
         ----------
         inputPtc : `lsst.ip.isr.PtcDataset`
             Pre-measured PTC dataset.
-        inputPhotodiodeCorrection : `lsst.ip.isr.PhotodiodeCorrection`
-            Pre-measured photodiode correction used in the case when
-            applyPhotodiodeCorrection=True.
         dummy : `lsst.afw.image.Exposure`
             The exposure used to select the appropriate PTC dataset.
             In almost all circumstances, one of the input exposures
             used to generate the PTC dataset is the best option.
+        inputPhotodiodeCorrection : `lsst.ip.isr.PhotodiodeCorrection`
+            Pre-measured photodiode correction used in the case when
+            applyPhotodiodeCorrection=True.
         camera : `lsst.afw.cameraGeom.Camera`
             Camera geometry.
+        inputPhotodiodeData : `dict` [`str`, `lsst.ip.isr.PhotodiodeCalib`]
+            Photodiode readings data.
         inputDims : `lsst.daf.butler.DataCoordinate` or `dict`
             DataIds to use to populate the output calibration.
 
@@ -239,8 +308,17 @@ class LinearitySolveTask(pipeBase.PipelineTask):
         # Initialize the linearizer.
         linearizer = Linearizer(detector=detector, table=table, log=self.log)
 
-        if self.config.usePhotodiode and self.config.applyPhotodiodeCorrection:
-            abscissaCorrections = inputPhotodiodeCorrection.abscissaCorrections
+        if self.config.usePhotodiode:
+            # Compute the photodiode integrals once, outside the loop
+            # over amps.
+            monDiodeCharge = {}
+            for handle in inputPhotodiodeData:
+                expId = handle.dataId['exposure']
+                pd_calib = handle.get()
+                pd_calib.integrationMethod = self.config.photodiodeIntegrationMethod
+                monDiodeCharge[expId] = pd_calib.integrate()[0]
+            if self.config.applyPhotodiodeCorrection:
+                abscissaCorrections = inputPhotodiodeCorrection.abscissaCorrections
 
         for i, amp in enumerate(detector):
             ampName = amp.getName()
@@ -258,9 +336,6 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 mask = np.array(inputPtc.expIdMask[ampName], dtype=bool)
 
             if self.config.usePhotodiode:
-                # Here's where we bring in the photodiode data
-                # TODO: DM-33585. Replace when pd data is ingested.
-                DATA_DIR = '/lsstdata/offline/teststand/BOT/storage/'
                 modExpTimes = []
                 for i, pair in enumerate(inputPtc.inputExpIdPairs[ampName]):
                     pair = pair[0]
@@ -268,25 +343,11 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                     nExps = 0
                     for j in range(2):
                         expId = pair[j]
-                        try:
-                            date = int(expId/100000)
-                            seq = expId - date * 100000
-                            date = date - 10000000
-                            filename = DATA_DIR + \
-                                '%d/MC_C_%d_%06d/Photodiode_Readings_%d_%06d.txt'\
-                                % (date, date, seq, date, seq)
-                            photodiodeCalib = PhotodiodeCalib.readTwoColumnPhotodiodeData(filename)
-                            photodiodeCalib.integrationMethod = 'TRIMMED_SUM'
-                            monDiodeCharge = photodiodeCalib.integrate()
-                            modExpTime += monDiodeCharge
+                        if expId in monDiodeCharge:
+                            modExpTime += monDiodeCharge[expId]
                             nExps += 1
-                        except (RuntimeError, OSError):
-                            continue
                     if nExps > 0:
-                        # The 5E8 factor bring the modExpTimes back to about
-                        # the same order as the expTimes.
-                        # Probably a better way to do this.
-                        modExpTime = 5.0E8 * modExpTime / nExps
+                        modExpTime = modExpTime / nExps
                     else:
                         mask[i] = False
 
@@ -299,7 +360,6 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                     else:
                         correction = 0.0
                     modExpTimes.append(modExpTime + correction)
-
                 inputAbscissa = np.array(modExpTimes)[mask]
             else:
                 inputAbscissa = np.array(inputPtc.rawExpTimes[ampName])[mask]
