@@ -458,7 +458,7 @@ def arrangeFlatsByExpTime(exposureList, exposureIdList):
     Returns
     ------
     flatsAtExpTime : `dict` [`float`,
-                      `list`[(`lsst.pipe.base.connections.DeferredDatasetRef`,
+                     `list`[(`lsst.pipe.base.connections.DeferredDatasetRef`,
                               `int`)]]
         Dictionary that groups references to flat-field exposures
         (and their IDs) that have the same exposure time (seconds).
@@ -471,6 +471,37 @@ def arrangeFlatsByExpTime(exposureList, exposureIdList):
         listAtExpTime.append((expRef, expId))
 
     return flatsAtExpTime
+
+
+def arrangeFlatsByExpFlux(exposureList, exposureIdList, fluxKeyword):
+    """Arrange exposures by exposure flux.
+
+    Parameters
+    ----------
+    exposureList : `list` [`lsst.pipe.base.connections.DeferredDatasetRef`]
+        Input list of exposure references.
+    exposureIdList : `list` [`int`]
+        List of exposure ids as obtained by dataId[`exposure`].
+    fluxKeyword : `str`
+        Header keyword that contains the flux per exposure.
+
+    Returns
+    -------
+    flatsAtFlux : `dict` [`float`,
+                  `list`[(`lsst.pipe.base.connections.DeferredDatasetRef`,
+                          `int`)]]
+        Dictionary that groups references to flat-field exposures
+        (and their IDs) that have the same flux.
+    """
+    flatsAtExpFlux = {}
+    assert len(exposureList) == len(exposureIdList), "Different lengths for exp. list and exp. ID lists"
+    for expRef, expId in zip(exposureList, exposureIdList):
+        # Get flux from header, assuming it is in the metadata.
+        expFlux = expRef.get().getMetadata().toDict()[fluxKeyword]
+        listAtExpFlux = flatsAtExpFlux.setdefault(expFlux, [])
+        listAtExpFlux.append((expRef, expId))
+
+    return flatsAtExpFlux
 
 
 def arrangeFlatsByExpId(exposureList, exposureIdList):
