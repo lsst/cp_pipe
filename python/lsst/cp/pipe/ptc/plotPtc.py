@@ -28,10 +28,57 @@ import matplotlib as mpl
 from matplotlib import gridspec
 from matplotlib.backends.backend_pdf import PdfPages
 
+import lsst.pex.config as pexConfig
+import lsst.pipe.base as pipeBase
+import lsst.pipe.base.connectionTypes as cT
+
 from lsst.cp.pipe.utils import (funcAstier, funcPolynomial,
                                 calculateWeightedReducedChi2,
                                 getFitDataFromCovariances)
 from matplotlib.ticker import MaxNLocator
+
+
+class PlotPhotonTransferCurveConnections(pipeBase.PipelineTaskConnections,
+                                         dimensions=("instrument", "detector")):
+
+    inputPtcDataset = cT.Input(
+        name="calib",
+        doc="Input PTC dataset.",
+        storageClass="PhotonTransferCurveDataset",
+        dimensions=["instrument", "detector"],
+        isCalibration=True
+    )
+    # Optional linearizer? not possible now, but see: RFC-899
+
+
+class PlotPhotonTransferCurveConfig(pipeBase.PipelineTaskConfig,
+                                    pipelineConnections=PlotPhotonTransferCurveConnections):
+    """Configuration for the measurement of covariances from flats.
+    """
+    filenameRoot = pexConfig.Field(
+        dtype=str,
+        doc="Root for name of output PDF file. The detector "
+            "ID will be appended to it.",
+        default="ptcPlots.pdf",
+    )
+    outputDirectory = pexConfig.Field(
+        dtype=str,
+        doc="Path to the output directory where the final PDF will "
+            "be placed",
+        default="./",
+    )
+    signalElectronsRelativeA = pexConfig.Field(
+        dtype=float,
+        doc="Signal value (in e-) for relative systematic bias between different "
+            "methods of estimating a_ij (Fig. 15 of Astier+19).",
+        default=75000.0,
+    )
+    plotNormalizedCovariancesNumberOfBins = pexConfig.Field(
+        dtype=float,
+        doc="Number of bins in `plotNormalizedCovariancesNumber` function"
+            "(Fig. 8, 10., of Astier+19).",
+        default=10,
+    )
 
 
 class PlotPhotonTransferCurveTask():
@@ -41,7 +88,7 @@ class PlotPhotonTransferCurveTask():
     ----------
 
     datasetFileName : `str`
-        datasetPtc (lsst.ip.isr.PhotonTransferCurveDataset) file
+        ptcDataset (lsst.ip.isr.PhotonTransferCurveDataset) file
         name (fits).
 
     linearizerFileName : `str`, optional
@@ -70,23 +117,26 @@ class PlotPhotonTransferCurveTask():
         self.datasetFilename = datasetFilename
         self.linearizerFileName = linearizerFileName
         self.detNum = detNum
-        self.signalElectronsRelativeA = signalElectronsRelativeA
-        self.plotNormalizedCovariancesNumberOfBins = plotNormalizedCovariancesNumberOfBins
-        self.outDir = outDir
+        self.signalElectronsRelativeA = self.config.signalElectronsRelativeA
+        self.plotNormalizedCovariancesNumberOfBins = self.config.plotNormalizedCovariancesNumberOfBins
 
-    def run(self, filenameFull, datasetPtc, linearizer=None, log=None):
+    def run(self, ptcDataset, linearizer=None, log=None):
         """Make the plots for the PTC task"""
-        ptcFitType = datasetPtc.ptcFitType
+        ptcFitType = ptcDataset.ptcFitType
+        ptcMetadata = ptcDataset.getMetadata().toDict()
+        self.detId = ptcMetadata['DETECTOR']
+        filenameFull = self.config.outputDirectory + "/" + self.config.filenameRoot + f"_{self.detId}.pdf"
+
         with PdfPages(filenameFull) as pdfPages:
             if ptcFitType in ["FULLCOVARIANCE", ]:
-                self.covAstierMakeAllPlots(datasetPtc, pdfPages, log=log)
+                self.covAstierMakeAllPlots(ptcDataset, pdfPages, log=log)
             elif ptcFitType in ["EXPAPPROXIMATION", "POLYNOMIAL"]:
-                self._plotStandardPtc(datasetPtc, ptcFitType, pdfPages)
+                self._plotStandardPtc(ptcDataset, ptcFitType, pdfPages)
             else:
                 raise RuntimeError(f"The input dataset had an invalid dataset.ptcFitType: {ptcFitType}. \n"
                                    "Options: 'FULLCOVARIANCE', EXPAPPROXIMATION, or 'POLYNOMIAL'.")
             if linearizer:
-                self._plotLinearizer(datasetPtc, linearizer, pdfPages)
+                self._plotLinearizer(ptcDataset, linearizer, pdfPages)
 
         return
 
