@@ -286,7 +286,7 @@ class PlotPhotonTransferCurveTask():
                 a.set_xscale('linear')
                 a.set_yscale('linear')
                 a.scatter(meanVecFinal, varVecFinal, c='blue', marker='o', s=markerSize)
-                a.plot(meanVecFinal, varVecModelFinal, color='red', lineStyle='-')
+                a.plot(meanVecFinal, varVecModelFinal, color='red', linestyle='-')
                 a.text(0.03, 0.7, stringLegend, transform=a.transAxes, fontsize=legendFontSize)
                 a.set_title(amp, fontsize=titleFontSize)
                 a.set_xlim([minMeanVecFinal - 0.2*deltaXlim, maxMeanVecFinal + 0.2*deltaXlim])
@@ -297,7 +297,7 @@ class PlotPhotonTransferCurveTask():
                 a2.tick_params(labelsize=11)
                 a2.set_xscale('log')
                 a2.set_yscale('log')
-                a2.plot(meanVecFinal, varVecModelFinal, color='red', lineStyle='-')
+                a2.plot(meanVecFinal, varVecModelFinal, color='red', linestyle='-')
                 a2.scatter(meanVecFinal, varVecFinal, c='blue', marker='o', s=markerSize)
                 a2.text(0.03, 0.7, stringLegend, transform=a2.transAxes, fontsize=legendFontSize)
                 a2.set_title(amp, fontsize=titleFontSize)
@@ -309,12 +309,12 @@ class PlotPhotonTransferCurveTask():
                 aResVar.tick_params(labelsize=11)
                 aResVar.set_xscale('linear')
                 aResVar.set_yscale('linear')
-                aResVar.plot(meanVecFinal, varVecFinal - varVecModelFinal, color='blue', lineStyle='-',
+                aResVar.plot(meanVecFinal, varVecFinal - varVecModelFinal, color='blue', linestyle='-',
                              label=r'Full fit ($\chi_{\rm{red}}^2$: %g)'%chi2FullModelVar)
-                aResVar.plot(meanVecFinal, varVecFinal - varModelFinalQuadratic, color='red', lineStyle='-',
+                aResVar.plot(meanVecFinal, varVecFinal - varModelFinalQuadratic, color='red', linestyle='-',
                              label=r'Quadratic fit ($\chi_{\rm{red}}^2$: %g)'%chi2QuadModelVar)
                 aResVar.plot(meanVecFinalNoB, varVecFinalNoB - varVecModelFinalNoB, color='green',
-                             lineStyle='-',
+                             linestyle='-',
                              label=r'Full fit (b=0) ($\chi_{\rm{red}}^2$: %g)'%chi2FullModelNoBVar)
                 aResVar.axhline(color='black')
                 aResVar.set_title(amp, fontsize=titleFontSize)
@@ -327,7 +327,7 @@ class PlotPhotonTransferCurveTask():
                 a3.set_xscale('linear')
                 a3.set_yscale('linear')
                 a3.scatter(meanVecFinalCov01, varVecFinalCov01, c='blue', marker='o', s=markerSize)
-                a3.plot(meanVecFinalCov01, varVecModelFinalCov01, color='red', lineStyle='-')
+                a3.plot(meanVecFinalCov01, varVecModelFinalCov01, color='red', linestyle='-')
                 a3.set_title(amp, fontsize=titleFontSize)
                 a3.set_xlim([minMeanVecFinal - 0.2*deltaXlim, maxMeanVecFinal + 0.2*deltaXlim])
 
@@ -337,7 +337,7 @@ class PlotPhotonTransferCurveTask():
                 a4.set_xscale('linear')
                 a4.set_yscale('linear')
                 a4.scatter(meanVecFinalCov10, varVecFinalCov10, c='blue', marker='o', s=markerSize)
-                a4.plot(meanVecFinalCov10, varVecModelFinalCov10, color='red', lineStyle='-')
+                a4.plot(meanVecFinalCov10, varVecModelFinalCov10, color='red', linestyle='-')
                 a4.set_title(amp, fontsize=titleFontSize)
                 a4.set_xlim([minMeanVecFinal - 0.2*deltaXlim, maxMeanVecFinal + 0.2*deltaXlim])
 
