@@ -20,7 +20,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 
-__all__ = ['PlotPhotonTransferCurveTask']
+__all__ = ['PlotPhotonTransferCurveConfig', 'PlotPhotonTransferCurveTask']
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -114,8 +114,18 @@ class PlotPhotonTransferCurveTask():
         self.signalElectronsRelativeA = self.config.signalElectronsRelativeA
         self.plotNormalizedCovariancesNumberOfBins = self.config.plotNormalizedCovariancesNumberOfBins
 
-    def run(self, ptcDataset, linearizer=None, log=None):
-        """Make the plots for the PTC task"""
+    def run(self, ptcDataset, log=None):
+        """Make the plots for the PTC task.
+
+        Parameters
+        ----------
+
+        ptcDataset : `lsst.ip.isr.PhotonTransferCurveDataset`
+            Output dataset from Photon Transfer Curve task.
+
+        log : `logging.Logger`, optional
+            Logger to handle messages
+        """
         ptcFitType = ptcDataset.ptcFitType
         ptcMetadata = ptcDataset.getMetadata().toDict()
         self.detId = ptcMetadata['DETECTOR']
