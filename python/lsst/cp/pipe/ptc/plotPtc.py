@@ -988,44 +988,6 @@ class PlotPhotonTransferCurveTask():
         return
 
     @staticmethod
-    def findGroups(x, maxDiff):
-        """Group data into bins, with at most maxDiff distance between bins.
-
-        Parameters
-        ----------
-        x : `list`
-            Data to bin.
-
-        maxDiff : `int`
-            Maximum distance between bins.
-
-        Returns
-        -------
-        index : `list`
-            Bin indices.
-        """
-        ix = np.argsort(x)
-        xsort = np.sort(x)
-        index = np.zeros_like(x, dtype=np.int32)
-        xc = xsort[0]
-        group = 0
-        ng = 1
-
-        for i in range(1, len(ix)):
-            xval = xsort[i]
-            if (xval - xc < maxDiff):
-                xc = (ng*xc + xval)/(ng+1)
-                ng += 1
-                index[ix[i]] = group
-            else:
-                group += 1
-                ng = 1
-                index[ix[i]] = group
-                xc = xval
-
-        return index
-
-    @staticmethod
     def indexForBins(x, nBins):
         """Builds an index with regular binning. The result can be fed into
         binData.
