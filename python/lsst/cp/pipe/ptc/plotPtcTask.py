@@ -58,7 +58,7 @@ class PlotPhotonTransferCurveConfig(pipeBase.PipelineTaskConfig,
         dtype=str,
         doc="Root for name of output PDF file. The detector "
             "ID will be appended to it.",
-        default="ptcPlots.pdf",
+        default="ptcPlots",
     )
     outputDirectory = pexConfig.Field(
         dtype=str,
