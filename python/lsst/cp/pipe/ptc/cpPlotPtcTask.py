@@ -31,6 +31,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 import lsst.pipe.base.connectionTypes as cT
+from lsst.cp.pipe._lookupStaticCalibration import lookupStaticCalibration
 
 from lsst.cp.pipe.utils import (funcAstier, funcPolynomial,
                                 calculateWeightedReducedChi2,
@@ -39,14 +40,30 @@ from matplotlib.ticker import MaxNLocator
 
 
 class PlotPhotonTransferCurveConnections(pipeBase.PipelineTaskConnections,
-                                         dimensions=("instrument", "detector")):
+                                         dimensions=("instrument", "exposure", "detector")):
 
+    dummyExposure = cT.Input(
+        name="raw",
+        doc="Dummy exposure to retreive PTC dataset.",
+        storageClass="Exposure",
+        dimensions=("instrument", "detector", "exposure"),
+        multiple=True,
+        deferLoad=True,
+    )
     inputPtcDataset = cT.Input(
         name="calib",
         doc="Input PTC dataset.",
         storageClass="PhotonTransferCurveDataset",
-        dimensions=["instrument", "detector"],
+        dimensions=("instrument", "detector"),
         isCalibration=True
+    )
+    camera = cT.PrerequisiteInput(
+        name="camera",
+        doc="Camera associated with this data.",
+        storageClass="Camera",
+        dimensions=("instrument", ),
+        isCalibration=True,
+        lookupFunction=lookupStaticCalibration,
     )
 
 
@@ -73,33 +90,21 @@ class PlotPhotonTransferCurveConfig(pipeBase.PipelineTaskConfig,
         default=75000.0,
     )
     plotNormalizedCovariancesNumberOfBins = pexConfig.Field(
-        dtype=float,
+        dtype=int,
         doc="Number of bins in `plotNormalizedCovariancesNumber` function"
             "(Fig. 8, 10., of Astier+19).",
         default=10,
     )
 
 
-class PlotPhotonTransferCurveTask():
+class PlotPhotonTransferCurveTask(pipeBase.PipelineTask):
     """A class to plot the dataset from MeasurePhotonTransferCurveTask.
 
     Parameters
     ----------
-
-    datasetFileName : `str`
-        ptcDataset (lsst.ip.isr.PhotonTransferCurveDataset) file
-        name (fits).
-
-    linearizerFileName : `str`, optional
-        linearizer (isr.linearize.Linearizer) file
-        name (fits).
-
     outDir : `str`, optional
         Path to the output directory where the final PDF will
         be placed.
-
-    detNum : `int`, optional
-        Detector number.
 
     signalElectronsRelativeA : `float`, optional
         Signal value for relative systematic bias between different
@@ -110,32 +115,35 @@ class PlotPhotonTransferCurveTask():
         (Fig. 8, 10., of Astier+19).
     """
 
-    def __init__(self):
-        self.signalElectronsRelativeA = self.config.signalElectronsRelativeA
-        self.plotNormalizedCovariancesNumberOfBins = self.config.plotNormalizedCovariancesNumberOfBins
+    ConfigClass = PlotPhotonTransferCurveConfig
+    _DefaultName = 'cpPlotPtc'
 
-    def run(self, ptcDataset, log=None):
+    def run(self, inputPtcDataset, dummyExposure=None, camera=None):
         """Make the plots for the PTC task.
 
         Parameters
         ----------
 
-        ptcDataset : `lsst.ip.isr.PhotonTransferCurveDataset`
+        inputPtcDataset : `lsst.ip.isr.PhotonTransferCurveDataset`
             Output dataset from Photon Transfer Curve task.
 
         log : `logging.Logger`, optional
             Logger to handle messages
         """
-        ptcFitType = ptcDataset.ptcFitType
-        ptcMetadata = ptcDataset.getMetadata().toDict()
+
+        if len(dummyExposure) == 0:
+            self.log.warning("No dummy exposure found.")
+
+        ptcFitType = inputPtcDataset.ptcFitType
+        ptcMetadata = inputPtcDataset.getMetadata().toDict()
         self.detId = ptcMetadata['DETECTOR']
         filenameFull = self.config.outputDirectory + "/" + self.config.filenameRoot + f"_{self.detId}.pdf"
 
         with PdfPages(filenameFull) as pdfPages:
             if ptcFitType in ["FULLCOVARIANCE", ]:
-                self.covAstierMakeAllPlots(ptcDataset, pdfPages, log=log)
+                self.covAstierMakeAllPlots(inputPtcDataset, pdfPages, log=self.log)
             elif ptcFitType in ["EXPAPPROXIMATION", "POLYNOMIAL"]:
-                self._plotStandardPtc(ptcDataset, pdfPages)
+                self._plotStandardPtc(inputPtcDataset, pdfPages)
             else:
                 raise RuntimeError(f"The input dataset had an invalid dataset.ptcFitType: {ptcFitType}. \n"
                                    "Options: 'FULLCOVARIANCE', EXPAPPROXIMATION, or 'POLYNOMIAL'.")
@@ -182,21 +190,21 @@ class PlotPhotonTransferCurveTask():
         self.plotNormalizedCovariances(0, 0, mu, fullCovs, fullCovsModel, fullCovWeights, fullCovsNoB,
                                        fullCovsModelNoB, fullCovWeightsNoB, pdfPages,
                                        offset=0.01, topPlot=True,
-                                       numberOfBins=self.plotNormalizedCovariancesNumberOfBins,
+                                       numberOfBins=self.config.plotNormalizedCovariancesNumberOfBins,
                                        log=log)
         self.plotNormalizedCovariances(0, 1, mu, fullCovs, fullCovsModel, fullCovWeights, fullCovsNoB,
                                        fullCovsModelNoB, fullCovWeightsNoB, pdfPages,
-                                       numberOfBins=self.plotNormalizedCovariancesNumberOfBins,
+                                       numberOfBins=self.config.plotNormalizedCovariancesNumberOfBins,
                                        log=log)
         self.plotNormalizedCovariances(1, 0, mu, fullCovs, fullCovsModel, fullCovWeights, fullCovsNoB,
                                        fullCovsModelNoB, fullCovWeightsNoB, pdfPages,
-                                       numberOfBins=self.plotNormalizedCovariancesNumberOfBins,
+                                       numberOfBins=self.config.plotNormalizedCovariancesNumberOfBins,
                                        log=log)
         self.plot_a_b(aDict, bDict, pdfPages)
         self.ab_vs_dist(aDict, bDict, pdfPages, bRange=4)
         self.plotAcoeffsSum(aDict, bDict, pdfPages)
         self.plotRelativeBiasACoeffs(aDict, aDictNoB, fullCovsModel, fullCovsModelNoB,
-                                     self.signalElectronsRelativeA, gainDict, pdfPages, maxr=4)
+                                     self.config.signalElectronsRelativeA, gainDict, pdfPages, maxr=4)
 
         return
 
