@@ -339,8 +339,8 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
         for expTime in inputExp:
             exposures = inputExp[expTime]
             if len(exposures) == 1:
-                self.log.warning("Only one exposure found at expTime %f. Dropping exposure %d.",
-                                 expTime, exposures[0][1])
+                self.log.warning("Only one exposure found at %s %f. Dropping exposure %d.",
+                                 self.config.matchExposuresType, expTime, exposures[0][1])
                 continue
             else:
                 # Only use the first two exposures at expTime. Each
@@ -351,8 +351,9 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                 exp1, exp2 = expRef1.get(), expRef2.get()
 
                 if len(exposures) > 2:
-                    self.log.warning("Already found 2 exposures at expTime %f. Ignoring exposures: %s",
-                                     expTime, ", ".join(str(i[1]) for i in exposures[2:]))
+                    self.log.warning("Already found 2 exposures at %s %f. Ignoring exposures: %s",
+                                     self.config.matchExposuresType, expTime,
+                                     ", ".join(str(i[1]) for i in exposures[2:]))
             # Mask pixels at the edge of the detector or of each amp
             if self.config.numEdgeSuspect > 0:
                 isrTask.maskEdges(exp1, numEdgePixels=self.config.numEdgeSuspect,

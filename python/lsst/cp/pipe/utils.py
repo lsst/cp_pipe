@@ -497,7 +497,7 @@ def arrangeFlatsByExpFlux(exposureList, exposureIdList, fluxKeyword):
     assert len(exposureList) == len(exposureIdList), "Different lengths for exp. list and exp. ID lists"
     for expRef, expId in zip(exposureList, exposureIdList):
         # Get flux from header, assuming it is in the metadata.
-        expFlux = expRef.get().getMetadata().toDict()[fluxKeyword]
+        expFlux = expRef.get().getMetadata()[fluxKeyword]
         listAtExpFlux = flatsAtExpFlux.setdefault(expFlux, [])
         listAtExpFlux.append((expRef, expId))
 
