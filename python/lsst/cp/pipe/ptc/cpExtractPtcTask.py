@@ -25,7 +25,8 @@ import lsst.afw.math as afwMath
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 from lsst.cp.pipe.utils import (arrangeFlatsByExpTime, arrangeFlatsByExpId,
-                                sigmaClipCorrection, CovFastFourierTransform)
+                                arrangeFlatsByExpFlux, sigmaClipCorrection,
+                                CovFastFourierTransform)
 
 import lsst.pipe.base.connectionTypes as cT
 
@@ -68,11 +69,21 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
                                        pipelineConnections=PhotonTransferCurveExtractConnections):
     """Configuration for the measurement of covariances from flats.
     """
-
-    matchByExposureId = pexConfig.Field(
-        dtype=bool,
-        doc="Should exposures be matched by ID rather than exposure time?",
-        default=False,
+    matchExposuresType = pexConfig.ChoiceField(
+        dtype=str,
+        doc="Match input exposures by time, flux, or expId",
+        default='TIME',
+        allowed={
+            "TIME": "Match exposures by exposure time.",
+            "FLUX": "Match exposures by target flux. Use header keyword"
+                " in matchExposuresByFluxKeyword to find the flux.",
+            "EXPID": "Match exposures by exposure ID."
+        }
+    )
+    matchExposuresByFluxKeyword = pexConfig.Field(
+        dtype=str,
+        doc="Header keyword for flux if matchExposuresType is FLUX.",
+        default='CCOBFLUX',
     )
     maximumRangeCovariancesAstier = pexConfig.Field(
         dtype=int,
@@ -178,7 +189,8 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
     there are more than two per exposure time). This task measures
     the  mean, variance, and covariances from a region (e.g.,
     an amplifier) of the difference image of the two flats with
-    the same exposure time.
+    the same exposure time (alternatively, all input images could have
+    the same exposure time but their flux changed).
 
     The variance is calculated via afwMath, and the covariance
     via the methods in Astier+19 (appendix A). In theory,
@@ -233,12 +245,16 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
         # (deferLoad=True in the input connections)
         inputs['inputDims'] = [expRef.datasetRef.dataId['exposure'] for expRef in inputRefs.inputExp]
 
-        # Dictionary, keyed by expTime, with tuples containing flat
-        # exposures and their IDs.
-        if self.config.matchByExposureId:
-            inputs['inputExp'] = arrangeFlatsByExpId(inputs['inputExp'], inputs['inputDims'])
-        else:
+        # Dictionary, keyed by expTime (or expFlux or expId), with tuples
+        # containing flat exposures and their IDs.
+        matchType = self.config.matchExposuresType
+        if matchType == 'TIME':
             inputs['inputExp'] = arrangeFlatsByExpTime(inputs['inputExp'], inputs['inputDims'])
+        elif matchType == 'FLUX':
+            inputs['inputExp'] = arrangeFlatsByExpFlux(inputs['inputExp'], inputs['inputDims'],
+                                                       self.config.matchExposuresByFluxKeyword)
+        else:
+            inputs['inputExp'] = arrangeFlatsByExpId(inputs['inputExp'], inputs['inputDims'])
 
         outputs = self.run(**inputs)
         butlerQC.put(outputs, outputRefs)
@@ -318,11 +334,13 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
             self.log.info("Masking %d pixels from the edges of all exposures as SUSPECT.",
                           self.config.numEdgeSuspect)
 
+        # Depending on the value of config.matchExposuresType
+        # 'expTime' can stand for exposure time, flux, or ID.
         for expTime in inputExp:
             exposures = inputExp[expTime]
             if len(exposures) == 1:
-                self.log.warning("Only one exposure found at expTime %f. Dropping exposure %d.",
-                                 expTime, exposures[0][1])
+                self.log.warning("Only one exposure found at %s %f. Dropping exposure %d.",
+                                 self.config.matchExposuresType, expTime, exposures[0][1])
                 continue
             else:
                 # Only use the first two exposures at expTime. Each
@@ -333,8 +351,9 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                 exp1, exp2 = expRef1.get(), expRef2.get()
 
                 if len(exposures) > 2:
-                    self.log.warning("Already found 2 exposures at expTime %f. Ignoring exposures: %s",
-                                     expTime, ", ".join(str(i[1]) for i in exposures[2:]))
+                    self.log.warning("Already found 2 exposures at %s %f. Ignoring exposures: %s",
+                                     self.config.matchExposuresType, expTime,
+                                     ", ".join(str(i[1]) for i in exposures[2:]))
             # Mask pixels at the edge of the detector or of each amp
             if self.config.numEdgeSuspect > 0:
                 isrTask.maskEdges(exp1, numEdgePixels=self.config.numEdgeSuspect,
