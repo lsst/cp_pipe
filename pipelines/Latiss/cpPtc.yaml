@@ -11,7 +11,7 @@ tasks:
   ptcExtract:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
     config:
-      matchByExposureId: false
+      matchExposuresType: TIME
   ptcSolve:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
     config:
