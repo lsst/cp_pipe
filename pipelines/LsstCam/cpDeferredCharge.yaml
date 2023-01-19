@@ -3,7 +3,7 @@ instrument: lsst.obs.lsst.LsstCam
 imports:
   - location: $CP_PIPE_DIR/pipelines/_ingredients/cpDeferredCharge.yaml
 tasks:
-  isr:
+  biasIsr:
     class: lsst.ip.isr.IsrTask
     config:
       overscan.fitType: 'MEDIAN_PER_ROW'

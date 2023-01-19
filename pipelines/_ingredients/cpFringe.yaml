@@ -1,6 +1,6 @@
 description: cp_pipe FRINGE calibration construction
 tasks:
-  isr:
+  fringeIsr:
     class: lsst.ip.isr.IsrTask
     config:
       connections.ccdExposure: 'raw'
@@ -20,6 +20,6 @@ tasks:
       calibrationType: 'fringe'
       exposureScaling: "Unity"
 contracts:
-  - isr.doFringe == False
+  - fringeIsr.doFringe == False
   - cpFringeCombine.calibrationType == "fringe"
   - cpFringeCombine.exposureScaling == "Unity"

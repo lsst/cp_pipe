@@ -1,6 +1,6 @@
 description: cp_pipe CROSSTALK calibration construction.
 tasks:
-  isr:
+  crosstalkIsr:
     class: lsst.ip.isr.IsrTask
     config:
       connections.ccdExposure: 'raw'

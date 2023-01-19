@@ -3,7 +3,7 @@ instrument: lsst.obs.lsst.Latiss
 imports:
   -  location: $CP_PIPE_DIR/pipelines/_ingredients/cpSky.yaml
 tasks:
-  isr:
+  skyIsr:
     class: lsst.ip.isr.isrTask.IsrTask
     config:
       overscan.fitType: 'MEDIAN_PER_ROW'

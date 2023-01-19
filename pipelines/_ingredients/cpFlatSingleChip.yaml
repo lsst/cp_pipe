@@ -1,6 +1,6 @@
 description: cp_pipe FLAT calibration construction
 tasks:
-  isr:
+  flatIsr:
     class: lsst.ip.isr.IsrTask
     config:
       connections.ccdExposure: 'raw'
@@ -18,5 +18,5 @@ tasks:
       calibrationType: 'flat'
       exposureScaling: MeanStats
 contracts:
-  - isr.doFlat == False
+  - flatIsr.doFlat == False
   - cpFlatCombine.calibrationType == "flat"

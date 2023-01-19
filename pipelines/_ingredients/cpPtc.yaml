@@ -3,7 +3,7 @@ parameters:
     exposureName: cpPtcProc
     measuredCovariances: cpPtcExtract
 tasks:
-  isr:
+  ptcIsr:
     class: lsst.ip.isr.IsrTask
     config:
       connections.ccdExposure: raw
@@ -35,7 +35,7 @@ tasks:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
     config:
       connections.inputExp: parameters.exposureName
-      connections.taskMetadata: 'isr_metadata'
+      connections.taskMetadata: 'ptcIsr_metadata'
       connections.outputCovariances: parameters.measuredCovariances
   ptcSolve:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
@@ -65,6 +65,6 @@ contracts:
 subsets:
   gainFromFlatPairs:
       subset:
-          - isr
+          - ptcIsr
           - ptcExtract
       description: gain estimation from pairs of flats at the same exposure time.

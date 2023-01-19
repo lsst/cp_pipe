@@ -3,7 +3,7 @@ instrument: lsst.obs.lsst.Latiss
 imports:
   - location: $CP_PIPE_DIR/pipelines/_ingredients/cpFringe.yaml
 tasks:
-  isr:
+  fringeIsr:
     class: lsst.ip.isr.IsrTask
     config:
       # Disable these until useful calibrations exist.

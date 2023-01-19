@@ -5,7 +5,7 @@ instrument: lsst.obs.decam.DarkEnergyCamera
 imports:
   - location: $CP_PIPE_DIR/pipelines/_ingredients/cpFlat.yaml
 tasks:
-  isr:
+  flatIsr:
     class: lsst.ip.isr.IsrTask
     config:
       connections.crosstalkSources: 'overscanRaw'

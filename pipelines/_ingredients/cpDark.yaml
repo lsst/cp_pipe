@@ -1,6 +1,6 @@
 description: cp_pipe DARK calibration construction
 tasks:
-  isr:
+  darkIsr:
     class: lsst.ip.isr.IsrTask
     config:
       connections.ccdExposure: 'raw'
@@ -25,6 +25,6 @@ tasks:
       exposureScaling: "DarkTime"
       python: config.mask.append("CR")
 contracts:
-  - isr.doDark == False
+  - darkIsr.doDark == False
   - cpDarkCombine.calibrationType == "dark"
   - cpDarkCombine.exposureScaling == "DarkTime"

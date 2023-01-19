@@ -1,6 +1,6 @@
 description: cp_pipe CTI calibration construction
 tasks:
-  isr:
+  ctiIsr:
     class: lsst.ip.isr.IsrTask
     config:
       connections.ccdExposure: 'raw'

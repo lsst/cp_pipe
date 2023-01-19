@@ -1,6 +1,6 @@
 description: cp_pipe FLAT calibration construction optimized for single-CCD cameras
 tasks:
-  isr:
+  flatIsr:
     class: lsst.ip.isr.IsrTask
     config:
       connections.ccdExposure: 'raw'
@@ -30,4 +30,4 @@ tasks:
       exposureScaling: InputList
       scalingLevel: AMP
 contracts:
-  - isr.doFlat == False
+  - flatIsr.doFlat == False
