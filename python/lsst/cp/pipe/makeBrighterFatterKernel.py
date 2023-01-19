@@ -329,7 +329,7 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask):
 
             postKernel = self.successiveOverRelax(preKernel)
             bfk.ampKernels[ampName] = postKernel
-            if self.config.level == 'DETECTOR':
+            if self.config.level == 'DETECTOR' and ampName not in self.config.ignoreAmpsForAveraging:
                 detectorCorrList.extend(scaledCorrList)
                 detectorFluxes.extend(fluxes)
             bfk.valid[ampName] = True
