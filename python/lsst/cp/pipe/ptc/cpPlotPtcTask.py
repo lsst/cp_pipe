@@ -782,52 +782,39 @@ class PlotPhotonTransferCurveTask(pipeBase.PipelineTask):
         Parameters
         ----------
         i : `int`
-            Covariane lag
-
+            Covariance lag.
         j : `int`
-            Covariance lag
-
+            Covariance lag.
         inputMu : `dict` [`str`, `list`]
             Dictionary keyed by amp name with mean signal values.
-
         covs : `dict` [`str`, `list`]
             Dictionary keyed by amp names containing a list of measued
             covariances per mean flux.
-
         covsModel : `dict` [`str`, `list`]
             Dictionary keyed by amp names containinging covariances
             model (Eq. 20 of Astier+19) per mean flux.
-
         covsWeights : `dict` [`str`, `list`]
             Dictionary keyed by amp names containinging sqrt. of
             covariances weights.
-
         covsNoB : `dict` [`str`, `list`]
             Dictionary keyed by amp names containing a list of measued
             covariances per mean flux ('b'=0 in Astier+19).
-
         covsModelNoB : `dict` [`str`, `list`]
             Dictionary keyed by amp names containing covariances model
             (with 'b'=0 in Eq. 20 of Astier+19) per mean flux.
-
         covsWeightsNoB : `dict` [`str`, `list`]
             Dictionary keyed by amp names containing sqrt. of
             covariances weights ('b' = 0 in Eq. 20 of Astier+19).
-
         expIdMask : `dict` [`str`, `list`]
             Dictionary keyed by amp names containing the masked
             exposure pairs.
-
         offset : `float`, optional
             Constant offset factor to plot covariances in same panel
             (so they don't overlap).
-
         numberOfBins : `int`, optional
             Number of bins for top and bottom plot.
-
         plotData : `bool`, optional
             Plot the data points?
-
         topPlot : `bool`, optional
             Plot the top plot with the covariances, and the bottom
             plot with the model residuals?
@@ -967,12 +954,10 @@ class PlotPhotonTransferCurveTask(pipeBase.PipelineTask):
             Dictionary keyed by amp names containing the fitted 'a'
             coefficients from the model in Eq. 20 of Astier+19 (if
             `ptcFitType` is `FULLCOVARIANCE`).
-
         bDict : `dict` [`numpy.array`]
             Dictionary keyed by amp names containing the fitted 'b'
             coefficients from the model in Eq. 20 of Astier+19 (if
             `ptcFitType` is `FULLCOVARIANCE`).
-
         bRange : `int`
             Maximum lag for b arrays.
         """
@@ -1026,7 +1011,6 @@ class PlotPhotonTransferCurveTask(pipeBase.PipelineTask):
             Dictionary keyed by amp names containing the fitted 'b'
             coefficients from the model in Eq. 20 of Astier+19 (if
             `ptcFitType` is `FULLCOVARIANCE`).
-
         bRange : `int`
             Maximum lag for b arrays.
         """
@@ -1131,7 +1115,6 @@ class PlotPhotonTransferCurveTask(pipeBase.PipelineTask):
             Dictionary keyed by amp names containing the fitted 'a'
             coefficients from the model in Eq. 20 of Astier+19 (if
             `ptcFitType` is `FULLCOVARIANCE`).
-
         bDict : `dict` [`numpy.array`]
             Dictionary keyed by amp names containing the fitted 'b'
             coefficients from the model in Eq. 20 of Astier+19 (if
@@ -1189,25 +1172,19 @@ class PlotPhotonTransferCurveTask(pipeBase.PipelineTask):
         aDict : `dict`
             Dictionary of 'a' matrices (Eq. 20, Astier+19), with amp
             names as keys.
-
         aDictNoB : `dict`
             Dictionary of 'a' matrices ('b'= 0 in Eq. 20, Astier+19),
             with amp names as keys.
-
         fullCovsModel : `dict` [`str`, `list`]
             Dictionary keyed by amp names containing covariances model
             per mean flux.
-
         fullCovsModelNoB : `dict` [`str`, `list`]
             Dictionary keyed by amp names containing covariances model
             (with 'b'=0 in Eq. 20 of Astier+19) per mean flux.
-
         signalElectrons : `float`
             Signal at which to evaluate the a_ij coefficients.
-
         gainDict : `dict` [`str`, `float`]
             Dicgionary keyed by amp names with the gains in e-/ADU.
-
         maxr : `int`, optional
             Maximum lag.
         """
@@ -1471,13 +1448,10 @@ class PlotPhotonTransferCurveTask(pipeBase.PipelineTask):
         ----------
         x : `numpy.array`
             Data to bin.
-
         y : `numpy.array`
             Data to bin.
-
         binIdex : `list`
             Bin number of each datum.
-
         wy : `numpy.array`
             Inverse rms of each datum to use when averaging (the
             actual weight is wy**2).
@@ -1486,13 +1460,10 @@ class PlotPhotonTransferCurveTask(pipeBase.PipelineTask):
         -------
         xbin : `numpy.array`
             Binned data in x.
-
         ybin : `numpy.array`
             Binned data in y.
-
         wybin : `numpy.array`
             Binned weights in y, computed from wy's in each bin.
-
         sybin : `numpy.array`
             Uncertainty on the bin average, considering actual
             scatter, and ignoring weights.
