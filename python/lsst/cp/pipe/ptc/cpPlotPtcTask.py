@@ -71,74 +71,74 @@ class PlotPhotonTransferCurveConnections(
     )
     # ptcFitType = "FULLCOVARIANCE" produces 12 plots
     ptcPlot1 = cT.Output(
-        name="ptcPlot1",
-        doc="Ptc plot 1",
+        name="ptcVarMean",
+        doc="Variance vs mean.",
         storageClass="Plot",
         dimensions=("instrument", "detector"),
     )
     ptcPlot2 = cT.Output(
-        name="ptcPlot2",
-        doc="Ptc plot 2",
+        name="ptcVarMeanLog",
+        doc="Variance vs Mean, log scale.",
         storageClass="Plot",
         dimensions=("instrument", "detector"),
     )
     ptcPlot3 = cT.Output(
-        name="ptcPlot3",
-        doc="Ptc plot 3",
+        name="ptcVarResiduals",
+        doc="Variance residuals compared to model.",
         storageClass="Plot",
         dimensions=("instrument", "detector"),
     )
     ptcPlot4 = cT.Output(
-        name="ptcPlot4",
-        doc="Ptc plot 4",
+        name="ptcCov01Mean",
+        doc="Cov01 vs mean.",
         storageClass="Plot",
         dimensions=("instrument", "detector"),
     )
     ptcPlot5 = cT.Output(
-        name="ptcPlot5",
-        doc="Ptc plot 5",
+        name="ptcCov10Mean",
+        doc="Cov10 vs mean.",
         storageClass="Plot",
         dimensions=("instrument", "detector"),
     )
     ptcPlot6 = cT.Output(
-        name="ptcPlot6",
-        doc="Ptc plot 6",
+        name="ptcNormalizedVar",
+        doc="Variance over mean vs mean.",
         storageClass="Plot",
         dimensions=("instrument", "detector"),
     )
     ptcPlot7 = cT.Output(
-        name="ptcPlot7",
-        doc="Ptc plot 7",
+        name="ptcNormalizedCov01",
+        doc="Cov01 over mean vs mean.",
         storageClass="Plot",
         dimensions=("instrument", "detector"),
     )
     ptcPlot8 = cT.Output(
-        name="ptcPlot8",
-        doc="Ptc plot 8",
+        name="ptcNormalizedCov10",
+        doc="Cov10 over mean vs mean.",
         storageClass="Plot",
         dimensions=("instrument", "detector"),
     )
     ptcPlot9 = cT.Output(
-        name="ptcPlot9",
-        doc="Ptc plot 9",
+        name="ptcAandBMatrices",
+        doc="Fig. 12 of Astier+19.",
         storageClass="Plot",
         dimensions=("instrument", "detector"),
     )
     ptcPlot10 = cT.Output(
-        name="ptcPlot10",
-        doc="Ptc plot 10",
+        name="ptcAandBDistance",
+        doc="Fig. 13 of Astier+19.",
         storageClass="Plot",
         dimensions=("instrument", "detector"),
     )
     ptcPlot11 = cT.Output(
-        name="ptcPlot11",
-        doc="Ptc plot 11",
+        name="ptcACumulativeSum",
+        doc="Fig. 14 of Astier+19.",
         storageClass="Plot",
         dimensions=("instrument", "detector"),
     )
     ptcPlot12 = cT.Output(
-        name="ptcPlot12",
-        doc="Ptc plot 12",
+        name="ptcARelativeBias",
+        doc="Fig. 15 of Astier+19.",
         storageClass="Plot",
         dimensions=("instrument", "detector"),
     )
