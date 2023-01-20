@@ -26,7 +26,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 from matplotlib import gridspec
-from matplotlib.backends.backend_pdf import PdfPages
 
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
@@ -149,23 +148,6 @@ class PlotPhotonTransferCurveConfig(
 ):
     """Configuration for the measurement of covariances from flats."""
 
-    doPdf = pexConfig.Field(
-        dtype=bool,
-        doc="Save plots as PDF file, in addition to PNGs.",
-        default=False,
-    )
-    filenameRoot = pexConfig.Field(
-        dtype=str,
-        doc="Root for name of optional output PDF file. The detector "
-        "ID will be appended to it.",
-        default="ptcPlots",
-    )
-    outputDirectory = pexConfig.Field(
-        dtype=str,
-        doc="Path to the output directory where the final optional PDF will "
-        "be placed",
-        default="./",
-    )
     signalElectronsRelativeA = pexConfig.Field(
         dtype=float,
         doc="Signal value (in e-) for relative systematic bias between different "
@@ -237,11 +219,6 @@ class PlotPhotonTransferCurveTask(pipeBase.PipelineTask):
                 "Options: 'FULLCOVARIANCE', EXPAPPROXIMATION, or 'POLYNOMIAL'."
             )
 
-        if self.config.doPdf:
-            filenameFull = self.config.outputDirectory + "/" + self.config.filenameRoot
-            filenameFull += f"_det{self.detId}.pdf"
-            self.makePdfFile(filenameFull, figDict)
-
         maxNumberPlots = 12
         if len(figDict) < maxNumberPlots:
             for i in range(len(figDict), maxNumberPlots + 1):
@@ -261,23 +238,6 @@ class PlotPhotonTransferCurveTask(pipeBase.PipelineTask):
             ptcPlot11=figDict[10],
             ptcPlot12=figDict[11],
         )
-
-    def makePdfFile(self, filenameFull, figDict):
-        """Save plots in a PDF file.
-
-        Parameters
-        ----------
-        filenameFull : `str`
-            File name, including full path.
-        figDict : `dict` [`int`, `~matplotlib.figure.Figure]
-            Dictionary, keyed by an integer index, of
-            matplotlib PTC figures.
-        """
-        with PdfPages(filenameFull) as pdfPages:
-            for index in figDict:
-                pdfPages.savefig(figDict[index])
-
-        return
 
     def covAstierMakeAllPlots(self, dataset):
         """Make plots for MeasurePhotonTransferCurve task when
