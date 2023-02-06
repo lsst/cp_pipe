@@ -756,9 +756,9 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
         if correctionType not in ['NONE', 'SIMPLE', 'FULL']:
             raise RuntimeError("Unknown correction type: %s" % correctionType)
 
-        if correctionType != 'NONE' and readNoise is None:
+        if correctionType != 'NONE' and not np.isfinite(readNoise):
             self.log.warning("'correctionType' in 'getGainFromFlatPair' is %s, "
-                             "but 'readNoise' is 'None'. Setting 'correctionType' "
+                             "but 'readNoise' is NaN. Setting 'correctionType' "
                              "to 'NONE', so a gain value will be estimated without "
                              "corrections." % correctionType)
             correctionType = 'NONE'
@@ -824,6 +824,6 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
         else:
             self.log.warning("Median readout noise from ISR metadata for amp %s "
                              "could not be calculated." % ampName)
-            readNoise = None
+            readNoise = np.nan
 
         return readNoise
