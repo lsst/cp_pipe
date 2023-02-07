@@ -156,7 +156,7 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
     edgeMaskLevel = pexConfig.ChoiceField(
         dtype=str,
         doc="Mask edge pixels in which coordinate frame: DETECTOR or AMP?",
-        default="DETECTOR",
+        default="AMP",
         allowed={
             'DETECTOR': 'Mask only the edges of the full detector.',
             'AMP': 'Mask edges of each amplifier.',
