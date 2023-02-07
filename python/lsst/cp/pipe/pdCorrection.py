@@ -42,7 +42,7 @@ class PhotodiodeCorrectionConnections(pipeBase.PipelineTaskConnections,
         lookupFunction=lookupStaticCalibration,
     )
 
-    inputPtc = cT.PrerequisiteInput(
+    inputPtc = cT.Input(
         name="ptc",
         doc="Input PTC dataset.",
         storageClass="PhotonTransferCurveDataset",

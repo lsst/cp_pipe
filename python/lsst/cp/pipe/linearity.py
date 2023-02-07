@@ -95,13 +95,12 @@ class LinearitySolveConnections(pipeBase.PipelineTaskConnections,
         lookupFunction=lookupStaticCalibration,
     )
 
-    inputPtc = cT.PrerequisiteInput(
+    inputPtc = cT.Input(
         name="ptc",
         doc="Input PTC dataset.",
         storageClass="PhotonTransferCurveDataset",
         dimensions=("instrument", "detector"),
         isCalibration=True,
-        lookupFunction=ptcLookup,
     )
 
     inputPhotodiodeData = cT.PrerequisiteInput(
