@@ -458,12 +458,14 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
             # and assemble the measurements in the datasets
             # in an addecuate manner for fitting a PTC
             # model.
+            partialPtcDataset.updateMetadataFromExposures([exp1, exp2])
             partialPtcDataset.updateMetadata(setDate=True, detector=detector)
             partialPtcDatasetList[datasetIndex] = partialPtcDataset
 
             if nAmpsNan == len(ampNames):
                 msg = f"NaN mean in all amps of exposure pair {expId1}, {expId2} of detector {detNum}."
                 self.log.warning(msg)
+
         return pipeBase.Struct(
             outputCovariances=partialPtcDatasetList,
         )

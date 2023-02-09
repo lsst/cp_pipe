@@ -217,6 +217,7 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask):
         bfk.noise = inputPtc.noise
         bfk.meanXcorrs = dict()
         bfk.valid = dict()
+        bfk.updateMetadataFromExposures([inputPtc])
 
         for amp in detector:
             ampName = amp.getName()

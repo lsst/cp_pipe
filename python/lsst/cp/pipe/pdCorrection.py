@@ -198,6 +198,8 @@ class PhotodiodeCorrectionTask(pipeBase.PipelineTask):
         photodiodeCorrection.abscissaCorrections = abscissaCorrections
 
         photodiodeCorrection.validate()
+        photodiodeCorrection.updateMetadataFromExposures(inputPtc)
+        photodiodeCorrection.updateMetadataFromExposures(inputLinearizer)
         photodiodeCorrection.updateMetadata(camera=camera, filterName='NONE')
         photodiodeCorrection.updateMetadata(setDate=True, setCalibId=True)
         provenance = IsrProvenance(calibType='photodiodeCorrection')
