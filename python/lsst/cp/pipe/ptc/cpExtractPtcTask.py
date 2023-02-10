@@ -32,6 +32,7 @@ import lsst.pipe.base.connectionTypes as cT
 
 from lsst.ip.isr import PhotonTransferCurveDataset
 from lsst.ip.isr import IsrTask
+from lsst.geom import Box2I, Point2I
 
 __all__ = ['PhotonTransferCurveExtractConfig', 'PhotonTransferCurveExtractTask']
 
@@ -177,6 +178,16 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
             'FULL': 'Second order correction.'
         }
     )
+    numSubregionsX = pexConfig.Field(
+        dtype=int,
+        doc="Number of subregions in each amp in the X direction.",
+        default=1,
+    )
+    numSubregionsY = pexConfig.Field(
+        dtype=int,
+        doc="Number of subregions in each amp in the Y direction.",
+        default=1,
+    )
 
 
 class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
@@ -291,6 +302,11 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
         amps = detector.getAmplifiers()
         ampNames = [amp.getName() for amp in amps]
 
+        # We have the option to split each amp into a number of sub-regions
+        # These parameters determine how many subregions we split the amp into.
+        nSubX = self.config.numSubregionsX
+        nSubY = self.config.numSubregionsY        
+
         # Each amp may have a different min and max ADU signal
         # specified in the config.
         maxMeanSignalDict = {ampName: 1e6 for ampName in ampNames}
@@ -326,7 +342,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
         partialPtcDatasetList = []
         # The number of output references needs to match that of input
         # references: initialize outputlist with dummy PTC datasets.
-        for i in range(len(inputDims)):
+        for i in range(len(inputDims) * nSubX * nSubY):
             partialPtcDatasetList.append(dummyPtcDataset)
 
         if self.config.numEdgeSuspect > 0:
@@ -371,99 +387,117 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                 elif self.config.detectorMeasurementRegion == 'FULL':
                     region = None
 
-                # Get masked image regions, masking planes, statistic control
-                # objects, and clipped means. Calculate once to reuse in
-                # `measureMeanVarCov` and `getGainFromFlatPair`.
-                im1Area, im2Area, imStatsCtrl, mu1, mu2 = self.getImageAreasMasksStats(exp1, exp2,
-                                                                                       region=region)
+                # Now split the region into subregions (if nSubX * nSubY > 1)    
+                xStep = int(region.width / nSubX)
+                yStep = int(region.height / nSubY)
+                for iSub in range(nSubX):
+                    xmin = region.minX + iSub * xStep
+                    if iSub < (nSubX - 1):
+                        xmax = region.minX + (iSub + 1) * xStep
+                    else:
+                        xmax = region.maxX
+                    for jSub in range(nSubY):
+                        ymin = region.minY + jSub * yStep
+                        if jSub < (nSubY - 1):
+                            ymax = region.minY + (jSub + 1) * yStep
+                        else:
+                            ymax = region.maxY
+                        subRegion = Box2I(minimum=Point2I(xmin,ymin), maximum=Point2I(xmax,ymax))
 
-                # `measureMeanVarCov` is the function that measures
-                # the variance and covariances from a region of
-                # the difference image of two flats at the same
-                # exposure time.  The variable `covAstier` that is
-                # returned is of the form:
-                # [(i, j, var (cov[0,0]), cov, npix) for (i,j) in
-                # {maxLag, maxLag}^2].
-                muDiff, varDiff, covAstier = self.measureMeanVarCov(im1Area, im2Area, imStatsCtrl, mu1, mu2)
-                # Estimate the gain from the flat pair
-                if self.config.doGain:
-                    gain = self.getGainFromFlatPair(im1Area, im2Area, imStatsCtrl, mu1, mu2,
-                                                    correctionType=self.config.gainCorrectionType,
-                                                    readNoise=readNoiseDict[ampName])
-                else:
-                    gain = np.nan
+                        # Get masked image regions, masking planes, statistic control
+                        # objects, and clipped means. Calculate once to reuse in
+                        # `measureMeanVarCov` and `getGainFromFlatPair`.
+                        im1Area, im2Area, imStatsCtrl, mu1, mu2 = self.getImageAreasMasksStats(exp1, exp2,
+                                                                                               region=subRegion)
 
-                # Correction factor for bias introduced by sigma
-                # clipping.
-                # Function returns 1/sqrt(varFactor), so it needs
-                # to be squared. varDiff is calculated via
-                # afwMath.VARIANCECLIP.
-                varFactor = sigmaClipCorrection(self.config.nSigmaClipPtc)**2
-                varDiff *= varFactor
+                        # `measureMeanVarCov` is the function that measures
+                        # the variance and covariances from a region of
+                        # the difference image of two flats at the same
+                        # exposure time.  The variable `covAstier` that is
+                        # returned is of the form:
+                        # [(i, j, var (cov[0,0]), cov, npix) for (i,j) in
+                        # {maxLag, maxLag}^2].
+                        muDiff, varDiff, covAstier = self.measureMeanVarCov(im1Area, im2Area, imStatsCtrl, mu1, mu2)
+                        # Estimate the gain from the flat pair
+                        if self.config.doGain:
+                            gain = self.getGainFromFlatPair(im1Area, im2Area, imStatsCtrl, mu1, mu2,
+                                                            correctionType=self.config.gainCorrectionType,
+                                                            readNoise=readNoiseDict[ampName])
+                        else:
+                            gain = np.nan
 
-                expIdMask = True
-                # Mask data point at this mean signal level if
-                # the signal, variance, or covariance calculations
-                # from `measureMeanVarCov` resulted in NaNs.
-                if np.isnan(muDiff) or np.isnan(varDiff) or (covAstier is None):
-                    self.log.warning("NaN mean or var, or None cov in amp %s in exposure pair %d, %d of "
-                                     "detector %d.", ampName, expId1, expId2, detNum)
-                    nAmpsNan += 1
-                    expIdMask = False
-                    covArray = np.full((1, self.config.maximumRangeCovariancesAstier,
-                                        self.config.maximumRangeCovariancesAstier), np.nan)
-                    covSqrtWeights = np.full_like(covArray, np.nan)
+                        # Correction factor for bias introduced by sigma
+                        # clipping.
+                        # Function returns 1/sqrt(varFactor), so it needs
+                        # to be squared. varDiff is calculated via
+                        # afwMath.VARIANCECLIP.
+                        varFactor = sigmaClipCorrection(self.config.nSigmaClipPtc)**2
+                        varDiff *= varFactor
 
-                # Mask data point if it is outside of the
-                # specified mean signal range.
-                if (muDiff <= minMeanSignalDict[ampName]) or (muDiff >= maxMeanSignalDict[ampName]):
-                    expIdMask = False
+                        expIdMask = True
+                        # Mask data point at this mean signal level if
+                        # the signal, variance, or covariance calculations
+                        # from `measureMeanVarCov` resulted in NaNs.
+                        if np.isnan(muDiff) or np.isnan(varDiff) or (covAstier is None):
+                            self.log.warning("NaN mean or var, or None cov in amp %s in exposure pair %d, %d of "
+                                             "detector %d.", ampName, expId1, expId2, detNum)
+                            nAmpsNan += 1
+                            expIdMask = False
+                            covArray = np.full((1, self.config.maximumRangeCovariancesAstier,
+                                                self.config.maximumRangeCovariancesAstier), np.nan)
+                            covSqrtWeights = np.full_like(covArray, np.nan)
 
-                if covAstier is not None:
-                    # Turn the tuples with the measured information
-                    # into covariance arrays.
-                    # covrow: (i, j, var (cov[0,0]), cov, npix)
-                    tupleRows = [(muDiff, varDiff) + covRow + (ampNumber, expTime,
-                                                               ampName) for covRow in covAstier]
-                    tempStructArray = np.array(tupleRows, dtype=tags)
-                    covArray, vcov, _ = self.makeCovArray(tempStructArray,
-                                                          self.config.maximumRangeCovariancesAstier)
-                    covSqrtWeights = np.nan_to_num(1./np.sqrt(vcov))
+                        # Mask data point if it is outside of the
+                        # specified mean signal range.
+                        if (muDiff <= minMeanSignalDict[ampName]) or (muDiff >= maxMeanSignalDict[ampName]):
+                            expIdMask = False
 
-                # Correct covArray for sigma clipping:
-                # 1) Apply varFactor twice for the whole covariance matrix
-                covArray *= varFactor**2
-                # 2) But, only once for the variance element of the
-                # matrix, covArray[0,0] (so divide one factor out).
-                covArray[0, 0] /= varFactor
+                        if covAstier is not None:
+                            # Turn the tuples with the measured information
+                            # into covariance arrays.
+                            # covrow: (i, j, var (cov[0,0]), cov, npix)
+                            tupleRows = [(muDiff, varDiff) + covRow + (ampNumber, expTime,
+                                                                       ampName) for covRow in covAstier]
+                            tempStructArray = np.array(tupleRows, dtype=tags)
+                            covArray, vcov, _ = self.makeCovArray(tempStructArray,
+                                                                  self.config.maximumRangeCovariancesAstier)
+                            covSqrtWeights = np.nan_to_num(1./np.sqrt(vcov))
 
-                partialPtcDataset.setAmpValues(ampName, rawExpTime=[expTime], rawMean=[muDiff],
-                                               rawVar=[varDiff], inputExpIdPair=[(expId1, expId2)],
-                                               expIdMask=[expIdMask], covArray=covArray,
-                                               covSqrtWeights=covSqrtWeights, gain=gain,
-                                               noise=readNoiseDict[ampName])
-            # Use location of exp1 to save PTC dataset from (exp1, exp2) pair.
-            # Below, np.where(expId1 == np.array(inputDims)) returns a tuple
-            # with a single-element array, so [0][0]
-            # is necessary to extract the required index.
-            datasetIndex = np.where(expId1 == np.array(inputDims))[0][0]
-            # `partialPtcDatasetList` is a list of
-            # `PhotonTransferCurveDataset` objects. Some of them
-            # will be dummy datasets (to match length of input
-            # and output references), and the rest will have
-            # datasets with the mean signal, variance, and
-            # covariance measurements at a given exposure
-            # time. The next ppart of the PTC-measurement
-            # pipeline, `solve`, will take this list as input,
-            # and assemble the measurements in the datasets
-            # in an addecuate manner for fitting a PTC
-            # model.
-            partialPtcDataset.updateMetadata(setDate=True, detector=detector)
-            partialPtcDatasetList[datasetIndex] = partialPtcDataset
+                        # Correct covArray for sigma clipping:
+                        # 1) Apply varFactor twice for the whole covariance matrix
+                        covArray *= varFactor**2
+                        # 2) But, only once for the variance element of the
+                        # matrix, covArray[0,0] (so divide one factor out).
+                        covArray[0, 0] /= varFactor
 
-            if nAmpsNan == len(ampNames):
-                msg = f"NaN mean in all amps of exposure pair {expId1}, {expId2} of detector {detNum}."
-                self.log.warning(msg)
+                        partialPtcDataset.setAmpValues(ampName, rawExpTime=[expTime], rawMean=[muDiff],
+                                                       rawVar=[varDiff], inputExpIdPair=[(expId1, expId2)],
+                                                       expIdMask=[expIdMask], covArray=covArray,
+                                                       covSqrtWeights=covSqrtWeights, gain=gain,
+                                                       noise=readNoiseDict[ampName])
+                        # Use location of exp1 to save PTC dataset from (exp1, exp2) pair.
+                        # Below, np.where(expId1 == np.array(inputDims)) returns a tuple
+                        # with a single-element array, so [0][0]
+                        # is necessary to extract the required index.
+                        #datasetIndex = np.where(expId1 == np.array(inputDims))[0][0]
+                        # `partialPtcDatasetList` is a list of
+                        # `PhotonTransferCurveDataset` objects. Some of them
+                        # will be dummy datasets (to match length of input
+                        # and output references), and the rest will have
+                        # datasets with the mean signal, variance, and
+                        # covariance measurements at a given exposure
+                        # time. The next ppart of the PTC-measurement
+                        # pipeline, `solve`, will take this list as input,
+                        # and assemble the measurements in the datasets
+                        # in an addecuate manner for fitting a PTC
+                        # model.
+                        partialPtcDataset.updateMetadata(setDate=True, detector=detector)
+                        #partialPtcDatasetList[datasetIndex] = partialPtcDataset
+                        partialPtcDatasetList.append(partialPtcDataset)                        
+
+                if nAmpsNan == len(ampNames):
+                    msg = f"NaN mean in all amps of exposure pair {expId1}, {expId2} of detector {detNum}."
+                    self.log.warning(msg)
         return pipeBase.Struct(
             outputCovariances=partialPtcDatasetList,
         )
