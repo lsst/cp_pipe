@@ -479,7 +479,10 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                         # Below, np.where(expId1 == np.array(inputDims)) returns a tuple
                         # with a single-element array, so [0][0]
                         # is necessary to extract the required index.
-                        #datasetIndex = np.where(expId1 == np.array(inputDims))[0][0]
+                        # After extracting the index, we add an integer to it
+                        # to account for the multiple subregions
+                        datasetIndex = np.where(expId1 == np.array(inputDims))[0][0]
+                        datasetIndex += iSub * nSubY + jSub
                         # `partialPtcDatasetList` is a list of
                         # `PhotonTransferCurveDataset` objects. Some of them
                         # will be dummy datasets (to match length of input
@@ -489,11 +492,11 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                         # time. The next ppart of the PTC-measurement
                         # pipeline, `solve`, will take this list as input,
                         # and assemble the measurements in the datasets
-                        # in an addecuate manner for fitting a PTC
+                        # in an adecuate manner for fitting a PTC
                         # model.
                         partialPtcDataset.updateMetadata(setDate=True, detector=detector)
-                        #partialPtcDatasetList[datasetIndex] = partialPtcDataset
-                        partialPtcDatasetList.append(partialPtcDataset)                        
+                        partialPtcDatasetList[datasetIndex] = partialPtcDataset
+
 
                 if nAmpsNan == len(ampNames):
                     msg = f"NaN mean in all amps of exposure pair {expId1}, {expId2} of detector {detNum}."
