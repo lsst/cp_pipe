@@ -479,10 +479,10 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                         # Below, np.where(expId1 == np.array(inputDims)) returns a tuple
                         # with a single-element array, so [0][0]
                         # is necessary to extract the required index.
-                        # After extracting the index, we add an integer to it
+                        # After extracting the index, we modify it
                         # to account for the multiple subregions
-                        datasetIndex = np.where(expId1 == np.array(inputDims))[0][0]
-                        datasetIndex += iSub * nSubY + jSub
+                        expIndex = np.where(expId1 == np.array(inputDims))[0][0]
+                        datasetIndex = expIndex * nSubX * nSubY + iSub * nSubY + jSub
                         # `partialPtcDatasetList` is a list of
                         # `PhotonTransferCurveDataset` objects. Some of them
                         # will be dummy datasets (to match length of input
