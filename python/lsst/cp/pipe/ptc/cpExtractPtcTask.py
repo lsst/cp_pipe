@@ -268,6 +268,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
             inputs['inputExp'] = arrangeFlatsByExpId(inputs['inputExp'], inputs['inputDims'])
 
         outputs = self.run(**inputs)
+        print("In runQuantum", outputs)
         butlerQC.put(outputs, outputRefs)
 
     def run(self, inputExp, inputDims, taskMetadata):
@@ -342,7 +343,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
         partialPtcDatasetList = []
         # The number of output references needs to match that of input
         # references: initialize outputlist with dummy PTC datasets.
-        for i in range(len(inputDims) * nSubX * nSubY):
+        for i in range(len(inputDims)):
             partialPtcDatasetList.append(dummyPtcDataset)
 
         if self.config.numEdgeSuspect > 0:
@@ -475,32 +476,30 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                                                        expIdMask=[expIdMask], covArray=covArray,
                                                        covSqrtWeights=covSqrtWeights, gain=gain,
                                                        noise=readNoiseDict[ampName])
-                        # Use location of exp1 to save PTC dataset from (exp1, exp2) pair.
-                        # Below, np.where(expId1 == np.array(inputDims)) returns a tuple
-                        # with a single-element array, so [0][0]
-                        # is necessary to extract the required index.
-                        # After extracting the index, we modify it
-                        # to account for the multiple subregions
-                        expIndex = np.where(expId1 == np.array(inputDims))[0][0]
-                        datasetIndex = expIndex * nSubX * nSubY + iSub * nSubY + jSub
-                        # `partialPtcDatasetList` is a list of
-                        # `PhotonTransferCurveDataset` objects. Some of them
-                        # will be dummy datasets (to match length of input
-                        # and output references), and the rest will have
-                        # datasets with the mean signal, variance, and
-                        # covariance measurements at a given exposure
-                        # time. The next ppart of the PTC-measurement
-                        # pipeline, `solve`, will take this list as input,
-                        # and assemble the measurements in the datasets
-                        # in an adecuate manner for fitting a PTC
-                        # model.
-                        partialPtcDataset.updateMetadata(setDate=True, detector=detector)
-                        partialPtcDatasetList[datasetIndex] = partialPtcDataset
+            # Use location of exp1 to save PTC dataset from (exp1, exp2) pair.
+            # Below, np.where(expId1 == np.array(inputDims)) returns a tuple
+            # with a single-element array, so [0][0]
+            # is necessary to extract the required index.
+            datasetIndex = np.where(expId1 == np.array(inputDims))[0][0]
+            # `partialPtcDatasetList` is a list of
+            # `PhotonTransferCurveDataset` objects. Some of them
+            # will be dummy datasets (to match length of input
+            # and output references), and the rest will have
+            # datasets with the mean signal, variance, and
+            # covariance measurements at a given exposure
+            # time. The next ppart of the PTC-measurement
+            # pipeline, `solve`, will take this list as input,
+            # and assemble the measurements in the datasets
+            # in an adecuate manner for fitting a PTC
+            # model.
+            partialPtcDataset.updateMetadata(setDate=True, detector=detector)
+            partialPtcDatasetList[datasetIndex] = partialPtcDataset
 
 
-                if nAmpsNan == len(ampNames):
-                    msg = f"NaN mean in all amps of exposure pair {expId1}, {expId2} of detector {detNum}."
-                    self.log.warning(msg)
+            if nAmpsNan == len(ampNames):
+                msg = f"NaN mean in all amps of exposure pair {expId1}, {expId2} of detector {detNum}."
+                self.log.warning(msg)
+        print("Finished covariances", len(inputDims), len(partialPtcDatasetList))
         return pipeBase.Struct(
             outputCovariances=partialPtcDatasetList,
         )
