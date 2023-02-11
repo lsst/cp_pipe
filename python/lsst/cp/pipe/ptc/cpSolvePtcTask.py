@@ -226,24 +226,25 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             for ampName in ampNames:
                 datasetPtc.inputExpIdPairs[ampName].append(partialPtcDataset.inputExpIdPairs[ampName])
                 if type(partialPtcDataset.rawExpTimes[ampName]) is list:
-                    datasetPtc.rawExpTimes[ampName].append(partialPtcDataset.rawExpTimes[ampName][0])
+                    datasetPtc.rawExpTimes[ampName] += partialPtcDataset.rawExpTimes[ampName]
                 else:
                     datasetPtc.rawExpTimes[ampName].append(partialPtcDataset.rawExpTimes[ampName])
                 if type(partialPtcDataset.rawMeans[ampName]) is list:
-                    datasetPtc.rawMeans[ampName].append(partialPtcDataset.rawMeans[ampName][0])
+                    print(f"Amp:{ampName}, rawMeans is a list of length {len(partialPtcDataset.rawMeans[ampName])}")
+                    datasetPtc.rawMeans[ampName]+= partialPtcDataset.rawMeans[ampName]
                 else:
                     datasetPtc.rawMeans[ampName].append(partialPtcDataset.rawMeans[ampName])
                 if type(partialPtcDataset.rawVars[ampName]) is list:
-                    datasetPtc.rawVars[ampName].append(partialPtcDataset.rawVars[ampName][0])
+                    datasetPtc.rawVars[ampName] += partialPtcDataset.rawVars[ampName]
                 else:
                     datasetPtc.rawVars[ampName].append(partialPtcDataset.rawVars[ampName])
                 if type(partialPtcDataset.expIdMask[ampName]) is list:
-                    datasetPtc.expIdMask[ampName].append(partialPtcDataset.expIdMask[ampName][0])
+                    datasetPtc.expIdMask[ampName] += partialPtcDataset.expIdMask[ampName]
                 else:
                     datasetPtc.expIdMask[ampName].append(partialPtcDataset.expIdMask[ampName])
-                datasetPtc.covariances[ampName].append(np.array(partialPtcDataset.covariances[ampName][0]))
-                datasetPtc.covariancesSqrtWeights[ampName].append(
-                    np.array(partialPtcDataset.covariancesSqrtWeights[ampName][0]))
+                print(f"Amp:{ampName}, loading covariances")
+                datasetPtc.covariances[ampName] += partialPtcDataset.covariances[ampName]
+                datasetPtc.covariancesSqrtWeights[ampName] += partialPtcDataset.covariancesSqrtWeights[ampName]
         # Sort arrays that are filled so far in the final dataset by
         # rawMeans index
         for ampName in ampNames:
