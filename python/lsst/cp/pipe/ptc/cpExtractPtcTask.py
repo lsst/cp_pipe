@@ -469,9 +469,9 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                         # 2) But, only once for the variance element of the
                         # matrix, covArray[0,0] (so divide one factor out).
                         covArray[0, 0] /= varFactor
-                        print(f"Amp:{ampName}, iSub={iSub}, jSub={jSub}, loading a covariance set")
-                        print(f"In cpExtract, type(covArray)={type(covArray)}, shape = {np.array(covArray).shape}")
-                        print(f"In cpExtract, type(covSqrtWeights)={type(covSqrtWeights)}, shape = {np.array(covSqrtWeights).shape}")                                                
+                        #print(f"Amp:{ampName}, iSub={iSub}, jSub={jSub}, loading a covariance set")
+                        #print(f"In cpExtract, type(covArray)={type(covArray)}, shape = {np.array(covArray).shape}")
+                        #print(f"In cpExtract, type(covSqrtWeights)={type(covSqrtWeights)}, shape = {np.array(covSqrtWeights).shape}")                                                
                         partialPtcDataset.setAmpValues(ampName, rawExpTime=[expTime], rawMean=[muDiff],
                                                        rawVar=[varDiff], inputExpIdPair=[(expId1, expId2)],
                                                        expIdMask=[expIdMask], covArray=covArray,

@@ -224,7 +224,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             if partialPtcDataset.ptcFitType == 'DUMMY':
                 continue
             for ampName in ampNames:
-                datasetPtc.inputExpIdPairs[ampName].append(partialPtcDataset.inputExpIdPairs[ampName])
+                datasetPtc.inputExpIdPairs[ampName] += partialPtcDataset.inputExpIdPairs[ampName]
                 if type(partialPtcDataset.rawExpTimes[ampName]) is list:
                     datasetPtc.rawExpTimes[ampName] += partialPtcDataset.rawExpTimes[ampName]
                 else:
@@ -248,7 +248,15 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         # Sort arrays that are filled so far in the final dataset by
         # rawMeans index
         for ampName in ampNames:
+            print(f"amp:{ampName}, ExpIdPairs size = {np.array(datasetPtc.inputExpIdPairs[ampName]).shape}")
+            print(f"amp:{ampName}, rawMeans size = {np.array(datasetPtc.rawMeans[ampName]).shape}")
+            print(f"amp:{ampName}, covariances size = {np.array(datasetPtc.covariances[ampName]).shape}")
+            print(f"amp:{ampName}, ExpIdMask size = {np.array(datasetPtc.expIdMask[ampName]).shape}")                        
+
+
+
             index = np.argsort(np.ravel(np.array(datasetPtc.rawMeans[ampName])))
+            print(f"amp:{ampName}, index={index}")                        
             datasetPtc.inputExpIdPairs[ampName] = np.array(datasetPtc.inputExpIdPairs[ampName])[index]
             datasetPtc.rawExpTimes[ampName] = np.array(datasetPtc.rawExpTimes[ampName])[index]
             datasetPtc.rawMeans[ampName] = np.array(datasetPtc.rawMeans[ampName])[index]
@@ -915,6 +923,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 continue
             dataset.expIdMask[ampName] = np.array(dataset.expIdMask[ampName])
             # store the final mask
+            print(f"Masking expIdMask shape = {dataset.expIdMask[ampName].shape}, lenMask={len(mask)}")
             if len(dataset.expIdMask[ampName]):
                 dataset.expIdMask[ampName] &= mask  # bitwise_and if there is already a mask
             else:
