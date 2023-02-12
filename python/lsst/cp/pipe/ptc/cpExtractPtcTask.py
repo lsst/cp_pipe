@@ -387,7 +387,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                 elif self.config.detectorMeasurementRegion == 'FULL':
                     region = None
 
-                # Now split the region into subregions (if nSubX * nSubY > 1)    
+                # Now split the region into subregions
                 xStep = int(region.width / nSubX)
                 yStep = int(region.height / nSubY)
                 for iSub in range(nSubX):
@@ -469,9 +469,6 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                         # 2) But, only once for the variance element of the
                         # matrix, covArray[0,0] (so divide one factor out).
                         covArray[0, 0] /= varFactor
-                        #print(f"Amp:{ampName}, iSub={iSub}, jSub={jSub}, loading a covariance set")
-                        #print(f"In cpExtract, type(covArray)={type(covArray)}, shape = {np.array(covArray).shape}")
-                        #print(f"In cpExtract, type(covSqrtWeights)={type(covSqrtWeights)}, shape = {np.array(covSqrtWeights).shape}")                                                
                         partialPtcDataset.setAmpValues(ampName, rawExpTime=[expTime], rawMean=[muDiff],
                                                        rawVar=[varDiff], inputExpIdPair=[(expId1, expId2)],
                                                        expIdMask=[expIdMask], covArray=covArray,
@@ -500,7 +497,6 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
             if nAmpsNan == len(ampNames):
                 msg = f"NaN mean in all amps of exposure pair {expId1}, {expId2} of detector {detNum}."
                 self.log.warning(msg)
-        print("Finished covariances", len(inputDims), len(partialPtcDatasetList))
         return pipeBase.Struct(
             outputCovariances=partialPtcDatasetList,
         )

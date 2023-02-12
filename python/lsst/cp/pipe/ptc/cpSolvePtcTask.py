@@ -223,6 +223,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             # Ignore dummy datasets
             if partialPtcDataset.ptcFitType == 'DUMMY':
                 continue
+            # Modifications here for the subregions to append new data to the old
             for ampName in ampNames:
                 datasetPtc.inputExpIdPairs[ampName] += partialPtcDataset.inputExpIdPairs[ampName]
                 if type(partialPtcDataset.rawExpTimes[ampName]) is list:
@@ -230,7 +231,6 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 else:
                     datasetPtc.rawExpTimes[ampName].append(partialPtcDataset.rawExpTimes[ampName])
                 if type(partialPtcDataset.rawMeans[ampName]) is list:
-                    print(f"Amp:{ampName}, rawMeans is a list of length {len(partialPtcDataset.rawMeans[ampName])}")
                     datasetPtc.rawMeans[ampName]+= partialPtcDataset.rawMeans[ampName]
                 else:
                     datasetPtc.rawMeans[ampName].append(partialPtcDataset.rawMeans[ampName])
@@ -242,21 +242,12 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                     datasetPtc.expIdMask[ampName] += partialPtcDataset.expIdMask[ampName]
                 else:
                     datasetPtc.expIdMask[ampName].append(partialPtcDataset.expIdMask[ampName])
-                print(f"Amp:{ampName}, loading covariances")
                 datasetPtc.covariances[ampName] += partialPtcDataset.covariances[ampName]
                 datasetPtc.covariancesSqrtWeights[ampName] += partialPtcDataset.covariancesSqrtWeights[ampName]
         # Sort arrays that are filled so far in the final dataset by
         # rawMeans index
         for ampName in ampNames:
-            print(f"amp:{ampName}, ExpIdPairs size = {np.array(datasetPtc.inputExpIdPairs[ampName]).shape}")
-            print(f"amp:{ampName}, rawMeans size = {np.array(datasetPtc.rawMeans[ampName]).shape}")
-            print(f"amp:{ampName}, covariances size = {np.array(datasetPtc.covariances[ampName]).shape}")
-            print(f"amp:{ampName}, ExpIdMask size = {np.array(datasetPtc.expIdMask[ampName]).shape}")                        
-
-
-
             index = np.argsort(np.ravel(np.array(datasetPtc.rawMeans[ampName])))
-            print(f"amp:{ampName}, index={index}")                        
             datasetPtc.inputExpIdPairs[ampName] = np.array(datasetPtc.inputExpIdPairs[ampName])[index]
             datasetPtc.rawExpTimes[ampName] = np.array(datasetPtc.rawExpTimes[ampName])[index]
             datasetPtc.rawMeans[ampName] = np.array(datasetPtc.rawMeans[ampName])[index]
@@ -923,7 +914,6 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 continue
             dataset.expIdMask[ampName] = np.array(dataset.expIdMask[ampName])
             # store the final mask
-            print(f"Masking expIdMask shape = {dataset.expIdMask[ampName].shape}, lenMask={len(mask)}")
             if len(dataset.expIdMask[ampName]):
                 dataset.expIdMask[ampName] &= mask  # bitwise_and if there is already a mask
             else:
