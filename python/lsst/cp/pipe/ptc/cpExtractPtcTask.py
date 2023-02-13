@@ -682,10 +682,6 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
             im1Area = exposure1.maskedImage
             im2Area = exposure2.maskedImage
 
-        if self.config.binSize > 1:
-            im1Area = afwMath.binImage(im1Area, self.config.binSize)
-            im2Area = afwMath.binImage(im2Area, self.config.binSize)
-
         # Get mask planes and construct statistics control object from one
         # of the exposures
         imMaskVal = exposure1.getMask().getPlaneBitMask(self.config.maskNameList)
