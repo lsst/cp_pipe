@@ -598,6 +598,9 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
         diffIm -= temp
         diffIm /= mu
 
+        if self.config.binSize > 1:
+            diffIm = afwMath.binImage(diffIm, self.config.binSize)
+
         # Variance calculation via afwMath
         varDiff = 0.5*(afwMath.makeStatistics(diffIm, afwMath.VARIANCECLIP, imStatsCtrl).getValue())
 
@@ -616,9 +619,10 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
         # calculations below.
         w = unmasked*wDiff
 
-        if np.sum(w) < self.config.minNumberGoodPixelsForCovariance:
+        if np.sum(w) < self.config.minNumberGoodPixelsForCovariance/(self.config.binSize**2):
             self.log.warning("Number of good points for covariance calculation (%s) is less "
-                             "(than threshold %s)", np.sum(w), self.config.minNumberGoodPixelsForCovariance)
+                             "(than threshold %s)", np.sum(w),
+                             self.config.minNumberGoodPixelsForCovariance/(self.config.binSize**2))
             return np.nan, np.nan, None
 
         maxRangeCov = self.config.maximumRangeCovariancesAstier
@@ -677,10 +681,6 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
         else:
             im1Area = exposure1.maskedImage
             im2Area = exposure2.maskedImage
-
-        if self.config.binSize > 1:
-            im1Area = afwMath.binImage(im1Area, self.config.binSize)
-            im2Area = afwMath.binImage(im2Area, self.config.binSize)
 
         # Get mask planes and construct statistics control object from one
         # of the exposures
