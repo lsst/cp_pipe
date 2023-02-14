@@ -28,6 +28,9 @@ from lsst.cp.pipe.utils import (fitLeastSq, fitBootstrap, funcPolynomial, funcAs
 
 from scipy.signal import fftconvolve
 from scipy.optimize import least_squares
+from scipy.interpolate import interp1d
+from scipy.signal import savgol_filter
+
 from itertools import groupby
 from operator import itemgetter
 
@@ -228,27 +231,27 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             # Ignore dummy datasets
             if partialPtcDataset.ptcFitType == 'DUMMY':
                 continue
+            # Modifications here for the subregions to append new data to the old
             for ampName in ampNames:
-                datasetPtc.inputExpIdPairs[ampName].append(partialPtcDataset.inputExpIdPairs[ampName])
+                datasetPtc.inputExpIdPairs[ampName] += partialPtcDataset.inputExpIdPairs[ampName]
                 if type(partialPtcDataset.rawExpTimes[ampName]) is list:
-                    datasetPtc.rawExpTimes[ampName].append(partialPtcDataset.rawExpTimes[ampName][0])
+                    datasetPtc.rawExpTimes[ampName] += partialPtcDataset.rawExpTimes[ampName]
                 else:
                     datasetPtc.rawExpTimes[ampName].append(partialPtcDataset.rawExpTimes[ampName])
                 if type(partialPtcDataset.rawMeans[ampName]) is list:
-                    datasetPtc.rawMeans[ampName].append(partialPtcDataset.rawMeans[ampName][0])
+                    datasetPtc.rawMeans[ampName]+= partialPtcDataset.rawMeans[ampName]
                 else:
                     datasetPtc.rawMeans[ampName].append(partialPtcDataset.rawMeans[ampName])
                 if type(partialPtcDataset.rawVars[ampName]) is list:
-                    datasetPtc.rawVars[ampName].append(partialPtcDataset.rawVars[ampName][0])
+                    datasetPtc.rawVars[ampName] += partialPtcDataset.rawVars[ampName]
                 else:
                     datasetPtc.rawVars[ampName].append(partialPtcDataset.rawVars[ampName])
                 if type(partialPtcDataset.expIdMask[ampName]) is list:
-                    datasetPtc.expIdMask[ampName].append(partialPtcDataset.expIdMask[ampName][0])
+                    datasetPtc.expIdMask[ampName] += partialPtcDataset.expIdMask[ampName]
                 else:
                     datasetPtc.expIdMask[ampName].append(partialPtcDataset.expIdMask[ampName])
-                datasetPtc.covariances[ampName].append(np.array(partialPtcDataset.covariances[ampName][0]))
-                datasetPtc.covariancesSqrtWeights[ampName].append(
-                    np.array(partialPtcDataset.covariancesSqrtWeights[ampName][0]))
+                datasetPtc.covariances[ampName] += partialPtcDataset.covariances[ampName]
+                datasetPtc.covariancesSqrtWeights[ampName] += partialPtcDataset.covariancesSqrtWeights[ampName]
         # Sort arrays that are filled so far in the final dataset by
         # rawMeans index
         for ampName in ampNames:
@@ -706,14 +709,6 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             Input array with mean signal values.
         variances : `numpy.array`
             Input array with variances at each mean value.
-        minVarPivotSearch : `float`
-            The variance (in ADU^2), above which, the point
-            of decreasing variance should be sought.
-        consecutivePointsVarDecreases : `int`
-            Required number of consecutive points/fluxes
-            in the PTC where the variance
-            decreases in order to find a first
-            estimate of the PTC turn-off.
 
         Returns
         ------
@@ -724,37 +719,24 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         Notes
         -----
         Eliminate points beyond which the variance decreases.
+        This algorithm has been problematic, so I (Lage -12-Feb-23)
+        have rewritten it to smooth the (mean,var) points
+        and then find the max variance of the smoothed points
         """
         goodPoints = np.ones_like(means, dtype=bool)
-        # Variances are sorted and should monotonically increase
-        pivotList = np.where(np.array(np.diff(variances)) < 0)[0]
-        if len(pivotList) > 0:
-            # For small values, sometimes the variance decreases slightly
-            # Only look when var > self.config.minVarPivotSearch
-            pivotList = [p for p in pivotList if variances[p] > minVarPivotSearch]
-            # Require that the varince decreases during
-            # consecutivePointsVarDecreases
-            # consecutive points. This will give a first
-            # estimate of the PTC turn-off, which
-            # may be updated (reduced) further in the code.
-            if len(pivotList) > 1:
-                # enumerate(pivotList) creates tuples (index, value), for
-                # each value in pivotList. The lambda function subtracts
-                # each value from the index.
-                # groupby groups elements by equal key value.
-                for k, g in groupby(enumerate(pivotList), lambda x: x[0]-x[1]):
-                    group = (map(itemgetter(1), g))
-                    # Form groups of consecute values from pivotList
-                    group = list(map(int, group))
-                    # values in pivotList are indices where np.diff(variances)
-                    # is negative, i.e., where the variance starts decreasing.
-                    # Find the first group of consecutive numbers when
-                    # variance decreases.
-                    if len(group) >= consecutivePointsVarDecreases:
-                        pivotIndex = np.min(group)
-                        goodPoints[pivotIndex+1:] = False
-                        break
+        x = np.array(means)
+        y = np.array(variances)
+        xx = np.linspace(x.min(),x.max(), 1000)
 
+        # interpolate + smooth
+        itp = interp1d(x,y, kind='linear')
+        window_size, poly_order = 101, 3
+        yy_sg = savgol_filter(itp(xx), window_size, poly_order)
+        max_var_index = np.argmax(yy_sg)
+        ptc_turnoff = xx[max_var_index]
+        for i, mean in enumerate(means):
+            if mean > ptc_turnoff:
+                goodPoints[i] = False
         return goodPoints
 
     def _makeZeroSafe(self, array, substituteValue=1e-9):
