@@ -331,8 +331,8 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
 
         if self.config.numEdgeSuspect > 0:
             isrTask = IsrTask()
-            self.log.info("Masking %d pixels from the edges of all exposures as SUSPECT.",
-                          self.config.numEdgeSuspect)
+            self.log.info("Masking %d pixels from the edges of all %ss as SUSPECT.",
+                          self.config.numEdgeSuspect, self.config.edgeMaskLevel)
 
         # Depending on the value of config.matchExposuresType
         # 'expTime' can stand for exposure time, flux, or ID.
@@ -820,7 +820,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
             readNoises.append(overscanNoise)
 
         if len(readNoises):
-            readNoise = np.median(np.array(readNoises))
+            readNoise = np.nanmedian(np.array(readNoises))
         else:
             self.log.warning("Median readout noise from ISR metadata for amp %s "
                              "could not be calculated." % ampName)
