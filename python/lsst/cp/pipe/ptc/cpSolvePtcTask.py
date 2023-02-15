@@ -755,6 +755,9 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                         goodPoints[pivotIndex+1:] = False
                         break
 
+        # Finally, we filter out any infinities or NaNs.
+        goodPoints[(~np.isfinite(means)) | (~np.isfinite(variances))] = False
+
         return goodPoints
 
     def _makeZeroSafe(self, array, substituteValue=1e-9):
