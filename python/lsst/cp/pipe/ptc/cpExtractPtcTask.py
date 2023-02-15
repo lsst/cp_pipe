@@ -820,7 +820,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
             readNoises.append(overscanNoise)
 
         if len(readNoises):
-            readNoise = np.median(np.array(readNoises))
+            readNoise = np.nanmedian(np.array(readNoises))
         else:
             self.log.warning("Median readout noise from ISR metadata for amp %s "
                              "could not be calculated." % ampName)
