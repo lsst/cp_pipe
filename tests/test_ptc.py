@@ -167,6 +167,13 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
         resultsExtract = extractTask.run(inputExp=expDict, inputDims=expIds,
                                          taskMetadata=[self.metadataContents])
+
+        # Force the last PTC dataset to have a NaN, and ensure that the
+        # task runs (DM-38029).  This is a minor perturbation and does not
+        # affect the output comparison.
+        resultsExtract.outputCovariances[-2].rawMeans['C:0,0'] = [np.nan]
+        resultsExtract.outputCovariances[-2].rawVars['C:0,0'] = [np.nan]
+
         resultsSolve = solveTask.run(resultsExtract.outputCovariances,
                                      camera=FakeCamera([self.flatExp1.getDetector()]))
 
