@@ -307,7 +307,7 @@ class LinearitySolveTask(pipeBase.PipelineTask):
 
         # Initialize the linearizer.
         linearizer = Linearizer(detector=detector, table=table, log=self.log)
-
+        linearizer.updateMetadataFromExposures([inputPtc])
         if self.config.usePhotodiode:
             # Compute the photodiode integrals once, outside the loop
             # over amps.

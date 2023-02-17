@@ -162,6 +162,7 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
         msg = "Found %s defects containing %s pixels in %s"
         self.log.info(msg, len(defects), self._nPixFromDefects(defects), datasetType)
 
+        defects.updateMetadataFromExposures([inputExp])
         defects.updateMetadata(camera=camera, detector=detector, filterName=filterName,
                                setCalibId=True, setDate=True,
                                cpDefectGenImageType=datasetType)
@@ -708,6 +709,7 @@ class MergeDefectsTask(pipeBase.PipelineTask):
             SourceDetectionTask.setEdgeBits(subImage, box, BADBIT)
 
         merged = Defects.fromMask(finalImage, 'BAD')
+        merged.updateMetadataFromExposures(inputDefects)
         merged.updateMetadata(camera=camera, detector=detector, filterName=None,
                               setCalibId=True, setDate=True)
 

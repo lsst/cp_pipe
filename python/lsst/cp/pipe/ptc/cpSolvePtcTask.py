@@ -295,6 +295,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             detector = camera[detId]
         else:
             detector = None
+        datasetPtc.updateMetadataFromExposures(inputCovariances)
         datasetPtc.updateMetadata(setDate=True, camera=camera, detector=detector)
 
         return pipeBase.Struct(
