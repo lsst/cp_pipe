@@ -19,6 +19,12 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
+
+__all__ = ['MeasureDefectsTaskConfig', 'MeasureDefectsTask',
+           'MergeDefectsTaskConfig', 'MergeDefectsTask',
+           'MeasureDefectsCombinedTaskConfig', 'MeasureDefectsCombinedTask',
+           'MergeDefectsCombinedTaskConfig', 'MergeDefectsCombinedTask', ]
+
 import numpy as np
 
 import lsst.pipe.base as pipeBase
@@ -38,9 +44,6 @@ from lsst.ip.isr import Defects, countMaskedPixels
 from lsst.pex.exceptions import InvalidParameterError
 
 from ._lookupStaticCalibration import lookupStaticCalibration
-
-__all__ = ['MeasureDefectsTaskConfig', 'MeasureDefectsTask',
-           'MergeDefectsTaskConfig', 'MergeDefectsTask', ]
 
 
 class MeasureDefectsConnections(pipeBase.PipelineTaskConnections,
@@ -149,8 +152,11 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
                  (`lsst.ip.isr.Defects`).
         """
         detector = inputExp.getDetector()
+        try:
+            filterName = inputExp.getFilter().physicalLabel
+        except AttributeError:
+            filterName = None
 
-        filterName = inputExp.getFilter().physicalLabel
         datasetType = inputExp.getMetadata().get('IMGTYPE', 'UNKNOWN')
 
         if datasetType.lower() == 'dark':
@@ -545,6 +551,13 @@ class MergeDefectsConnections(pipeBase.PipelineTaskConnections,
         name="singleExpDefects",
         doc="Measured defect lists.",
         storageClass="Defects",
+        dimensions=("instrument", "detector", "exposure",),
+        multiple=True,
+    )
+    secondaryInputDefects = cT.Input(
+        name="AdditionalSingleExpDefects",
+        doc="Additional measured defect lists.",
+        storageClass="Defects",
         dimensions=("instrument", "detector", "exposure"),
         multiple=True,
     )
@@ -716,3 +729,237 @@ class MergeDefectsTask(pipeBase.PipelineTask):
         return pipeBase.Struct(
             mergedDefects=merged,
         )
+
+# Subclass the MergeDefects task to reduce the input dimensions
+# from ("instrument", "detector", "exposure") to
+# ("instrument", "detector").
+
+
+class MergeDefectsCombinedConnections(MergeDefectsConnections,
+                                      dimensions=("instrument", "detector")):
+    inputDefects = cT.Input(
+        name="singleExpDefects",
+        doc="Measured defect lists.",
+        storageClass="Defects",
+        dimensions=("instrument", "detector",),
+        multiple=False,
+    )
+    secondaryInputDefects = cT.Input(
+        name="AdditionalSingleExpDefects",
+        doc="Additional measured defect lists.",
+        storageClass="Defects",
+        dimensions=("instrument", "detector",),
+        multiple=False,
+    )
+    camera = cT.PrerequisiteInput(
+        name='camera',
+        doc="Camera associated with these defects.",
+        storageClass="Camera",
+        dimensions=("instrument", ),
+        isCalibration=True,
+        lookupFunction=lookupStaticCalibration,
+    )
+
+    mergedDefects = cT.Output(
+        name="defects",
+        doc="Final merged defects.",
+        storageClass="Defects",
+        dimensions=("instrument", "detector"),
+        multiple=False,
+        isCalibration=True,
+    )
+
+
+class MergeDefectsCombinedTaskConfig(pipeBase.PipelineTaskConfig,
+                                     pipelineConnections=MergeDefectsCombinedConnections):
+    """Configuration for merging defects from combined exposure.
+    """
+    pass
+
+
+class MergeDefectsCombinedTask(MergeDefectsTask):
+    """Task to measure defects in combined images."""
+
+    ConfigClass = MergeDefectsCombinedTaskConfig
+    _DefaultName = "cpDefectMergeCombined"
+
+    def run(self, inputDefects, secondaryInputDefects, camera):
+        """Merge a list of single defects to find the common defect regions.
+
+        Parameters
+        ----------
+        inputDefects : `list` [`lsst.ip.isr.Defects`]
+            Partial defects from a combined exposure.
+        secondaryInputDefects : `list` [`lsst.ip.isr.Defects`]
+            Partial defects from a combined exposure.
+        camera : `lsst.afw.cameraGeom.Camera`
+             Camera to use for metadata.
+
+        Returns
+        -------
+        results : `lsst.pipe.base.Struct`
+             Results struct containing:
+
+             ``mergedDefects``
+                 The defects merged from the input lists
+                 (`lsst.ip.isr.Defects`).
+        """
+        with inputDefects.bulk_update():
+            for d in secondaryInputDefects:
+                inputDefects.append(d)
+        # Not a list, like in the base MergeDefectsTask class
+        detectorId = inputDefects.getMetadata().get('DETECTOR', None)
+        if detectorId is None:
+            raise RuntimeError("Cannot identify detector id.")
+        detector = camera[detectorId]
+
+        imageTypes = set()
+        for inDefect in inputDefects:
+            imageType = inDefect.getMetadata().get('cpDefectGenImageType', 'UNKNOWN')
+            imageTypes.add(imageType)
+
+        # Determine common defect pixels separately for each input image type.
+        splitDefects = list()
+        for imageType in imageTypes:
+            sumImage = afwImage.MaskedImageF(detector.getBBox())
+            count = 0
+            for inDefect in inputDefects:
+                if imageType == inDefect.getMetadata().get('cpDefectGenImageType', 'UNKNOWN'):
+                    count += 1
+                    for defect in inDefect:
+                        sumImage.image[defect.getBBox()] += 1.0
+            sumImage /= count
+            nDetected = len(np.where(sumImage.getImage().getArray() > 0)[0])
+            self.log.info("Pre-merge %s pixels with non-zero detections for %s" % (nDetected, imageType))
+
+            if self.config.combinationMode == 'AND':
+                threshold = 1.0
+            elif self.config.combinationMode == 'OR':
+                threshold = 0.0
+            elif self.config.combinationMode == 'FRACTION':
+                threshold = self.config.combinationFraction
+            else:
+                raise RuntimeError(f"Got unsupported combinationMode {self.config.combinationMode}")
+            indices = np.where(sumImage.getImage().getArray() > threshold)
+            BADBIT = sumImage.getMask().getPlaneBitMask('BAD')
+            sumImage.getMask().getArray()[indices] |= BADBIT
+            self.log.info("Post-merge %s pixels marked as defects for %s" % (len(indices[0]), imageType))
+            partialDefect = Defects.fromMask(sumImage, 'BAD')
+            splitDefects.append(partialDefect)
+
+        # Do final combination of separate image types
+        finalImage = afwImage.MaskedImageF(detector.getBBox())
+        for inDefect in splitDefects:
+            for defect in inDefect:
+                finalImage.image[defect.getBBox()] += 1
+        finalImage /= len(splitDefects)
+        nDetected = len(np.where(finalImage.getImage().getArray() > 0)[0])
+        self.log.info("Pre-final merge %s pixels with non-zero detections" % (nDetected, ))
+
+        # This combination is the OR of all image types
+        threshold = 0.0
+        indices = np.where(finalImage.getImage().getArray() > threshold)
+        BADBIT = finalImage.getMask().getPlaneBitMask('BAD')
+        finalImage.getMask().getArray()[indices] |= BADBIT
+        self.log.info("Post-final merge %s pixels marked as defects" % (len(indices[0]), ))
+
+        if self.config.edgesAsDefects:
+            self.log.info("Masking edge pixels as defects.")
+            # Do the same as IsrTask.maskEdges()
+            box = detector.getBBox()
+            subImage = finalImage[box]
+            box.grow(-self.nPixBorder)
+            SourceDetectionTask.setEdgeBits(subImage, box, BADBIT)
+
+        merged = Defects.fromMask(finalImage, 'BAD')
+        merged.updateMetadataFromExposures(inputDefects)
+        merged.updateMetadata(camera=camera, detector=detector, filterName=None,
+                              setCalibId=True, setDate=True)
+
+        return pipeBase.Struct(
+            mergedDefects=merged,
+        )
+
+
+class MeasureDefectsCombinedConnections(MeasureDefectsConnections,
+                                        dimensions=("instrument", "detector")):
+    inputExp = cT.Input(
+        name="defectExps",
+        doc="Input ISR-processed combined exposures to measure.",
+        storageClass="Exposure",
+        dimensions=("instrument", "detector"),
+        multiple=False,
+        isCalibration=True,
+    )
+    camera = cT.PrerequisiteInput(
+        name='camera',
+        doc="Camera associated with this exposure.",
+        storageClass="Camera",
+        dimensions=("instrument", ),
+        isCalibration=True,
+        lookupFunction=lookupStaticCalibration,
+    )
+
+    outputDefects = cT.Output(
+        name="combinedExpDefects",
+        doc="Output measured defects.",
+        storageClass="Defects",
+        dimensions=("instrument", "detector"),
+    )
+
+
+class MeasureDefectsCombinedTaskConfig(MeasureDefectsTaskConfig,
+                                       pipelineConnections=MeasureDefectsCombinedConnections):
+    """Configuration for measuring defects from combined exposures.
+    """
+    pass
+
+
+class MeasureDefectsCombinedTask(MeasureDefectsTask):
+    """Task to measure defects in combined images."""
+
+    ConfigClass = MeasureDefectsCombinedTaskConfig
+    _DefaultName = "cpDefectMeasureCombined"
+
+
+class MeasureDefectsCombinedWithFilterConnections(MeasureDefectsCombinedConnections,
+                                                  dimensions=("instrument", "detector")):
+    """Task to measure defects in combined flats under a certain filter."""
+    inputExp = cT.Input(
+        name="defectExps",
+        doc="Input ISR-processed combined exposures to measure.",
+        storageClass="Exposure",
+        dimensions=("instrument", "detector", "physical_filter"),
+        multiple=False,
+        isCalibration=True,
+    )
+    camera = cT.PrerequisiteInput(
+        name='camera',
+        doc="Camera associated with this exposure.",
+        storageClass="Camera",
+        dimensions=("instrument", ),
+        isCalibration=True,
+        lookupFunction=lookupStaticCalibration,
+    )
+
+    outputDefects = cT.Output(
+        name="combinedExpDefects",
+        doc="Output measured defects.",
+        storageClass="Defects",
+        dimensions=("instrument", "detector"),
+    )
+
+
+class MeasureDefectsCombinedWithFilterTaskConfig(
+    MeasureDefectsTaskConfig,
+        pipelineConnections=MeasureDefectsCombinedWithFilterConnections):
+    """Configuration for measuring defects from combined exposures.
+    """
+    pass
+
+
+class MeasureDefectsCombinedWithFilterTask(MeasureDefectsTask):
+    """Task to measure defects in combined images."""
+
+    ConfigClass = MeasureDefectsCombinedWithFilterTaskConfig
+    _DefaultName = "cpDefectMeasureWithFilterCombined"
