@@ -166,7 +166,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             idCounter += 2
 
         resultsExtract = extractTask.run(inputExp=expDict, inputDims=expIds,
-                                         taskMetadata=[self.metadataContents])
+                                         taskMetadata=[self.metadataContents for x in expIds])
 
         # Force the last PTC dataset to have a NaN, and ensure that the
         # task runs (DM-38029).  This is a minor perturbation and does not
@@ -465,7 +465,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             idCounter += 2
 
         resultsExtract = extractTask.run(inputExp=expDict, inputDims=expIds,
-                                         taskMetadata=[self.metadataContents])
+                                         taskMetadata=[self.metadataContents for x in expIds])
         for exposurePair in resultsExtract.outputCovariances:
             for ampName in self.ampNames:
                 if exposurePair.gain[ampName] is np.nan:
