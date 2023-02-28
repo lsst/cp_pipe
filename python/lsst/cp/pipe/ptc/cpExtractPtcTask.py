@@ -257,9 +257,45 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
             inputs['inputExp'] = arrangeFlatsByExpId(inputs['inputExp'], inputs['inputDims'])
 
         outputs = self.run(**inputs)
+        outputs = self._guaranteeOutputs(inputs['inputDims'], outputs, outputRefs)
         butlerQC.put(outputs, outputRefs)
 
+    def _guaranteeOutputs(self, inputDims, outputs, outputRefs):
+        """Ensure that all outputRefs have a matching output, and if they do
+        not, fill the output with dummy PTC datasets.
+
+        Parameters
+        ----------
+        inputDims : `dict` [`str`, `int`]
+            Input exposure dimensions.
+        outputs : `lsst.pipe.base.Struct`
+            Outputs from the ``run`` method.  Contains the entry:
+
+            ``outputCovariances``
+                Output PTC datasets (`list` [`lsst.ip.isr.IsrCalib`])
+        outputRefs : `~lsst.pipe.base.connections.OutputQuantizedConnection`
+            Container with all of the outputs expected to be generated.
+
+        Returns
+        -------
+        outputs : `lsst.pipe.base.Struct`
+            Dummy dataset padded version of the input ``outputs`` with
+            the same entries.
+        """
+        newCovariances = []
+        for ref in outputRefs.outputCovariances:
+            outputExpId = ref.dataId['exposure']
+            if outputExpId in inputDims:
+                entry = inputDims.index(outputExpId)
+                newCovariances.append(outputs.outputCovariances[entry])
+            else:
+                newPtc = PhotonTransferCurveDataset(['no amp'], 'DUMMY', 1)
+                newPtc.setAmpValues('no amp')
+                newCovariances.append(newPtc)
+        return pipeBase.Struct(outputCovariances=newCovariances)
+
     def run(self, inputExp, inputDims, taskMetadata):
+
         """Measure covariances from difference of flat pairs
 
         Parameters
