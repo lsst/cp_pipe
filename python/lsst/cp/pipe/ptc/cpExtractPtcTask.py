@@ -350,13 +350,27 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
         dummyPtcDataset = PhotonTransferCurveDataset(ampNames, 'DUMMY',
                                                      self.config.maximumRangeCovariancesAstier)
 
+        # Get read noise.  Try from the exposure, then try
+        # taskMetadata.  This adds a get() for the exposures.
+        readNoiseLists = {}
+        for pairIndex, expRefs in inputExp.items():
+            # This yields an index (exposure_time, seq_num, or flux)
+            # and a pair of references at that index.
+            for expRef, expId in expRefs:
+                # This yields an exposure ref and an exposureId.
+                exposure = expRef.get()
+                metadataIndex = inputDims.index(expId)
+                thisTaskMetadata = taskMetadata[metadataIndex]
+
+                for ampName in ampNames:
+                    if ampName not in readNoiseLists:
+                        readNoiseLists[ampName] = [self.getReadNoise(exposure, thisTaskMetadata, ampName)]
+                    else:
+                        readNoiseLists[ampName].append(self.getReadNoise(exposure, thisTaskMetadata, ampName))
         readNoiseDict = {ampName: 0.0 for ampName in ampNames}
         for ampName in ampNames:
-            # Initialize amps of `dummyPtcDatset`.
-            dummyPtcDataset.setAmpValues(ampName)
-            # Overscan readnoise from post-ISR exposure metadata.
-            # It will be used to estimate the gain from a pair of flats.
-            readNoiseDict[ampName] = self.getReadNoiseFromMetadata(taskMetadata, ampName)
+            # Take median read noise value
+            readNoiseDict[ampName] = np.nanmedian(readNoiseLists[ampName])
 
         # Output list with PTC datasets.
         partialPtcDatasetList = []
@@ -828,40 +842,35 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
 
         return gain
 
-    def getReadNoiseFromMetadata(self, taskMetadata, ampName):
+    def getReadNoise(self, exposure, taskMetadata, ampName):
         """Gets readout noise for an amp from ISR metadata.
 
         Parameters
         ----------
-        taskMetadata : `list` [`lsst.pipe.base.TaskMetadata`]
-                    List of exposures metadata from ISR.
+        exposure : `lsst.afw.image.Exposure`
+            Exposure to check for read noise first.
+        taskMetadata : `lsst.pipe.base.TaskMetadata`
+            List of exposures metadata from ISR for this exposure.
         ampName : `str`
             Amplifier name.
 
         Returns
         -------
         readNoise : `float`
-            Median of the overscan readnoise in the
-            post-ISR metadata of the input exposures (ADU).
-            Returns 'None' if the median could not be calculated.
+            The read noise for this set of exposure/amplifier.
         """
-        # Empirical readout noise [ADU] measured from an
-        # overscan-subtracted overscan during ISR.
+        # Try from the exposure first.
+        expectedKey = f"LSST ISR OVERSCAN RESIDUAL SERIAL STDEV {ampName}"
+        md = exposure.getMetadata()
+        if expectedKey in md:
+            return md[expectedKey]
+
+        # If not, try getting it from the task metadata.
         expectedKey = f"RESIDUAL STDEV {ampName}"
+        if "isr" in taskMetadata:
+            if expectedKey in taskMetadata["isr"]:
+                return taskMetadata["isr"][expectedKey]
 
-        readNoises = []
-        for expMetadata in taskMetadata:
-            if 'isr' in expMetadata:
-                overscanNoise = expMetadata['isr'][expectedKey]
-            else:
-                continue
-            readNoises.append(overscanNoise)
-
-        if len(readNoises):
-            readNoise = np.nanmedian(np.array(readNoises))
-        else:
-            self.log.warning("Median readout noise from ISR metadata for amp %s "
-                             "could not be calculated." % ampName)
-            readNoise = np.nan
-
-        return readNoise
+        self.log.warning("Median readout noise from ISR metadata for amp %s "
+                         "could not be calculated." % ampName)
+        return np.nan
