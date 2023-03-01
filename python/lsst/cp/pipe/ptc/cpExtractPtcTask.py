@@ -349,7 +349,8 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
         # dimensions match.
         dummyPtcDataset = PhotonTransferCurveDataset(ampNames, 'DUMMY',
                                                      self.config.maximumRangeCovariancesAstier)
-
+        for ampName in ampNames:
+            dummyPtcDataset.setAmpValues(ampName)
         # Get read noise.  Try from the exposure, then try
         # taskMetadata.  This adds a get() for the exposures.
         readNoiseLists = {}
