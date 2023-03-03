@@ -359,15 +359,18 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
             # and a pair of references at that index.
             for expRef, expId in expRefs:
                 # This yields an exposure ref and an exposureId.
-                exposure = expRef.get()
+                exposureMetadata = expRef.get(component="metadata")
                 metadataIndex = inputDims.index(expId)
                 thisTaskMetadata = taskMetadata[metadataIndex]
 
                 for ampName in ampNames:
                     if ampName not in readNoiseLists:
-                        readNoiseLists[ampName] = [self.getReadNoise(exposure, thisTaskMetadata, ampName)]
+                        readNoiseLists[ampName] = [self.getReadNoise(exposureMetadata,
+                                                                     thisTaskMetadata, ampName)]
                     else:
-                        readNoiseLists[ampName].append(self.getReadNoise(exposure, thisTaskMetadata, ampName))
+                        readNoiseLists[ampName].append(self.getReadNoise(exposureMetadata,
+                                                                         thisTaskMetadata, ampName))
+
         readNoiseDict = {ampName: 0.0 for ampName in ampNames}
         for ampName in ampNames:
             # Take median read noise value
@@ -843,13 +846,18 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
 
         return gain
 
-    def getReadNoise(self, exposure, taskMetadata, ampName):
+    def getReadNoise(self, exposureMetadata, taskMetadata, ampName):
         """Gets readout noise for an amp from ISR metadata.
+
+        If possible, this attempts to get the now-standard headers
+        added to the exposure itself.  If not found there, the ISR
+        TaskMetadata is searched.  If neither of these has the value,
+        warn and set the read noise to NaN.
 
         Parameters
         ----------
-        exposure : `lsst.afw.image.Exposure`
-            Exposure to check for read noise first.
+        exposureMetadata : `lsst.daf.base.PropertySet`
+            Metadata to check for read noise first.
         taskMetadata : `lsst.pipe.base.TaskMetadata`
             List of exposures metadata from ISR for this exposure.
         ampName : `str`
@@ -862,9 +870,8 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
         """
         # Try from the exposure first.
         expectedKey = f"LSST ISR OVERSCAN RESIDUAL SERIAL STDEV {ampName}"
-        md = exposure.getMetadata()
-        if expectedKey in md:
-            return md[expectedKey]
+        if expectedKey in exposureMetadata:
+            return exposureMetadata[expectedKey]
 
         # If not, try getting it from the task metadata.
         expectedKey = f"RESIDUAL STDEV {ampName}"
