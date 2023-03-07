@@ -257,9 +257,45 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
             inputs['inputExp'] = arrangeFlatsByExpId(inputs['inputExp'], inputs['inputDims'])
 
         outputs = self.run(**inputs)
+        outputs = self._guaranteeOutputs(inputs['inputDims'], outputs, outputRefs)
         butlerQC.put(outputs, outputRefs)
 
+    def _guaranteeOutputs(self, inputDims, outputs, outputRefs):
+        """Ensure that all outputRefs have a matching output, and if they do
+        not, fill the output with dummy PTC datasets.
+
+        Parameters
+        ----------
+        inputDims : `dict` [`str`, `int`]
+            Input exposure dimensions.
+        outputs : `lsst.pipe.base.Struct`
+            Outputs from the ``run`` method.  Contains the entry:
+
+            ``outputCovariances``
+                Output PTC datasets (`list` [`lsst.ip.isr.IsrCalib`])
+        outputRefs : `~lsst.pipe.base.connections.OutputQuantizedConnection`
+            Container with all of the outputs expected to be generated.
+
+        Returns
+        -------
+        outputs : `lsst.pipe.base.Struct`
+            Dummy dataset padded version of the input ``outputs`` with
+            the same entries.
+        """
+        newCovariances = []
+        for ref in outputRefs.outputCovariances:
+            outputExpId = ref.dataId['exposure']
+            if outputExpId in inputDims:
+                entry = inputDims.index(outputExpId)
+                newCovariances.append(outputs.outputCovariances[entry])
+            else:
+                newPtc = PhotonTransferCurveDataset(['no amp'], 'DUMMY', 1)
+                newPtc.setAmpValues('no amp')
+                newCovariances.append(newPtc)
+        return pipeBase.Struct(outputCovariances=newCovariances)
+
     def run(self, inputExp, inputDims, taskMetadata):
+
         """Measure covariances from difference of flat pairs
 
         Parameters
@@ -313,14 +349,32 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
         # dimensions match.
         dummyPtcDataset = PhotonTransferCurveDataset(ampNames, 'DUMMY',
                                                      self.config.maximumRangeCovariancesAstier)
+        for ampName in ampNames:
+            dummyPtcDataset.setAmpValues(ampName)
+        # Get read noise.  Try from the exposure, then try
+        # taskMetadata.  This adds a get() for the exposures.
+        readNoiseLists = {}
+        for pairIndex, expRefs in inputExp.items():
+            # This yields an index (exposure_time, seq_num, or flux)
+            # and a pair of references at that index.
+            for expRef, expId in expRefs:
+                # This yields an exposure ref and an exposureId.
+                exposureMetadata = expRef.get(component="metadata")
+                metadataIndex = inputDims.index(expId)
+                thisTaskMetadata = taskMetadata[metadataIndex]
+
+                for ampName in ampNames:
+                    if ampName not in readNoiseLists:
+                        readNoiseLists[ampName] = [self.getReadNoise(exposureMetadata,
+                                                                     thisTaskMetadata, ampName)]
+                    else:
+                        readNoiseLists[ampName].append(self.getReadNoise(exposureMetadata,
+                                                                         thisTaskMetadata, ampName))
 
         readNoiseDict = {ampName: 0.0 for ampName in ampNames}
         for ampName in ampNames:
-            # Initialize amps of `dummyPtcDatset`.
-            dummyPtcDataset.setAmpValues(ampName)
-            # Overscan readnoise from post-ISR exposure metadata.
-            # It will be used to estimate the gain from a pair of flats.
-            readNoiseDict[ampName] = self.getReadNoiseFromMetadata(taskMetadata, ampName)
+            # Take median read noise value
+            readNoiseDict[ampName] = np.nanmedian(readNoiseLists[ampName])
 
         # Output list with PTC datasets.
         partialPtcDatasetList = []
@@ -792,40 +846,39 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
 
         return gain
 
-    def getReadNoiseFromMetadata(self, taskMetadata, ampName):
+    def getReadNoise(self, exposureMetadata, taskMetadata, ampName):
         """Gets readout noise for an amp from ISR metadata.
+
+        If possible, this attempts to get the now-standard headers
+        added to the exposure itself.  If not found there, the ISR
+        TaskMetadata is searched.  If neither of these has the value,
+        warn and set the read noise to NaN.
 
         Parameters
         ----------
-        taskMetadata : `list` [`lsst.pipe.base.TaskMetadata`]
-                    List of exposures metadata from ISR.
+        exposureMetadata : `lsst.daf.base.PropertySet`
+            Metadata to check for read noise first.
+        taskMetadata : `lsst.pipe.base.TaskMetadata`
+            List of exposures metadata from ISR for this exposure.
         ampName : `str`
             Amplifier name.
 
         Returns
         -------
         readNoise : `float`
-            Median of the overscan readnoise in the
-            post-ISR metadata of the input exposures (ADU).
-            Returns 'None' if the median could not be calculated.
+            The read noise for this set of exposure/amplifier.
         """
-        # Empirical readout noise [ADU] measured from an
-        # overscan-subtracted overscan during ISR.
+        # Try from the exposure first.
+        expectedKey = f"LSST ISR OVERSCAN RESIDUAL SERIAL STDEV {ampName}"
+        if expectedKey in exposureMetadata:
+            return exposureMetadata[expectedKey]
+
+        # If not, try getting it from the task metadata.
         expectedKey = f"RESIDUAL STDEV {ampName}"
+        if "isr" in taskMetadata:
+            if expectedKey in taskMetadata["isr"]:
+                return taskMetadata["isr"][expectedKey]
 
-        readNoises = []
-        for expMetadata in taskMetadata:
-            if 'isr' in expMetadata:
-                overscanNoise = expMetadata['isr'][expectedKey]
-            else:
-                continue
-            readNoises.append(overscanNoise)
-
-        if len(readNoises):
-            readNoise = np.nanmedian(np.array(readNoises))
-        else:
-            self.log.warning("Median readout noise from ISR metadata for amp %s "
-                             "could not be calculated." % ampName)
-            readNoise = np.nan
-
-        return readNoise
+        self.log.warning("Median readout noise from ISR metadata for amp %s "
+                         "could not be calculated." % ampName)
+        return np.nan

@@ -219,8 +219,14 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 means, variances, and exposure times
                 (`lsst.ip.isr.PhotonTransferCurveDataset`).
         """
+        # Find the ampNames from a non-dummy ptc.
+        ampNames = []
+        for partialPtcDataset in inputCovariances:
+            if partialPtcDataset.ptcFitType != 'DUMMY':
+                ampNames = partialPtcDataset.ampNames
+                break
+
         # Assemble individual PTC datasets into a single PTC dataset.
-        ampNames = np.unique(inputCovariances[0].ampNames)
         datasetPtc = PhotonTransferCurveDataset(ampNames=ampNames,
                                                 ptcFitType=self.config.ptcFitType,
                                                 covMatrixSide=self.config.maximumRangeCovariancesAstier)
