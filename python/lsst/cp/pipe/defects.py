@@ -386,6 +386,7 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
             for x0 in multipleX:
                 index = np.where(x == x0)
                 multipleY = y[index]  # multipleY and multipleX are in 1-1 correspondence.
+                multipleY.sort()  # Ensure that the y values are sorted to look for gaps.
                 minY, maxY = np.min(multipleY), np.max(multipleY)
                 # Next few lines: don't mask pixels in column if gap
                 # of good pixels between two consecutive bad pixels is
