@@ -99,16 +99,19 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
         self.defaultTask = cpPipe.defects.MeasureDefectsTask()
 
         self.allDefectsList = ipIsr.Defects()
-
         self.brightDefectsList = ipIsr.Defects()
-        for d in self.brightBBoxes:
-            self.brightDefectsList.append(d)
-            self.allDefectsList.append(d)
-
         self.darkDefectsList = ipIsr.Defects()
-        for d in self.darkBBoxes:
-            self.darkDefectsList.append(d)
-            self.allDefectsList.append(d)
+
+        with self.allDefectsList.bulk_update():
+            with self.brightDefectsList.bulk_update():
+                for d in self.brightBBoxes:
+                    self.brightDefectsList.append(d)
+                    self.allDefectsList.append(d)
+
+            with self.darkDefectsList.bulk_update():
+                for d in self.darkBBoxes:
+                    self.darkDefectsList.append(d)
+                    self.allDefectsList.append(d)
 
     def check_maskBlocks(self, inputDefects, expectedDefects):
         """A helper function for the tests of
@@ -218,8 +221,9 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
                      Box2I(corner=Point2I(30, 19), dimensions=Extent2I(1, 5)),
                      Box2I(corner=Point2I(30, 27), dimensions=Extent2I(1, 4)),
                      Box2I(corner=Point2I(30, 34), dimensions=Extent2I(1, 15))]
-        for badBox in badPixels:
-            defects.append(badBox)
+        with defects.bulk_update():
+            for badBox in badPixels:
+                defects.append(badBox)
 
         self.check_maskBlocks(defects, expectedDefects)
 
@@ -242,8 +246,9 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
         badPixels = [Box2I(corner=Point2I(35, 1), dimensions=Extent2I(1, 2)),
                      Box2I(corner=Point2I(35, 5), dimensions=Extent2I(1, 3)),
                      Box2I(corner=Point2I(35, 11), dimensions=Extent2I(1, 2))]
-        for badBox in badPixels:
-            defects.append(badBox)
+        with defects.bulk_update():
+            for badBox in badPixels:
+                defects.append(badBox)
 
         self.check_maskBlocks(defects, expectedDefects)
 
@@ -268,8 +273,9 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
                      Box2I(corner=Point2I(40, 19), dimensions=Extent2I(1, 5)),
                      Box2I(corner=Point2I(40, 27), dimensions=Extent2I(1, 4)),
                      Box2I(corner=Point2I(40, 34), dimensions=Extent2I(1, 15))]
-        for badBox in badPixels:
-            defects.append(badBox)
+        with defects.bulk_update():
+            for badBox in badPixels:
+                defects.append(badBox)
 
         self.check_maskBlocks(defects, expectedDefects)
 
@@ -293,8 +299,9 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
         defects = self.allDefectsList
         badPixels = [Box2I(corner=Point2I(45, 10), dimensions=Extent2I(1, 2)),
                      Box2I(corner=Point2I(45, 30), dimensions=Extent2I(1, 3))]
-        for badBox in badPixels:
-            defects.append(badBox)
+        with defects.bulk_update():
+            for badBox in badPixels:
+                defects.append(badBox)
 
         self.check_maskBlocks(defects, expectedDefects)
 
@@ -327,8 +334,9 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
                      Box2I(corner=Point2I(50, 36), dimensions=Extent2I(1, 1)),
                      Box2I(corner=Point2I(50, 38), dimensions=Extent2I(1, 1)),
                      Box2I(corner=Point2I(50, 40), dimensions=Extent2I(1, 1))]
-        for badBox in badPixels:
-            defects.append(badBox)
+        with defects.bulk_update():
+            for badBox in badPixels:
+                defects.append(badBox)
 
         self.check_maskBlocks(defects, expectedDefects)
 
@@ -356,8 +364,9 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
                      Box2I(corner=Point2I(55, 26), dimensions=Extent2I(1, 1)),
                      Box2I(corner=Point2I(55, 28), dimensions=Extent2I(1, 1)),
                      Box2I(corner=Point2I(55, 30), dimensions=Extent2I(1, 1))]
-        for badBox in badPixels:
-            defects.append(badBox)
+        with defects.bulk_update():
+            for badBox in badPixels:
+                defects.append(badBox)
 
         self.check_maskBlocks(defects, expectedDefects)
 
@@ -380,8 +389,9 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
                      Box2I(corner=Point2I(60, 20), dimensions=Extent2I(1, 10)),
                      Box2I(corner=Point2I(61, 2), dimensions=Extent2I(2, 2)),
                      Box2I(corner=Point2I(61, 6), dimensions=Extent2I(2, 8))]
-        for badBox in badPixels:
-            defects.append(badBox)
+        with defects.bulk_update():
+            for badBox in badPixels:
+                defects.append(badBox)
 
         self.check_maskBlocks(defects, expectedDefects)
 
@@ -404,8 +414,9 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
                      Box2I(corner=Point2I(70, 20), dimensions=Extent2I(1, 10)),
                      Box2I(corner=Point2I(68, 2), dimensions=Extent2I(2, 2)),
                      Box2I(corner=Point2I(68, 6), dimensions=Extent2I(2, 8))]
-        for badBox in badPixels:
-            defects.append(badBox)
+        with defects.bulk_update():
+            for badBox in badPixels:
+                defects.append(badBox)
 
         self.check_maskBlocks(defects, expectedDefects)
 
@@ -431,8 +442,9 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
                      Box2I(corner=Point2I(73, 6), dimensions=Extent2I(2, 8)),
                      Box2I(corner=Point2I(76, 2), dimensions=Extent2I(2, 2)),
                      Box2I(corner=Point2I(76, 6), dimensions=Extent2I(2, 8))]
-        for badBox in badPixels:
-            defects.append(badBox)
+        with defects.bulk_update():
+            for badBox in badPixels:
+                defects.append(badBox)
 
         self.check_maskBlocks(defects, expectedDefects)
 
@@ -456,8 +468,9 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
                      Box2I(corner=Point2I(80, 20), dimensions=Extent2I(1, 10)),
                      Box2I(corner=Point2I(81, 2), dimensions=Extent2I(2, 2)),
                      Box2I(corner=Point2I(81, 8), dimensions=Extent2I(2, 8))]
-        for badBox in badPixels:
-            defects.append(badBox)
+        with defects.bulk_update():
+            for badBox in badPixels:
+                defects.append(badBox)
 
         self.check_maskBlocks(defects, expectedDefects)
 
@@ -481,8 +494,9 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
                      Box2I(corner=Point2I(87, 20), dimensions=Extent2I(1, 10)),
                      Box2I(corner=Point2I(85, 2), dimensions=Extent2I(2, 2)),
                      Box2I(corner=Point2I(85, 8), dimensions=Extent2I(2, 8))]
-        for badBox in badPixels:
-            defects.append(badBox)
+        with defects.bulk_update():
+            for badBox in badPixels:
+                defects.append(badBox)
 
         self.check_maskBlocks(defects, expectedDefects)
 
@@ -514,8 +528,47 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
                      Box2I(corner=Point2I(91, 24), dimensions=Extent2I(2, 3)),
                      Box2I(corner=Point2I(94, 18), dimensions=Extent2I(2, 3)),
                      Box2I(corner=Point2I(94, 24), dimensions=Extent2I(2, 3))]
+        with defects.bulk_update():
+            for badBox in badPixels:
+                defects.append(badBox)
+
+        self.check_maskBlocks(defects, expectedDefects)
+
+    def test_maskBlocks_y_out_of_order_dm38103(self):
+        """A test for maskBlocksIfIntermitentBadPixelsInColumn, y out of order.
+
+        This test is a variant of
+        notest_maskBlocks_every_other_pixel_bad_greater_than_threshold with
+        an extra out-of-y-order bad pixel to trigger DM-38103.
+        """
+        expectedDefects = [Box2I(corner=Point2I(50, 110), dimensions=Extent2I(1, 31))]
+        defects = self.allDefectsList
+        badPixels = [Box2I(corner=Point2I(50, 110), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 112), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 114), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 116), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 118), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 120), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 122), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 124), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 126), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 128), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 130), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 132), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 134), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 136), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 138), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 140), dimensions=Extent2I(1, 1)),
+                     # This last point is out of order in y.
+                     Box2I(corner=Point2I(50, 100), dimensions=Extent2I(1, 1))]
+
+        # Force defect normalization off in order to trigger DM-38301, because
+        # defects.fromFootprintList() which is called by findHotAndColdPixels
+        # does not do normalization.
+        defects._bulk_update = True
         for badBox in badPixels:
             defects.append(badBox)
+        defects._bulk_update = False
 
         self.check_maskBlocks(defects, expectedDefects)
 

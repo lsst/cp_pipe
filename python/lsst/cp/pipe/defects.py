@@ -386,6 +386,7 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
             for x0 in multipleX:
                 index = np.where(x == x0)
                 multipleY = y[index]  # multipleY and multipleX are in 1-1 correspondence.
+                multipleY.sort()  # Ensure that the y values are sorted to look for gaps.
                 minY, maxY = np.min(multipleY), np.max(multipleY)
                 # Next few lines: don't mask pixels in column if gap
                 # of good pixels between two consecutive bad pixels is
@@ -397,7 +398,6 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
                         limits.append(multipleY[gapIndex])
                         limits.append(multipleY[gapIndex+1])
                     limits.append(maxY)  # maximum last
-                    assert len(limits)%2 == 0, 'limits is even by design, but check anyways'
                     for i in np.arange(0, len(limits)-1, 2):
                         s = Box2I(minimum=Point2I(x0, limits[i]), maximum=Point2I(x0, limits[i+1]))
                         defects.append(s)
