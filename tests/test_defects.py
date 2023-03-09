@@ -519,6 +519,44 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
 
         self.check_maskBlocks(defects, expectedDefects)
 
+    def test_maskBlocks_y_out_of_order_dm38103(self):
+        """A test for maskBlocksIfIntermitentBadPixelsInColumn, y out of order.
+
+        This test is a variant of
+        notest_maskBlocks_every_other_pixel_bad_greater_than_threshold with
+        an extra out-of-y-order bad pixel to trigger DM-38103.
+        """
+        expectedDefects = [Box2I(corner=Point2I(50, 110), dimensions=Extent2I(1, 31))]
+        defects = self.allDefectsList
+        badPixels = [Box2I(corner=Point2I(50, 110), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 112), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 114), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 116), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 118), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 120), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 122), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 124), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 126), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 128), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 130), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 132), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 134), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 136), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 138), dimensions=Extent2I(1, 1)),
+                     Box2I(corner=Point2I(50, 140), dimensions=Extent2I(1, 1)),
+                     # This last point is out of order in y.
+                     Box2I(corner=Point2I(50, 100), dimensions=Extent2I(1, 1))]
+
+        # Force defect normalization off in order to trigger DM-38301, because
+        # defects.fromFootprintList() which is called by findHotAndColdPixels
+        # does not do normalization.
+        defects._bulk_update = True
+        for badBox in badPixels:
+            defects.append(badBox)
+        defects._bulk_update = False
+
+        self.check_maskBlocks(defects, expectedDefects)
+
     def test_defectFindingAllSensor(self):
         config = copy.copy(self.defaultConfig)
         config.nPixBorderLeftRight = 0
