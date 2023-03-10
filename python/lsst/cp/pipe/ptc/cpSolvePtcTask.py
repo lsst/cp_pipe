@@ -235,26 +235,19 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             if partialPtcDataset.ptcFitType == 'DUMMY':
                 continue
             for ampName in ampNames:
-                datasetPtc.inputExpIdPairs[ampName].append(partialPtcDataset.inputExpIdPairs[ampName])
-                if type(partialPtcDataset.rawExpTimes[ampName]) is list:
-                    datasetPtc.rawExpTimes[ampName].append(partialPtcDataset.rawExpTimes[ampName][0])
-                else:
-                    datasetPtc.rawExpTimes[ampName].append(partialPtcDataset.rawExpTimes[ampName])
-                if type(partialPtcDataset.rawMeans[ampName]) is list:
-                    datasetPtc.rawMeans[ampName].append(partialPtcDataset.rawMeans[ampName][0])
-                else:
-                    datasetPtc.rawMeans[ampName].append(partialPtcDataset.rawMeans[ampName])
-                if type(partialPtcDataset.rawVars[ampName]) is list:
-                    datasetPtc.rawVars[ampName].append(partialPtcDataset.rawVars[ampName][0])
-                else:
-                    datasetPtc.rawVars[ampName].append(partialPtcDataset.rawVars[ampName])
-                if type(partialPtcDataset.expIdMask[ampName]) is list:
-                    datasetPtc.expIdMask[ampName].append(partialPtcDataset.expIdMask[ampName][0])
-                else:
-                    datasetPtc.expIdMask[ampName].append(partialPtcDataset.expIdMask[ampName])
+                # The partial dataset consists of lists of values for each
+                # quantity. In the case of the input exposure pairs, this is a
+                # list of tuples. In all cases we only want the first
+                # (and only) element of the list.
+                datasetPtc.inputExpIdPairs[ampName].append(partialPtcDataset.inputExpIdPairs[ampName][0])
+                datasetPtc.rawExpTimes[ampName].append(partialPtcDataset.rawExpTimes[ampName][0])
+                datasetPtc.rawMeans[ampName].append(partialPtcDataset.rawMeans[ampName][0])
+                datasetPtc.rawVars[ampName].append(partialPtcDataset.rawVars[ampName][0])
+                datasetPtc.expIdMask[ampName].append(partialPtcDataset.expIdMask[ampName][0])
                 datasetPtc.covariances[ampName].append(np.array(partialPtcDataset.covariances[ampName][0]))
                 datasetPtc.covariancesSqrtWeights[ampName].append(
                     np.array(partialPtcDataset.covariancesSqrtWeights[ampName][0]))
+
         # Sort arrays that are filled so far in the final dataset by
         # rawMeans index
         for ampName in ampNames:
