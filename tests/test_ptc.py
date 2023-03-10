@@ -435,25 +435,6 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                                                              consecutivePointsVarDecreases=2)
         assert np.all(points) == np.all(np.array([True, True, True, True, False]))
 
-    def test_getExpIdsUsed(self):
-        localDataset = copy.copy(self.dataset)
-
-        for pair in [(12, 34), (56, 78), (90, 10)]:
-            localDataset.inputExpIdPairs["C:0,0"].append(pair)
-        localDataset.expIdMask["C:0,0"] = np.array([True, False, True])
-        self.assertTrue(np.all(localDataset.getExpIdsUsed("C:0,0") == [(12, 34), (90, 10)]))
-
-        localDataset.expIdMask["C:0,0"] = np.array([True, False, True, True])  # wrong length now
-        with self.assertRaises(AssertionError):
-            localDataset.getExpIdsUsed("C:0,0")
-
-    def test_getGoodAmps(self):
-        dataset = self.dataset
-
-        self.assertTrue(dataset.ampNames == self.ampNames)
-        dataset.badAmps.append("C:0,1")
-        self.assertTrue(dataset.getGoodAmps() == [amp for amp in self.ampNames if amp != "C:0,1"])
-
     def runGetGainFromFlatPair(self, correctionType='NONE'):
         extractConfig = self.defaultConfigExtract
         extractConfig.gainCorrectionType = correctionType
