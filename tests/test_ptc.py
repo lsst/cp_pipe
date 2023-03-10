@@ -184,6 +184,17 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             for v1, v2 in zip(varStandard[amp], resultsSolve.outputPtcDataset.finalVars[amp]):
                 self.assertAlmostEqual(v1/v2, 1.0, places=1)
 
+        # Test various operations on the PTC output from the task.
+        ptc = resultsSolve.outputPtcDataset
+
+        expIdsUsed = ptc.getExpIdsUsed("C:0,0")
+        # Check that these are the same as the inputs, paired up, with the
+        # final two removed.
+        self.assertTrue(np.all(expIdsUsed == np.array(expIds).reshape(len(expIds) // 2, 2)[:-1]))
+
+        goodAmps = ptc.getGoodAmps()
+        self.assertEqual(goodAmps, self.ampNames)
+
     def ptcFitAndCheckPtc(self, order=None, fitType=None, doTableArray=False, doFitBootstrap=False):
         localDataset = copy.deepcopy(self.dataset)
         localDataset.ptcFitType = fitType
