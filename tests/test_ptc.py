@@ -24,7 +24,6 @@
 #
 """Test cases for cp_pipe."""
 
-from __future__ import absolute_import, division, print_function
 import unittest
 import numpy as np
 import copy
@@ -108,12 +107,14 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         self.c3 = -4.7e-12  # tuned so that it turns over for 200k mean
 
         self.ampNames = [amp.getName() for amp in self.flatExp1.getDetector().getAmplifiers()]
-        self.dataset = PhotonTransferCurveDataset(self.ampNames, " ")  # pack raw data for fitting
+        self.dataset = PhotonTransferCurveDataset(self.ampNames, ptcFitType="PARTIAL")
         self.covariancesSqrtWeights = {}
         for ampName in self.ampNames:  # just the expTimes and means here - vars vary per function
             self.dataset.rawExpTimes[ampName] = self.timeVec
             self.dataset.rawMeans[ampName] = muVec
-            self.covariancesSqrtWeights[ampName] = []
+            self.dataset.covariancesSqrtWeights[ampName] = np.zeros((1,
+                                                                     self.dataset.covMatrixSide,
+                                                                     self.dataset.covMatrixSide))
 
         # ISR metadata
         self.metadataContents = TaskMetadata()
@@ -173,8 +174,8 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         # Force the last PTC dataset to have a NaN, and ensure that the
         # task runs (DM-38029).  This is a minor perturbation and does not
         # affect the output comparison.
-        resultsExtract.outputCovariances[-2].rawMeans['C:0,0'] = [np.nan]
-        resultsExtract.outputCovariances[-2].rawVars['C:0,0'] = [np.nan]
+        resultsExtract.outputCovariances[-2].rawMeans['C:0,0'] = np.array([np.nan])
+        resultsExtract.outputCovariances[-2].rawVars['C:0,0'] = np.array([np.nan])
 
         resultsSolve = solveTask.run(resultsExtract.outputCovariances,
                                      camera=FakeCamera([self.flatExp1.getDetector()]))
@@ -228,7 +229,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                                                  + self.noiseSq/(g*g))
                                                  for mu in localDataset.rawMeans[ampName]]
         else:
-            RuntimeError("Enter a fit function type: 'POLYNOMIAL' or 'EXPAPPROXIMATION'")
+            raise RuntimeError("Enter a fit function type: 'POLYNOMIAL' or 'EXPAPPROXIMATION'")
 
         # Initialize mask and covariance weights that will be used in fits.
         # Covariance weights values empirically determined from one of
@@ -248,6 +249,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                                                                      0.00131929, 0.00121935, 0.0011334,
                                                                      0.00105893, 0.00099357, 0.0009358,
                                                                      0.00088439, 0.00083833]
+
         configLin.maxLookupTableAdu = 200000  # Max ADU in input mock flats
         configLin.maxLinearAdu = 100000
         configLin.minLinearAdu = 50000
