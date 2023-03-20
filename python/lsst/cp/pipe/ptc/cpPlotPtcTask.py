@@ -178,6 +178,10 @@ class PlotPhotonTransferCurveTask(pipeBase.PipelineTask):
     plotNormalizedCovariancesNumberOfBins : `float`, optional
         Number of bins in `plotNormalizedCovariancesNumber` function
         (Fig. 8, 10., of Astier+19).
+
+    Notes
+    -----
+    See DM-36388 for usage exammple.
     """
 
     ConfigClass = PlotPhotonTransferCurveConfig
@@ -1193,8 +1197,7 @@ class PlotPhotonTransferCurveTask(pipeBase.PipelineTask):
         return [fig]
 
     def _plotStandardPtc(self, dataset):
-        """Plot PTC, var/signal vs signal, linearity, and linearity residual
-        per amplifier.
+        """Plot PTC and var/signal vs signal per amplifier.
 
         Parameters
         ----------
@@ -1305,6 +1308,7 @@ class PlotPhotonTransferCurveTask(pipeBase.PipelineTask):
                         r"$\chi^2_{\rm{red}}$: " + f"{ptcRedChi2:.4}"
                         f"\nLast in fit: {meanVecFinal[-1]:.7} ADU "
                     )
+
             a.set_xlabel(r"Mean signal ($\mu$, ADU)", fontsize=labelFontSize)
             a.set_ylabel(r"Variance (ADU$^2$)", fontsize=labelFontSize)
             a.tick_params(labelsize=11)
@@ -1331,6 +1335,21 @@ class PlotPhotonTransferCurveTask(pipeBase.PipelineTask):
             maxMeanVecOriginal = np.nanmax(meanVecOriginal)
             deltaXlim = maxMeanVecOriginal - minMeanVecOriginal
             a.plot(meanVecFit, ptcFunc(pars, meanVecFit), color="red")
+            a.scatter(meanVecFinal, varVecFinal, c="blue", marker="o", s=markerSize)
+            a.scatter(
+                meanVecOutliers, varVecOutliers, c="magenta", marker="s", s=markerSize
+            )
+            a.text(
+                0.03,
+                0.66,
+                stringLegend,
+                transform=a.transAxes,
+                fontsize=legendFontSize,
+            )
+            a.set_title(amp, fontsize=titleFontSize)
+            a.set_xlim([minMeanVecOriginal - 0.2*deltaXlim, maxMeanVecOriginal + 0.2*deltaXlim])
+
+            # Same, but in log-log scale
             a2.plot(meanVecFit, ptcFunc(pars, meanVecFit), color="red")
             a2.scatter(meanVecFinal, varVecFinal, c="blue", marker="o", s=markerSize)
             a2.scatter(
@@ -1375,6 +1394,10 @@ class PlotPhotonTransferCurveTask(pipeBase.PipelineTask):
         f.suptitle("PTC \n Fit: " + stringTitle, fontsize=supTitleFontSize)
         f2.suptitle("PTC (log-log)", fontsize=supTitleFontSize)
         f3.suptitle(r"Var/$\mu$", fontsize=supTitleFontSize)
+
+        f.tight_layout()
+        f2.tight_layout()
+        f3.tight_layout()
 
         figDict = {0: f, 1: f2, 2: f3}
 
