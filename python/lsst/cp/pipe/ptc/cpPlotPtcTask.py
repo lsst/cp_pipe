@@ -82,8 +82,8 @@ class PlotPhotonTransferCurveConnections(
         dimensions=("instrument", "detector"),
     )
     ptcPlot3 = cT.Output(
-        name="ptcVarResiduals",
-        doc="Variance residuals compared to model.",
+        name="ptcNormalizedVar",
+        doc="Variance over mean vs mean.",
         storageClass="Plot",
         dimensions=("instrument", "detector"),
     )
@@ -100,8 +100,8 @@ class PlotPhotonTransferCurveConnections(
         dimensions=("instrument", "detector"),
     )
     ptcPlot6 = cT.Output(
-        name="ptcNormalizedVar",
-        doc="Variance over mean vs mean.",
+        name="ptcVarResiduals",
+        doc="Variance residuals compared to model.",
         storageClass="Plot",
         dimensions=("instrument", "detector"),
     )
@@ -343,6 +343,15 @@ class PlotPhotonTransferCurveTask(pipeBase.PipelineTask):
             gainDict,
             maxr=4,
         )
+
+        # Let's switch the var/mu vs mu plot (figList1[2])
+        # and the variance residual plot (figList2[0]) so that
+        # var/mu vs mu corresponds to ptcPlot3 and the name
+        # matches when FITTYPE is FULLCOVARIANCE or
+        # [EXPAPPROXIMATION, POLYNOMIAL]
+        temp = figList1[2]
+        figList1[2] = figList2[0]
+        figList2 = [temp]
 
         figList = (
             figList1
