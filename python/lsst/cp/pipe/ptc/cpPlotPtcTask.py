@@ -42,17 +42,8 @@ from matplotlib.ticker import MaxNLocator
 
 
 class PlotPhotonTransferCurveConnections(
-    pipeBase.PipelineTaskConnections, dimensions=("instrument", "exposure", "detector")
+    pipeBase.PipelineTaskConnections, dimensions=("instrument", "detector")
 ):
-
-    dummyExposure = cT.Input(
-        name="raw",
-        doc="Dummy exposure to retreive PTC dataset.",
-        storageClass="Exposure",
-        dimensions=("instrument", "detector", "exposure"),
-        multiple=True,
-        deferLoad=True,
-    )
     inputPtcDataset = cT.Input(
         name="calib",
         doc="Input PTC dataset.",
@@ -82,8 +73,8 @@ class PlotPhotonTransferCurveConnections(
         dimensions=("instrument", "detector"),
     )
     ptcPlot3 = cT.Output(
-        name="ptcVarResiduals",
-        doc="Variance residuals compared to model.",
+        name="ptcNormalizedVar",
+        doc="Variance over mean vs mean.",
         storageClass="Plot",
         dimensions=("instrument", "detector"),
     )
@@ -100,8 +91,8 @@ class PlotPhotonTransferCurveConnections(
         dimensions=("instrument", "detector"),
     )
     ptcPlot6 = cT.Output(
-        name="ptcNormalizedVar",
-        doc="Variance over mean vs mean.",
+        name="ptcVarResiduals",
+        doc="Variance residuals compared to model.",
         storageClass="Plot",
         dimensions=("instrument", "detector"),
     )
@@ -178,6 +169,10 @@ class PlotPhotonTransferCurveTask(pipeBase.PipelineTask):
     plotNormalizedCovariancesNumberOfBins : `float`, optional
         Number of bins in `plotNormalizedCovariancesNumber` function
         (Fig. 8, 10., of Astier+19).
+
+    Notes
+    -----
+    See DM-36388 for usage exammple.
     """
 
     ConfigClass = PlotPhotonTransferCurveConfig
@@ -188,29 +183,23 @@ class PlotPhotonTransferCurveTask(pipeBase.PipelineTask):
         outputs = self.run(**inputs)
         butlerQC.put(outputs, outputRefs)
 
-    def run(self, inputPtcDataset, dummyExposure=None, camera=None):
+    def run(self, inputPtcDataset, camera=None):
         """Make the plots for the PTC task.
 
         Parameters
         ----------
         inputPtcDataset : `lsst.ip.isr.PhotonTransferCurveDataset`
             Output dataset from Photon Transfer Curve task.
-        dummyExposure :  `lsst.afw.image.Exposure`
-            The exposure used to select the appropriate PTC dataset.
         camera : `lsst.afw.cameraGeom.Camera`
             Camera to use for camera geometry information.
         """
-
-        if len(dummyExposure) == 0:
-            self.log.warning("No dummy exposure found.")
-
         ptcFitType = inputPtcDataset.ptcFitType
         self.detId = inputPtcDataset.getMetadata()["DETECTOR"]
 
         if ptcFitType in [
             "FULLCOVARIANCE",
         ]:
-            figDict = self.covAstierMakeAllPlots(inputPtcDataset)
+            figDict = self._covAstierMakeAllPlots(inputPtcDataset)
         elif ptcFitType in ["EXPAPPROXIMATION", "POLYNOMIAL"]:
             figDict = self._plotStandardPtc(inputPtcDataset)
         else:
@@ -239,9 +228,8 @@ class PlotPhotonTransferCurveTask(pipeBase.PipelineTask):
             ptcPlot12=figDict[11],
         )
 
-    def covAstierMakeAllPlots(self, dataset):
-        """Make plots for MeasurePhotonTransferCurve task when
-        doCovariancesAstier=True.
+    def _covAstierMakeAllPlots(self, dataset):
+        """Make plots for PTC dataset when fitType=FULLCOVARIANCE.
 
         This function call other functions that mostly reproduce the
         plots in Astier+19.  Most of the code is ported from Pierre
@@ -252,6 +240,23 @@ class PlotPhotonTransferCurveTask(pipeBase.PipelineTask):
         dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
             The dataset containing the necessary information to
             produce the plots.
+
+        Returns
+        -------
+        figDict : `dict` [`int`, `matplotlib.figure.Figure`]
+            Figure dictionary, keyd by an integer index:
+                0: ptcPlot1 ('ptcVarMean')
+                1: ptcPlot2 ('ptcVarMeanLog')
+                2: ptcPlot3 ('ptcNormalizedVar')
+                3: ptcPlot4 ('ptcCov01Mean')
+                4: ptcPlot5 ('ptcCov10Mean')
+                5: ptcPlot6 ('ptcVarResiduals')
+                6: ptcPlot7 ('ptcNormalizedCov01')
+                7: ptcPlot8 ('ptcNormalizedCov10')
+                8: ptcPlot9 ('ptcAandBDistance')
+                9: ptcPlot10 ('ptcAandBDistance')
+                10: ptcPlot11 ('ptcACumulativeSum')
+                11: ptcPlot12 ('ptcARelativeBias')
         """
         mu = dataset.finalMeans
         # dictionaries with ampNames as keys
@@ -339,6 +344,15 @@ class PlotPhotonTransferCurveTask(pipeBase.PipelineTask):
             gainDict,
             maxr=4,
         )
+
+        # Let's switch the var/mu vs mu plot (figList1[2])
+        # and the variance residual plot (figList2[0]) so that
+        # var/mu vs mu corresponds to ptcPlot3 and the name
+        # matches when FITTYPE is FULLCOVARIANCE or
+        # [EXPAPPROXIMATION, POLYNOMIAL]
+        temp = figList1[2]
+        figList1[2] = figList2[0]
+        figList2 = [temp]
 
         figList = (
             figList1
@@ -1193,14 +1207,22 @@ class PlotPhotonTransferCurveTask(pipeBase.PipelineTask):
         return [fig]
 
     def _plotStandardPtc(self, dataset):
-        """Plot PTC, var/signal vs signal, linearity, and linearity residual
-        per amplifier.
+        """Plot PTC (linear and log scales ) and var/signal
+        vs signal per amplifier.
 
         Parameters
         ----------
         dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
             The dataset containing the means, variances, exposure
             times, and mask.
+
+        Returns
+        -------
+        figDict : `dict` [`int`, `matplotlib.figure.Figure`]
+            Figure dictionary, keyd by an integer index:
+                0: ptcPlot1 ('ptcVarMean')
+                1: ptcPlot2 ('ptcVarMeanLog')
+                2: ptcPlot3 ('ptcNormalizedVar')
         """
         ptcFitType = dataset.ptcFitType
         if ptcFitType == "EXPAPPROXIMATION":
@@ -1305,6 +1327,7 @@ class PlotPhotonTransferCurveTask(pipeBase.PipelineTask):
                         r"$\chi^2_{\rm{red}}$: " + f"{ptcRedChi2:.4}"
                         f"\nLast in fit: {meanVecFinal[-1]:.7} ADU "
                     )
+
             a.set_xlabel(r"Mean signal ($\mu$, ADU)", fontsize=labelFontSize)
             a.set_ylabel(r"Variance (ADU$^2$)", fontsize=labelFontSize)
             a.tick_params(labelsize=11)
@@ -1331,6 +1354,21 @@ class PlotPhotonTransferCurveTask(pipeBase.PipelineTask):
             maxMeanVecOriginal = np.nanmax(meanVecOriginal)
             deltaXlim = maxMeanVecOriginal - minMeanVecOriginal
             a.plot(meanVecFit, ptcFunc(pars, meanVecFit), color="red")
+            a.scatter(meanVecFinal, varVecFinal, c="blue", marker="o", s=markerSize)
+            a.scatter(
+                meanVecOutliers, varVecOutliers, c="magenta", marker="s", s=markerSize
+            )
+            a.text(
+                0.03,
+                0.66,
+                stringLegend,
+                transform=a.transAxes,
+                fontsize=legendFontSize,
+            )
+            a.set_title(amp, fontsize=titleFontSize)
+            a.set_xlim([minMeanVecOriginal - 0.2*deltaXlim, maxMeanVecOriginal + 0.2*deltaXlim])
+
+            # Same, but in log-log scale
             a2.plot(meanVecFit, ptcFunc(pars, meanVecFit), color="red")
             a2.scatter(meanVecFinal, varVecFinal, c="blue", marker="o", s=markerSize)
             a2.scatter(
@@ -1375,6 +1413,10 @@ class PlotPhotonTransferCurveTask(pipeBase.PipelineTask):
         f.suptitle("PTC \n Fit: " + stringTitle, fontsize=supTitleFontSize)
         f2.suptitle("PTC (log-log)", fontsize=supTitleFontSize)
         f3.suptitle(r"Var/$\mu$", fontsize=supTitleFontSize)
+
+        f.tight_layout()
+        f2.tight_layout()
+        f3.tight_layout()
 
         figDict = {0: f, 1: f2, 2: f3}
 
