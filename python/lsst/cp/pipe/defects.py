@@ -770,11 +770,14 @@ class MergeDefectsCombinedConnections(MergeDefectsConnections,
     )
 
 
-class MergeDefectsCombinedTaskConfig(pipeBase.PipelineTaskConfig,
+class MergeDefectsCombinedTaskConfig(MergeDefectsTaskConfig,
                                      pipelineConnections=MergeDefectsCombinedConnections):
     """Configuration for merging defects from combined exposure.
     """
-    pass
+    def validate(self):
+        super().validate()
+        if self.combinationMode != 'OR':
+            raise ValueError("combinationMode must be 'OR'")
 
 
 class MergeDefectsCombinedTask(MergeDefectsTask):
@@ -783,102 +786,16 @@ class MergeDefectsCombinedTask(MergeDefectsTask):
     ConfigClass = MergeDefectsCombinedTaskConfig
     _DefaultName = "cpDefectMergeCombined"
 
-    def run(self, inputDefects, secondaryInputDefects, camera):
-        """Merge a list of single defects to find the common defect regions.
+    def runQuantum(self, butlerQC, inputRefs, outputRefs):
+        inputs = butlerQC.get(inputRefs)
+        # Turn inputDefects and secondaryInputDefects into a list
+        # which is what MergeDefectsTask expects.
+        tempList = [inputs['inputDefects'], inputs['secondaryInputDefects']]
+        # Rename inputDefects
+        inputsCombined = {'inputDefects': tempList, 'camera': inputs['camera']}
 
-        Parameters
-        ----------
-        inputDefects : `list` [`lsst.ip.isr.Defects`]
-            Partial defects from a combined exposure.
-        secondaryInputDefects : `list` [`lsst.ip.isr.Defects`]
-            Partial defects from a combined exposure.
-        camera : `lsst.afw.cameraGeom.Camera`
-             Camera to use for metadata.
-
-        Returns
-        -------
-        results : `lsst.pipe.base.Struct`
-             Results struct containing:
-
-             ``mergedDefects``
-                 The defects merged from the input lists
-                 (`lsst.ip.isr.Defects`).
-        """
-        with inputDefects.bulk_update():
-            for d in secondaryInputDefects:
-                inputDefects.append(d)
-        # Not a list, like in the base MergeDefectsTask class
-        detectorId = inputDefects.getMetadata().get('DETECTOR', None)
-        if detectorId is None:
-            raise RuntimeError("Cannot identify detector id.")
-        detector = camera[detectorId]
-
-        imageTypes = set()
-        for inDefect in inputDefects:
-            imageType = inDefect.getMetadata().get('cpDefectGenImageType', 'UNKNOWN')
-            imageTypes.add(imageType)
-
-        # Determine common defect pixels separately for each input image type.
-        splitDefects = list()
-        for imageType in imageTypes:
-            sumImage = afwImage.MaskedImageF(detector.getBBox())
-            count = 0
-            for inDefect in inputDefects:
-                if imageType == inDefect.getMetadata().get('cpDefectGenImageType', 'UNKNOWN'):
-                    count += 1
-                    for defect in inDefect:
-                        sumImage.image[defect.getBBox()] += 1.0
-            sumImage /= count
-            nDetected = len(np.where(sumImage.getImage().getArray() > 0)[0])
-            self.log.info("Pre-merge %s pixels with non-zero detections for %s" % (nDetected, imageType))
-
-            if self.config.combinationMode == 'AND':
-                threshold = 1.0
-            elif self.config.combinationMode == 'OR':
-                threshold = 0.0
-            elif self.config.combinationMode == 'FRACTION':
-                threshold = self.config.combinationFraction
-            else:
-                raise RuntimeError(f"Got unsupported combinationMode {self.config.combinationMode}")
-            indices = np.where(sumImage.getImage().getArray() > threshold)
-            BADBIT = sumImage.getMask().getPlaneBitMask('BAD')
-            sumImage.getMask().getArray()[indices] |= BADBIT
-            self.log.info("Post-merge %s pixels marked as defects for %s" % (len(indices[0]), imageType))
-            partialDefect = Defects.fromMask(sumImage, 'BAD')
-            splitDefects.append(partialDefect)
-
-        # Do final combination of separate image types
-        finalImage = afwImage.MaskedImageF(detector.getBBox())
-        for inDefect in splitDefects:
-            for defect in inDefect:
-                finalImage.image[defect.getBBox()] += 1
-        finalImage /= len(splitDefects)
-        nDetected = len(np.where(finalImage.getImage().getArray() > 0)[0])
-        self.log.info("Pre-final merge %s pixels with non-zero detections" % (nDetected, ))
-
-        # This combination is the OR of all image types
-        threshold = 0.0
-        indices = np.where(finalImage.getImage().getArray() > threshold)
-        BADBIT = finalImage.getMask().getPlaneBitMask('BAD')
-        finalImage.getMask().getArray()[indices] |= BADBIT
-        self.log.info("Post-final merge %s pixels marked as defects" % (len(indices[0]), ))
-
-        if self.config.edgesAsDefects:
-            self.log.info("Masking edge pixels as defects.")
-            # Do the same as IsrTask.maskEdges()
-            box = detector.getBBox()
-            subImage = finalImage[box]
-            box.grow(-self.nPixBorder)
-            SourceDetectionTask.setEdgeBits(subImage, box, BADBIT)
-
-        merged = Defects.fromMask(finalImage, 'BAD')
-        merged.updateMetadataFromExposures(inputDefects)
-        merged.updateMetadata(camera=camera, detector=detector, filterName=None,
-                              setCalibId=True, setDate=True)
-
-        return pipeBase.Struct(
-            mergedDefects=merged,
-        )
+        outputs = super().run(**inputsCombined)
+        butlerQC.put(outputs, outputRefs)
 
 
 class MeasureDefectsCombinedConnections(MeasureDefectsConnections,
