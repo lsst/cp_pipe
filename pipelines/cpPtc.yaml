@@ -39,6 +39,22 @@ tasks:
       connections.inputCovariances: parameters.measuredCovariances
       connections.outputPtcDataset: ptc
       ptcFitType: EXPAPPROXIMATION
+  ptcPlot:
+    class: lsst.cp.pipe.ptc.PlotPhotonTransferCurveTask
+    config:
+      connections.inputPtcDataset: ptc
+      connections.ptcPlot1: ptcVarMean
+      connections.ptcPlot2: ptcVarMeanLog
+      connections.ptcPlot3: ptcNormalizedVar
+      connections.ptcPlot4: ptcCov01Mean
+      connections.ptcPlot5: ptcCov10Mean
+      connections.ptcPlot6: ptcVarResiduals
+      connections.ptcPlot7: ptcNormalizedCov01
+      connections.ptcPlot8: ptcNormalizedCov10
+      connections.ptcPlot9: ptcAandBMatrices
+      connections.ptcPlot10: ptcAandBDistance
+      connections.ptcPlot11: ptcACumulativeSum
+      connections.ptcPlot12: ptcARelativeBias
 contracts:
   - ptcSolve.maximumRangeCovariancesAstier == ptcExtract.maximumRangeCovariancesAstier
   - ptcSolve.binSize == ptcExtract.binSize

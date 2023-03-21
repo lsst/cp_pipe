@@ -42,17 +42,8 @@ from matplotlib.ticker import MaxNLocator
 
 
 class PlotPhotonTransferCurveConnections(
-    pipeBase.PipelineTaskConnections, dimensions=("instrument", "exposure", "detector")
+    pipeBase.PipelineTaskConnections, dimensions=("instrument", "detector")
 ):
-
-    dummyExposure = cT.Input(
-        name="raw",
-        doc="Dummy exposure to retreive PTC dataset.",
-        storageClass="Exposure",
-        dimensions=("instrument", "detector", "exposure"),
-        multiple=True,
-        deferLoad=True,
-    )
     inputPtcDataset = cT.Input(
         name="calib",
         doc="Input PTC dataset.",
@@ -192,22 +183,16 @@ class PlotPhotonTransferCurveTask(pipeBase.PipelineTask):
         outputs = self.run(**inputs)
         butlerQC.put(outputs, outputRefs)
 
-    def run(self, inputPtcDataset, dummyExposure=None, camera=None):
+    def run(self, inputPtcDataset, camera=None):
         """Make the plots for the PTC task.
 
         Parameters
         ----------
         inputPtcDataset : `lsst.ip.isr.PhotonTransferCurveDataset`
             Output dataset from Photon Transfer Curve task.
-        dummyExposure :  `lsst.afw.image.Exposure`
-            The exposure used to select the appropriate PTC dataset.
         camera : `lsst.afw.cameraGeom.Camera`
             Camera to use for camera geometry information.
         """
-
-        if len(dummyExposure) == 0:
-            self.log.warning("No dummy exposure found.")
-
         ptcFitType = inputPtcDataset.ptcFitType
         self.detId = inputPtcDataset.getMetadata()["DETECTOR"]
 

@@ -1,6 +1,6 @@
 description: cp_pipe task to plot Photon Transfer Curve dataset
 tasks:
-  plotPtcTask:
+  plotPhotonTransferCurveTask:
     class: lsst.cp.pipe.ptc.PlotPhotonTransferCurveTask
     config:
       connections.inputPtcDataset: 'ptc'
