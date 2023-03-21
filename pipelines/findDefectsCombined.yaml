@@ -10,9 +10,10 @@ tasks:
     config:
       connections.inputExp: 'flat'
       connections.outputDefects: 'cpPartialDefectsCombinedWithFilter'
-  mergeDefects:
+  mergeDefectsCombined:
     class: lsst.cp.pipe.defects.MergeDefectsCombinedTask
     config:
       connections.inputDefects: 'cpBrightPartialDefectsCombined'
       connections.secondaryInputDefects: 'cpPartialDefectsCombinedWithFilter'
       connections.mergedDefects: 'defects'
+      combinationMode: OR

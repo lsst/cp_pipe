@@ -77,6 +77,23 @@ class MeasureDefectsTaskConfig(pipeBase.PipelineTaskConfig,
     """Configuration for measuring defects from a list of exposures
     """
 
+    thresholdType = pexConfig.ChoiceField(
+        dtype=str,
+        doc=("Defects threshold type: 'STDEV' or `VALUE`."),
+        default='STDEV',
+        allowed={'STDEV': "Use number of sigma given standard deviation.",
+                 'VALUE': "Use pixel value."},
+    )
+    darkCurrentThreshold = pexConfig.Field(
+        dtype=float,
+        doc="Dark current threshold (in e-/sec) to define hot/bright pixels in dark images.",
+        default=5,
+    )
+    fracThreshold = pexConfig.Field(
+        dtype=float,
+        doc="Fractional threshold to define cold/dark pixels in flat images.",
+        default=0.8,
+    )
     nSigmaBright = pexConfig.Field(
         dtype=float,
         doc=("Number of sigma above mean for bright pixel detection. The default value was found to be"
@@ -157,14 +174,9 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
         except AttributeError:
             filterName = None
 
+        defects = self.findHotAndColdPixels(inputExp)
+
         datasetType = inputExp.getMetadata().get('IMGTYPE', 'UNKNOWN')
-
-        if datasetType.lower() == 'dark':
-            nSigmaList = [self.config.nSigmaBright]
-        else:
-            nSigmaList = [self.config.nSigmaBright, self.config.nSigmaDark]
-        defects = self.findHotAndColdPixels(inputExp, nSigmaList)
-
         msg = "Found %s defects containing %s pixels in %s"
         self.log.info(msg, len(defects), self._nPixFromDefects(defects), datasetType)
 
@@ -196,7 +208,7 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
             nPix += defect.getBBox().getArea()
         return nPix
 
-    def findHotAndColdPixels(self, exp, nSigma):
+    def findHotAndColdPixels(self, exp):
         """Find hot and cold pixels in an image.
 
         Using config-defined thresholds on a per-amp basis, mask
@@ -208,9 +220,6 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
         ----------
         exp : `lsst.afw.image.exposure.Exposure`
             The exposure in which to find defects.
-        nSigma : `list` [`float`]
-            Detection threshold to use.  Positive for DETECTED pixels,
-            negative for DETECTED_NEGATIVE pixels.
 
         Returns
         -------
@@ -244,10 +253,41 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
                 continue
 
             # Remove a background estimate
-            ampImg -= afwMath.makeStatistics(ampImg, afwMath.MEANCLIP, ).getValue()
+            meanClip = afwMath.makeStatistics(ampImg, afwMath.MEANCLIP, ).getValue()
+            ampImg -= meanClip
 
+            # Determine thresholds
+            stDev = afwMath.makeStatistics(ampImg, afwMath.STDEVCLIP, ).getValue()
+            expTime = exp.getInfo().getVisitInfo().getExposureTime()
+            thresholdType = self.config.thresholdType
+            datasetType = exp.getMetadata().get('IMGTYPE', 'UNKNOWN')
+            if thresholdType == 'VALUE':
+                hotPixelThreshold = self.config.darkCurrentThreshold*expTime/amp.getGain()
+                if datasetType.lower() == 'dark':
+                    nSigmaList = [hotPixelThreshold]
+                else:
+                    coldPixelThreshold = -(1.-self.config.fracThreshold)*meanClip
+                    nSigmaList = [hotPixelThreshold, coldPixelThreshold]
+                # Find equivalent sigma values.
+                nSigmaList = [x/stDev for x in nSigmaList]
+            else:
+                hotPixelThreshold = self.config.nSigmaBright
+                coldPixelThreshold = self.config.nSigmaDark
+                if datasetType.lower() == 'dark':
+                    nSigmaList = [hotPixelThreshold]
+                else:
+                    nSigmaList = [hotPixelThreshold, coldPixelThreshold]
+
+            # Go back to pixel values to provide log info below
+            valuesList = [np.array(nSigmaList[0])*stDev*amp.getGain()/expTime]
+            if len(nSigmaList) == 2:
+                valuesList.append(np.array(nSigmaList[1])*stDev/meanClip + 1.)
+
+            self.log.info("Amp: %s. Threshold Type: %s. Sigma values and Pixel"
+                          "Values (hot and cold pixels thresholds): %s, %s",
+                          amp.getName(), thresholdType, nSigmaList, valuesList)
             mergedSet = None
-            for sigma in nSigma:
+            for sigma in nSigmaList:
                 nSig = np.abs(sigma)
                 self.debugHistogram('ampFlux', ampImg, nSig, exp)
                 polarity = {-1: False, 1: True}[np.sign(sigma)]
