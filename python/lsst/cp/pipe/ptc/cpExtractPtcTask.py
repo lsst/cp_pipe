@@ -290,7 +290,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                 newCovariances.append(outputs.outputCovariances[entry])
             else:
                 newPtc = PhotonTransferCurveDataset(['no amp'], 'DUMMY', 1)
-                newPtc.setAmpValues('no amp')
+                newPtc.setAmpValuesPartialDataset('no amp')
                 newCovariances.append(newPtc)
         return pipeBase.Struct(outputCovariances=newCovariances)
 
@@ -350,7 +350,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
         dummyPtcDataset = PhotonTransferCurveDataset(ampNames, 'DUMMY',
                                                      self.config.maximumRangeCovariancesAstier)
         for ampName in ampNames:
-            dummyPtcDataset.setAmpValues(ampName)
+            dummyPtcDataset.setAmpValuesPartialDataset(ampName)
         # Get read noise.  Try from the exposure, then try
         # taskMetadata.  This adds a get() for the exposures.
         readNoiseLists = {}
@@ -480,22 +480,39 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                     tupleRows = [(muDiff, varDiff) + covRow + (ampNumber, expTime,
                                                                ampName) for covRow in covAstier]
                     tempStructArray = np.array(tupleRows, dtype=tags)
+
                     covArray, vcov, _ = self.makeCovArray(tempStructArray,
                                                           self.config.maximumRangeCovariancesAstier)
+
+                    # The returned covArray should only have 1 entry;
+                    # raise if this is not the case.
+                    if covArray.shape[0] != 1:
+                        raise RuntimeError("Serious programming error in covArray shape.")
+
                     covSqrtWeights = np.nan_to_num(1./np.sqrt(vcov))
 
                 # Correct covArray for sigma clipping:
                 # 1) Apply varFactor twice for the whole covariance matrix
                 covArray *= varFactor**2
                 # 2) But, only once for the variance element of the
-                # matrix, covArray[0,0] (so divide one factor out).
-                covArray[0, 0] /= varFactor
+                # matrix, covArray[0, 0, 0] (so divide one factor out).
+                # (the first 0 is because this is a 3D array for insertion into
+                # the combined dataset).
+                covArray[0, 0, 0] /= varFactor
 
-                partialPtcDataset.setAmpValues(ampName, rawExpTime=[expTime], rawMean=[muDiff],
-                                               rawVar=[varDiff], inputExpIdPair=[(expId1, expId2)],
-                                               expIdMask=[expIdMask], covArray=covArray,
-                                               covSqrtWeights=covSqrtWeights, gain=gain,
-                                               noise=readNoiseDict[ampName])
+                partialPtcDataset.setAmpValuesPartialDataset(
+                    ampName,
+                    inputExpIdPair=(expId1, expId2),
+                    rawExpTime=expTime,
+                    rawMean=muDiff,
+                    rawVar=varDiff,
+                    expIdMask=expIdMask,
+                    covariance=covArray[0, :, :],
+                    covSqrtWeights=covSqrtWeights[0, :, :],
+                    gain=gain,
+                    noise=readNoiseDict[ampName],
+                )
+
             # Use location of exp1 to save PTC dataset from (exp1, exp2) pair.
             # Below, np.where(expId1 == np.array(inputDims)) returns a tuple
             # with a single-element array, so [0][0]

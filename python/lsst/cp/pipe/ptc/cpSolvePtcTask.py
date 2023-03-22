@@ -235,38 +235,54 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             if partialPtcDataset.ptcFitType == 'DUMMY':
                 continue
             for ampName in ampNames:
-                datasetPtc.inputExpIdPairs[ampName].append(partialPtcDataset.inputExpIdPairs[ampName])
-                if type(partialPtcDataset.rawExpTimes[ampName]) is list:
-                    datasetPtc.rawExpTimes[ampName].append(partialPtcDataset.rawExpTimes[ampName][0])
-                else:
-                    datasetPtc.rawExpTimes[ampName].append(partialPtcDataset.rawExpTimes[ampName])
-                if type(partialPtcDataset.rawMeans[ampName]) is list:
-                    datasetPtc.rawMeans[ampName].append(partialPtcDataset.rawMeans[ampName][0])
-                else:
-                    datasetPtc.rawMeans[ampName].append(partialPtcDataset.rawMeans[ampName])
-                if type(partialPtcDataset.rawVars[ampName]) is list:
-                    datasetPtc.rawVars[ampName].append(partialPtcDataset.rawVars[ampName][0])
-                else:
-                    datasetPtc.rawVars[ampName].append(partialPtcDataset.rawVars[ampName])
-                if type(partialPtcDataset.expIdMask[ampName]) is list:
-                    datasetPtc.expIdMask[ampName].append(partialPtcDataset.expIdMask[ampName][0])
-                else:
-                    datasetPtc.expIdMask[ampName].append(partialPtcDataset.expIdMask[ampName])
-                datasetPtc.covariances[ampName].append(np.array(partialPtcDataset.covariances[ampName][0]))
-                datasetPtc.covariancesSqrtWeights[ampName].append(
-                    np.array(partialPtcDataset.covariancesSqrtWeights[ampName][0]))
+                # The partial dataset consists of lists of values for each
+                # quantity. In the case of the input exposure pairs, this is a
+                # list of tuples. In all cases we only want the first
+                # (and only) element of the list.
+                datasetPtc.inputExpIdPairs[ampName].append(partialPtcDataset.inputExpIdPairs[ampName][0])
+                datasetPtc.rawExpTimes[ampName] = np.append(datasetPtc.rawExpTimes[ampName],
+                                                            partialPtcDataset.rawExpTimes[ampName][0])
+                datasetPtc.rawMeans[ampName] = np.append(datasetPtc.rawMeans[ampName],
+                                                         partialPtcDataset.rawMeans[ampName][0])
+                datasetPtc.rawVars[ampName] = np.append(datasetPtc.rawVars[ampName],
+                                                        partialPtcDataset.rawVars[ampName][0])
+                datasetPtc.expIdMask[ampName] = np.append(datasetPtc.expIdMask[ampName],
+                                                          partialPtcDataset.expIdMask[ampName][0])
+                datasetPtc.covariances[ampName] = np.append(
+                    datasetPtc.covariances[ampName].ravel(),
+                    partialPtcDataset.covariances[ampName].ravel()
+                ).reshape(
+                    (
+                        len(datasetPtc.rawExpTimes[ampName]),
+                        datasetPtc.covMatrixSide,
+                        datasetPtc.covMatrixSide,
+                    )
+                )
+                datasetPtc.covariancesSqrtWeights[ampName] = np.append(
+                    datasetPtc.covariancesSqrtWeights[ampName].ravel(),
+                    partialPtcDataset.covariancesSqrtWeights[ampName].ravel()
+                ).reshape(
+                    (
+                        len(datasetPtc.rawExpTimes[ampName]),
+                        datasetPtc.covMatrixSide,
+                        datasetPtc.covMatrixSide,
+                    )
+                )
+
         # Sort arrays that are filled so far in the final dataset by
         # rawMeans index
         for ampName in ampNames:
-            index = np.argsort(np.ravel(np.array(datasetPtc.rawMeans[ampName])))
-            datasetPtc.inputExpIdPairs[ampName] = np.array(datasetPtc.inputExpIdPairs[ampName])[index]
-            datasetPtc.rawExpTimes[ampName] = np.array(datasetPtc.rawExpTimes[ampName])[index]
-            datasetPtc.rawMeans[ampName] = np.array(datasetPtc.rawMeans[ampName])[index]
-            datasetPtc.rawVars[ampName] = np.array(datasetPtc.rawVars[ampName])[index]
-            datasetPtc.expIdMask[ampName] = np.array(datasetPtc.expIdMask[ampName])[index]
-            datasetPtc.covariances[ampName] = np.array(datasetPtc.covariances[ampName])[index]
-            datasetPtc.covariancesSqrtWeights[ampName] = np.array(
-                datasetPtc.covariancesSqrtWeights[ampName])[index]
+            index = np.argsort(datasetPtc.rawMeans[ampName])
+            datasetPtc.inputExpIdPairs[ampName] = np.array(
+                datasetPtc.inputExpIdPairs[ampName]
+            )[index].tolist()
+            datasetPtc.rawExpTimes[ampName] = datasetPtc.rawExpTimes[ampName][index]
+            datasetPtc.rawMeans[ampName] = datasetPtc.rawMeans[ampName][index]
+            datasetPtc.rawVars[ampName] = datasetPtc.rawVars[ampName][index]
+            datasetPtc.expIdMask[ampName] = datasetPtc.expIdMask[ampName][index]
+            datasetPtc.covariances[ampName] = datasetPtc.covariances[ampName][index]
+            datasetPtc.covariancesSqrtWeights[ampName] = datasetPtc.covariances[ampName][index]
+
         if self.config.ptcFitType == "FULLCOVARIANCE":
             # Fit the measured covariances vs mean signal to
             # the Astier+19 full model (Eq. 20). Before that
