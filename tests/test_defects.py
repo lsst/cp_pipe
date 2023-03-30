@@ -563,7 +563,7 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
                      Box2I(corner=Point2I(50, 100), dimensions=Extent2I(1, 1))]
 
         # Force defect normalization off in order to trigger DM-38301, because
-        # defects.fromFootprintList() which is called by findHotAndColdPixels
+        # defects.fromFootprintList() which is called by _findHotAndColdPixels
         # does not do normalization.
         defects._bulk_update = True
         for badBox in badPixels:
@@ -579,8 +579,7 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
 
         task = cpPipe.defects.MeasureDefectsTask(config=config)
 
-        defects = task.findHotAndColdPixels(self.flatExp, [config.nSigmaBright,
-                                                           config.nSigmaDark])
+        defects = task._findHotAndColdPixels(self.flatExp)
 
         allBBoxes = self.darkBBoxes + self.brightBBoxes
 
@@ -595,8 +594,7 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
         config = copy.copy(self.defaultConfig)
         config.nPixBorderUpDown = 0
         task = cpPipe.defects.MeasureDefectsTask(config=config)
-        defects = task.findHotAndColdPixels(self.flatExp, [config.nSigmaBright,
-                                                           config.nSigmaDark])
+        defects = task._findHotAndColdPixels(self.flatExp)
 
         shouldBeFound = self.darkBBoxes[self.noEdges] + self.brightBBoxes[self.noEdges]
 
@@ -618,8 +616,7 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
         config.nPixBorderUpDown = 0
         config.nPixBorderLeftRight = 0
         task = cpPipe.defects.MeasureDefectsTask(config=config)
-        defects = task.findHotAndColdPixels(self.flatExp, [config.nSigmaBright,
-                                                           config.nSigmaDark])
+        defects = task._findHotAndColdPixels(self.flatExp)
 
         defectArea = 0
         for defect in defects:
@@ -701,8 +698,7 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
         config.nPixBorderLeftRight = 0
 
         task = cpPipe.defects.MeasureDefectsTask(config=config)
-        defects = task.findHotAndColdPixels(testImage, [config.nSigmaBright,
-                                                        config.nSigmaDark])
+        defects = task._findHotAndColdPixels(testImage)
 
         defectArea = 0
         for defect in defects:

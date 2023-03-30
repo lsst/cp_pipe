@@ -86,25 +86,34 @@ class MeasureDefectsTaskConfig(pipeBase.PipelineTaskConfig,
     )
     darkCurrentThreshold = pexConfig.Field(
         dtype=float,
-        doc="Dark current threshold (in e-/sec) to define hot/bright pixels in dark images.",
+        doc=("If thresholdType='VALUE', dark current threshold (in e-/sec) to define "
+             "hot/bright pixels in dark images."),
         default=5,
     )
     fracThreshold = pexConfig.Field(
         dtype=float,
-        doc="Fractional threshold to define cold/dark pixels in flat images.",
+        doc=("If thresholdType='VALUE', fractional threshold to define cold/dark "
+             "pixels in flat images."),
         default=0.8,
     )
     nSigmaBright = pexConfig.Field(
         dtype=float,
-        doc=("Number of sigma above mean for bright pixel detection. The default value was found to be"
-             " appropriate for some LSST sensors in DM-17490."),
+        doc=("If thresholdType='STDEV', number of sigma above mean for bright "
+             "pixel detection. The default value was found to be "
+             "appropriate for some LSST sensors in DM-17490."),
         default=4.8,
     )
     nSigmaDark = pexConfig.Field(
         dtype=float,
-        doc=("Number of sigma below mean for dark pixel detection. The default value was found to be"
-             " appropriate for some LSST sensors in DM-17490."),
+        doc=("If thresholdType='STDEV', number of sigma below mean for dark pixel "
+             "detection. The default value was found to be "
+             "appropriate for some LSST sensors in DM-17490."),
         default=-5.0,
+    )
+    doHotandColdInFlats = pexConfig.Field(
+        dtype=bool,
+        doc=("Should the code find hot/bright and cold/dark pixels in flat field images? "),
+        default=True,
     )
     nPixBorderUpDown = pexConfig.Field(
         dtype=int,
@@ -174,7 +183,7 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
         except AttributeError:
             filterName = None
 
-        defects = self.findHotAndColdPixels(inputExp)
+        defects = self._findHotAndColdPixels(inputExp)
 
         datasetType = inputExp.getMetadata().get('IMGTYPE', 'UNKNOWN')
         msg = "Found %s defects containing %s pixels in %s"
@@ -208,7 +217,7 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
             nPix += defect.getBBox().getArea()
         return nPix
 
-    def findHotAndColdPixels(self, exp):
+    def _findHotAndColdPixels(self, exp):
         """Find hot and cold pixels in an image.
 
         Using config-defined thresholds on a per-amp basis, mask
@@ -262,12 +271,21 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
             thresholdType = self.config.thresholdType
             datasetType = exp.getMetadata().get('IMGTYPE', 'UNKNOWN')
             if thresholdType == 'VALUE':
+                # LCA-128 and eoTest: bright/hot pixels in dark images are
+                # defined as any pixel with more than 5 e-/s of dark current.
+                # We scale by the exposure time.
                 hotPixelThreshold = self.config.darkCurrentThreshold*expTime/amp.getGain()
                 if datasetType.lower() == 'dark':
                     nSigmaList = [hotPixelThreshold]
                 else:
+                    # LCA-128 and eoTest: dark/cold pixels in flat images as
+                    # defined as any pixel with photoresponse <80% of
+                    # the mean (at 500nm).
                     coldPixelThreshold = -(1.-self.config.fracThreshold)*meanClip
-                    nSigmaList = [hotPixelThreshold, coldPixelThreshold]
+                    if self.config.doHotandColdInFlats:
+                        nSigmaList = [hotPixelThreshold, coldPixelThreshold]
+                    else:
+                        nSigmaList = [coldPixelThreshold]
                 # Find equivalent sigma values.
                 nSigmaList = [x/stDev for x in nSigmaList]
             else:
@@ -276,9 +294,13 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
                 if datasetType.lower() == 'dark':
                     nSigmaList = [hotPixelThreshold]
                 else:
-                    nSigmaList = [hotPixelThreshold, coldPixelThreshold]
+                    if self.config.doHotandColdInFlats:
+                        nSigmaList = [hotPixelThreshold, coldPixelThreshold]
+                    else:
+                        nSigmaList = [hotPixelThreshold]
 
-            # Go back to pixel values to provide log info below
+            # Go back to pixel values to provide log info below.
+            # The first element will be hotPixelThreshold
             valuesList = [np.array(nSigmaList[0])*stDev*amp.getGain()/expTime]
             if len(nSigmaList) == 2:
                 valuesList.append(np.array(nSigmaList[1])*stDev/meanClip + 1.)
@@ -594,13 +616,6 @@ class MergeDefectsConnections(pipeBase.PipelineTaskConnections,
         dimensions=("instrument", "detector", "exposure",),
         multiple=True,
     )
-    secondaryInputDefects = cT.Input(
-        name="AdditionalSingleExpDefects",
-        doc="Additional measured defect lists.",
-        storageClass="Defects",
-        dimensions=("instrument", "detector", "exposure"),
-        multiple=True,
-    )
     camera = cT.PrerequisiteInput(
         name='camera',
         doc="Camera associated with these defects.",
@@ -778,14 +793,14 @@ class MergeDefectsTask(pipeBase.PipelineTask):
 class MergeDefectsCombinedConnections(MergeDefectsConnections,
                                       dimensions=("instrument", "detector")):
     inputDefects = cT.Input(
-        name="singleExpDefects",
+        name="cpPartialDefectsFromDarkCombined",
         doc="Measured defect lists.",
         storageClass="Defects",
         dimensions=("instrument", "detector",),
         multiple=False,
     )
     secondaryInputDefects = cT.Input(
-        name="AdditionalSingleExpDefects",
+        name="cpPartialDefectsFromFlatCombined",
         doc="Additional measured defect lists.",
         storageClass="Defects",
         dimensions=("instrument", "detector",),
@@ -900,7 +915,7 @@ class MeasureDefectsCombinedWithFilterConnections(MeasureDefectsCombinedConnecti
     )
 
     outputDefects = cT.Output(
-        name="combinedExpDefects",
+        name="combinedExpDefectsFlat",
         doc="Output measured defects.",
         storageClass="Defects",
         dimensions=("instrument", "detector"),

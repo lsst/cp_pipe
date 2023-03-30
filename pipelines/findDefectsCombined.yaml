@@ -4,16 +4,12 @@ tasks:
     class: lsst.cp.pipe.defects.MeasureDefectsCombinedTask
     config:
       connections.inputExp: 'dark'
-      connections.outputDefects: 'cpBrightPartialDefectsCombined'
   measureDefectsFlat:
     class: lsst.cp.pipe.defects.MeasureDefectsCombinedWithFilterTask
     config:
       connections.inputExp: 'flat'
-      connections.outputDefects: 'cpPartialDefectsCombinedWithFilter'
   mergeDefectsCombined:
     class: lsst.cp.pipe.defects.MergeDefectsCombinedTask
     config:
-      connections.inputDefects: 'cpBrightPartialDefectsCombined'
-      connections.secondaryInputDefects: 'cpPartialDefectsCombinedWithFilter'
       connections.mergedDefects: 'defects'
       combinationMode: OR
