@@ -341,6 +341,18 @@ class CalibCombineTask(pipeBase.PipelineTask):
         self.combineHeaders(inputExpHandles, combinedExp,
                             calibType=self.config.calibrationType, scales=expScales)
 
+        # Populate a visitInfo.  Set the exposure time and dark time
+        # to 0.0 or 1.0 as appropriate, and copy the instrument name
+        # from one of the inputs.
+        expTime = 1.0
+        if self.config.connections.outputData.lower() == 'bias':
+            expTime = 0.0
+        inputVisitInfo = inputExpHandles[0].get(component="visitInfo")
+        visitInfo = afwImage.VisitInfo(exposureTime=expTime, darkTime=expTime,
+                                       instrumentLabel=inputVisitInfo.getInstrumentLabel())
+
+        combinedExp.getInfo().setVisitInfo(visitInfo)
+
         # Set the detector
         combinedExp.setDetector(inputDetector)
 
