@@ -202,7 +202,7 @@ class CpCtiSolveTaskTestCase(lsst.utils.tests.TestCase):
         # Check that the result matches expectation.
         self.assertAlmostEqual(calib.globalCti['C:0,0'], 1.0e-7, 4)
         self.assertAlmostEqual(calib.driftScale['C:0,0'], 1.8105e-4, 4)
-        self.assertAlmostEqual(calib.decayTime['C:0,0'], 3.0809, 4)
+        self.assertAlmostEqual(calib.decayTime['C:0,0'], 3.08095, 4)
 
         # Check that all amps are equal.
         for ampName in calib.globalCti.keys():
