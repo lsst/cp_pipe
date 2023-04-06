@@ -79,7 +79,9 @@ class MeasureDefectsTaskConfig(pipeBase.PipelineTaskConfig,
 
     thresholdType = pexConfig.ChoiceField(
         dtype=str,
-        doc=("Defects threshold type: 'STDEV' or `VALUE`."),
+        doc=("Defects threshold type: 'STDEV' or `VALUE`. If 'VALUE', cold pixels will be found "
+             "in flats, and hot pixels in darks. If 'STDEV', cold and hot pixels will be found "
+             "in flats, and hot pixels in darks."),
         default='STDEV',
         allowed={'STDEV': "Use number of sigma given standard deviation.",
                  'VALUE': "Use pixel value."},
@@ -90,30 +92,25 @@ class MeasureDefectsTaskConfig(pipeBase.PipelineTaskConfig,
              "hot/bright pixels in dark images."),
         default=5,
     )
-    fracThreshold = pexConfig.Field(
+    fracThresholdFlat = pexConfig.Field(
         dtype=float,
         doc=("If thresholdType='VALUE', fractional threshold to define cold/dark "
-             "pixels in flat images."),
+             "pixels in flat images (fraction of the mean value per amplifier)."),
         default=0.8,
     )
     nSigmaBright = pexConfig.Field(
         dtype=float,
-        doc=("If thresholdType='STDEV', number of sigma above mean for bright "
+        doc=("If thresholdType='STDEV', number of sigma above mean for bright/hot "
              "pixel detection. The default value was found to be "
              "appropriate for some LSST sensors in DM-17490."),
         default=4.8,
     )
     nSigmaDark = pexConfig.Field(
         dtype=float,
-        doc=("If thresholdType='STDEV', number of sigma below mean for dark pixel "
+        doc=("If thresholdType='STDEV', number of sigma below mean for dark/cold pixel "
              "detection. The default value was found to be "
              "appropriate for some LSST sensors in DM-17490."),
         default=-5.0,
-    )
-    doHotandColdInFlats = pexConfig.Field(
-        dtype=bool,
-        doc=("Should the code find hot/bright and cold/dark pixels in flat field images? "),
-        default=True,
     )
     nPixBorderUpDown = pexConfig.Field(
         dtype=int,
@@ -274,40 +271,33 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
                 # LCA-128 and eoTest: bright/hot pixels in dark images are
                 # defined as any pixel with more than 5 e-/s of dark current.
                 # We scale by the exposure time.
-                hotPixelThreshold = self.config.darkCurrentThreshold*expTime/amp.getGain()
                 if datasetType.lower() == 'dark':
-                    nSigmaList = [hotPixelThreshold]
+                    # hot pixel threshold
+                    valueThreshold = self.config.darkCurrentThreshold*expTime/amp.getGain()
                 else:
                     # LCA-128 and eoTest: dark/cold pixels in flat images as
                     # defined as any pixel with photoresponse <80% of
                     # the mean (at 500nm).
-                    coldPixelThreshold = -(1.-self.config.fracThreshold)*meanClip
-                    if self.config.doHotandColdInFlats:
-                        nSigmaList = [hotPixelThreshold, coldPixelThreshold]
-                    else:
-                        nSigmaList = [coldPixelThreshold]
+
+                    # We subtracted the mean above, so the threshold will be
+                    # negative cold pixel threshold.
+                    valueThreshold = (self.config.fracThresholdFlat-1)*meanClip
                 # Find equivalent sigma values.
-                nSigmaList = [x/stDev for x in nSigmaList]
+                nSigmaList = [valueThreshold/stDev]
             else:
                 hotPixelThreshold = self.config.nSigmaBright
                 coldPixelThreshold = self.config.nSigmaDark
                 if datasetType.lower() == 'dark':
                     nSigmaList = [hotPixelThreshold]
+                    valueThreshold = stDev*hotPixelThreshold
                 else:
-                    if self.config.doHotandColdInFlats:
-                        nSigmaList = [hotPixelThreshold, coldPixelThreshold]
-                    else:
-                        nSigmaList = [hotPixelThreshold]
-
-            # Go back to pixel values to provide log info below.
-            # The first element will be hotPixelThreshold
-            valuesList = [np.array(nSigmaList[0])*stDev*amp.getGain()/expTime]
-            if len(nSigmaList) == 2:
-                valuesList.append(np.array(nSigmaList[1])*stDev/meanClip + 1.)
+                    nSigmaList = [hotPixelThreshold, coldPixelThreshold]
+                    valueThreshold = [x*stDev for x in nSigmaList]
 
             self.log.info("Amp: %s. Threshold Type: %s. Sigma values and Pixel"
                           "Values (hot and cold pixels thresholds): %s, %s",
-                          amp.getName(), thresholdType, nSigmaList, valuesList)
+                          amp.getName(), thresholdType, nSigmaList, valueThreshold)
+
             mergedSet = None
             for sigma in nSigmaList:
                 nSig = np.abs(sigma)
@@ -873,7 +863,7 @@ class MeasureDefectsCombinedConnections(MeasureDefectsConnections,
     )
 
     outputDefects = cT.Output(
-        name="combinedExpDefects",
+        name="cpPartialDefectsFromDarkCombined",
         doc="Output measured defects.",
         storageClass="Defects",
         dimensions=("instrument", "detector"),
@@ -915,7 +905,7 @@ class MeasureDefectsCombinedWithFilterConnections(MeasureDefectsCombinedConnecti
     )
 
     outputDefects = cT.Output(
-        name="combinedExpDefectsFlat",
+        name="cpPartialDefectsFromFlatCombined",
         doc="Output measured defects.",
         storageClass="Defects",
         dimensions=("instrument", "detector"),
