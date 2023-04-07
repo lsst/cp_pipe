@@ -597,6 +597,90 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
             plt.close()
 
 
+class MeasureDefectsCombinedConnections(MeasureDefectsConnections,
+                                        dimensions=("instrument", "detector")):
+    inputExp = cT.Input(
+        name="defectExps",
+        doc="Input ISR-processed combined exposures to measure.",
+        storageClass="Exposure",
+        dimensions=("instrument", "detector"),
+        multiple=False,
+        isCalibration=True,
+    )
+    camera = cT.PrerequisiteInput(
+        name='camera',
+        doc="Camera associated with this exposure.",
+        storageClass="Camera",
+        dimensions=("instrument", ),
+        isCalibration=True,
+        lookupFunction=lookupStaticCalibration,
+    )
+
+    outputDefects = cT.Output(
+        name="cpPartialDefectsFromDarkCombined",
+        doc="Output measured defects.",
+        storageClass="Defects",
+        dimensions=("instrument", "detector"),
+    )
+
+
+class MeasureDefectsCombinedTaskConfig(MeasureDefectsTaskConfig,
+                                       pipelineConnections=MeasureDefectsCombinedConnections):
+    """Configuration for measuring defects from combined exposures.
+    """
+    pass
+
+
+class MeasureDefectsCombinedTask(MeasureDefectsTask):
+    """Task to measure defects in combined images."""
+
+    ConfigClass = MeasureDefectsCombinedTaskConfig
+    _DefaultName = "cpDefectMeasureCombined"
+
+
+class MeasureDefectsCombinedWithFilterConnections(MeasureDefectsCombinedConnections,
+                                                  dimensions=("instrument", "detector")):
+    """Task to measure defects in combined flats under a certain filter."""
+    inputExp = cT.Input(
+        name="defectExps",
+        doc="Input ISR-processed combined exposures to measure.",
+        storageClass="Exposure",
+        dimensions=("instrument", "detector", "physical_filter"),
+        multiple=False,
+        isCalibration=True,
+    )
+    camera = cT.PrerequisiteInput(
+        name='camera',
+        doc="Camera associated with this exposure.",
+        storageClass="Camera",
+        dimensions=("instrument", ),
+        isCalibration=True,
+        lookupFunction=lookupStaticCalibration,
+    )
+
+    outputDefects = cT.Output(
+        name="cpPartialDefectsFromFlatCombinedWithFilter",
+        doc="Output measured defects.",
+        storageClass="Defects",
+        dimensions=("instrument", "detector", "physical_filter"),
+    )
+
+
+class MeasureDefectsCombinedWithFilterTaskConfig(
+    MeasureDefectsTaskConfig,
+        pipelineConnections=MeasureDefectsCombinedWithFilterConnections):
+    """Configuration for measuring defects from combined exposures.
+    """
+    pass
+
+
+class MeasureDefectsCombinedWithFilterTask(MeasureDefectsTask):
+    """Task to measure defects in combined images."""
+
+    ConfigClass = MeasureDefectsCombinedWithFilterTaskConfig
+    _DefaultName = "cpDefectMeasureWithFilterCombined"
+
+
 class MergeDefectsConnections(pipeBase.PipelineTaskConnections,
                               dimensions=("instrument", "detector")):
     inputDefects = cT.Input(
@@ -790,10 +874,10 @@ class MergeDefectsCombinedConnections(MergeDefectsConnections,
         multiple=False,
     )
     secondaryInputDefects = cT.Input(
-        name="cpPartialDefectsFromFlatCombined",
+        name="cpPartialDefectsFromFlatCombinedWithFilter",
         doc="Additional measured defect lists.",
         storageClass="Defects",
-        dimensions=("instrument", "detector",),
+        dimensions=("instrument", "detector", "physical_filter"),
         multiple=False,
     )
     camera = cT.PrerequisiteInput(
@@ -806,7 +890,7 @@ class MergeDefectsCombinedConnections(MergeDefectsConnections,
     )
 
     mergedDefects = cT.Output(
-        name="defects",
+        name="defectsCombined",
         doc="Final merged defects.",
         storageClass="Defects",
         dimensions=("instrument", "detector"),
@@ -841,87 +925,3 @@ class MergeDefectsCombinedTask(MergeDefectsTask):
 
         outputs = super().run(**inputsCombined)
         butlerQC.put(outputs, outputRefs)
-
-
-class MeasureDefectsCombinedConnections(MeasureDefectsConnections,
-                                        dimensions=("instrument", "detector")):
-    inputExp = cT.Input(
-        name="defectExps",
-        doc="Input ISR-processed combined exposures to measure.",
-        storageClass="Exposure",
-        dimensions=("instrument", "detector"),
-        multiple=False,
-        isCalibration=True,
-    )
-    camera = cT.PrerequisiteInput(
-        name='camera',
-        doc="Camera associated with this exposure.",
-        storageClass="Camera",
-        dimensions=("instrument", ),
-        isCalibration=True,
-        lookupFunction=lookupStaticCalibration,
-    )
-
-    outputDefects = cT.Output(
-        name="cpPartialDefectsFromDarkCombined",
-        doc="Output measured defects.",
-        storageClass="Defects",
-        dimensions=("instrument", "detector"),
-    )
-
-
-class MeasureDefectsCombinedTaskConfig(MeasureDefectsTaskConfig,
-                                       pipelineConnections=MeasureDefectsCombinedConnections):
-    """Configuration for measuring defects from combined exposures.
-    """
-    pass
-
-
-class MeasureDefectsCombinedTask(MeasureDefectsTask):
-    """Task to measure defects in combined images."""
-
-    ConfigClass = MeasureDefectsCombinedTaskConfig
-    _DefaultName = "cpDefectMeasureCombined"
-
-
-class MeasureDefectsCombinedWithFilterConnections(MeasureDefectsCombinedConnections,
-                                                  dimensions=("instrument", "detector")):
-    """Task to measure defects in combined flats under a certain filter."""
-    inputExp = cT.Input(
-        name="defectExps",
-        doc="Input ISR-processed combined exposures to measure.",
-        storageClass="Exposure",
-        dimensions=("instrument", "detector", "physical_filter"),
-        multiple=False,
-        isCalibration=True,
-    )
-    camera = cT.PrerequisiteInput(
-        name='camera',
-        doc="Camera associated with this exposure.",
-        storageClass="Camera",
-        dimensions=("instrument", ),
-        isCalibration=True,
-        lookupFunction=lookupStaticCalibration,
-    )
-
-    outputDefects = cT.Output(
-        name="cpPartialDefectsFromFlatCombined",
-        doc="Output measured defects.",
-        storageClass="Defects",
-        dimensions=("instrument", "detector"),
-    )
-
-
-class MeasureDefectsCombinedWithFilterTaskConfig(
-    MeasureDefectsTaskConfig,
-        pipelineConnections=MeasureDefectsCombinedWithFilterConnections):
-    """Configuration for measuring defects from combined exposures.
-    """
-    pass
-
-
-class MeasureDefectsCombinedWithFilterTask(MeasureDefectsTask):
-    """Task to measure defects in combined images."""
-
-    ConfigClass = MeasureDefectsCombinedWithFilterTaskConfig
-    _DefaultName = "cpDefectMeasureWithFilterCombined"
