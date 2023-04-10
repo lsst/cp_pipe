@@ -11,5 +11,4 @@ tasks:
   mergeDefectsCombined:
     class: lsst.cp.pipe.defects.MergeDefectsCombinedTask
     config:
-      connections.mergedDefects: 'defects'
       combinationMode: OR
