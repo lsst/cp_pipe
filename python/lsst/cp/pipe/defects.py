@@ -79,37 +79,40 @@ class MeasureDefectsTaskConfig(pipeBase.PipelineTaskConfig,
 
     thresholdType = pexConfig.ChoiceField(
         dtype=str,
-        doc=("Defects threshold type: 'STDEV' or `VALUE`. If 'VALUE', cold pixels will be found "
-             "in flats, and hot pixels in darks. If 'STDEV', cold and hot pixels will be found "
+        doc=("Defects threshold type: ``STDEV`` or ``VALUE``. If ``VALUE``, cold pixels will be found "
+             "in flats, and hot pixels in darks. If ``STDEV``, cold and hot pixels will be found "
              "in flats, and hot pixels in darks."),
         default='STDEV',
-        allowed={'STDEV': "Use number of sigma given standard deviation.",
-                 'VALUE': "Use pixel value."},
+        allowed={'STDEV': "Use a multiple of the image standard deviation to determine detection threshold.",
+                 'VALUE': "Use pixel value to determine detection threshold."},
     )
     darkCurrentThreshold = pexConfig.Field(
         dtype=float,
-        doc=("If thresholdType='VALUE', dark current threshold (in e-/sec) to define "
-             "hot/bright pixels in dark images."),
+        doc=("If thresholdType=``VALUE``, dark current threshold (in e-/sec) to define "
+             "hot/bright pixels in dark images. Unused if thresholdType==``STDEV``."),
         default=5,
     )
     fracThresholdFlat = pexConfig.Field(
         dtype=float,
-        doc=("If thresholdType='VALUE', fractional threshold to define cold/dark "
-             "pixels in flat images (fraction of the mean value per amplifier)."),
+        doc=("If thresholdType=``VALUE``, fractional threshold to define cold/dark "
+             "pixels in flat images (fraction of the mean value per amplifier)."
+             "Unused if thresholdType==``STDEV``."),
         default=0.8,
     )
     nSigmaBright = pexConfig.Field(
         dtype=float,
-        doc=("If thresholdType='STDEV', number of sigma above mean for bright/hot "
+        doc=("If thresholdType=``STDEV``, number of sigma above mean for bright/hot "
              "pixel detection. The default value was found to be "
-             "appropriate for some LSST sensors in DM-17490."),
+             "appropriate for some LSST sensors in DM-17490. "
+             "Unused if thresholdType==``VALUE``"),
         default=4.8,
     )
     nSigmaDark = pexConfig.Field(
         dtype=float,
-        doc=("If thresholdType='STDEV', number of sigma below mean for dark/cold pixel "
+        doc=("If thresholdType=``STDEV``, number of sigma below mean for dark/cold pixel "
              "detection. The default value was found to be "
-             "appropriate for some LSST sensors in DM-17490."),
+             "appropriate for some LSST sensors in DM-17490. "
+             "Unused if thresholdType==``VALUE``"),
         default=-5.0,
     )
     nPixBorderUpDown = pexConfig.Field(
@@ -294,9 +297,9 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
                     nSigmaList = [hotPixelThreshold, coldPixelThreshold]
                     valueThreshold = [x*stDev for x in nSigmaList]
 
-            self.log.info("Amp: %s. Threshold Type: %s. Sigma values and Pixel"
+            self.log.info("Image type: %s. Amp: %s. Threshold Type: %s. Sigma values and Pixel"
                           "Values (hot and cold pixels thresholds): %s, %s",
-                          amp.getName(), thresholdType, nSigmaList, valueThreshold)
+                          datasetType, amp.getName(), thresholdType, nSigmaList, valueThreshold)
 
             mergedSet = None
             for sigma in nSigmaList:
@@ -600,8 +603,8 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
 class MeasureDefectsCombinedConnections(MeasureDefectsConnections,
                                         dimensions=("instrument", "detector")):
     inputExp = cT.Input(
-        name="defectExps",
-        doc="Input ISR-processed combined exposures to measure.",
+        name="dark",
+        doc="Input ISR-processed combined exposure to measure.",
         storageClass="Exposure",
         dimensions=("instrument", "detector"),
         multiple=False,
@@ -642,8 +645,8 @@ class MeasureDefectsCombinedWithFilterConnections(MeasureDefectsCombinedConnecti
                                                   dimensions=("instrument", "detector")):
     """Task to measure defects in combined flats under a certain filter."""
     inputExp = cT.Input(
-        name="defectExps",
-        doc="Input ISR-processed combined exposures to measure.",
+        name="flat",
+        doc="Input ISR-processed combined exposure to measure.",
         storageClass="Exposure",
         dimensions=("instrument", "detector", "physical_filter"),
         multiple=False,
@@ -866,14 +869,14 @@ class MergeDefectsTask(pipeBase.PipelineTask):
 
 class MergeDefectsCombinedConnections(MergeDefectsConnections,
                                       dimensions=("instrument", "detector")):
-    inputDefects = cT.Input(
+    inputFlatDefects = cT.Input(
         name="cpPartialDefectsFromDarkCombined",
         doc="Measured defect lists.",
         storageClass="Defects",
         dimensions=("instrument", "detector",),
         multiple=False,
     )
-    secondaryInputDefects = cT.Input(
+    inputDarkDefects = cT.Input(
         name="cpPartialDefectsFromFlatCombinedWithFilter",
         doc="Additional measured defect lists.",
         storageClass="Defects",
@@ -917,9 +920,9 @@ class MergeDefectsCombinedTask(MergeDefectsTask):
 
     def runQuantum(self, butlerQC, inputRefs, outputRefs):
         inputs = butlerQC.get(inputRefs)
-        # Turn inputDefects and secondaryInputDefects into a list
+        # Turn inputFlatDefects and inputDarkDefects into a list
         # which is what MergeDefectsTask expects.
-        tempList = [inputs['inputDefects'], inputs['secondaryInputDefects']]
+        tempList = [inputs['inputFlatDefects'], inputs['inputDarkDefects']]
         # Rename inputDefects
         inputsCombined = {'inputDefects': tempList, 'camera': inputs['camera']}
 
