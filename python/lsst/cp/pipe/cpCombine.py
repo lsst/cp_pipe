@@ -341,18 +341,6 @@ class CalibCombineTask(pipeBase.PipelineTask):
         self.combineHeaders(inputExpHandles, combinedExp,
                             calibType=self.config.calibrationType, scales=expScales)
 
-        # Populate a visitInfo.  Set the exposure time and dark time
-        # to 0.0 or 1.0 as appropriate, and copy the instrument name
-        # from one of the inputs.
-        expTime = 1.0
-        if self.config.connections.outputData.lower() == 'bias':
-            expTime = 0.0
-        inputVisitInfo = inputExpHandles[0].get(component="visitInfo")
-        visitInfo = afwImage.VisitInfo(exposureTime=expTime, darkTime=expTime,
-                                       instrumentLabel=inputVisitInfo.getInstrumentLabel())
-
-        combinedExp.getInfo().setVisitInfo(visitInfo)
-
         # Set the detector
         combinedExp.setDetector(inputDetector)
 
@@ -498,7 +486,8 @@ class CalibCombineTask(pipeBase.PipelineTask):
 
     def combineHeaders(self, expHandleList, calib, calibType="CALIB", scales=None):
         """Combine input headers to determine the set of common headers,
-        supplemented by calibration inputs.
+        supplemented by calibration inputs.  The calibration header is
+        set in-place.
 
         Parameters
         ----------
@@ -559,6 +548,17 @@ class CalibCombineTask(pipeBase.PipelineTask):
             if scales is not None:
                 header.set("CPP_INPUT_SCALE_%d" % (i,), scales[i])
 
+        # Populate a visitInfo.  Set the exposure time and dark time
+        # to 0.0 or 1.0 as appropriate, and copy the instrument name
+        # from one of the inputs.
+        expTime = 1.0
+        if self.config.connections.outputData.lower() == 'bias':
+            expTime = 0.0
+        inputVisitInfo = visitInfoList[0]
+        visitInfo = afwImage.VisitInfo(exposureTime=expTime, darkTime=expTime,
+                                       instrumentLabel=inputVisitInfo.instrumentLabel)
+        calib.getInfo().setVisitInfo(visitInfo)
+
         # Not yet working: DM-22302
         # Create an observation group so we can add some standard headers
         # independent of the form in the input files.
@@ -569,7 +569,7 @@ class CalibCombineTask(pipeBase.PipelineTask):
             self.log.warning("Exception making an obs group for headers. Continuing.")
             # Fall back to setting a DATE-OBS from the calibDate
             dateCards = {"DATE-OBS": "{}T00:00:00.00".format(calibDate)}
-            comments["DATE-OBS"] = "Date of start of day of calibration midpoint"
+            comments["DATE-OBS"] = "Date of start of day of calibration creation"
         else:
             oldest, newest = group.extremes()
             dateCards = dates_to_fits(oldest.datetime_begin, newest.datetime_end)
