@@ -268,8 +268,12 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
             # Determine thresholds
             stDev = afwMath.makeStatistics(ampImg, afwMath.STDEVCLIP, ).getValue()
             expTime = exp.getInfo().getVisitInfo().getExposureTime()
-            thresholdType = self.config.thresholdType
             datasetType = exp.getMetadata().get('IMGTYPE', 'UNKNOWN')
+            if np.isnan(expTime):
+                self.log.warning("expTime=%s for AMP %s in %s. Setting expTime to 1 second",
+                                 expTime, amp.getName(), datasetType)
+                expTime = 1.
+            thresholdType = self.config.thresholdType
             if thresholdType == 'VALUE':
                 # LCA-128 and eoTest: bright/hot pixels in dark images are
                 # defined as any pixel with more than 5 e-/s of dark current.
@@ -300,7 +304,6 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
             self.log.info("Image type: %s. Amp: %s. Threshold Type: %s. Sigma values and Pixel"
                           "Values (hot and cold pixels thresholds): %s, %s",
                           datasetType, amp.getName(), thresholdType, nSigmaList, valueThreshold)
-
             mergedSet = None
             for sigma in nSigmaList:
                 nSig = np.abs(sigma)
@@ -867,7 +870,7 @@ class MergeDefectsTask(pipeBase.PipelineTask):
 # ("instrument", "detector").
 
 
-class MergeDefectsCombinedConnections(MergeDefectsConnections,
+class MergeDefectsCombinedConnections(pipeBase.PipelineTaskConnections,
                                       dimensions=("instrument", "detector")):
     inputFlatDefects = cT.Input(
         name="cpPartialDefectsFromDarkCombined",
