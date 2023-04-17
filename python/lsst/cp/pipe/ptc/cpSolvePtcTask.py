@@ -1022,7 +1022,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         if not len(dataset.ptcFitType) == 0:
             dataset.ptcFitType = ptcFitType
         if len(dataset.badAmps) == 0:
-            dataset.badAmps = np.repeat(np.nan, len(list(dataset.rawExpTimes.values())[0]))
+            dataset.badAmps = []
 
         return dataset
 
