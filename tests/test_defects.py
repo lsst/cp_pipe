@@ -33,6 +33,7 @@ import lsst.ip.isr as ipIsr
 import lsst.cp.pipe as cpPipe
 from lsst.ip.isr import isrMock, countMaskedPixels
 from lsst.geom import Box2I, Point2I, Extent2I
+from lsst.daf.base import PropertyList
 
 
 class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
@@ -101,6 +102,15 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
         self.allDefectsList = ipIsr.Defects()
         self.brightDefectsList = ipIsr.Defects()
         self.darkDefectsList = ipIsr.Defects()
+
+        # Set image types, the defects code will use them.
+        metaDataFlat = PropertyList()
+        metaDataFlat["IMGTYPE"] = "FLAT"
+        self.flatExp.setMetadata(metaDataFlat)
+
+        metaDataDark = PropertyList()
+        metaDataDark["IMGTYPE"] = "DARK"
+        self.darkExp.setMetadata(metaDataDark)
 
         with self.allDefectsList.bulk_update():
             with self.brightDefectsList.bulk_update():
@@ -611,6 +621,37 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
         shouldBeMissed = self.darkBBoxes[self.onlyEdges] + self.brightBBoxes[self.onlyEdges]
         for boxMissed in shouldBeMissed:
             self.assertNotIn(boxMissed, boxesMeasured)
+
+    def valueThreshold(self, fileType):
+        """Helper function to loop over flats and darks
+        to test thresholdType = 'VALUE'."""
+        config = copy.copy(self.defaultConfig)
+        config.thresholdType = 'VALUE'
+        task = self.defaultTask
+        task.config = config
+
+        if fileType == 'dark':
+            exp = self.darkExp
+            shouldBeFound = self.brightBBoxes[self.noEdges]
+        else:
+            exp = self.flatExp
+            shouldBeFound = self.darkBBoxes[self.noEdges]
+            # Change the default a bit so it works for the
+            # existing simulated defects.
+            task.config.fracThresholdFlat = 0.9
+
+        defects = task._findHotAndColdPixels(exp)
+
+        boxesMeasured = []
+        for defect in defects:
+            boxesMeasured.append(defect.getBBox())
+
+        for expectedBBox in shouldBeFound:
+            self.assertIn(expectedBBox, boxesMeasured)
+
+    def test_valueThreshold(self):
+        for fileType in ['flat', 'flat']:
+            self.valueThreshold(fileType)
 
     def test_pixelCounting(self):
         """Test that the number of defective pixels identified is as expected.
