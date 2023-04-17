@@ -27,6 +27,7 @@
 import unittest
 import numpy as np
 import copy
+import tempfile
 
 import lsst.utils
 import lsst.utils.tests
@@ -195,6 +196,30 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
         goodAmps = ptc.getGoodAmps()
         self.assertEqual(goodAmps, self.ampNames)
+
+        # Check that every possibly modified field has the same length.
+        covShape = None
+        covSqrtShape = None
+        covModelShape = None
+        covModelNoBShape = None
+
+        for ampName in self.ampNames:
+            if covShape is None:
+                covShape = ptc.covariances[ampName].shape
+                covSqrtShape = ptc.covariancesSqrtWeights[ampName].shape
+                covModelShape = ptc.covariancesModel[ampName].shape
+                covModelNoBShape = ptc.covariancesModelNoB[ampName].shape
+            else:
+                self.assertEqual(ptc.covariances[ampName].shape, covShape)
+                self.assertEqual(ptc.covariancesSqrtWeights[ampName].shape, covSqrtShape)
+                self.assertEqual(ptc.covariancesModel[ampName].shape, covModelShape)
+                self.assertEqual(ptc.covariancesModelNoB[ampName].shape, covModelNoBShape)
+
+        # And check that this is serializable
+        with tempfile.NamedTemporaryFile(suffix=".fits") as f:
+            usedFilename = ptc.writeFits(f.name)
+            fromFits = PhotonTransferCurveDataset.readFits(usedFilename)
+        self.assertEqual(fromFits, ptc)
 
     def ptcFitAndCheckPtc(self, order=None, fitType=None, doTableArray=False, doFitBootstrap=False):
         localDataset = copy.deepcopy(self.dataset)
