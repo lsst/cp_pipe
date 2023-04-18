@@ -19,6 +19,12 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
+
+__all__ = ['MeasureDefectsTaskConfig', 'MeasureDefectsTask',
+           'MergeDefectsTaskConfig', 'MergeDefectsTask',
+           'MeasureDefectsCombinedTaskConfig', 'MeasureDefectsCombinedTask',
+           'MergeDefectsCombinedTaskConfig', 'MergeDefectsCombinedTask', ]
+
 import numpy as np
 
 import lsst.pipe.base as pipeBase
@@ -38,9 +44,6 @@ from lsst.ip.isr import Defects, countMaskedPixels
 from lsst.pex.exceptions import InvalidParameterError
 
 from ._lookupStaticCalibration import lookupStaticCalibration
-
-__all__ = ['MeasureDefectsTaskConfig', 'MeasureDefectsTask',
-           'MergeDefectsTaskConfig', 'MergeDefectsTask', ]
 
 
 class MeasureDefectsConnections(pipeBase.PipelineTaskConnections,
@@ -74,16 +77,42 @@ class MeasureDefectsTaskConfig(pipeBase.PipelineTaskConfig,
     """Configuration for measuring defects from a list of exposures
     """
 
+    thresholdType = pexConfig.ChoiceField(
+        dtype=str,
+        doc=("Defects threshold type: ``STDEV`` or ``VALUE``. If ``VALUE``, cold pixels will be found "
+             "in flats, and hot pixels in darks. If ``STDEV``, cold and hot pixels will be found "
+             "in flats, and hot pixels in darks."),
+        default='STDEV',
+        allowed={'STDEV': "Use a multiple of the image standard deviation to determine detection threshold.",
+                 'VALUE': "Use pixel value to determine detection threshold."},
+    )
+    darkCurrentThreshold = pexConfig.Field(
+        dtype=float,
+        doc=("If thresholdType=``VALUE``, dark current threshold (in e-/sec) to define "
+             "hot/bright pixels in dark images. Unused if thresholdType==``STDEV``."),
+        default=5,
+    )
+    fracThresholdFlat = pexConfig.Field(
+        dtype=float,
+        doc=("If thresholdType=``VALUE``, fractional threshold to define cold/dark "
+             "pixels in flat images (fraction of the mean value per amplifier)."
+             "Unused if thresholdType==``STDEV``."),
+        default=0.8,
+    )
     nSigmaBright = pexConfig.Field(
         dtype=float,
-        doc=("Number of sigma above mean for bright pixel detection. The default value was found to be"
-             " appropriate for some LSST sensors in DM-17490."),
+        doc=("If thresholdType=``STDEV``, number of sigma above mean for bright/hot "
+             "pixel detection. The default value was found to be "
+             "appropriate for some LSST sensors in DM-17490. "
+             "Unused if thresholdType==``VALUE``"),
         default=4.8,
     )
     nSigmaDark = pexConfig.Field(
         dtype=float,
-        doc=("Number of sigma below mean for dark pixel detection. The default value was found to be"
-             " appropriate for some LSST sensors in DM-17490."),
+        doc=("If thresholdType=``STDEV``, number of sigma below mean for dark/cold pixel "
+             "detection. The default value was found to be "
+             "appropriate for some LSST sensors in DM-17490. "
+             "Unused if thresholdType==``VALUE``"),
         default=-5.0,
     )
     nPixBorderUpDown = pexConfig.Field(
@@ -149,16 +178,14 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
                  (`lsst.ip.isr.Defects`).
         """
         detector = inputExp.getDetector()
+        try:
+            filterName = inputExp.getFilter().physicalLabel
+        except AttributeError:
+            filterName = None
 
-        filterName = inputExp.getFilter().physicalLabel
+        defects = self._findHotAndColdPixels(inputExp)
+
         datasetType = inputExp.getMetadata().get('IMGTYPE', 'UNKNOWN')
-
-        if datasetType.lower() == 'dark':
-            nSigmaList = [self.config.nSigmaBright]
-        else:
-            nSigmaList = [self.config.nSigmaBright, self.config.nSigmaDark]
-        defects = self.findHotAndColdPixels(inputExp, nSigmaList)
-
         msg = "Found %s defects containing %s pixels in %s"
         self.log.info(msg, len(defects), self._nPixFromDefects(defects), datasetType)
 
@@ -190,7 +217,7 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
             nPix += defect.getBBox().getArea()
         return nPix
 
-    def findHotAndColdPixels(self, exp, nSigma):
+    def _findHotAndColdPixels(self, exp):
         """Find hot and cold pixels in an image.
 
         Using config-defined thresholds on a per-amp basis, mask
@@ -202,9 +229,6 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
         ----------
         exp : `lsst.afw.image.exposure.Exposure`
             The exposure in which to find defects.
-        nSigma : `list` [`float`]
-            Detection threshold to use.  Positive for DETECTED pixels,
-            negative for DETECTED_NEGATIVE pixels.
 
         Returns
         -------
@@ -238,10 +262,50 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
                 continue
 
             # Remove a background estimate
-            ampImg -= afwMath.makeStatistics(ampImg, afwMath.MEANCLIP, ).getValue()
+            meanClip = afwMath.makeStatistics(ampImg, afwMath.MEANCLIP, ).getValue()
+            ampImg -= meanClip
 
+            # Determine thresholds
+            stDev = afwMath.makeStatistics(ampImg, afwMath.STDEVCLIP, ).getValue()
+            expTime = exp.getInfo().getVisitInfo().getExposureTime()
+            datasetType = exp.getMetadata().get('IMGTYPE', 'UNKNOWN')
+            if np.isnan(expTime):
+                self.log.warning("expTime=%s for AMP %s in %s. Setting expTime to 1 second",
+                                 expTime, amp.getName(), datasetType)
+                expTime = 1.
+            thresholdType = self.config.thresholdType
+            if thresholdType == 'VALUE':
+                # LCA-128 and eoTest: bright/hot pixels in dark images are
+                # defined as any pixel with more than 5 e-/s of dark current.
+                # We scale by the exposure time.
+                if datasetType.lower() == 'dark':
+                    # hot pixel threshold
+                    valueThreshold = self.config.darkCurrentThreshold*expTime/amp.getGain()
+                else:
+                    # LCA-128 and eoTest: dark/cold pixels in flat images as
+                    # defined as any pixel with photoresponse <80% of
+                    # the mean (at 500nm).
+
+                    # We subtracted the mean above, so the threshold will be
+                    # negative cold pixel threshold.
+                    valueThreshold = (self.config.fracThresholdFlat-1)*meanClip
+                # Find equivalent sigma values.
+                nSigmaList = [valueThreshold/stDev]
+            else:
+                hotPixelThreshold = self.config.nSigmaBright
+                coldPixelThreshold = self.config.nSigmaDark
+                if datasetType.lower() == 'dark':
+                    nSigmaList = [hotPixelThreshold]
+                    valueThreshold = stDev*hotPixelThreshold
+                else:
+                    nSigmaList = [hotPixelThreshold, coldPixelThreshold]
+                    valueThreshold = [x*stDev for x in nSigmaList]
+
+            self.log.info("Image type: %s. Amp: %s. Threshold Type: %s. Sigma values and Pixel"
+                          "Values (hot and cold pixels thresholds): %s, %s",
+                          datasetType, amp.getName(), thresholdType, nSigmaList, valueThreshold)
             mergedSet = None
-            for sigma in nSigma:
+            for sigma in nSigmaList:
                 nSig = np.abs(sigma)
                 self.debugHistogram('ampFlux', ampImg, nSig, exp)
                 polarity = {-1: False, 1: True}[np.sign(sigma)]
@@ -539,13 +603,97 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
             plt.close()
 
 
+class MeasureDefectsCombinedConnections(MeasureDefectsConnections,
+                                        dimensions=("instrument", "detector")):
+    inputExp = cT.Input(
+        name="dark",
+        doc="Input ISR-processed combined exposure to measure.",
+        storageClass="Exposure",
+        dimensions=("instrument", "detector"),
+        multiple=False,
+        isCalibration=True,
+    )
+    camera = cT.PrerequisiteInput(
+        name='camera',
+        doc="Camera associated with this exposure.",
+        storageClass="Camera",
+        dimensions=("instrument", ),
+        isCalibration=True,
+        lookupFunction=lookupStaticCalibration,
+    )
+
+    outputDefects = cT.Output(
+        name="cpPartialDefectsFromDarkCombined",
+        doc="Output measured defects.",
+        storageClass="Defects",
+        dimensions=("instrument", "detector"),
+    )
+
+
+class MeasureDefectsCombinedTaskConfig(MeasureDefectsTaskConfig,
+                                       pipelineConnections=MeasureDefectsCombinedConnections):
+    """Configuration for measuring defects from combined exposures.
+    """
+    pass
+
+
+class MeasureDefectsCombinedTask(MeasureDefectsTask):
+    """Task to measure defects in combined images."""
+
+    ConfigClass = MeasureDefectsCombinedTaskConfig
+    _DefaultName = "cpDefectMeasureCombined"
+
+
+class MeasureDefectsCombinedWithFilterConnections(MeasureDefectsCombinedConnections,
+                                                  dimensions=("instrument", "detector")):
+    """Task to measure defects in combined flats under a certain filter."""
+    inputExp = cT.Input(
+        name="flat",
+        doc="Input ISR-processed combined exposure to measure.",
+        storageClass="Exposure",
+        dimensions=("instrument", "detector", "physical_filter"),
+        multiple=False,
+        isCalibration=True,
+    )
+    camera = cT.PrerequisiteInput(
+        name='camera',
+        doc="Camera associated with this exposure.",
+        storageClass="Camera",
+        dimensions=("instrument", ),
+        isCalibration=True,
+        lookupFunction=lookupStaticCalibration,
+    )
+
+    outputDefects = cT.Output(
+        name="cpPartialDefectsFromFlatCombinedWithFilter",
+        doc="Output measured defects.",
+        storageClass="Defects",
+        dimensions=("instrument", "detector", "physical_filter"),
+    )
+
+
+class MeasureDefectsCombinedWithFilterTaskConfig(
+    MeasureDefectsTaskConfig,
+        pipelineConnections=MeasureDefectsCombinedWithFilterConnections):
+    """Configuration for measuring defects from combined exposures.
+    """
+    pass
+
+
+class MeasureDefectsCombinedWithFilterTask(MeasureDefectsTask):
+    """Task to measure defects in combined images."""
+
+    ConfigClass = MeasureDefectsCombinedWithFilterTaskConfig
+    _DefaultName = "cpDefectMeasureWithFilterCombined"
+
+
 class MergeDefectsConnections(pipeBase.PipelineTaskConnections,
                               dimensions=("instrument", "detector")):
     inputDefects = cT.Input(
         name="singleExpDefects",
         doc="Measured defect lists.",
         storageClass="Defects",
-        dimensions=("instrument", "detector", "exposure"),
+        dimensions=("instrument", "detector", "exposure",),
         multiple=True,
     )
     camera = cT.PrerequisiteInput(
@@ -716,3 +864,70 @@ class MergeDefectsTask(pipeBase.PipelineTask):
         return pipeBase.Struct(
             mergedDefects=merged,
         )
+
+# Subclass the MergeDefects task to reduce the input dimensions
+# from ("instrument", "detector", "exposure") to
+# ("instrument", "detector").
+
+
+class MergeDefectsCombinedConnections(pipeBase.PipelineTaskConnections,
+                                      dimensions=("instrument", "detector")):
+    inputFlatDefects = cT.Input(
+        name="cpPartialDefectsFromDarkCombined",
+        doc="Measured defect lists.",
+        storageClass="Defects",
+        dimensions=("instrument", "detector",),
+        multiple=False,
+    )
+    inputDarkDefects = cT.Input(
+        name="cpPartialDefectsFromFlatCombinedWithFilter",
+        doc="Additional measured defect lists.",
+        storageClass="Defects",
+        dimensions=("instrument", "detector", "physical_filter"),
+        multiple=False,
+    )
+    camera = cT.PrerequisiteInput(
+        name='camera',
+        doc="Camera associated with these defects.",
+        storageClass="Camera",
+        dimensions=("instrument", ),
+        isCalibration=True,
+        lookupFunction=lookupStaticCalibration,
+    )
+
+    mergedDefects = cT.Output(
+        name="defectsCombined",
+        doc="Final merged defects.",
+        storageClass="Defects",
+        dimensions=("instrument", "detector"),
+        multiple=False,
+        isCalibration=True,
+    )
+
+
+class MergeDefectsCombinedTaskConfig(MergeDefectsTaskConfig,
+                                     pipelineConnections=MergeDefectsCombinedConnections):
+    """Configuration for merging defects from combined exposure.
+    """
+    def validate(self):
+        super().validate()
+        if self.combinationMode != 'OR':
+            raise ValueError("combinationMode must be 'OR'")
+
+
+class MergeDefectsCombinedTask(MergeDefectsTask):
+    """Task to measure defects in combined images."""
+
+    ConfigClass = MergeDefectsCombinedTaskConfig
+    _DefaultName = "cpDefectMergeCombined"
+
+    def runQuantum(self, butlerQC, inputRefs, outputRefs):
+        inputs = butlerQC.get(inputRefs)
+        # Turn inputFlatDefects and inputDarkDefects into a list
+        # which is what MergeDefectsTask expects.
+        tempList = [inputs['inputFlatDefects'], inputs['inputDarkDefects']]
+        # Rename inputDefects
+        inputsCombined = {'inputDefects': tempList, 'camera': inputs['camera']}
+
+        outputs = super().run(**inputsCombined)
+        butlerQC.put(outputs, outputRefs)

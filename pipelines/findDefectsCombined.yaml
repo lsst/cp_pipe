@@ -1,0 +1,10 @@
+description: cp_pipe DEFECT calibration construction from combined images.
+tasks:
+  measureDefectsDark:
+    class: lsst.cp.pipe.defects.MeasureDefectsCombinedTask
+  measureDefectsFlat:
+    class: lsst.cp.pipe.defects.MeasureDefectsCombinedWithFilterTask
+  mergeDefectsCombined:
+    class: lsst.cp.pipe.defects.MergeDefectsCombinedTask
+    config:
+      combinationMode: OR

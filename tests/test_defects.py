@@ -20,7 +20,7 @@
 # the GNU General Public License along with this program.  If not,
 # see <https://www.lsstcorp.org/LegalNotices/>.
 #
-"""Test cases for lsst.cp.pipe.FindDefectsTask."""
+"""Test cases for lsst.cp.pipe.defects.MeasureDefectsTask."""
 
 import unittest
 import numpy as np
@@ -33,6 +33,7 @@ import lsst.ip.isr as ipIsr
 import lsst.cp.pipe as cpPipe
 from lsst.ip.isr import isrMock, countMaskedPixels
 from lsst.geom import Box2I, Point2I, Extent2I
+from lsst.daf.base import PropertyList
 
 
 class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
@@ -102,6 +103,15 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
         self.brightDefectsList = ipIsr.Defects()
         self.darkDefectsList = ipIsr.Defects()
 
+        # Set image types, the defects code will use them.
+        metaDataFlat = PropertyList()
+        metaDataFlat["IMGTYPE"] = "FLAT"
+        self.flatExp.setMetadata(metaDataFlat)
+
+        metaDataDark = PropertyList()
+        metaDataDark["IMGTYPE"] = "DARK"
+        self.darkExp.setMetadata(metaDataDark)
+
         with self.allDefectsList.bulk_update():
             with self.brightDefectsList.bulk_update():
                 for d in self.brightBBoxes:
@@ -124,7 +134,8 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
         config.nPixBorderUpDown = 0
         config.nPixBorderLeftRight = 0
 
-        task = cpPipe.defects.MeasureDefectsTask(config=config)
+        task = self.defaultTask
+        task.config = config
 
         defectsWithColumns = task.maskBlocksIfIntermitentBadPixelsInColumn(inputDefects)
         boxesMeasured = []
@@ -563,7 +574,7 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
                      Box2I(corner=Point2I(50, 100), dimensions=Extent2I(1, 1))]
 
         # Force defect normalization off in order to trigger DM-38301, because
-        # defects.fromFootprintList() which is called by findHotAndColdPixels
+        # defects.fromFootprintList() which is called by _findHotAndColdPixels
         # does not do normalization.
         defects._bulk_update = True
         for badBox in badPixels:
@@ -577,10 +588,10 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
         config.nPixBorderLeftRight = 0
         config.nPixBorderUpDown = 0
 
-        task = cpPipe.defects.MeasureDefectsTask(config=config)
+        task = self.defaultTask
+        task.config = config
 
-        defects = task.findHotAndColdPixels(self.flatExp, [config.nSigmaBright,
-                                                           config.nSigmaDark])
+        defects = task._findHotAndColdPixels(self.flatExp)
 
         allBBoxes = self.darkBBoxes + self.brightBBoxes
 
@@ -594,9 +605,9 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
     def test_defectFindingEdgeIgnore(self):
         config = copy.copy(self.defaultConfig)
         config.nPixBorderUpDown = 0
-        task = cpPipe.defects.MeasureDefectsTask(config=config)
-        defects = task.findHotAndColdPixels(self.flatExp, [config.nSigmaBright,
-                                                           config.nSigmaDark])
+        task = self.defaultTask
+        task.config = config
+        defects = task._findHotAndColdPixels(self.flatExp)
 
         shouldBeFound = self.darkBBoxes[self.noEdges] + self.brightBBoxes[self.noEdges]
 
@@ -611,15 +622,46 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
         for boxMissed in shouldBeMissed:
             self.assertNotIn(boxMissed, boxesMeasured)
 
+    def valueThreshold(self, fileType):
+        """Helper function to loop over flats and darks
+        to test thresholdType = 'VALUE'."""
+        config = copy.copy(self.defaultConfig)
+        config.thresholdType = 'VALUE'
+        task = self.defaultTask
+        task.config = config
+
+        if fileType == 'dark':
+            exp = self.darkExp
+            shouldBeFound = self.brightBBoxes[self.noEdges]
+        else:
+            exp = self.flatExp
+            shouldBeFound = self.darkBBoxes[self.noEdges]
+            # Change the default a bit so it works for the
+            # existing simulated defects.
+            task.config.fracThresholdFlat = 0.9
+
+        defects = task._findHotAndColdPixels(exp)
+
+        boxesMeasured = []
+        for defect in defects:
+            boxesMeasured.append(defect.getBBox())
+
+        for expectedBBox in shouldBeFound:
+            self.assertIn(expectedBBox, boxesMeasured)
+
+    def test_valueThreshold(self):
+        for fileType in ['flat', 'flat']:
+            self.valueThreshold(fileType)
+
     def test_pixelCounting(self):
         """Test that the number of defective pixels identified is as expected.
         """
         config = copy.copy(self.defaultConfig)
         config.nPixBorderUpDown = 0
         config.nPixBorderLeftRight = 0
-        task = cpPipe.defects.MeasureDefectsTask(config=config)
-        defects = task.findHotAndColdPixels(self.flatExp, [config.nSigmaBright,
-                                                           config.nSigmaDark])
+        task = self.defaultTask
+        task.config = config
+        defects = task._findHotAndColdPixels(self.flatExp)
 
         defectArea = 0
         for defect in defects:
@@ -700,9 +742,9 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
         config.nPixBorderUpDown = 0
         config.nPixBorderLeftRight = 0
 
-        task = cpPipe.defects.MeasureDefectsTask(config=config)
-        defects = task.findHotAndColdPixels(testImage, [config.nSigmaBright,
-                                                        config.nSigmaDark])
+        task = self.defaultTask
+        task.config = config
+        defects = task._findHotAndColdPixels(testImage)
 
         defectArea = 0
         for defect in defects:
