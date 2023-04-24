@@ -455,6 +455,9 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 self.debugFit('splineFit', binCenters, np.abs(values), values, None, ampName)
                 # Anchor the spline to have zero correction at zero
                 # flux as well as at the lowest measured flux bin.
+                if np.any(np.array(binCenters) < 0):
+                    raise ValueError("Linearity correction has negative flux values!")
+
                 if binCenters[0] != 0.0:
                     if values[0] != 0.0:
                         offset = values[0]
