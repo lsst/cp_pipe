@@ -281,7 +281,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             datasetPtc.rawVars[ampName] = datasetPtc.rawVars[ampName][index]
             datasetPtc.expIdMask[ampName] = datasetPtc.expIdMask[ampName][index]
             datasetPtc.covariances[ampName] = datasetPtc.covariances[ampName][index]
-            datasetPtc.covariancesSqrtWeights[ampName] = datasetPtc.covariances[ampName][index]
+            datasetPtc.covariancesSqrtWeights[ampName] = datasetPtc.covariancesSqrtWeights[ampName][index]
 
         if self.config.ptcFitType == "FULLCOVARIANCE":
             # Fit the measured covariances vs mean signal to
