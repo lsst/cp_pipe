@@ -138,6 +138,10 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         extractConfig = self.defaultConfigExtract
         extractConfig.minNumberGoodPixelsForCovariance = 5000
         extractConfig.detectorMeasurementRegion = 'FULL'
+        # Cut off the low-flux point which is a bad fit, and this
+        # also exercises this functionality and makes the tests
+        # run a lot faster.
+        extractConfig.minMeanSignal["ALL_AMPS"] = 2000.0
         extractTask = cpPipe.ptc.PhotonTransferCurveExtractTask(config=extractConfig)
 
         solveConfig = self.defaultConfigSolve
@@ -181,18 +185,31 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         resultsSolve = solveTask.run(resultsExtract.outputCovariances,
                                      camera=FakeCamera([self.flatExp1.getDetector()]))
 
+        ptc = resultsSolve.outputPtcDataset
+
         for amp in self.ampNames:
-            self.assertAlmostEqual(resultsSolve.outputPtcDataset.gain[amp], inputGain, places=2)
-            for v1, v2 in zip(varStandard[amp], resultsSolve.outputPtcDataset.finalVars[amp]):
+            self.assertAlmostEqual(ptc.gain[amp], inputGain, places=2)
+            for v1, v2 in zip(varStandard[amp], ptc.finalVars[amp]):
                 self.assertAlmostEqual(v1/v2, 1.0, places=1)
 
-        # Test various operations on the PTC output from the task.
-        ptc = resultsSolve.outputPtcDataset
+            mask = ptc.getGoodPoints(amp)
+
+            values = ((ptc.covariancesModel[amp][mask, 0, 0] - ptc.covariances[amp][mask, 0, 0])
+                      / ptc.covariancesModel[amp][mask, 0, 0])
+            np.testing.assert_array_less(np.abs(values), 2e-3)
+
+            values = ((ptc.covariancesModel[amp][mask, 1, 1] - ptc.covariances[amp][mask, 1, 1])
+                      / ptc.covariancesModel[amp][mask, 1, 1])
+            np.testing.assert_array_less(np.abs(values), 0.2)
+
+            values = ((ptc.covariancesModel[amp][mask, 1, 2] - ptc.covariances[amp][mask, 1, 2])
+                      / ptc.covariancesModel[amp][mask, 1, 2])
+            np.testing.assert_array_less(np.abs(values), 0.2)
 
         expIdsUsed = ptc.getExpIdsUsed("C:0,0")
         # Check that these are the same as the inputs, paired up, with the
-        # final two removed.
-        self.assertTrue(np.all(expIdsUsed == np.array(expIds).reshape(len(expIds) // 2, 2)[:-1]))
+        # first two (low flux) and final two (nans) removed.
+        self.assertTrue(np.all(expIdsUsed == np.array(expIds).reshape(len(expIds) // 2, 2)[1:-1]))
 
         goodAmps = ptc.getGoodAmps()
         self.assertEqual(goodAmps, self.ampNames)
