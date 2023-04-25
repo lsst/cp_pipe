@@ -57,7 +57,6 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
 
         self.flatExp = isrMock.FlatMock(config=mockImageConfig).run()
         (shapeY, shapeX) = self.flatExp.getDimensions()
-
         # x, y, size tuples
         # always put edge defects at the start and change the value of nEdge
 
@@ -622,7 +621,7 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
         for boxMissed in shouldBeMissed:
             self.assertNotIn(boxMissed, boxesMeasured)
 
-    def valueThreshold(self, fileType):
+    def valueThreshold(self, fileType, saturateAmpInFlat=False):
         """Helper function to loop over flats and darks
         to test thresholdType = 'VALUE'."""
         config = copy.copy(self.defaultConfig)
@@ -630,15 +629,28 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
         task = self.defaultTask
         task.config = config
 
+        for amp in self.flatExp.getDetector():
+            if amp.getName() == 'C:0,0':
+                regionC00 = amp.getBBox()
+
         if fileType == 'dark':
             exp = self.darkExp
             shouldBeFound = self.brightBBoxes[self.noEdges]
         else:
             exp = self.flatExp
-            shouldBeFound = self.darkBBoxes[self.noEdges]
-            # Change the default a bit so it works for the
-            # existing simulated defects.
-            task.config.fracThresholdFlat = 0.9
+            if saturateAmpInFlat:
+                exp.maskedImage[regionC00].image.array[:] = 0.0
+                # Amp C:0,0: minimum=(0, 0), maximum=(99, 50)
+                x = self.defaultConfig.nPixBorderUpDown
+                y = self.defaultConfig.nPixBorderLeftRight
+                width, height = regionC00.getEndX() - x, regionC00.getEndY() - y
+                # Defects code will mark whole saturated amp as defect box.
+                shouldBeFound = [Box2I(corner=Point2I(x, y), dimensions=Extent2I(width, height))]
+            else:
+                shouldBeFound = self.darkBBoxes[self.noEdges]
+                # Change the default a bit so it works for the
+                # existing simulated defects.
+                task.config.fracThresholdFlat = 0.9
 
         defects = task._findHotAndColdPixels(exp)
 
@@ -650,8 +662,10 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
             self.assertIn(expectedBBox, boxesMeasured)
 
     def test_valueThreshold(self):
-        for fileType in ['flat', 'flat']:
+        for fileType in ['dark', 'flat']:
             self.valueThreshold(fileType)
+        # stdDev = 0.0
+        self.valueThreshold('flat', saturateAmpInFlat=True)
 
     def test_pixelCounting(self):
         """Test that the number of defective pixels identified is as expected.
