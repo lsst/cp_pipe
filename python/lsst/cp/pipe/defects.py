@@ -290,7 +290,12 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
                     # negative cold pixel threshold.
                     valueThreshold = (self.config.fracThresholdFlat-1)*meanClip
                 # Find equivalent sigma values.
-                nSigmaList = [valueThreshold/stDev]
+                if stDev == 0.0:
+                    self.log.warning("stDev=%s for AMP %s in %s. Setting nSigma to inf.",
+                                     stDev, amp.getName(), datasetType)
+                    nSigmaList = [np.inf]
+                else:
+                    nSigmaList = [valueThreshold/stDev]
             else:
                 hotPixelThreshold = self.config.nSigmaBright
                 coldPixelThreshold = self.config.nSigmaDark
