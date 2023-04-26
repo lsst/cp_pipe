@@ -613,7 +613,7 @@ class MeasureDefectsCombinedConnections(MeasureDefectsConnections,
     inputExp = cT.Input(
         name="dark",
         doc="Input ISR-processed combined exposure to measure.",
-        storageClass="Exposure",
+        storageClass="ExposureF",
         dimensions=("instrument", "detector"),
         multiple=False,
         isCalibration=True,
@@ -655,7 +655,7 @@ class MeasureDefectsCombinedWithFilterConnections(MeasureDefectsCombinedConnecti
     inputExp = cT.Input(
         name="flat",
         doc="Input ISR-processed combined exposure to measure.",
-        storageClass="Exposure",
+        storageClass="ExposureF",
         dimensions=("instrument", "detector", "physical_filter"),
         multiple=False,
         isCalibration=True,
