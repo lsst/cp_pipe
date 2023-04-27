@@ -1,0 +1,4 @@
+description: cp_pipe brighter-fatter kernel calibration construction.
+instrument: lsst.obs.decam.DarkEnergyCamera
+imports:
+  - location: $CP_PIPE_DIR/pipelines/cpBfkSolve.yaml

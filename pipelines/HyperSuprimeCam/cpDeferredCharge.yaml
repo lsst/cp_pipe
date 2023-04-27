@@ -1,0 +1,4 @@
+description: cp_pipe CTI calibration construction
+instrument: lsst.obs.subaru.HyperSuprimeCam
+imports:
+  - location: $CP_PIPE_DIR/pipelines/cpDeferredCharge.yaml
