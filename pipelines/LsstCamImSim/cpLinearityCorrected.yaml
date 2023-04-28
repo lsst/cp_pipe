@@ -1,0 +1,4 @@
+description: linearizer with photodiode correction
+instrument: lsst.obs.lsst.LsstCamImSim
+imports:
+  - location: $CP_PIPE_DIR/pipelines/cpLinearityCorrected.yaml

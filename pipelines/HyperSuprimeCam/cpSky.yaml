@@ -1,0 +1,4 @@
+description: Sky frame generation pipeline definition.
+instrument: lsst.obs.subaru.HyperSuprimeCam
+imports:
+  - location: $CP_PIPE_DIR/pipelines/cpSky.yaml

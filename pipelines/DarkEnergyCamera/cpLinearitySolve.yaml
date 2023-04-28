@@ -1,0 +1,4 @@
+description: cp_pipe linearity calibration construction.
+instrument: lsst.obs.decam.DarkEnergyCamera
+imports:
+  - location: $CP_PIPE_DIR/pipelines/cpLinearitySolve.yaml

@@ -1,0 +1,4 @@
+description: cp_pipe FLAT calibration construction
+instrument: lsst.obs.lsst.Latiss
+imports:
+  - location: $CP_PIPE_DIR/pipelines/cpFlatSingleChip.yaml
