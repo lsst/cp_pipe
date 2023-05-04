@@ -301,7 +301,7 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask):
 
             if self.config.useAmatrix:
                 # Use the aMatrix, ignoring the meanXcorr generated above.
-                preKernel = np.pad(self._tileArray(np.array(inputPtc.aMatrix[ampName])), ((1, 1)))
+                preKernel = np.pad(self._tileArray(-1.0 * np.array(inputPtc.aMatrix[ampName])), ((1, 1)))
             elif self.config.correlationQuadraticFit:
                 # Use a quadratic fit to the correlations as a
                 # function of flux.
