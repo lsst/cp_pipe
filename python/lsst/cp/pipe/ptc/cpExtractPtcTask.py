@@ -517,13 +517,20 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                 # the combined dataset).
                 covArray[0, 0, 0] /= varFactor
 
-                histVar, histChi2Dof, kspValue = self.computeGaussianHistogramParameters(
-                    im1Area,
-                    im2Area,
-                    imStatsCtrl,
-                    mu1,
-                    mu2,
-                )
+                if expIdMask:
+                    # Run the Gaussian histogram only if this is a legal
+                    # amplifier.
+                    histVar, histChi2Dof, kspValue = self.computeGaussianHistogramParameters(
+                        im1Area,
+                        im2Area,
+                        imStatsCtrl,
+                        mu1,
+                        mu2,
+                    )
+                else:
+                    histVar = np.nan
+                    histChi2Dof = np.nan
+                    kspValue = 0.0
 
                 partialPtcDataset.setAmpValuesPartialDataset(
                     ampName,
@@ -963,7 +970,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
 
         numOk = len(diffArr)
 
-        if numOk >= self.config.ksHistMinDataValues:
+        if numOk >= self.config.ksHistMinDataValues and np.isfinite(mu1) and np.isfinite(mu2):
             lim = self.config.ksHistLimitMultiplier * np.sqrt((mu1 + mu2)/2.)
             yVals, binEdges = np.histogram(diffArr, bins=self.config.ksHistNBins, range=[-lim, lim])
 
