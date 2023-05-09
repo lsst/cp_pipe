@@ -86,6 +86,22 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
             "FULLCOVARIANCE": "Full covariances model in Astier+19 (Eq. 20)"
         }
     )
+    minMeanSignal = pexConfig.DictField(
+        keytype=str,
+        itemtype=float,
+        doc="Minimum values (inclusive) of mean signal (in ADU) per amp to use."
+            " The same cut is applied to all amps if this parameter [`dict`] is passed as "
+            " {'ALL_AMPS': value}",
+        default={'ALL_AMPS': 0.0},
+    )
+    maxMeanSignal = pexConfig.DictField(
+        keytype=str,
+        itemtype=float,
+        doc="Maximum values (inclusive) of mean signal (in ADU) below which to consider, per amp."
+            " The same cut is applied to all amps if this dictionary is of the form"
+            " {'ALL_AMPS': value}",
+        default={'ALL_AMPS': 1e6},
+    )
     maximumRangeCovariancesAstier = pexConfig.Field(
         dtype=int,
         doc="Maximum range of covariances as in Astier+19",
@@ -226,6 +242,21 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 ampNames = partialPtcDataset.ampNames
                 break
 
+        # Each amp may have a different min and max ADU signal
+        # specified in the config.
+        maxMeanSignalDict = {ampName: 1e6 for ampName in ampNames}
+        minMeanSignalDict = {ampName: 0.0 for ampName in ampNames}
+        for ampName in ampNames:
+            if 'ALL_AMPS' in self.config.maxMeanSignal:
+                maxMeanSignalDict[ampName] = self.config.maxMeanSignal['ALL_AMPS']
+            elif ampName in self.config.maxMeanSignal:
+                maxMeanSignalDict[ampName] = self.config.maxMeanSignal[ampName]
+
+            if 'ALL_AMPS' in self.config.minMeanSignal:
+                minMeanSignalDict[ampName] = self.config.minMeanSignal['ALL_AMPS']
+            elif ampName in self.config.minMeanSignal:
+                minMeanSignalDict[ampName] = self.config.minMeanSignal[ampName]
+
         # Assemble individual PTC datasets into a single PTC dataset.
         datasetPtc = PhotonTransferCurveDataset(ampNames=ampNames,
                                                 ptcFitType=self.config.ptcFitType,
@@ -246,8 +277,12 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                                                          partialPtcDataset.rawMeans[ampName][0])
                 datasetPtc.rawVars[ampName] = np.append(datasetPtc.rawVars[ampName],
                                                         partialPtcDataset.rawVars[ampName][0])
-                datasetPtc.expIdMask[ampName] = np.append(datasetPtc.expIdMask[ampName],
-                                                          partialPtcDataset.expIdMask[ampName][0])
+                datasetPtc.histVars[ampName] = np.append(datasetPtc.histVars[ampName],
+                                                         partialPtcDataset.histVars[ampName][0])
+                datasetPtc.histChi2Dofs[ampName] = np.append(datasetPtc.histChi2Dofs[ampName],
+                                                             partialPtcDataset.histChi2Dofs[ampName][0])
+                datasetPtc.kspValues[ampName] = np.append(datasetPtc.kspValues[ampName],
+                                                          partialPtcDataset.kspValues[ampName][0])
                 datasetPtc.covariances[ampName] = np.append(
                     datasetPtc.covariances[ampName].ravel(),
                     partialPtcDataset.covariances[ampName].ravel()
@@ -268,6 +303,14 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                         datasetPtc.covMatrixSide,
                     )
                 )
+
+                # Apply min/max masking.
+                rawMean = partialPtcDataset.rawMeans[ampName][0]
+                expIdMask = partialPtcDataset.expIdMask[ampName][0]
+                if (rawMean <= minMeanSignalDict[ampName]) or (rawMean >= maxMeanSignalDict[ampName]):
+                    expIdMask = False
+
+                datasetPtc.expIdMask[ampName] = np.append(datasetPtc.expIdMask[ampName], expIdMask)
 
         # Sort arrays that are filled so far in the final dataset by
         # rawMeans index

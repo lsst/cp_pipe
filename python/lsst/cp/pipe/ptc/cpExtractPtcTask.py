@@ -104,6 +104,7 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
             " The same cut is applied to all amps if this parameter [`dict`] is passed as "
             " {'ALL_AMPS': value}",
         default={'ALL_AMPS': 0.0},
+        deprecated="This config has been moved to cpSolvePtcTask, and will be removed after v26.",
     )
     maxMeanSignal = pexConfig.DictField(
         keytype=str,
@@ -112,6 +113,7 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
             " The same cut is applied to all amps if this dictionary is of the form"
             " {'ALL_AMPS': value}",
         default={'ALL_AMPS': 1e6},
+        deprecated="This config has been moved to cpSolvePtcTask, and will be removed after v26.",
     )
     maskNameList = pexConfig.ListField(
         dtype=str,
