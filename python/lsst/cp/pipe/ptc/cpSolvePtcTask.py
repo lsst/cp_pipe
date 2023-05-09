@@ -335,9 +335,22 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 datasetPtc.expIdMask[ampName] = np.append(datasetPtc.expIdMask[ampName], expIdMask)
 
         # Sort arrays that are filled so far in the final dataset by
-        # rawMeans index
+        # rawMeans index.
+        # First compute the mean across all the amps to make sure that they are
+        # all sorted the same way.
+        detectorMeans = np.zeros(len(datasetPtc.inputExpIdPairs[ampNames[0]]))
+
+        for i in range(len(detectorMeans)):
+            arr = np.array([datasetPtc.rawMeans[ampName][i] for ampName in ampNames])
+            good, = (np.isfinite(arr)).nonzero()
+            if good.size == 0:
+                detectorMeans[i] = np.nan
+            else:
+                detectorMeans[i] = np.mean(arr[good])
+
+        index = np.argsort(detectorMeans)
+
         for ampName in ampNames:
-            index = np.argsort(datasetPtc.rawMeans[ampName])
             datasetPtc.inputExpIdPairs[ampName] = np.array(
                 datasetPtc.inputExpIdPairs[ampName]
             )[index].tolist()
