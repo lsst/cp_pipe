@@ -122,14 +122,22 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
         doc="Degree of polynomial to fit the PTC, when 'ptcFitType'=POLYNOMIAL.",
         default=3,
     )
+    doLegacyTurnoffAndOutlierSelection = pexConfig.Field(
+        dtype=bool,
+        doc="Use 'legacy' computation for PTC turnoff and outlier selection. If set "
+            "to False, then the KS test p-value selection will be used instead.",
+        default=False,
+    )
     sigmaCutPtcOutliers = pexConfig.Field(
         dtype=float,
-        doc="Sigma cut for outlier rejection in PTC.",
+        doc="Sigma cut for outlier rejection in PTC. Only used if "
+            "doLegacyTurnoffAndOutlierSelection is True.",
         default=5.0,
     )
     maxIterationsPtcOutliers = pexConfig.RangeField(
         dtype=int,
-        doc="Maximum number of iterations for outlier rejection in PTC.",
+        doc="Maximum number of iterations for outlier rejection in PTC. Only used if "
+            "doLegacyTurnoffAndOutlierSelection is True.",
         default=2,
         min=0
     )
@@ -138,15 +146,22 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
         doc="The code looks for a pivot signal point after which the variance starts decreasing at high-flux"
             " to exclude then from the PTC model fit. However, sometimes at low fluxes, the variance"
             " decreases slightly. Set this variable for the variance value, in ADU^2, after which the pivot "
-            " should be sought.",
+            " should be sought. Only used if doLegacyTurnoffAndOutlierSelection is True.",
         default=10000,
     )
     consecutivePointsVarDecreases = pexConfig.RangeField(
         dtype=int,
         doc="Required number of consecutive points/fluxes in the PTC where the variance "
-            "decreases in order to find a first estimate of the PTC turn-off. ",
+            "decreases in order to find a first estimate of the PTC turn-off. "
+            "Only used if doLegacyTurnoffAndOutlierSelection is True.",
         default=2,
         min=2
+    )
+    ksTestMinPvalue = pexConfig.Field(
+        dtype=float,
+        doc="Minimum value of the Gaussian histogram KS test p-value to be used in PTC fit. "
+            "Only used if doLegacyTurnoffAndOutlierSelection is False.",
+        default=0.01,
     )
     doFitBootstrap = pexConfig.Field(
         dtype=bool,
@@ -306,8 +321,15 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
 
                 # Apply min/max masking.
                 rawMean = partialPtcDataset.rawMeans[ampName][0]
+                rawVar = partialPtcDataset.rawVars[ampName][0]
                 expIdMask = partialPtcDataset.expIdMask[ampName][0]
-                if (rawMean <= minMeanSignalDict[ampName]) or (rawMean >= maxMeanSignalDict[ampName]):
+                if (rawMean <= minMeanSignalDict[ampName]) or (rawMean >= maxMeanSignalDict[ampName]) \
+                   or not np.isfinite(rawMean) or not np.isfinite(rawVar):
+                    expIdMask = False
+
+                kspValue = partialPtcDataset.kspValues[ampName][0]
+                if not self.config.doLegacyTurnoffAndOutlierSelection and \
+                   kspValue < self.config.ksTestMinPvalue:
                     expIdMask = False
 
                 datasetPtc.expIdMask[ampName] = np.append(datasetPtc.expIdMask[ampName], expIdMask)
@@ -913,19 +935,22 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         maxIterationsPtcOutliers = self.config.maxIterationsPtcOutliers
 
         for i, ampName in enumerate(dataset.ampNames):
-            timeVecOriginal = np.ravel(np.array(dataset.rawExpTimes[ampName]))
-            meanVecOriginal = np.ravel(np.array(dataset.rawMeans[ampName]))
-            varVecOriginal = np.ravel(np.array(dataset.rawVars[ampName]))
+            timeVecOriginal = dataset.rawExpTimes[ampName]
+            meanVecOriginal = dataset.rawMeans[ampName]
+            varVecOriginal = dataset.rawVars[ampName]
             varVecOriginal = self._makeZeroSafe(varVecOriginal)
 
-            # Discard points when the variance starts to decrease after two
-            # consecutive signal levels
-            goodPoints = self._getInitialGoodPoints(meanVecOriginal, varVecOriginal,
-                                                    self.config.minVarPivotSearch,
-                                                    self.config.consecutivePointsVarDecreases)
+            if self.config.doLegacyTurnoffAndOutlierSelection:
+                # Discard points when the variance starts to decrease after two
+                # consecutive signal levels
+                goodPoints = self._getInitialGoodPoints(meanVecOriginal, varVecOriginal,
+                                                        self.config.minVarPivotSearch,
+                                                        self.config.consecutivePointsVarDecreases)
+            else:
+                goodPoints = dataset.expIdMask[ampName]
 
             # Check if all points are bad from the 'cpExtractPtcTask'
-            initialExpIdMask = np.ravel(np.array(dataset.expIdMask[ampName]))
+            initialExpIdMask = dataset.expIdMask[ampName]
 
             if not (goodPoints.any() and initialExpIdMask.any()):
                 msg = (f"SERIOUS: All points in goodPoints: {goodPoints} or "
@@ -958,43 +983,59 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 parsIniPtc = self._initialParsForPolynomial(self.config.polynomialFitDegree + 1)
                 bounds = self._boundsForPolynomial(parsIniPtc)
 
-            # Before bootstrap fit, do an iterative fit to get rid of outliers.
-            # This further process of outlier rejection be skipped
-            # if self.config.maxIterationsPtcOutliers = 0.
-            # We already did some initial outlier rejection above in
-            # self._getInitialGoodPoints.
-            count = 1
-            newMask = np.ones_like(meanVecOriginal, dtype=bool)
-            pars = parsIniPtc
-            while count <= maxIterationsPtcOutliers:
-                # Note that application of the mask actually shrinks the array
-                # to size rather than setting elements to zero (as we want) so
-                # always update mask itself and re-apply to the original data
+            if self.config.doLegacyTurnoffAndOutlierSelection:
+                # Before bootstrap fit, do an iterative fit to get rid of
+                # outliers. This further process of outlier rejection be
+                # skipped if self.config.maxIterationsPtcOutliers = 0.
+                # We already did some initial outlier rejection above in
+                # self._getInitialGoodPoints.
+                count = 1
+                newMask = np.ones_like(meanVecOriginal, dtype=bool)
+                pars = parsIniPtc
+                while count <= maxIterationsPtcOutliers:
+                    # Note that application of the mask actually shrinks the
+                    # array to size rather than setting elements to zero (as we
+                    # want) so always update mask itself and re-apply to the
+                    # original data.
+                    meanTempVec = meanVecOriginal[mask]
+                    varTempVec = varVecOriginal[mask]
+                    res = least_squares(errFunc, parsIniPtc, bounds=bounds, args=(meanTempVec, varTempVec))
+                    pars = res.x
+
+                    # change this to the original from the temp because
+                    # the masks are ANDed meaning once a point is masked
+                    # it's always masked, and the masks must always be the
+                    # same length for broadcasting
+                    sigResids = (varVecOriginal - ptcFunc(pars, meanVecOriginal))/np.sqrt(varVecOriginal)
+                    newMask = np.array([True if np.abs(r) < sigmaCutPtcOutliers else False
+                                        for r in sigResids])
+                    mask = mask & newMask
+                    if not (mask.any() and newMask.any()):
+                        msg = (f"SERIOUS: All points in either mask: {mask} or newMask: {newMask} are bad. "
+                               f"Setting {ampName} to BAD.")
+                        self.log.warning(msg)
+                        # Fill entries with NaNs
+                        self.fillBadAmp(dataset, ptcFitType, ampName)
+                        break
+                    nDroppedTotal = Counter(mask)[False]
+                    self.log.debug("Iteration %d: discarded %d points in total for %s",
+                                   count, nDroppedTotal, ampName)
+                    count += 1
+                    # objects should never shrink
+                    assert (len(mask) == len(timeVecOriginal) == len(meanVecOriginal) == len(varVecOriginal))
+            else:
+                pars = parsIniPtc
                 meanTempVec = meanVecOriginal[mask]
                 varTempVec = varVecOriginal[mask]
-                res = least_squares(errFunc, parsIniPtc, bounds=bounds, args=(meanTempVec, varTempVec))
+                res = least_squares(
+                    errFunc,
+                    parsIniPtc,
+                    bounds=bounds,
+                    args=(meanVecOriginal[mask], varVecOriginal[mask]),
+                )
                 pars = res.x
+                newMask = mask
 
-                # change this to the original from the temp because
-                # the masks are ANDed meaning once a point is masked
-                # it's always masked, and the masks must always be the
-                # same length for broadcasting
-                sigResids = (varVecOriginal - ptcFunc(pars, meanVecOriginal))/np.sqrt(varVecOriginal)
-                newMask = np.array([True if np.abs(r) < sigmaCutPtcOutliers else False for r in sigResids])
-                mask = mask & newMask
-                if not (mask.any() and newMask.any()):
-                    msg = (f"SERIOUS: All points in either mask: {mask} or newMask: {newMask} are bad. "
-                           f"Setting {ampName} to BAD.")
-                    self.log.warning(msg)
-                    # Fill entries with NaNs
-                    self.fillBadAmp(dataset, ptcFitType, ampName)
-                    break
-                nDroppedTotal = Counter(mask)[False]
-                self.log.debug("Iteration %d: discarded %d points in total for %s",
-                               count, nDroppedTotal, ampName)
-                count += 1
-                # objects should never shrink
-                assert (len(mask) == len(timeVecOriginal) == len(meanVecOriginal) == len(varVecOriginal))
             if not (mask.any() and newMask.any()):
                 continue
             dataset.expIdMask[ampName] = np.array(dataset.expIdMask[ampName])

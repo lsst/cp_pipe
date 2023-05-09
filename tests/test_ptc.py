@@ -238,7 +238,14 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             fromFits = PhotonTransferCurveDataset.readFits(usedFilename)
         self.assertEqual(fromFits, ptc)
 
-    def ptcFitAndCheckPtc(self, order=None, fitType=None, doTableArray=False, doFitBootstrap=False):
+    def ptcFitAndCheckPtc(
+            self,
+            order=None,
+            fitType=None,
+            doTableArray=False,
+            doFitBootstrap=False,
+            doLegacy=False,
+    ):
         localDataset = copy.deepcopy(self.dataset)
         localDataset.ptcFitType = fitType
         configSolve = copy.copy(self.defaultConfigSolve)
@@ -250,6 +257,8 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             # in the precense of noise.  Allow for more margin of
             # error.
             placesTests = 3
+
+        configSolve.doLegacyTurnoffAndOutlierSelection = doLegacy
 
         if fitType == 'POLYNOMIAL':
             if order not in [2, 3]:
@@ -384,8 +393,14 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
     def test_ptcFit(self):
         for createArray in [True, False]:
-            for (fitType, order) in [('POLYNOMIAL', 2), ('POLYNOMIAL', 3), ('EXPAPPROXIMATION', None)]:
-                self.ptcFitAndCheckPtc(fitType=fitType, order=order, doTableArray=createArray)
+            for doLegacy in [False, True]:
+                for (fitType, order) in [('POLYNOMIAL', 2), ('POLYNOMIAL', 3), ('EXPAPPROXIMATION', None)]:
+                    self.ptcFitAndCheckPtc(
+                        fitType=fitType,
+                        order=order,
+                        doTableArray=createArray,
+                        doLegacy=doLegacy,
+                    )
 
     def test_meanVarMeasurement(self):
         task = self.defaultTaskExtract
