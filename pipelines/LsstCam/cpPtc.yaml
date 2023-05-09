@@ -3,6 +3,10 @@ instrument: lsst.obs.lsst.LsstCam
 imports:
   - location: $CP_PIPE_DIR/pipelines/cpPtc.yaml
 tasks:
+  isr:
+    class: lsst.ip.isr.IsrTask
+    config:
+      deferredChargeCorrection.useGains: true
   ptcExtract:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
     config:
