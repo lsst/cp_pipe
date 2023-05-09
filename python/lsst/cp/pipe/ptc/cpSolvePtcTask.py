@@ -1078,16 +1078,14 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             dataset.ptcFitPars[ampName] = parsFit
             dataset.ptcFitParsError[ampName] = parsFitErr
             dataset.ptcFitChiSq[ampName] = reducedChiSqPtc
-            # Masked variances (measured and modeled) and means. Need
-            # to pad the array so astropy.Table does not crash (the
-            # mask may vary per amp).
-            padLength = len(dataset.rawExpTimes[ampName]) - len(varVecFinal)
-            dataset.finalVars[ampName] = np.pad(varVecFinal, (0, padLength), 'constant',
-                                                constant_values=np.nan)
-            dataset.finalModelVars[ampName] = np.pad(ptcFunc(parsFit, meanVecFinal), (0, padLength),
-                                                     'constant', constant_values=np.nan)
-            dataset.finalMeans[ampName] = np.pad(meanVecFinal, (0, padLength), 'constant',
-                                                 constant_values=np.nan)
+
+            dataset.finalVars[ampName] = varVecOriginal
+            dataset.finalVars[ampName][~mask] = np.nan
+            dataset.finalModelVars[ampName] = ptcFunc(parsFit, meanVecOriginal)
+            dataset.finalModelVars[ampName][~mask] = np.nan
+            dataset.finalMeans[ampName] = meanVecOriginal
+            dataset.finalMeans[ampName][~mask] = np.nan
+
             if ptcFitType == 'EXPAPPROXIMATION':
                 ptcGain = parsFit[1]
                 ptcGainErr = parsFitErr[1]
