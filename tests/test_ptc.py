@@ -28,6 +28,7 @@ import unittest
 import numpy as np
 import copy
 import tempfile
+import logging
 
 import lsst.utils
 import lsst.utils.tests
@@ -459,6 +460,58 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         im1Area, im2Area, imStatsCtrl, mu1, mu2 = task.getImageAreasMasksStats(flatExp1,
                                                                                flatExp2)
         mu, varDiff, covDiff = task.measureMeanVarCov(im1Area, im2Area, imStatsCtrl, mu1, mu2)
+
+        self.assertTrue(np.isnan(mu))
+        self.assertTrue(np.isnan(varDiff))
+        self.assertTrue(covDiff is None)
+
+    def test_meanVarMeasurementTooFewPixels(self):
+        task = self.defaultTaskExtract
+        flatExp1 = self.flatExp1.clone()
+        flatExp2 = self.flatExp2.clone()
+
+        flatExp1.image.array[0: 190, :] = np.nan
+        flatExp2.image.array[0: 190, :] = np.nan
+
+        bit = flatExp1.mask.getMaskPlaneDict()["NO_DATA"]
+        flatExp1.mask.array[0: 190, :] &= 2**bit
+        flatExp2.mask.array[0: 190, :] &= 2**bit
+
+        im1Area, im2Area, imStatsCtrl, mu1, mu2 = task.getImageAreasMasksStats(flatExp1,
+                                                                               flatExp2)
+        with self.assertLogs(level=logging.WARNING) as cm:
+            mu, varDiff, covDiff = task.measureMeanVarCov(im1Area, im2Area, imStatsCtrl, mu1, mu2)
+        self.assertIn("Number of good points", cm.output[0])
+
+        self.assertTrue(np.isnan(mu))
+        self.assertTrue(np.isnan(varDiff))
+        self.assertTrue(covDiff is None)
+
+    def test_meanVarMeasurementTooNarrowStrip(self):
+        # We need a new config to make sure the second covariance cut is
+        # triggered.
+        config = cpPipe.ptc.PhotonTransferCurveExtractTask.ConfigClass()
+        config.minNumberGoodPixelsForCovariance = 10
+        task = cpPipe.ptc.PhotonTransferCurveExtractTask(config=config)
+        flatExp1 = self.flatExp1.clone()
+        flatExp2 = self.flatExp2.clone()
+
+        flatExp1.image.array[0: 195, :] = np.nan
+        flatExp2.image.array[0: 195, :] = np.nan
+        flatExp1.image.array[:, 0: 195] = np.nan
+        flatExp2.image.array[:, 0: 195] = np.nan
+
+        bit = flatExp1.mask.getMaskPlaneDict()["NO_DATA"]
+        flatExp1.mask.array[0: 195, :] &= 2**bit
+        flatExp2.mask.array[0: 195, :] &= 2**bit
+        flatExp1.mask.array[:, 0: 195] &= 2**bit
+        flatExp2.mask.array[:, 0: 195] &= 2**bit
+
+        im1Area, im2Area, imStatsCtrl, mu1, mu2 = task.getImageAreasMasksStats(flatExp1,
+                                                                               flatExp2)
+        with self.assertLogs(level=logging.WARNING) as cm:
+            mu, varDiff, covDiff = task.measureMeanVarCov(im1Area, im2Area, imStatsCtrl, mu1, mu2)
+        self.assertIn("Not enough pixels", cm.output[0])
 
         self.assertTrue(np.isnan(mu))
         self.assertTrue(np.isnan(varDiff))

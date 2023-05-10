@@ -746,7 +746,13 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
         fftShape = (fftSize[0], fftSize[1])
         c = CovFastFourierTransform(diffIm.image.array, w, fftShape, maxRangeCov)
         # np.sum(w) is the same as npix[0][0] returned in covDiffAstier
-        covDiffAstier = c.reportCovFastFourierTransform(maxRangeCov)
+        try:
+            covDiffAstier = c.reportCovFastFourierTransform(maxRangeCov)
+        except ValueError:
+            # This is raised if there are not enough pixels.
+            self.log.warning("Not enough pixels covering the requested covariance range in x/y (%d)",
+                             self.config.maximumRangeCovariancesAstier)
+            return np.nan, np.nan, None
 
         # Compare Cov[0,0] and afwMath.VARIANCECLIP covDiffAstier[0]
         # is the Cov[0,0] element, [3] is the variance, and there's a
