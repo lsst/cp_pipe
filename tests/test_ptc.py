@@ -413,20 +413,24 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
     def test_meanVarMeasurementWithNans(self):
         task = self.defaultTaskExtract
-        self.flatExp1.image.array[20:30, :] = np.nan
-        self.flatExp2.image.array[20:30, :] = np.nan
 
-        im1Area, im2Area, imStatsCtrl, mu1, mu2 = task.getImageAreasMasksStats(self.flatExp1,
-                                                                               self.flatExp2)
+        flatExp1 = self.flatExp1.clone()
+        flatExp2 = self.flatExp2.clone()
+
+        flatExp1.image.array[20:30, :] = np.nan
+        flatExp2.image.array[20:30, :] = np.nan
+
+        im1Area, im2Area, imStatsCtrl, mu1, mu2 = task.getImageAreasMasksStats(flatExp1,
+                                                                               flatExp2)
         mu, varDiff, _ = task.measureMeanVarCov(im1Area, im2Area, imStatsCtrl, mu1, mu2)
 
-        expectedMu1 = np.nanmean(self.flatExp1.image.array)
-        expectedMu2 = np.nanmean(self.flatExp2.image.array)
+        expectedMu1 = np.nanmean(flatExp1.image.array)
+        expectedMu2 = np.nanmean(flatExp2.image.array)
         expectedMu = 0.5*(expectedMu1 + expectedMu2)
 
         # Now the variance of the difference. First, create the diff image.
-        im1 = self.flatExp1.maskedImage
-        im2 = self.flatExp2.maskedImage
+        im1 = flatExp1.maskedImage
+        im2 = flatExp2.maskedImage
 
         temp = im2.clone()
         temp *= expectedMu1
@@ -446,11 +450,14 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
     def test_meanVarMeasurementAllNan(self):
         task = self.defaultTaskExtract
-        self.flatExp1.image.array[:, :] = np.nan
-        self.flatExp2.image.array[:, :] = np.nan
+        flatExp1 = self.flatExp1.clone()
+        flatExp2 = self.flatExp2.clone()
 
-        im1Area, im2Area, imStatsCtrl, mu1, mu2 = task.getImageAreasMasksStats(self.flatExp1,
-                                                                               self.flatExp2)
+        flatExp1.image.array[:, :] = np.nan
+        flatExp2.image.array[:, :] = np.nan
+
+        im1Area, im2Area, imStatsCtrl, mu1, mu2 = task.getImageAreasMasksStats(flatExp1,
+                                                                               flatExp2)
         mu, varDiff, covDiff = task.measureMeanVarCov(im1Area, im2Area, imStatsCtrl, mu1, mu2)
 
         self.assertTrue(np.isnan(mu))
