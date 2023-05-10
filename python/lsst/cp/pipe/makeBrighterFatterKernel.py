@@ -209,7 +209,8 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask):
 
         # Use the PTC covariances as the cross-correlations.  These
         # are scaled before the kernel is generated, which performs
-        # the conversion.
+        # the conversion.  The input covariances are in (x, y) index
+        # ordering, as is the aMatrix.
         bfk.rawXcorrs = inputPtc.covariances  # ADU^2
         bfk.badAmps = inputPtc.badAmps
         bfk.shape = (inputPtc.covMatrixSide*2 + 1, inputPtc.covMatrixSide*2 + 1)
@@ -372,12 +373,13 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask):
             The averaged cross-correlation.
         """
         meanXcorr = np.zeros_like(xCorrList[0])
-        xCorrList = np.transpose(xCorrList)
+        xCorrList = np.array(xCorrList)
+
         sctrl = afwMath.StatisticsControl()
         sctrl.setNumSigmaClip(self.config.nSigmaClip)
         for i in range(np.shape(meanXcorr)[0]):
             for j in range(np.shape(meanXcorr)[1]):
-                meanXcorr[i, j] = afwMath.makeStatistics(xCorrList[i, j],
+                meanXcorr[i, j] = afwMath.makeStatistics(xCorrList[:, i, j],
                                                          afwMath.MEANCLIP, sctrl).getValue()
 
         # To match previous definitions, pad by one element.
@@ -409,11 +411,11 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask):
 
         for i in range(np.shape(meanXcorr)[0]):
             for j in range(np.shape(meanXcorr)[1]):
-                # Fit corrlation_i(x, y) = a0 + a1 * (flux_i)^2 The
-                # i,j indices are inverted to apply the transposition,
-                # as is done in the averaging case.
+                # Fit corrlation_i(x, y) = a0 + a1 * (flux_i)^2 We do
+                # not want to transpose, so use (i, j) without
+                # inversion.
                 linearFit, linearFitErr, chiSq, weights = irlsFit([0.0, 1e-4], fluxList,
-                                                                  xCorrList[:, j, i], funcPolynomial,
+                                                                  xCorrList[:, i, j], funcPolynomial,
                                                                   scaleResidual=False)
                 meanXcorr[i, j] = linearFit[1]  # Discard the intercept.
                 self.log.info("Quad fit meanXcorr[%d,%d] = %g", i, j, linearFit[1])
