@@ -968,6 +968,14 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
             Chi-squared per degree of freedom of Gaussian fit.
         kspValue : `float`
             The KS test p-value for the Gaussian fit.
+
+        Notes
+        -----
+        The algorithm here was originally developed by Aaron Roodman.
+        Tests on the full focal plane of LSSTCam during testing has shown
+        that a KS test p-value cut of 0.01 is a good discriminant for
+        well-behaved flat pairs (p>0.01) and poorly behaved non-Gaussian
+        flat pairs (p<0.01).
         """
         diffExp = im1Area.clone()
         diffExp -= im2Area
@@ -979,9 +987,13 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
         numOk = len(diffArr)
 
         if numOk >= self.config.ksHistMinDataValues and np.isfinite(mu1) and np.isfinite(mu2):
+            # Create a histogram symmetric around zero, with a bin size
+            # determined from the expected variance given by the average of
+            # the input signal levels.
             lim = self.config.ksHistLimitMultiplier * np.sqrt((mu1 + mu2)/2.)
             yVals, binEdges = np.histogram(diffArr, bins=self.config.ksHistNBins, range=[-lim, lim])
 
+            # Fit the histogram with a Gaussian model.
             model = GaussianModel()
             yVals = yVals.astype(np.float64)
             xVals = ((binEdges[0: -1] + binEdges[1:])/2.).astype(np.float64)
@@ -990,13 +1002,13 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
             pars = model.guess(yVals, x=xVals)
             out = model.fit(yVals, pars, x=xVals, weights=1./errVals, calc_covar=True, method="least_squares")
 
-            # Calculate chi2
+            # Calculate chi2.
             chiArr = out.residual
             nDof = len(yVals) - 3
             chi2Dof = np.sum(chiArr**2.)/nDof
             sigmaFit = out.params["sigma"].value
 
-            # Calculate kstest
+            # Calculate KS test p-value for the fit.
             gSample = scipy.stats.norm.rvs(size=numOk, scale=sigmaFit, loc=out.params["center"].value)
             ksResult = scipy.stats.ks_2samp(diffArr, gSample)
             kspValue = ksResult.pvalue
