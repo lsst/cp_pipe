@@ -609,13 +609,21 @@ class CovFastFourierTransform:
             Covariance at (dx, dy) lag
         npix1+npix2 : `int`
             Number of pixels used in covariance calculation.
+
+        Raises
+        ------
+        ValueError if number of pixels for a given lag is 0.
         """
         # compensate rounding errors
         nPix1 = int(round(self.pCount[dy, dx]))
+        if nPix1 == 0:
+            raise ValueError(f"Could not compute covariance term {dy}, {dx}, as there are no good pixels.")
         cov1 = self.pCov[dy, dx]/nPix1-self.pMean[dy, dx]*self.pMean[-dy, -dx]/(nPix1*nPix1)
         if (dx == 0 or dy == 0):
             return cov1, nPix1
         nPix2 = int(round(self.pCount[-dy, dx]))
+        if nPix2 == 0:
+            raise ValueError("Could not compute covariance term {dy}, {dx} as there are no good pixels.")
         cov2 = self.pCov[-dy, dx]/nPix2-self.pMean[-dy, dx]*self.pMean[dy, -dx]/(nPix2*nPix2)
         return 0.5*(cov1+cov2), nPix1+nPix2
 

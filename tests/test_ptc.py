@@ -28,6 +28,7 @@ import unittest
 import numpy as np
 import copy
 import tempfile
+import logging
 
 import lsst.utils
 import lsst.utils.tests
@@ -238,7 +239,14 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             fromFits = PhotonTransferCurveDataset.readFits(usedFilename)
         self.assertEqual(fromFits, ptc)
 
-    def ptcFitAndCheckPtc(self, order=None, fitType=None, doTableArray=False, doFitBootstrap=False):
+    def ptcFitAndCheckPtc(
+            self,
+            order=None,
+            fitType=None,
+            doTableArray=False,
+            doFitBootstrap=False,
+            doLegacy=False,
+    ):
         localDataset = copy.deepcopy(self.dataset)
         localDataset.ptcFitType = fitType
         configSolve = copy.copy(self.defaultConfigSolve)
@@ -250,6 +258,8 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             # in the precense of noise.  Allow for more margin of
             # error.
             placesTests = 3
+
+        configSolve.doLegacyTurnoffAndOutlierSelection = doLegacy
 
         if fitType == 'POLYNOMIAL':
             if order not in [2, 3]:
@@ -384,8 +394,14 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
     def test_ptcFit(self):
         for createArray in [True, False]:
-            for (fitType, order) in [('POLYNOMIAL', 2), ('POLYNOMIAL', 3), ('EXPAPPROXIMATION', None)]:
-                self.ptcFitAndCheckPtc(fitType=fitType, order=order, doTableArray=createArray)
+            for doLegacy in [False, True]:
+                for (fitType, order) in [('POLYNOMIAL', 2), ('POLYNOMIAL', 3), ('EXPAPPROXIMATION', None)]:
+                    self.ptcFitAndCheckPtc(
+                        fitType=fitType,
+                        order=order,
+                        doTableArray=createArray,
+                        doLegacy=doLegacy,
+                    )
 
     def test_meanVarMeasurement(self):
         task = self.defaultTaskExtract
@@ -398,20 +414,24 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
     def test_meanVarMeasurementWithNans(self):
         task = self.defaultTaskExtract
-        self.flatExp1.image.array[20:30, :] = np.nan
-        self.flatExp2.image.array[20:30, :] = np.nan
 
-        im1Area, im2Area, imStatsCtrl, mu1, mu2 = task.getImageAreasMasksStats(self.flatExp1,
-                                                                               self.flatExp2)
+        flatExp1 = self.flatExp1.clone()
+        flatExp2 = self.flatExp2.clone()
+
+        flatExp1.image.array[20:30, :] = np.nan
+        flatExp2.image.array[20:30, :] = np.nan
+
+        im1Area, im2Area, imStatsCtrl, mu1, mu2 = task.getImageAreasMasksStats(flatExp1,
+                                                                               flatExp2)
         mu, varDiff, _ = task.measureMeanVarCov(im1Area, im2Area, imStatsCtrl, mu1, mu2)
 
-        expectedMu1 = np.nanmean(self.flatExp1.image.array)
-        expectedMu2 = np.nanmean(self.flatExp2.image.array)
+        expectedMu1 = np.nanmean(flatExp1.image.array)
+        expectedMu2 = np.nanmean(flatExp2.image.array)
         expectedMu = 0.5*(expectedMu1 + expectedMu2)
 
         # Now the variance of the difference. First, create the diff image.
-        im1 = self.flatExp1.maskedImage
-        im2 = self.flatExp2.maskedImage
+        im1 = flatExp1.maskedImage
+        im2 = flatExp2.maskedImage
 
         temp = im2.clone()
         temp *= expectedMu1
@@ -431,12 +451,67 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
     def test_meanVarMeasurementAllNan(self):
         task = self.defaultTaskExtract
-        self.flatExp1.image.array[:, :] = np.nan
-        self.flatExp2.image.array[:, :] = np.nan
+        flatExp1 = self.flatExp1.clone()
+        flatExp2 = self.flatExp2.clone()
 
-        im1Area, im2Area, imStatsCtrl, mu1, mu2 = task.getImageAreasMasksStats(self.flatExp1,
-                                                                               self.flatExp2)
+        flatExp1.image.array[:, :] = np.nan
+        flatExp2.image.array[:, :] = np.nan
+
+        im1Area, im2Area, imStatsCtrl, mu1, mu2 = task.getImageAreasMasksStats(flatExp1,
+                                                                               flatExp2)
         mu, varDiff, covDiff = task.measureMeanVarCov(im1Area, im2Area, imStatsCtrl, mu1, mu2)
+
+        self.assertTrue(np.isnan(mu))
+        self.assertTrue(np.isnan(varDiff))
+        self.assertTrue(covDiff is None)
+
+    def test_meanVarMeasurementTooFewPixels(self):
+        task = self.defaultTaskExtract
+        flatExp1 = self.flatExp1.clone()
+        flatExp2 = self.flatExp2.clone()
+
+        flatExp1.image.array[0: 190, :] = np.nan
+        flatExp2.image.array[0: 190, :] = np.nan
+
+        bit = flatExp1.mask.getMaskPlaneDict()["NO_DATA"]
+        flatExp1.mask.array[0: 190, :] &= 2**bit
+        flatExp2.mask.array[0: 190, :] &= 2**bit
+
+        im1Area, im2Area, imStatsCtrl, mu1, mu2 = task.getImageAreasMasksStats(flatExp1,
+                                                                               flatExp2)
+        with self.assertLogs(level=logging.WARNING) as cm:
+            mu, varDiff, covDiff = task.measureMeanVarCov(im1Area, im2Area, imStatsCtrl, mu1, mu2)
+        self.assertIn("Number of good points", cm.output[0])
+
+        self.assertTrue(np.isnan(mu))
+        self.assertTrue(np.isnan(varDiff))
+        self.assertTrue(covDiff is None)
+
+    def test_meanVarMeasurementTooNarrowStrip(self):
+        # We need a new config to make sure the second covariance cut is
+        # triggered.
+        config = cpPipe.ptc.PhotonTransferCurveExtractTask.ConfigClass()
+        config.minNumberGoodPixelsForCovariance = 10
+        task = cpPipe.ptc.PhotonTransferCurveExtractTask(config=config)
+        flatExp1 = self.flatExp1.clone()
+        flatExp2 = self.flatExp2.clone()
+
+        flatExp1.image.array[0: 195, :] = np.nan
+        flatExp2.image.array[0: 195, :] = np.nan
+        flatExp1.image.array[:, 0: 195] = np.nan
+        flatExp2.image.array[:, 0: 195] = np.nan
+
+        bit = flatExp1.mask.getMaskPlaneDict()["NO_DATA"]
+        flatExp1.mask.array[0: 195, :] &= 2**bit
+        flatExp2.mask.array[0: 195, :] &= 2**bit
+        flatExp1.mask.array[:, 0: 195] &= 2**bit
+        flatExp2.mask.array[:, 0: 195] &= 2**bit
+
+        im1Area, im2Area, imStatsCtrl, mu1, mu2 = task.getImageAreasMasksStats(flatExp1,
+                                                                               flatExp2)
+        with self.assertLogs(level=logging.WARNING) as cm:
+            mu, varDiff, covDiff = task.measureMeanVarCov(im1Area, im2Area, imStatsCtrl, mu1, mu2)
+        self.assertIn("Not enough pixels", cm.output[0])
 
         self.assertTrue(np.isnan(mu))
         self.assertTrue(np.isnan(varDiff))

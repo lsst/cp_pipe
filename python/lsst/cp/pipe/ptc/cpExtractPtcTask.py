@@ -20,6 +20,8 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 import numpy as np
+from lmfit.models import GaussianModel
+import scipy.stats
 
 import lsst.afw.math as afwMath
 import lsst.pex.config as pexConfig
@@ -102,6 +104,7 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
             " The same cut is applied to all amps if this parameter [`dict`] is passed as "
             " {'ALL_AMPS': value}",
         default={'ALL_AMPS': 0.0},
+        deprecated="This config has been moved to cpSolvePtcTask, and will be removed after v26.",
     )
     maxMeanSignal = pexConfig.DictField(
         keytype=str,
@@ -110,6 +113,7 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
             " The same cut is applied to all amps if this dictionary is of the form"
             " {'ALL_AMPS': value}",
         default={'ALL_AMPS': 1e6},
+        deprecated="This config has been moved to cpSolvePtcTask, and will be removed after v26.",
     )
     maskNameList = pexConfig.ListField(
         dtype=str,
@@ -176,6 +180,21 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
             'SIMPLE': 'First order correction.',
             'FULL': 'Second order correction.'
         }
+    )
+    ksHistNBins = pexConfig.Field(
+        dtype=int,
+        doc="Number of bins for the KS test histogram.",
+        default=100,
+    )
+    ksHistLimitMultiplier = pexConfig.Field(
+        dtype=float,
+        doc="Number of sigma (as predicted from the mean value) to compute KS test histogram.",
+        default=8.0,
+    )
+    ksHistMinDataValues = pexConfig.Field(
+        dtype=int,
+        doc="Minimum number of good data values to compute KS test histogram.",
+        default=100,
     )
 
 
@@ -500,6 +519,21 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                 # the combined dataset).
                 covArray[0, 0, 0] /= varFactor
 
+                if expIdMask:
+                    # Run the Gaussian histogram only if this is a legal
+                    # amplifier.
+                    histVar, histChi2Dof, kspValue = self.computeGaussianHistogramParameters(
+                        im1Area,
+                        im2Area,
+                        imStatsCtrl,
+                        mu1,
+                        mu2,
+                    )
+                else:
+                    histVar = np.nan
+                    histChi2Dof = np.nan
+                    kspValue = 0.0
+
                 partialPtcDataset.setAmpValuesPartialDataset(
                     ampName,
                     inputExpIdPair=(expId1, expId2),
@@ -511,6 +545,9 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                     covSqrtWeights=covSqrtWeights[0, :, :],
                     gain=gain,
                     noise=readNoiseDict[ampName],
+                    histVar=histVar,
+                    histChi2Dof=histChi2Dof,
+                    kspValue=kspValue,
                 )
 
             # Use location of exp1 to save PTC dataset from (exp1, exp2) pair.
@@ -709,7 +746,13 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
         fftShape = (fftSize[0], fftSize[1])
         c = CovFastFourierTransform(diffIm.image.array, w, fftShape, maxRangeCov)
         # np.sum(w) is the same as npix[0][0] returned in covDiffAstier
-        covDiffAstier = c.reportCovFastFourierTransform(maxRangeCov)
+        try:
+            covDiffAstier = c.reportCovFastFourierTransform(maxRangeCov)
+        except ValueError:
+            # This is raised if there are not enough pixels.
+            self.log.warning("Not enough pixels covering the requested covariance range in x/y (%d)",
+                             self.config.maximumRangeCovariancesAstier)
+            return np.nan, np.nan, None
 
         # Compare Cov[0,0] and afwMath.VARIANCECLIP covDiffAstier[0]
         # is the Cov[0,0] element, [3] is the variance, and there's a
@@ -727,9 +770,9 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
 
         Parameters
         ----------
-        exposure1 : `lsst.afw.image.exposure.ExposureF`
+        exposure1 : `lsst.afw.image.ExposureF`
             First exposure of flat field pair.
-        exposure2 : `lsst.afw.image.exposure.ExposureF`
+        exposure2 : `lsst.afw.image.ExposureF`
             Second exposure of flat field pair.
         region : `lsst.geom.Box2I`, optional
             Region of each exposure where to perform the calculations
@@ -737,15 +780,15 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
 
         Returns
         -------
-        im1Area : `lsst.afw.image.maskedImage.MaskedImageF`
+        im1Area : `lsst.afw.image.MaskedImageF`
             Masked image from exposure 1.
-        im2Area : `lsst.afw.image.maskedImage.MaskedImageF`
+        im2Area : `lsst.afw.image.MaskedImageF`
             Masked image from exposure 2.
         imStatsCtrl : `lsst.afw.math.StatisticsControl`
             Statistics control object.
-        mu1: `float`
+        mu1 : `float`
             Clipped mean of im1Area (ADU).
-        mu2: `float`
+        mu2 : `float`
             Clipped mean of im2Area (ADU).
         """
         if region is not None:
@@ -899,3 +942,84 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
         self.log.warning("Median readout noise from ISR metadata for amp %s "
                          "could not be calculated." % ampName)
         return np.nan
+
+    def computeGaussianHistogramParameters(self, im1Area, im2Area, imStatsCtrl, mu1, mu2):
+        """Compute KS test for a Gaussian model fit to a histogram of the
+        difference image.
+
+        Parameters
+        ----------
+        im1Area : `lsst.afw.image.MaskedImageF`
+            Masked image from exposure 1.
+        im2Area : `lsst.afw.image.MaskedImageF`
+            Masked image from exposure 2.
+        imStatsCtrl : `lsst.afw.math.StatisticsControl`
+            Statistics control object.
+        mu1 : `float`
+            Clipped mean of im1Area (ADU).
+        mu2 : `float`
+            Clipped mean of im2Area (ADU).
+
+        Returns
+        -------
+        varFit : `float`
+            Variance from the Gaussian fit.
+        chi2Dof : `float`
+            Chi-squared per degree of freedom of Gaussian fit.
+        kspValue : `float`
+            The KS test p-value for the Gaussian fit.
+
+        Notes
+        -----
+        The algorithm here was originally developed by Aaron Roodman.
+        Tests on the full focal plane of LSSTCam during testing has shown
+        that a KS test p-value cut of 0.01 is a good discriminant for
+        well-behaved flat pairs (p>0.01) and poorly behaved non-Gaussian
+        flat pairs (p<0.01).
+        """
+        diffExp = im1Area.clone()
+        diffExp -= im2Area
+
+        sel = (((diffExp.mask.array & imStatsCtrl.getAndMask()) == 0)
+               & np.isfinite(diffExp.mask.array))
+        diffArr = diffExp.image.array[sel]
+
+        numOk = len(diffArr)
+
+        if numOk >= self.config.ksHistMinDataValues and np.isfinite(mu1) and np.isfinite(mu2):
+            # Create a histogram symmetric around zero, with a bin size
+            # determined from the expected variance given by the average of
+            # the input signal levels.
+            lim = self.config.ksHistLimitMultiplier * np.sqrt((mu1 + mu2)/2.)
+            yVals, binEdges = np.histogram(diffArr, bins=self.config.ksHistNBins, range=[-lim, lim])
+
+            # Fit the histogram with a Gaussian model.
+            model = GaussianModel()
+            yVals = yVals.astype(np.float64)
+            xVals = ((binEdges[0: -1] + binEdges[1:])/2.).astype(np.float64)
+            errVals = np.sqrt(yVals)
+            errVals[(errVals == 0.0)] = 1.0
+            pars = model.guess(yVals, x=xVals)
+            out = model.fit(yVals, pars, x=xVals, weights=1./errVals, calc_covar=True, method="least_squares")
+
+            # Calculate chi2.
+            chiArr = out.residual
+            nDof = len(yVals) - 3
+            chi2Dof = np.sum(chiArr**2.)/nDof
+            sigmaFit = out.params["sigma"].value
+
+            # Calculate KS test p-value for the fit.
+            gSample = scipy.stats.norm.rvs(size=numOk, scale=sigmaFit, loc=out.params["center"].value)
+            ksResult = scipy.stats.ks_2samp(diffArr, gSample)
+            kspValue = ksResult.pvalue
+            if kspValue < 1e-15:
+                kspValue = 0.0
+
+            varFit = sigmaFit**2.
+
+        else:
+            varFit = np.nan
+            chi2Dof = np.nan
+            kspValue = 0.0
+
+        return varFit, chi2Dof, kspValue
