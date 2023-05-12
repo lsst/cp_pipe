@@ -1009,7 +1009,15 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
             sigmaFit = out.params["sigma"].value
 
             # Calculate KS test p-value for the fit.
-            gSample = scipy.stats.norm.rvs(size=numOk, scale=sigmaFit, loc=out.params["center"].value)
+            # Seed this with the mean value, so that the same data will get the
+            # same result.
+            randomSeed = int((mu1 + mu2)/2.)
+            gSample = scipy.stats.norm.rvs(
+                size=numOk,
+                scale=sigmaFit,
+                loc=out.params["center"].value,
+                random_state=randomSeed,
+            )
             ksResult = scipy.stats.ks_2samp(diffArr, gSample)
             kspValue = ksResult.pvalue
             if kspValue < 1e-15:
