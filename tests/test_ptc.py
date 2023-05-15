@@ -139,14 +139,14 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         extractConfig = self.defaultConfigExtract
         extractConfig.minNumberGoodPixelsForCovariance = 5000
         extractConfig.detectorMeasurementRegion = 'FULL'
-        # Cut off the low-flux point which is a bad fit, and this
-        # also exercises this functionality and makes the tests
-        # run a lot faster.
-        extractConfig.minMeanSignal["ALL_AMPS"] = 2000.0
         extractTask = cpPipe.ptc.PhotonTransferCurveExtractTask(config=extractConfig)
 
         solveConfig = self.defaultConfigSolve
         solveConfig.ptcFitType = 'FULLCOVARIANCE'
+        # Cut off the low-flux point which is a bad fit, and this
+        # also exercises this functionality and makes the tests
+        # run a lot faster.
+        solveConfig.minMeanSignal["ALL_AMPS"] = 2000.0
         solveTask = cpPipe.ptc.PhotonTransferCurveSolveTask(config=solveConfig)
 
         inputGain = self.gain
