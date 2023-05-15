@@ -1,4 +1,4 @@
 description: linearizer with photodiode correction
 instrument: lsst.obs.subaru.HyperSuprimeCam
 imports:
-  - location: $CP_PIPE_DIR/pipelines/cpLinearityCorrected.yaml
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpLinearityCorrected.yaml

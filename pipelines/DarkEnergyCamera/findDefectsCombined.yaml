@@ -1,4 +1,4 @@
 description: cp_pipe DEFECT calibration construction from combined images.
 instrument: lsst.obs.decam.DarkEnergyCamera
 imports:
-  - location: $CP_PIPE_DIR/pipelines/findDefectsCombined.yaml
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/findDefectsCombined.yaml

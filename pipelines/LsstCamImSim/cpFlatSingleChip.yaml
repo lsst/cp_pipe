@@ -1,4 +1,4 @@
 description: cp_pipe FLAT calibration construction
 instrument: lsst.obs.lsst.LsstCamImSim
 imports:
-  - location: $CP_PIPE_DIR/pipelines/cpFlatSingleChip.yaml
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpFlatSingleChip.yaml
