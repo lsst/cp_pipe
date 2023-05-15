@@ -183,7 +183,11 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         resultsExtract.outputCovariances[-2].rawMeans['C:0,0'] = np.array([np.nan])
         resultsExtract.outputCovariances[-2].rawVars['C:0,0'] = np.array([np.nan])
 
-        resultsSolve = solveTask.run(resultsExtract.outputCovariances,
+        # Reorganize the outputCovariances so we can confirm they come
+        # out sorted afterwards.
+        outputCovariancesRev = resultsExtract.outputCovariances[::-1]
+
+        resultsSolve = solveTask.run(outputCovariancesRev,
                                      camera=FakeCamera([self.flatExp1.getDetector()]))
 
         ptc = resultsSolve.outputPtcDataset
@@ -192,6 +196,42 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             self.assertAlmostEqual(ptc.gain[amp], inputGain, places=2)
             for v1, v2 in zip(varStandard[amp], ptc.finalVars[amp]):
                 self.assertAlmostEqual(v1/v2, 1.0, places=1)
+
+            # Test that all the quantities are correctly ordered and have
+            # not accidentally been masked.
+            for i, extractPtc in enumerate(resultsExtract.outputCovariances[::2]):
+                self.assertFloatsAlmostEqual(
+                    extractPtc.rawExpTimes[ampName][0],
+                    ptc.rawExpTimes[ampName][i],
+                )
+                self.assertFloatsAlmostEqual(
+                    extractPtc.rawMeans[ampName][0],
+                    ptc.rawMeans[ampName][i],
+                )
+                self.assertFloatsAlmostEqual(
+                    extractPtc.rawVars[ampName][0],
+                    ptc.rawVars[ampName][i],
+                )
+                self.assertFloatsAlmostEqual(
+                    extractPtc.histVars[ampName][0],
+                    ptc.histVars[ampName][i],
+                )
+                self.assertFloatsAlmostEqual(
+                    extractPtc.histChi2Dofs[ampName][0],
+                    ptc.histChi2Dofs[ampName][i],
+                )
+                self.assertFloatsAlmostEqual(
+                    extractPtc.kspValues[ampName][0],
+                    ptc.kspValues[ampName][i],
+                )
+                self.assertFloatsAlmostEqual(
+                    extractPtc.covariances[ampName][0],
+                    ptc.covariances[ampName][i],
+                )
+                self.assertFloatsAlmostEqual(
+                    extractPtc.covariancesSqrtWeights[ampName][0],
+                    ptc.covariancesSqrtWeights[ampName][i],
+                )
 
             mask = ptc.getGoodPoints(amp)
 
