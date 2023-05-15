@@ -951,9 +951,9 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         maxIterationsPtcOutliers = self.config.maxIterationsPtcOutliers
 
         for i, ampName in enumerate(dataset.ampNames):
-            timeVecOriginal = dataset.rawExpTimes[ampName]
-            meanVecOriginal = dataset.rawMeans[ampName]
-            varVecOriginal = dataset.rawVars[ampName]
+            timeVecOriginal = dataset.rawExpTimes[ampName].copy()
+            meanVecOriginal = dataset.rawMeans[ampName].copy()
+            varVecOriginal = dataset.rawVars[ampName].copy()
             varVecOriginal = self._makeZeroSafe(varVecOriginal)
 
             if self.config.doLegacyTurnoffAndOutlierSelection:
