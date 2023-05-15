@@ -182,12 +182,16 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
         # Force the last PTC dataset to have a NaN, and ensure that the
         # task runs (DM-38029).  This is a minor perturbation and does not
-        # affect the output comparison.
+        # affect the output comparison. Note that we use index -2 because
+        # these datasets are in pairs of [real, dummy] to match the inputs
+        # to the extract task.
         resultsExtract.outputCovariances[-2].rawMeans['C:0,0'] = np.array([np.nan])
         resultsExtract.outputCovariances[-2].rawVars['C:0,0'] = np.array([np.nan])
 
         # Force the next-to-last PTC dataset to have a decreased variance to
-        # ensure that the outlier fit rejection works.
+        # ensure that the outlier fit rejection works. Note that we use
+        # index -4 because these datasets are in pairs of [real, dummy] to
+        # match the inputs to the extract task.
         rawVar = resultsExtract.outputCovariances[-4].rawVars['C:0,0']
         resultsExtract.outputCovariances[-4].rawVars['C:0,0'] = rawVar*0.9
 
@@ -205,8 +209,17 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             for v1, v2 in zip(varStandard[amp], ptc.finalVars[amp]):
                 self.assertAlmostEqual(v1/v2, 1.0, places=1)
 
+            # Check that the PTC turnoff is correctly computed.
+            # This will be different for the C:0,0 amp.
+            if amp == 'C:0,0':
+                self.assertAlmostEqual(ptc.ptcTurnoff[amp], ptc.rawMeans[ampName][-3])
+            else:
+                self.assertAlmostEqual(ptc.ptcTurnoff[amp], ptc.rawMeans[ampName][-1])
+
             # Test that all the quantities are correctly ordered and have
-            # not accidentally been masked.
+            # not accidentally been masked. We check every other output ([::2])
+            # because these datasets are in pairs of [real, dummy] to
+            # match the inputs to the extract task.
             for i, extractPtc in enumerate(resultsExtract.outputCovariances[::2]):
                 self.assertFloatsAlmostEqual(
                     extractPtc.rawExpTimes[ampName][0],

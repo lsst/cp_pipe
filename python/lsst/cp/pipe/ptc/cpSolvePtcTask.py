@@ -980,11 +980,6 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 self.fillBadAmp(dataset, ptcFitType, ampName)
                 continue
 
-            # Save the point where the variance starts decreasing as the
-            # PTC turnoff point
-            ptcTurnoff = meanVecOriginal[goodPoints][-1]
-            dataset.ptcTurnoff[ampName] = ptcTurnoff
-
             mask = goodPoints
 
             if ptcFitType == 'EXPAPPROXIMATION':
@@ -1009,6 +1004,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             # the PTC turnoff and then extrapolated to ensure that high
             # flux points that have abnormal variance values can be properly
             # rejected in this phase without biasing the initial fit.
+            # This algorithm was initially developed by Seth Digel for
+            # the EO Testing pipeline.
 
             if maxIterationsPtcOutliers == 0:
                 # We are not doing any outlier rejection here, but we do want
@@ -1072,6 +1069,10 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             parsIniPtc = pars
             meanVecFinal = meanVecOriginal[mask]
             varVecFinal = varVecOriginal[mask]
+
+            # Save the maximum point after outlier detection as the
+            # PTC turnoff point.
+            dataset.ptcTurnoff[ampName] = meanVecFinal[-1]
 
             if Counter(mask)[False] > 0:
                 self.log.info("Number of points discarded in PTC of amplifier %s:"
