@@ -147,6 +147,9 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         # also exercises this functionality and makes the tests
         # run a lot faster.
         solveConfig.minMeanSignal["ALL_AMPS"] = 2000.0
+        # Set the outlier fit threshold higher than the default appropriate
+        # for this test dataset.
+        solveConfig.maxSignalInitialPtcOutlierFit = 90000.0
         solveTask = cpPipe.ptc.PhotonTransferCurveSolveTask(config=solveConfig)
 
         inputGain = self.gain
@@ -182,6 +185,11 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         # affect the output comparison.
         resultsExtract.outputCovariances[-2].rawMeans['C:0,0'] = np.array([np.nan])
         resultsExtract.outputCovariances[-2].rawVars['C:0,0'] = np.array([np.nan])
+
+        # Force the next-to-last PTC dataset to have a decreased variance to
+        # ensure that the outlier fit rejection works.
+        rawVar = resultsExtract.outputCovariances[-4].rawVars['C:0,0']
+        resultsExtract.outputCovariances[-4].rawVars['C:0,0'] = rawVar*0.9
 
         # Reorganize the outputCovariances so we can confirm they come
         # out sorted afterwards.
@@ -249,8 +257,8 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
         expIdsUsed = ptc.getExpIdsUsed("C:0,0")
         # Check that these are the same as the inputs, paired up, with the
-        # first two (low flux) and final two (nans) removed.
-        self.assertTrue(np.all(expIdsUsed == np.array(expIds).reshape(len(expIds) // 2, 2)[1:-1]))
+        # first two (low flux) and final four (outliers, nans) removed.
+        self.assertTrue(np.all(expIdsUsed == np.array(expIds).reshape(len(expIds) // 2, 2)[1:-2]))
 
         goodAmps = ptc.getGoodAmps()
         self.assertEqual(goodAmps, self.ampNames)
@@ -299,7 +307,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             # error.
             placesTests = 3
 
-        configSolve.doLegacyTurnoffAndOutlierSelection = doLegacy
+        configSolve.doLegacyTurnoffSelection = doLegacy
 
         if fitType == 'POLYNOMIAL':
             if order not in [2, 3]:
