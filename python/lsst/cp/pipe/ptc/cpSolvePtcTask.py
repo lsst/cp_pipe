@@ -1022,6 +1022,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 newMask = (mask & (meanVecOriginal <= self.config.maxSignalInitialPtcOutlierFit))
 
                 count = 0
+                lastMask = mask.copy()
                 while count < maxIterationsPtcOutliers:
                     res = least_squares(
                         errFunc,
@@ -1054,6 +1055,13 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                         np.count_nonzero(mask) - np.count_nonzero(newMask),
                         ampName,
                     )
+
+                    # If the mask hasn't changed then break out.
+                    if np.all(newMask == lastMask):
+                        self.log.debug("Convergence at iteration %d; breaking loop for %s.", count, ampName)
+                        break
+
+                    lastMask = newMask.copy()
 
                     count += 1
 
