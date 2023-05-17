@@ -196,12 +196,6 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
         doc="Minimum number of good data values to compute KS test histogram.",
         default=100,
     )
-    ksHistSampleMultiplier = pexConfig.Field(
-        dtype=int,
-        doc="Multiplier for how many more points to sample from the model to reduce measurement "
-            "noise.",
-        default=10,
-    )
 
 
 class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
@@ -1015,16 +1009,12 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
             sigmaFit = out.params["sigma"].value
 
             # Calculate KS test p-value for the fit.
-            # Seed this with the mean value, so that the same data will get the
-            # same result.
-            randomSeed = int((mu1 + mu2)/2.)
-            gSample = scipy.stats.norm.rvs(
-                size=numOk*self.config.ksHistSampleMultiplier,
-                scale=sigmaFit,
-                loc=out.params["center"].value,
-                random_state=randomSeed,
+            ksResult = scipy.stats.ks_1samp(
+                diffArr,
+                scipy.stats.norm.cdf,
+                (out.params["center"].value, sigmaFit),
             )
-            ksResult = scipy.stats.ks_2samp(diffArr, gSample)
+
             kspValue = ksResult.pvalue
             if kspValue < 1e-15:
                 kspValue = 0.0
