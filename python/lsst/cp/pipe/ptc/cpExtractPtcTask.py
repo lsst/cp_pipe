@@ -22,6 +22,7 @@
 import numpy as np
 from lmfit.models import GaussianModel
 import scipy.stats
+import warnings
 
 import lsst.afw.math as afwMath
 import lsst.pex.config as pexConfig
@@ -1017,7 +1018,19 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
             errVals = np.sqrt(yVals)
             errVals[(errVals == 0.0)] = 1.0
             pars = model.guess(yVals, x=xVals)
-            out = model.fit(yVals, pars, x=xVals, weights=1./errVals, calc_covar=True, method="least_squares")
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                # The least-squares fitter sometimes spouts (spurious) warnings
+                # when the model is very bad. Swallow these warnings now and
+                # let the KS test check the model below.
+                out = model.fit(
+                    yVals,
+                    pars,
+                    x=xVals,
+                    weights=1./errVals,
+                    calc_covar=True,
+                    method="least_squares",
+                )
 
             # Calculate chi2.
             chiArr = out.residual
