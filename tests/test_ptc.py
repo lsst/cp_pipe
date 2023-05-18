@@ -139,14 +139,17 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         extractConfig = self.defaultConfigExtract
         extractConfig.minNumberGoodPixelsForCovariance = 5000
         extractConfig.detectorMeasurementRegion = 'FULL'
-        # Cut off the low-flux point which is a bad fit, and this
-        # also exercises this functionality and makes the tests
-        # run a lot faster.
-        extractConfig.minMeanSignal["ALL_AMPS"] = 2000.0
         extractTask = cpPipe.ptc.PhotonTransferCurveExtractTask(config=extractConfig)
 
         solveConfig = self.defaultConfigSolve
         solveConfig.ptcFitType = 'FULLCOVARIANCE'
+        # Cut off the low-flux point which is a bad fit, and this
+        # also exercises this functionality and makes the tests
+        # run a lot faster.
+        solveConfig.minMeanSignal["ALL_AMPS"] = 2000.0
+        # Set the outlier fit threshold higher than the default appropriate
+        # for this test dataset.
+        solveConfig.maxSignalInitialPtcOutlierFit = 90000.0
         solveTask = cpPipe.ptc.PhotonTransferCurveSolveTask(config=solveConfig)
 
         inputGain = self.gain
@@ -179,11 +182,24 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
         # Force the last PTC dataset to have a NaN, and ensure that the
         # task runs (DM-38029).  This is a minor perturbation and does not
-        # affect the output comparison.
+        # affect the output comparison. Note that we use index -2 because
+        # these datasets are in pairs of [real, dummy] to match the inputs
+        # to the extract task.
         resultsExtract.outputCovariances[-2].rawMeans['C:0,0'] = np.array([np.nan])
         resultsExtract.outputCovariances[-2].rawVars['C:0,0'] = np.array([np.nan])
 
-        resultsSolve = solveTask.run(resultsExtract.outputCovariances,
+        # Force the next-to-last PTC dataset to have a decreased variance to
+        # ensure that the outlier fit rejection works. Note that we use
+        # index -4 because these datasets are in pairs of [real, dummy] to
+        # match the inputs to the extract task.
+        rawVar = resultsExtract.outputCovariances[-4].rawVars['C:0,0']
+        resultsExtract.outputCovariances[-4].rawVars['C:0,0'] = rawVar*0.9
+
+        # Reorganize the outputCovariances so we can confirm they come
+        # out sorted afterwards.
+        outputCovariancesRev = resultsExtract.outputCovariances[::-1]
+
+        resultsSolve = solveTask.run(outputCovariancesRev,
                                      camera=FakeCamera([self.flatExp1.getDetector()]))
 
         ptc = resultsSolve.outputPtcDataset
@@ -192,6 +208,51 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             self.assertAlmostEqual(ptc.gain[amp], inputGain, places=2)
             for v1, v2 in zip(varStandard[amp], ptc.finalVars[amp]):
                 self.assertAlmostEqual(v1/v2, 1.0, places=1)
+
+            # Check that the PTC turnoff is correctly computed.
+            # This will be different for the C:0,0 amp.
+            if amp == 'C:0,0':
+                self.assertAlmostEqual(ptc.ptcTurnoff[amp], ptc.rawMeans[ampName][-3])
+            else:
+                self.assertAlmostEqual(ptc.ptcTurnoff[amp], ptc.rawMeans[ampName][-1])
+
+            # Test that all the quantities are correctly ordered and have
+            # not accidentally been masked. We check every other output ([::2])
+            # because these datasets are in pairs of [real, dummy] to
+            # match the inputs to the extract task.
+            for i, extractPtc in enumerate(resultsExtract.outputCovariances[::2]):
+                self.assertFloatsAlmostEqual(
+                    extractPtc.rawExpTimes[ampName][0],
+                    ptc.rawExpTimes[ampName][i],
+                )
+                self.assertFloatsAlmostEqual(
+                    extractPtc.rawMeans[ampName][0],
+                    ptc.rawMeans[ampName][i],
+                )
+                self.assertFloatsAlmostEqual(
+                    extractPtc.rawVars[ampName][0],
+                    ptc.rawVars[ampName][i],
+                )
+                self.assertFloatsAlmostEqual(
+                    extractPtc.histVars[ampName][0],
+                    ptc.histVars[ampName][i],
+                )
+                self.assertFloatsAlmostEqual(
+                    extractPtc.histChi2Dofs[ampName][0],
+                    ptc.histChi2Dofs[ampName][i],
+                )
+                self.assertFloatsAlmostEqual(
+                    extractPtc.kspValues[ampName][0],
+                    ptc.kspValues[ampName][i],
+                )
+                self.assertFloatsAlmostEqual(
+                    extractPtc.covariances[ampName][0],
+                    ptc.covariances[ampName][i],
+                )
+                self.assertFloatsAlmostEqual(
+                    extractPtc.covariancesSqrtWeights[ampName][0],
+                    ptc.covariancesSqrtWeights[ampName][i],
+                )
 
             mask = ptc.getGoodPoints(amp)
 
@@ -209,8 +270,8 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
         expIdsUsed = ptc.getExpIdsUsed("C:0,0")
         # Check that these are the same as the inputs, paired up, with the
-        # first two (low flux) and final two (nans) removed.
-        self.assertTrue(np.all(expIdsUsed == np.array(expIds).reshape(len(expIds) // 2, 2)[1:-1]))
+        # first two (low flux) and final four (outliers, nans) removed.
+        self.assertTrue(np.all(expIdsUsed == np.array(expIds).reshape(len(expIds) // 2, 2)[1:-2]))
 
         goodAmps = ptc.getGoodAmps()
         self.assertEqual(goodAmps, self.ampNames)
@@ -259,7 +320,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             # error.
             placesTests = 3
 
-        configSolve.doLegacyTurnoffAndOutlierSelection = doLegacy
+        configSolve.doLegacyTurnoffSelection = doLegacy
 
         if fitType == 'POLYNOMIAL':
             if order not in [2, 3]:
