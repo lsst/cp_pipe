@@ -450,6 +450,23 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                 im1Area, im2Area, imStatsCtrl, mu1, mu2 = self.getImageAreasMasksStats(exp1, exp2,
                                                                                        region=region)
 
+                # We demand that both mu1 and mu2 be finite and greater than 0.
+                if not np.isfinite(mu1) or not np.isfinite(mu2) \
+                   or ((np.nan_to_num(mu1) + np.nan_to_num(mu2)/2.) <= 0.0):
+                    self.log.warning(
+                        "Illegal mean value(s) detected for amp %s on exposure pair %d/%d",
+                        ampName,
+                        expId1,
+                        expId2,
+                    )
+                    partialPtcDataset.setAmpValuesPartialDataset(
+                        ampName,
+                        inputExpIdPair=(expId1, expId2),
+                        rawExpTime=expTime,
+                        expIdMask=False,
+                    )
+                    continue
+
                 # `measureMeanVarCov` is the function that measures
                 # the variance and covariances from a region of
                 # the difference image of two flats at the same
