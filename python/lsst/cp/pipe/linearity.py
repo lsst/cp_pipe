@@ -206,7 +206,16 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
             "TRIMMED_SUM": ("Use numpy's trapz integrator, clipping the "
                             "leading and trailing entries, which are "
                             "nominally at zero baseline level."),
+            "CHARGE_SUM": ("Treat the current values as integrated charge "
+                           "over the sampling interval and simply sum "
+                           "the values, after subtracting a baseline level."),
         }
+    )
+    photodiodeCurrentScale = pexConfig.Field(
+        dtype=float,
+        doc="Scale factor to apply to photodiode current values for the "
+            "``CHARGE_SUM`` integration method.",
+        default=-1.0,
     )
     applyPhotodiodeCorrection = pexConfig.Field(
         dtype=bool,
@@ -316,6 +325,7 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 expId = handle.dataId['exposure']
                 pd_calib = handle.get()
                 pd_calib.integrationMethod = self.config.photodiodeIntegrationMethod
+                pd_calib.currentScale = self.config.photodiodeCurrentScale
                 monDiodeCharge[expId] = pd_calib.integrate()[0]
             if self.config.applyPhotodiodeCorrection:
                 abscissaCorrections = inputPhotodiodeCorrection.abscissaCorrections
