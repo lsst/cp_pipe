@@ -1,0 +1,13 @@
+description: Latiss bias calibration construction
+instrument: lsst.obs.lsst.LsstTS8
+imports:
+  - location: $CP_PIPE_DIR/pipelines/cpDeferredCharge.yaml
+tasks:
+  isr:
+    class: lsst.ip.isr.IsrTask
+    config:
+      overscan.fitType: 'MEDIAN_PER_ROW'
+      # Skip the first five columns to remove CTI effects.  Skip the
+      # last two in case those columns are noisy.
+      overscan.leadingColumnsToSkip: 5
+      overscan.trailingColumnsToSkip: 2
