@@ -326,7 +326,7 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 pd_calib = handle.get()
                 pd_calib.integrationMethod = self.config.photodiodeIntegrationMethod
                 pd_calib.currentScale = self.config.photodiodeCurrentScale
-                monDiodeCharge[expId] = pd_calib.integrate()[0]
+                monDiodeCharge[expId] = pd_calib.integrate()
             if self.config.applyPhotodiodeCorrection:
                 abscissaCorrections = inputPhotodiodeCorrection.abscissaCorrections
 
