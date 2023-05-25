@@ -1,4 +1,4 @@
 description: cp_pipe task to plot Photon Transfer Curve dataset
 instrument: lsst.obs.decam.DarkEnergyCamera
 imports:
-  - location: $CP_PIPE_DIR/pipelines/cpPlotPtc.yaml
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpPlotPtc.yaml

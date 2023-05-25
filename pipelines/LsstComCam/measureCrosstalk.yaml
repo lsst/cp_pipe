@@ -1,4 +1,4 @@
 description: cp_pipe CROSSTALK calibration construction.
 instrument: lsst.obs.lsst.LsstComCam
 imports:
-  - location: $CP_PIPE_DIR/pipelines/measureCrosstalk.yaml
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/measureCrosstalk.yaml

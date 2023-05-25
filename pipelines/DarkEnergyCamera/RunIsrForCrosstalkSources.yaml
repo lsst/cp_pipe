@@ -1,4 +1,4 @@
 description: Prepare crosstalkSources for ISR/interchip crosstalk by running overscan correction on raw frames.
 instrument: lsst.obs.decam.DarkEnergyCamera
 imports:
-  - location: $AP_PIPE_DIR/pipelines/DarkEnergyCamera/RunIsrForCrosstalkSources.yaml
+  - location: $AP_PIPE_DIR/pipelines/_ingredients/DarkEnergyCamera/RunIsrForCrosstalkSources.yaml

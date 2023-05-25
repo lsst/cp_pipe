@@ -3,7 +3,7 @@ description: cp_pipe FLAT calibration construction for DECam
 # the isrForCrosstalkSources subset or RunIsrForCrosstalkSources.yaml.
 instrument: lsst.obs.decam.DarkEnergyCamera
 imports:
-  - location: $CP_PIPE_DIR/pipelines/cpFlat.yaml
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpFlat.yaml
 tasks:
   isr:
     class: lsst.ip.isr.IsrTask

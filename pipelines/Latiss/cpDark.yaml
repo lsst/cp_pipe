@@ -1,7 +1,7 @@
 description: Latiss dark calibration construction
 instrument: lsst.obs.lsst.Latiss
 imports:
-  -  location: $CP_PIPE_DIR/pipelines/cpDark.yaml
+  -  location: $CP_PIPE_DIR/pipelines/_ingredients/cpDark.yaml
 tasks:
   isr:
     class: lsst.ip.isr.IsrTask

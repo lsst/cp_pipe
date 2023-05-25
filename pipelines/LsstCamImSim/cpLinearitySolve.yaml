@@ -1,4 +1,4 @@
 description: cp_pipe linearity calibration construction.
 instrument: lsst.obs.lsst.LsstCamImSim
 imports:
-  - location: $CP_PIPE_DIR/pipelines/cpLinearitySolve.yaml
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpLinearitySolve.yaml

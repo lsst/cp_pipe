@@ -1,4 +1,4 @@
 description: cp_pipe brighter-fatter kernel calibration construction.
 instrument: lsst.obs.subaru.HyperSuprimeCam
 imports:
-  - location: $CP_PIPE_DIR/pipelines/cpBfkSolve.yaml
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpBfkSolve.yaml
