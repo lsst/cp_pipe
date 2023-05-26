@@ -338,6 +338,12 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
 
                 datasetPtc.expIdMask[ampName] = np.append(datasetPtc.expIdMask[ampName], expIdMask)
 
+            for key, value in partialPtcDataset.auxValues.items():
+                if key in datasetPtc.auxValues:
+                    datasetPtc.auxValues[key] = np.append(datasetPtc.auxValues[key], value)
+                else:
+                    datasetPtc.auxValues[key] = value
+
         # Sort arrays that are filled so far in the final dataset by
         # rawMeans index.
         # First compute the mean across all the amps to make sure that they are
@@ -367,6 +373,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             datasetPtc.expIdMask[ampName] = datasetPtc.expIdMask[ampName][index]
             datasetPtc.covariances[ampName] = datasetPtc.covariances[ampName][index]
             datasetPtc.covariancesSqrtWeights[ampName] = datasetPtc.covariancesSqrtWeights[ampName][index]
+        for key, value in datasetPtc.auxValues.items():
+            datasetPtc.auxValues[key] = value[index]
 
         if self.config.ptcFitType == "FULLCOVARIANCE":
             # Fit the measured covariances vs mean signal to

@@ -139,6 +139,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         extractConfig = self.defaultConfigExtract
         extractConfig.minNumberGoodPixelsForCovariance = 5000
         extractConfig.detectorMeasurementRegion = 'FULL'
+        extractConfig.auxiliaryHeaderKeys = ['CCOBCURR', 'CCDTEMP']
         extractTask = cpPipe.ptc.PhotonTransferCurveExtractTask(config=extractConfig)
 
         solveConfig = self.defaultConfigSolve
@@ -162,6 +163,14 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             mockExp1, mockExp2 = makeMockFlats(expTime, gain=inputGain,
                                                readNoiseElectrons=3,
                                                expId1=idCounter, expId2=idCounter+1)
+            for mockExp in [mockExp1, mockExp2]:
+                md = mockExp.getMetadata()
+                # These values are chosen to be easily compared after
+                # processing for correct ordering.
+                md['CCOBCURR'] = float(idCounter)
+                md['CCDTEMP'] = float(idCounter + 1)
+                mockExp.setMetadata(md)
+
             mockExpRef1 = PretendRef(mockExp1)
             mockExpRef2 = PretendRef(mockExp2)
             expDict[expTime] = ((mockExpRef1, idCounter), (mockExpRef2, idCounter+1))
@@ -267,6 +276,13 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             values = ((ptc.covariancesModel[amp][mask, 1, 2] - ptc.covariances[amp][mask, 1, 2])
                       / ptc.covariancesModel[amp][mask, 1, 2])
             np.testing.assert_array_less(np.abs(values), 0.2)
+
+        # And test that the auxiliary values are there and correctly ordered.
+        self.assertIn('CCOBCURR', ptc.auxValues)
+        self.assertIn('CCDTEMP', ptc.auxValues)
+        firstExpIds = np.array([i for i, _ in ptc.inputExpIdPairs['C:0,0']], dtype=np.float64)
+        self.assertFloatsAlmostEqual(ptc.auxValues['CCOBCURR'], firstExpIds)
+        self.assertFloatsAlmostEqual(ptc.auxValues['CCDTEMP'], firstExpIds + 1)
 
         expIdsUsed = ptc.getExpIdsUsed("C:0,0")
         # Check that these are the same as the inputs, paired up, with the
