@@ -1,7 +1,7 @@
 description: Latiss bias calibration construction
 instrument: lsst.obs.lsst.LsstTS8
 imports:
-  - location: $CP_PIPE_DIR/pipelines/cpDeferredCharge.yaml
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpDeferredCharge.yaml
 tasks:
   isr:
     class: lsst.ip.isr.IsrTask
