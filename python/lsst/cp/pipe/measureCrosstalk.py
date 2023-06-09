@@ -248,7 +248,7 @@ class CrosstalkExtractTask(pipeBase.PipelineTask):
                     bg = CrosstalkCalib.calculateBackground(targetIm, badPixels + ["DETECTED"])
 
                     ratios = ((targetAmpImage.image.array[select] - targetBkgImage.array[select])
-                              /sourceAmpImage.image.array[select])
+                              / sourceAmpImage.image.array[select])
 
                     ratioDict[targetAmpName][sourceAmpName] = ratios.tolist()
                     self.log.info("Amp extracted %d pixels from %s -> %s",
@@ -390,6 +390,13 @@ class CrosstalkSolveConfig(pipeBase.PipelineTaskConfig,
         default=0,
         doc="Polynomial order in source flux to fit crosstalk.",
     )
+
+    rejectNegativeSolutions = Field(
+        dtype=bool,
+        default=True,
+        doc="Should solutions with negative coefficients (which add flux to the target) be excluded?",
+    )
+
     significanceLimit = Field(
         dtype=float,
         default=3.0,
@@ -630,6 +637,9 @@ class CrosstalkSolveTask(pipeBase.PipelineTask):
                 calib.coeffValid[ii][jj] = False
             else:
                 calib.coeffs[ii][jj] = np.mean(values)
+                if self.config.rejectNegativeSolutions and calib.coeffs[ii][jj] < 0.0:
+                    calib.coeffs[ii][jj] = 0.0
+
                 if calib.coeffNum[ii][jj] == 1:
                     calib.coeffErr[ii][jj] = np.nan
                     calib.coeffValid[ii][jj] = False
