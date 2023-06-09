@@ -344,18 +344,18 @@ class LinearitySolveTask(pipeBase.PipelineTask):
 
             if self.config.usePhotodiode:
                 modExpTimes = []
-                for i, pair in enumerate(inputPtc.inputExpIdPairs[ampName]):
+                for j, pair in enumerate(inputPtc.inputExpIdPairs[ampName]):
                     modExpTime = 0.0
                     nExps = 0
-                    for j in range(2):
-                        expId = pair[j]
+                    for k in range(2):
+                        expId = pair[k]
                         if expId in monDiodeCharge:
                             modExpTime += monDiodeCharge[expId]
                             nExps += 1
                     if nExps > 0:
                         modExpTime = modExpTime / nExps
                     else:
-                        mask[i] = False
+                        mask[j] = False
 
                     # Get the photodiode correction
                     if self.config.applyPhotodiodeCorrection:
