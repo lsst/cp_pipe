@@ -345,7 +345,6 @@ class LinearitySolveTask(pipeBase.PipelineTask):
             if self.config.usePhotodiode:
                 modExpTimes = []
                 for i, pair in enumerate(inputPtc.inputExpIdPairs[ampName]):
-                    pair = pair[0]
                     modExpTime = 0.0
                     nExps = 0
                     for j in range(2):
