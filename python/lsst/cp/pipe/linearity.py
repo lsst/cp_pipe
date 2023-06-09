@@ -338,9 +338,9 @@ class LinearitySolveTask(pipeBase.PipelineTask):
             if (len(inputPtc.expIdMask[ampName]) == 0) or self.config.ignorePtcMask:
                 self.log.warning("Mask not found for %s in detector %s in fit. Using all points.",
                                  ampName, detector.getName())
-                mask = np.repeat(True, len(inputPtc.expIdMask[ampName]))
+                mask = np.ones(len(inputPtc.expIdMask[ampName]), dtype=bool)
             else:
-                mask = np.array(inputPtc.expIdMask[ampName], dtype=bool)
+                mask = inputPtc.expIdMask[ampName]
 
             if self.config.usePhotodiode:
                 modExpTimes = []
