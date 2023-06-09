@@ -224,6 +224,7 @@ class CrosstalkExtractTask(pipeBase.PipelineTask):
                     if sourceAmpName == targetAmpName and sourceChip == targetChip:
                         ratioDict[targetAmpName][sourceAmpName] = []
                         continue
+
                     self.log.debug("    Target amplifier: %s", targetAmpName)
 
                     targetAmpImage = CrosstalkCalib.extractAmp(targetIm.image,
@@ -231,6 +232,8 @@ class CrosstalkExtractTask(pipeBase.PipelineTask):
                                                                isTrimmed=self.config.isTrimmed)
                     ratios = (targetAmpImage.array[select] - bg)/sourceAmpImage.image.array[select]
                     ratioDict[targetAmpName][sourceAmpName] = ratios.tolist()
+                    self.log.info("Amp extracted %d pixels from %s -> %s",
+                                  count, sourceAmpName, targetAmpName)
                     extractedCount += count
 
                     self.debugPixels('pixels',
@@ -471,6 +474,7 @@ class CrosstalkSolveTask(pipeBase.PipelineTask):
 
         combinedRatios = defaultdict(lambda: defaultdict(list))
         combinedFluxes = defaultdict(lambda: defaultdict(list))
+
         for ratioDict, fluxDict in zip(inputRatios, inputFluxes):
             for targetChip in ratioDict:
                 if calibChip and targetChip != calibChip and targetChip != calibDetector.getName():
@@ -494,7 +498,7 @@ class CrosstalkSolveTask(pipeBase.PipelineTask):
             for sourceAmp in combinedRatios[targetAmp]:
                 self.log.info("Read %d pixels for %s -> %s",
                               len(combinedRatios[targetAmp][sourceAmp]),
-                              targetAmp, sourceAmp)
+                              sourceAmp, targetAmp)
                 if len(combinedRatios[targetAmp][sourceAmp]) > 1:
                     self.debugRatios('reduce', combinedRatios, targetAmp, sourceAmp)
 
@@ -579,7 +583,9 @@ class CrosstalkSolveTask(pipeBase.PipelineTask):
             if ii == jj:
                 values = [0.0]
             else:
-                values = np.array(ratios[ordering[ii]][ordering[jj]])
+                # ratios is ratios[Target][Source]
+                # use jj for Target, use ii for Source, to match ip_isr.
+                values = np.array(ratios[ordering[jj]][ordering[ii]])
                 values = values[np.abs(values) < 1.0]  # Discard unreasonable values
 
             # Sigma clip using the inter-quartile distance and a
@@ -595,6 +601,7 @@ class CrosstalkSolveTask(pipeBase.PipelineTask):
                         break
                     values = values[good]
 
+            # Crosstalk calib is property[Source][Target].
             calib.coeffNum[ii][jj] = len(values)
             significanceThreshold = 0.0
             if len(values) == 0:
@@ -620,7 +627,7 @@ class CrosstalkSolveTask(pipeBase.PipelineTask):
                     self.debugRatios('measure', ratios, ordering[ii], ordering[jj],
                                      calib.coeffs[ii][jj], calib.coeffValid[ii][jj])
             self.log.info("Measured %s -> %s Coeff: %e Err: %e N: %d Valid: %s Limit: %e",
-                          ordering[jj], ordering[ii], calib.coeffs[ii][jj], calib.coeffErr[ii][jj],
+                          ordering[ii], ordering[jj], calib.coeffs[ii][jj], calib.coeffErr[ii][jj],
                           calib.coeffNum[ii][jj], calib.coeffValid[ii][jj], significanceThreshold)
 
         return calib
@@ -669,9 +676,9 @@ class CrosstalkSolveTask(pipeBase.PipelineTask):
             Array of measured CT ratios, indexed by source/victim
             amplifier.  These arrays are one-dimensional.
         i : `str`
-            Index of the source amplifier.
-        j : `str`
             Index of the target amplifier.
+        j : `str`
+            Index of the source amplifier.
         coeff : `float`, optional
             Coefficient calculated to plot along with the simple mean.
         valid : `bool`, optional
@@ -700,7 +707,7 @@ class CrosstalkSolveTask(pipeBase.PipelineTask):
             plt.axvline(x=coeff, color='g')
             plt.axvline(x=(std / np.sqrt(len(ratioList))), color='r')
             plt.axvline(x=-(std / np.sqrt(len(ratioList))), color='r')
-            plt.title(f"(Source {i} -> Target {j}) mean: {mean:.2g} coeff: {coeff:.2g} valid: {valid}")
+            plt.title(f"(Source {j} -> Target {i}) mean: {mean:.2g} coeff: {coeff:.2g} valid: {valid}")
             figure.show()
 
             prompt = "Press Enter to continue: "
