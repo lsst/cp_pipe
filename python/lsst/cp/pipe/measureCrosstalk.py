@@ -29,9 +29,10 @@ import lsst.pipe.base.connectionTypes as cT
 from lsstDebug import getDebugFrame
 from lsst.afw.detection import FootprintSet, Threshold
 from lsst.afw.display import getDisplay
-from lsst.pex.config import Field, ListField
+from lsst.pex.config import ConfigurableField, Field, ListField
 from lsst.ip.isr import CrosstalkCalib, IsrProvenance
 from lsst.cp.pipe.utils import (ddict2dict, sigmaClipCorrection)
+from lsst.meas.algorithms import SubtractBackgroundTask
 
 from ._lookupStaticCalibration import lookupStaticCalibration
 
@@ -109,6 +110,10 @@ class CrosstalkExtractConfig(pipeBase.PipelineTaskConfig,
         default=True,
         doc="Is the input exposure trimmed?"
     )
+    background = ConfigurableField(
+        target=SubtractBackgroundTask,
+        doc="Background estimation task.",
+    )
 
     def validate(self):
         super().validate()
@@ -129,6 +134,10 @@ class CrosstalkExtractTask(pipeBase.PipelineTask):
 
     ConfigClass = CrosstalkExtractConfig
     _DefaultName = 'cpCrosstalkExtract'
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.makeSubtask("background")
 
     def run(self, inputExp, sourceExps=[]):
         """Measure pixel ratios between amplifiers in inputExp.
@@ -186,6 +195,8 @@ class CrosstalkExtractTask(pipeBase.PipelineTask):
         FootprintSet(targetIm, Threshold(threshold), "DETECTED")
         detected = targetIm.getMask().getPlaneBitMask("DETECTED")
         bg = CrosstalkCalib.calculateBackground(targetIm, badPixels + ["DETECTED"])
+        backgroundModel = self.background.fitBackground(inputExp.maskedImage)
+        backgroundIm = backgroundModel.getImageF()
 
         self.debugView('extract', inputExp)
 
@@ -227,10 +238,18 @@ class CrosstalkExtractTask(pipeBase.PipelineTask):
 
                     self.log.debug("    Target amplifier: %s", targetAmpName)
 
-                    targetAmpImage = CrosstalkCalib.extractAmp(targetIm.image,
+                    targetAmpImage = CrosstalkCalib.extractAmp(targetIm,
                                                                targetAmp, sourceAmp,
                                                                isTrimmed=self.config.isTrimmed)
-                    ratios = (targetAmpImage.array[select] - bg)/sourceAmpImage.image.array[select]
+                    targetBkgImage = CrosstalkCalib.extractAmp(backgroundIm,
+                                                               targetAmp, sourceAmp,
+                                                               isTrimmed=self.config.isTrimmed)
+
+                    bg = CrosstalkCalib.calculateBackground(targetIm, badPixels + ["DETECTED"])
+
+                    ratios = ((targetAmpImage.image.array[select] - targetBkgImage.array[select])
+                              /sourceAmpImage.image.array[select])
+
                     ratioDict[targetAmpName][sourceAmpName] = ratios.tolist()
                     self.log.info("Amp extracted %d pixels from %s -> %s",
                                   count, sourceAmpName, targetAmpName)
@@ -238,7 +257,7 @@ class CrosstalkExtractTask(pipeBase.PipelineTask):
 
                     self.debugPixels('pixels',
                                      sourceAmpImage.image.array[select],
-                                     targetAmpImage.array[select] - bg,
+                                     targetAmpImage.image.array[select] - bg,
                                      sourceAmpName, targetAmpName)
 
             self.log.info("Extracted %d pixels from %s -> %s (targetBG: %f)",
