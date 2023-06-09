@@ -130,13 +130,11 @@ class LinearitySolveConnections(pipeBase.PipelineTaskConnections,
     )
 
     def __init__(self, *, config=None):
-        super().__init__(config=config)
+        if not config.applyPhotodiodeCorrection:
+            del self.inputPhotoDiodeCorrection
 
-        if config.applyPhotodiodeCorrection is not True:
-            self.inputs.discard("inputPhotodiodeCorrection")
-
-        if config.usePhotodiode is not True:
-            self.inputs.discard("inputPhotodiodeData")
+        if not config.usePhotodiode:
+            del self.inputPhotoDiodeData
 
 
 class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
