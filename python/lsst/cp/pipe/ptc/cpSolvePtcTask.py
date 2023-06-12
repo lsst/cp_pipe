@@ -591,6 +591,9 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             dataset.noise[ampName] = readoutNoise
             readoutNoiseSigma = fitResults['fullModel']['paramsErr'][2*lenParams]
             dataset.noiseErr[ampName] = 0.5*(readoutNoiseSigma/np.fabs(readoutNoise))*readoutNoiseSqrt
+            dataset.noiseMatrix[ampName] = fitResults['fullModel']['noise']
+            dataset.noiseMatrixNoB[ampName] = fitResults['fullModelNoB']['noise']
+
             dataset.finalVars[ampName] = covAtAmp[:, 0, 0]
             dataset.finalModelVars[ampName] = dataset.covariancesModel[ampName][:, 0, 0]
             dataset.finalMeans[ampName] = muAtAmp
