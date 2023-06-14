@@ -681,7 +681,7 @@ class CrosstalkSolveTask(pipeBase.PipelineTask):
              Filtered calibration.
         """
         outCalib = CrosstalkCalib()
-        outCalib.numAmps = inCalib.numAmps
+        outCalib.nAmp = inCalib.nAmp
 
         outCalib.coeffs = inCalib.coeffs
         outCalib.coeffs[~inCalib.coeffValid] = 0.0
