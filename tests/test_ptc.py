@@ -36,7 +36,7 @@ import lsst.utils.tests
 import lsst.cp.pipe as cpPipe
 import lsst.ip.isr.isrMock as isrMock
 from lsst.ip.isr import PhotonTransferCurveDataset
-from lsst.cp.pipe.utils import (funcPolynomial, makeMockFlats)
+from lsst.cp.pipe.utils import funcPolynomial, makeMockFlats
 
 from lsst.pipe.base import TaskMetadata
 
@@ -46,17 +46,18 @@ class FakeCamera(list):
         return "FakeCam"
 
 
-class PretendRef():
+class PretendRef:
     "A class to act as a mock exposure reference"
+
     def __init__(self, exposure):
         self.exp = exposure
 
     def get(self, component=None):
-        if component == 'visitInfo':
+        if component == "visitInfo":
             return self.exp.getVisitInfo()
-        elif component == 'detector':
+        elif component == "detector":
             return self.exp.getDetector()
-        elif component == 'metadata':
+        elif component == "metadata":
             return self.exp.getMetadata()
         else:
             return self.exp
@@ -66,11 +67,17 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
     """A test case for the PTC tasks."""
 
     def setUp(self):
-        self.defaultConfigExtract = cpPipe.ptc.PhotonTransferCurveExtractTask.ConfigClass()
-        self.defaultTaskExtract = cpPipe.ptc.PhotonTransferCurveExtractTask(config=self.defaultConfigExtract)
+        self.defaultConfigExtract = (
+            cpPipe.ptc.PhotonTransferCurveExtractTask.ConfigClass()
+        )
+        self.defaultTaskExtract = cpPipe.ptc.PhotonTransferCurveExtractTask(
+            config=self.defaultConfigExtract
+        )
 
         self.defaultConfigSolve = cpPipe.ptc.PhotonTransferCurveSolveTask.ConfigClass()
-        self.defaultTaskSolve = cpPipe.ptc.PhotonTransferCurveSolveTask(config=self.defaultConfigSolve)
+        self.defaultTaskSolve = cpPipe.ptc.PhotonTransferCurveSolveTask(
+            config=self.defaultConfigSolve
+        )
 
         self.flatMean = 2000
         self.readNoiseAdu = 10
@@ -96,34 +103,40 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         self.flatExp2.image.array[:] = flatData2
 
         # create fake PTC data to see if fit works, for one amp ('amp')
-        self.flux = 1000.  # ADU/sec
-        self.timeVec = np.arange(1., 101., 5)
+        self.flux = 1000.0  # ADU/sec
+        self.timeVec = np.arange(1.0, 101.0, 5)
         self.k2NonLinearity = -5e-6
         # quadratic signal-chain non-linearity
-        muVec = self.flux*self.timeVec + self.k2NonLinearity*self.timeVec**2
+        muVec = self.flux * self.timeVec + self.k2NonLinearity * self.timeVec**2
         self.gain = 0.75  # e-/ADU
-        self.c1 = 1./self.gain
-        self.noiseSq = 2*self.gain  # 7.5 (e-)^2
+        self.c1 = 1.0 / self.gain
+        self.noiseSq = 2 * self.gain  # 7.5 (e-)^2
         self.a00 = -1.2e-6
         self.c2 = -1.5e-6
         self.c3 = -4.7e-12  # tuned so that it turns over for 200k mean
 
-        self.ampNames = [amp.getName() for amp in self.flatExp1.getDetector().getAmplifiers()]
+        self.ampNames = [
+            amp.getName() for amp in self.flatExp1.getDetector().getAmplifiers()
+        ]
         self.dataset = PhotonTransferCurveDataset(self.ampNames, ptcFitType="PARTIAL")
         self.covariancesSqrtWeights = {}
-        for ampName in self.ampNames:  # just the expTimes and means here - vars vary per function
+        for (
+            ampName
+        ) in self.ampNames:  # just the expTimes and means here - vars vary per function
             self.dataset.rawExpTimes[ampName] = self.timeVec
             self.dataset.rawMeans[ampName] = muVec
-            self.dataset.covariancesSqrtWeights[ampName] = np.zeros((1,
-                                                                     self.dataset.covMatrixSide,
-                                                                     self.dataset.covMatrixSide))
+            self.dataset.covariancesSqrtWeights[ampName] = np.zeros(
+                (1, self.dataset.covMatrixSide, self.dataset.covMatrixSide)
+            )
 
         # ISR metadata
         self.metadataContents = TaskMetadata()
         self.metadataContents["isr"] = {}
         # Overscan readout noise [in ADU]
         for amp in self.ampNames:
-            self.metadataContents["isr"][f"RESIDUAL STDEV {amp}"] = np.sqrt(self.noiseSq)/self.gain
+            self.metadataContents["isr"][f"RESIDUAL STDEV {amp}"] = (
+                np.sqrt(self.noiseSq) / self.gain
+            )
 
     def test_covAstier(self):
         """Test to check getCovariancesAstier
@@ -138,11 +151,11 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         """
         extractConfig = self.defaultConfigExtract
         extractConfig.minNumberGoodPixelsForCovariance = 5000
-        extractConfig.detectorMeasurementRegion = 'FULL'
+        extractConfig.detectorMeasurementRegion = "FULL"
         extractTask = cpPipe.ptc.PhotonTransferCurveExtractTask(config=extractConfig)
 
         solveConfig = self.defaultConfigSolve
-        solveConfig.ptcFitType = 'FULLCOVARIANCE'
+        solveConfig.ptcFitType = "FULLCOVARIANCE"
         # Cut off the low-flux point which is a bad fit, and this
         # also exercises this functionality and makes the tests
         # run a lot faster.
@@ -159,64 +172,245 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         expIds = []
         idCounter = 0
         for expTime in self.timeVec:
-            mockExp1, mockExp2 = makeMockFlats(expTime, gain=inputGain,
-                                               readNoiseElectrons=3,
-                                               expId1=idCounter, expId2=idCounter+1)
+            mockExp1, mockExp2 = makeMockFlats(
+                expTime,
+                gain=inputGain,
+                readNoiseElectrons=3,
+                expId1=idCounter,
+                expId2=idCounter + 1,
+            )
             mockExpRef1 = PretendRef(mockExp1)
             mockExpRef2 = PretendRef(mockExp2)
-            expDict[expTime] = ((mockExpRef1, idCounter), (mockExpRef2, idCounter+1))
+            expDict[expTime] = ((mockExpRef1, idCounter), (mockExpRef2, idCounter + 1))
             expIds.append(idCounter)
-            expIds.append(idCounter+1)
+            expIds.append(idCounter + 1)
             for ampNumber, ampName in enumerate(self.ampNames):
                 # cov has (i, j, var, cov, npix)
-                im1Area, im2Area, imStatsCtrl, mu1, mu2 = extractTask.getImageAreasMasksStats(mockExp1,
-                                                                                              mockExp2)
-                muDiff, varDiff, covAstier = extractTask.measureMeanVarCov(im1Area, im2Area, imStatsCtrl,
-                                                                           mu1, mu2)
+                (
+                    im1Area,
+                    im2Area,
+                    imStatsCtrl,
+                    mu1,
+                    mu2,
+                ) = extractTask.getImageAreasMasksStats(mockExp1, mockExp2)
+                muDiff, varDiff, covAstier = extractTask.measureMeanVarCov(
+                    im1Area, im2Area, imStatsCtrl, mu1, mu2
+                )
                 muStandard.setdefault(ampName, []).append(muDiff)
                 varStandard.setdefault(ampName, []).append(varDiff)
             idCounter += 2
 
-        resultsExtract = extractTask.run(inputExp=expDict, inputDims=expIds,
-                                         taskMetadata=[self.metadataContents for x in expIds])
+        resultsExtract = extractTask.run(
+            inputExp=expDict,
+            inputDims=expIds,
+            taskMetadata=[self.metadataContents for x in expIds],
+        )
 
         # Force the last PTC dataset to have a NaN, and ensure that the
         # task runs (DM-38029).  This is a minor perturbation and does not
         # affect the output comparison. Note that we use index -2 because
         # these datasets are in pairs of [real, dummy] to match the inputs
         # to the extract task.
-        resultsExtract.outputCovariances[-2].rawMeans['C:0,0'] = np.array([np.nan])
-        resultsExtract.outputCovariances[-2].rawVars['C:0,0'] = np.array([np.nan])
+        resultsExtract.outputCovariances[-2].rawMeans["C:0,0"] = np.array([np.nan])
+        resultsExtract.outputCovariances[-2].rawVars["C:0,0"] = np.array([np.nan])
 
         # Force the next-to-last PTC dataset to have a decreased variance to
         # ensure that the outlier fit rejection works. Note that we use
         # index -4 because these datasets are in pairs of [real, dummy] to
         # match the inputs to the extract task.
-        rawVar = resultsExtract.outputCovariances[-4].rawVars['C:0,0']
-        resultsExtract.outputCovariances[-4].rawVars['C:0,0'] = rawVar*0.9
+        rawVar = resultsExtract.outputCovariances[-4].rawVars["C:0,0"]
+        resultsExtract.outputCovariances[-4].rawVars["C:0,0"] = rawVar * 0.9
 
         # Reorganize the outputCovariances so we can confirm they come
         # out sorted afterwards.
         outputCovariancesRev = resultsExtract.outputCovariances[::-1]
 
-        resultsSolve = solveTask.run(outputCovariancesRev,
-                                     camera=FakeCamera([self.flatExp1.getDetector()]))
+        resultsSolve = solveTask.run(
+            outputCovariancesRev, camera=FakeCamera([self.flatExp1.getDetector()])
+        )
 
         ptc = resultsSolve.outputPtcDataset
 
         # Some expected values for noise matrix, just to check that
         # it was calculated.
-        noiseMatrixNoBExpected = {(0, 0): 6.53126505, (1, 1): -23.20924747, (2, 2): 35.69834113}
-        noiseMatrixExpected = {(0, 0): 29.37146918, (1, 1): -14.6849025, (2, 2): 24.7328517}
+        noiseMatrixNoBExpected = np.array(
+            [
+                [
+                    6.53126505,
+                    12.14827594,
+                    -37.11919923,
+                    41.18675353,
+                    -85.1613845,
+                    -28.45801954,
+                    -61.24442999,
+                    88.76480122,
+                ],
+                [
+                    -4.64541165,
+                    -23.20924747,
+                    -66.08733987,
+                    -0.87558055,
+                    12.20111853,
+                    24.84795549,
+                    -34.92458788,
+                    24.42745014,
+                ],
+                [
+                    7.66734507,
+                    -4.51403645,
+                    35.69834113,
+                    52.73693356,
+                    -30.85044089,
+                    10.86761771,
+                    10.8503068,
+                    -2.18908327,
+                ],
+                [
+                    50.9901156,
+                    -7.34803977,
+                    5.33443765,
+                    21.60899396,
+                    -25.06129827,
+                    15.14015505,
+                    10.94263771,
+                    29.23975515,
+                ],
+                [
+                    -48.66912069,
+                    -31.58003774,
+                    21.81305735,
+                    -13.08993444,
+                    8.17275394,
+                    74.85293723,
+                    -11.18403252,
+                    -31.7799437,
+                ],
+                [
+                    -38.55206382,
+                    22.92982676,
+                    13.39861008,
+                    -33.3307362,
+                    8.65362238,
+                    29.18775548,
+                    31.78433947,
+                    1.27923706,
+                ],
+                [
+                    23.33663918,
+                    -41.74105625,
+                    -26.55920751,
+                    -24.71611677,
+                    12.13343146,
+                    11.25763907,
+                    21.79131019,
+                    -26.579393,
+                ],
+                [
+                    11.44334226,
+                    -34.9759641,
+                    13.96449509,
+                    19.64121933,
+                    -36.09794843,
+                    -34.27205933,
+                    -25.16574105,
+                    23.80460972,
+                ],
+            ]
+        )
+
+        noiseMatrixExpected = np.array(
+            [
+                [
+                    29.37146918,
+                    9.2760363,
+                    -29.08907932,
+                    33.65818827,
+                    -52.65710984,
+                    -18.5821773,
+                    -46.26896286,
+                    65.01049736,
+                ],
+                [
+                    -3.62427987,
+                    -14.6849025,
+                    -46.55230305,
+                    -1.30410627,
+                    6.44903599,
+                    18.11796075,
+                    -22.72874074,
+                    20.90219857,
+                ],
+                [
+                    5.09203058,
+                    -4.40097862,
+                    24.7328517,
+                    39.2847586,
+                    -21.46132351,
+                    8.12179783,
+                    6.23585617,
+                    -2.09949622,
+                ],
+                [
+                    35.79204016,
+                    -6.50205005,
+                    3.37910363,
+                    15.22335662,
+                    -19.29035067,
+                    9.66065941,
+                    7.47510934,
+                    20.25962845,
+                ],
+                [
+                    -36.23187633,
+                    -22.72307472,
+                    16.29140749,
+                    -13.09493835,
+                    3.32091085,
+                    52.4380977,
+                    -8.06428902,
+                    -22.66669839,
+                ],
+                [
+                    -27.93122896,
+                    15.37016686,
+                    9.18835073,
+                    -24.48892946,
+                    8.14480304,
+                    22.38983222,
+                    22.36866891,
+                    -0.38803439,
+                ],
+                [
+                    17.13962665,
+                    -28.33153763,
+                    -17.79744334,
+                    -18.57064463,
+                    7.69408833,
+                    8.48265396,
+                    18.0447022,
+                    -16.97496022,
+                ],
+                [
+                    10.09078383,
+                    -26.61613002,
+                    10.48504889,
+                    15.33196998,
+                    -23.35165517,
+                    -24.53098643,
+                    -18.21201067,
+                    17.40755051,
+                ],
+            ]
+        )
 
         for amp in self.ampNames:
             self.assertAlmostEqual(ptc.gain[amp], inputGain, places=2)
             for v1, v2 in zip(varStandard[amp], ptc.finalVars[amp]):
-                self.assertAlmostEqual(v1/v2, 1.0, places=1)
+                self.assertAlmostEqual(v1 / v2, 1.0, places=1)
 
             # Check that the PTC turnoff is correctly computed.
             # This will be different for the C:0,0 amp.
-            if amp == 'C:0,0':
+            if amp == "C:0,0":
                 self.assertAlmostEqual(ptc.ptcTurnoff[amp], ptc.rawMeans[ampName][-3])
             else:
                 self.assertAlmostEqual(ptc.ptcTurnoff[amp], ptc.rawMeans[ampName][-1])
@@ -259,48 +453,41 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                     ptc.covariancesSqrtWeights[ampName][i],
                 )
                 self.assertFloatsAlmostEqual(
-                    ptc.noiseMatrix[ampName][0, 0],
-                    noiseMatrixExpected[(0, 0)], atol=1e-8, rtol=None
+                    ptc.noiseMatrix[ampName],
+                    noiseMatrixExpected,
+                    atol=1e-8,
+                    rtol=None,
                 )
                 self.assertFloatsAlmostEqual(
-                    ptc.noiseMatrix[ampName][1, 1],
-                    noiseMatrixExpected[(1, 1)], atol=1e-8, rtol=None
-                )
-                self.assertFloatsAlmostEqual(
-                    ptc.noiseMatrix[ampName][2, 2],
-                    noiseMatrixExpected[(2, 2)], atol=1e-8, rtol=None
-                )
-                self.assertFloatsAlmostEqual(
-                    ptc.noiseMatrixNoB[ampName][0, 0],
-                    noiseMatrixNoBExpected[(0, 0)], atol=1e-8, rtol=None
-                )
-                self.assertFloatsAlmostEqual(
-                    ptc.noiseMatrixNoB[ampName][1, 1],
-                    noiseMatrixNoBExpected[(1, 1)], atol=1e-8, rtol=None
-                )
-                self.assertFloatsAlmostEqual(
-                    ptc.noiseMatrixNoB[ampName][2, 2],
-                    noiseMatrixNoBExpected[(2, 2)], atol=1e-8, rtol=None
+                    ptc.noiseMatrixNoB[ampName],
+                    noiseMatrixNoBExpected,
+                    atol=1e-8,
+                    rtol=None,
                 )
 
             mask = ptc.getGoodPoints(amp)
 
-            values = ((ptc.covariancesModel[amp][mask, 0, 0] - ptc.covariances[amp][mask, 0, 0])
-                      / ptc.covariancesModel[amp][mask, 0, 0])
+            values = (
+                ptc.covariancesModel[amp][mask, 0, 0] - ptc.covariances[amp][mask, 0, 0]
+            ) / ptc.covariancesModel[amp][mask, 0, 0]
             np.testing.assert_array_less(np.abs(values), 2e-3)
 
-            values = ((ptc.covariancesModel[amp][mask, 1, 1] - ptc.covariances[amp][mask, 1, 1])
-                      / ptc.covariancesModel[amp][mask, 1, 1])
+            values = (
+                ptc.covariancesModel[amp][mask, 1, 1] - ptc.covariances[amp][mask, 1, 1]
+            ) / ptc.covariancesModel[amp][mask, 1, 1]
             np.testing.assert_array_less(np.abs(values), 0.2)
 
-            values = ((ptc.covariancesModel[amp][mask, 1, 2] - ptc.covariances[amp][mask, 1, 2])
-                      / ptc.covariancesModel[amp][mask, 1, 2])
+            values = (
+                ptc.covariancesModel[amp][mask, 1, 2] - ptc.covariances[amp][mask, 1, 2]
+            ) / ptc.covariancesModel[amp][mask, 1, 2]
             np.testing.assert_array_less(np.abs(values), 0.2)
 
         expIdsUsed = ptc.getExpIdsUsed("C:0,0")
         # Check that these are the same as the inputs, paired up, with the
         # first two (low flux) and final four (outliers, nans) removed.
-        self.assertTrue(np.all(expIdsUsed == np.array(expIds).reshape(len(expIds) // 2, 2)[1:-2]))
+        self.assertTrue(
+            np.all(expIdsUsed == np.array(expIds).reshape(len(expIds) // 2, 2)[1:-2])
+        )
 
         goodAmps = ptc.getGoodAmps()
         self.assertEqual(goodAmps, self.ampNames)
@@ -319,9 +506,13 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                 covModelNoBShape = ptc.covariancesModelNoB[ampName].shape
             else:
                 self.assertEqual(ptc.covariances[ampName].shape, covShape)
-                self.assertEqual(ptc.covariancesSqrtWeights[ampName].shape, covSqrtShape)
+                self.assertEqual(
+                    ptc.covariancesSqrtWeights[ampName].shape, covSqrtShape
+                )
                 self.assertEqual(ptc.covariancesModel[ampName].shape, covModelShape)
-                self.assertEqual(ptc.covariancesModelNoB[ampName].shape, covModelNoBShape)
+                self.assertEqual(
+                    ptc.covariancesModelNoB[ampName].shape, covModelNoBShape
+                )
 
         # And check that this is serializable
         with tempfile.NamedTemporaryFile(suffix=".fits") as f:
@@ -330,12 +521,12 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         self.assertEqual(fromFits, ptc)
 
     def ptcFitAndCheckPtc(
-            self,
-            order=None,
-            fitType=None,
-            doTableArray=False,
-            doFitBootstrap=False,
-            doLegacy=False,
+        self,
+        order=None,
+        fitType=None,
+        doTableArray=False,
+        doFitBootstrap=False,
+        doLegacy=False,
     ):
         localDataset = copy.deepcopy(self.dataset)
         localDataset.ptcFitType = fitType
@@ -351,27 +542,40 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
         configSolve.doLegacyTurnoffSelection = doLegacy
 
-        if fitType == 'POLYNOMIAL':
+        if fitType == "POLYNOMIAL":
             if order not in [2, 3]:
                 RuntimeError("Enter a valid polynomial order for this test: 2 or 3")
             if order == 2:
                 for ampName in self.ampNames:
-                    localDataset.rawVars[ampName] = [self.noiseSq + self.c1*mu + self.c2*mu**2 for
-                                                     mu in localDataset.rawMeans[ampName]]
+                    localDataset.rawVars[ampName] = [
+                        self.noiseSq + self.c1 * mu + self.c2 * mu**2
+                        for mu in localDataset.rawMeans[ampName]
+                    ]
                 configSolve.polynomialFitDegree = 2
             if order == 3:
                 for ampName in self.ampNames:
-                    localDataset.rawVars[ampName] = [self.noiseSq + self.c1*mu + self.c2*mu**2 + self.c3*mu**3
-                                                     for mu in localDataset.rawMeans[ampName]]
+                    localDataset.rawVars[ampName] = [
+                        self.noiseSq
+                        + self.c1 * mu
+                        + self.c2 * mu**2
+                        + self.c3 * mu**3
+                        for mu in localDataset.rawMeans[ampName]
+                    ]
                 configSolve.polynomialFitDegree = 3
-        elif fitType == 'EXPAPPROXIMATION':
+        elif fitType == "EXPAPPROXIMATION":
             g = self.gain
             for ampName in self.ampNames:
-                localDataset.rawVars[ampName] = [(0.5/(self.a00*g**2)*(np.exp(2*self.a00*mu*g)-1)
-                                                 + self.noiseSq/(g*g))
-                                                 for mu in localDataset.rawMeans[ampName]]
+                localDataset.rawVars[ampName] = [
+                    (
+                        0.5 / (self.a00 * g**2) * (np.exp(2 * self.a00 * mu * g) - 1)
+                        + self.noiseSq / (g * g)
+                    )
+                    for mu in localDataset.rawMeans[ampName]
+                ]
         else:
-            raise RuntimeError("Enter a fit function type: 'POLYNOMIAL' or 'EXPAPPROXIMATION'")
+            raise RuntimeError(
+                "Enter a fit function type: 'POLYNOMIAL' or 'EXPAPPROXIMATION'"
+            )
 
         # Initialize mask and covariance weights that will be used in fits.
         # Covariance weights values empirically determined from one of
@@ -380,17 +584,31 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         maskLength = len(localDataset.rawMeans[ampName])
         for ampName in self.ampNames:
             localDataset.expIdMask[ampName] = np.repeat(True, maskLength)
-            localDataset.covariancesSqrtWeights[ampName] = np.repeat(np.ones((matrixSize, matrixSize)),
-                                                                     maskLength).reshape((maskLength,
-                                                                                          matrixSize,
-                                                                                          matrixSize))
-            localDataset.covariancesSqrtWeights[ampName][:, 0, 0] = [0.07980188, 0.01339653, 0.0073118,
-                                                                     0.00502802, 0.00383132, 0.00309475,
-                                                                     0.00259572, 0.00223528, 0.00196273,
-                                                                     0.00174943, 0.00157794, 0.00143707,
-                                                                     0.00131929, 0.00121935, 0.0011334,
-                                                                     0.00105893, 0.00099357, 0.0009358,
-                                                                     0.00088439, 0.00083833]
+            localDataset.covariancesSqrtWeights[ampName] = np.repeat(
+                np.ones((matrixSize, matrixSize)), maskLength
+            ).reshape((maskLength, matrixSize, matrixSize))
+            localDataset.covariancesSqrtWeights[ampName][:, 0, 0] = [
+                0.07980188,
+                0.01339653,
+                0.0073118,
+                0.00502802,
+                0.00383132,
+                0.00309475,
+                0.00259572,
+                0.00223528,
+                0.00196273,
+                0.00174943,
+                0.00157794,
+                0.00143707,
+                0.00131929,
+                0.00121935,
+                0.0011334,
+                0.00105893,
+                0.00099357,
+                0.0009358,
+                0.00088439,
+                0.00083833,
+            ]
 
         configLin.maxLookupTableAdu = 200000  # Max ADU in input mock flats
         configLin.maxLinearAdu = 100000
@@ -409,83 +627,119 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             # (`lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`)
             localDataset = solveTask.fitMeasurementsToModel(localDataset)
             # linDataset here is a lsst.pipe.base.Struct
-            linDataset = linearityTask.run(localDataset,
-                                           dummy=[1.0],
-                                           camera=FakeCamera([self.flatExp1.getDetector()]),
-                                           inputPhotodiodeData={},
-                                           inputDims={'detector': 0})
+            linDataset = linearityTask.run(
+                localDataset,
+                dummy=[1.0],
+                camera=FakeCamera([self.flatExp1.getDetector()]),
+                inputPhotodiodeData={},
+                inputDims={"detector": 0},
+            )
             linDataset = linDataset.outputLinearizer
         else:
             localDataset = solveTask.fitMeasurementsToModel(localDataset)
-            linDataset = linearityTask.run(localDataset,
-                                           dummy=[1.0],
-                                           camera=FakeCamera([self.flatExp1.getDetector()]),
-                                           inputPhotodiodeData={},
-                                           inputDims={'detector': 0})
+            linDataset = linearityTask.run(
+                localDataset,
+                dummy=[1.0],
+                camera=FakeCamera([self.flatExp1.getDetector()]),
+                inputPhotodiodeData={},
+                inputDims={"detector": 0},
+            )
             linDataset = linDataset.outputLinearizer
         if doTableArray:
             # check that the linearizer table has been filled out properly
             for i in np.arange(numberAmps):
-                tMax = (configLin.maxLookupTableAdu)/self.flux
-                timeRange = np.linspace(0., tMax, configLin.maxLookupTableAdu)
-                signalIdeal = timeRange*self.flux
-                signalUncorrected = funcPolynomial(np.array([0.0, self.flux, self.k2NonLinearity]),
-                                                   timeRange)
+                tMax = (configLin.maxLookupTableAdu) / self.flux
+                timeRange = np.linspace(0.0, tMax, configLin.maxLookupTableAdu)
+                signalIdeal = timeRange * self.flux
+                signalUncorrected = funcPolynomial(
+                    np.array([0.0, self.flux, self.k2NonLinearity]), timeRange
+                )
                 linearizerTableRow = signalIdeal - signalUncorrected
-                self.assertEqual(len(linearizerTableRow), len(linDataset.tableData[i, :]))
+                self.assertEqual(
+                    len(linearizerTableRow), len(linDataset.tableData[i, :])
+                )
                 for j in np.arange(len(linearizerTableRow)):
-                    self.assertAlmostEqual(linearizerTableRow[j], linDataset.tableData[i, :][j],
-                                           places=placesTests)
+                    self.assertAlmostEqual(
+                        linearizerTableRow[j],
+                        linDataset.tableData[i, :][j],
+                        places=placesTests,
+                    )
         else:
             # check entries in localDataset, which was modified by the function
             for ampName in self.ampNames:
                 maskAmp = localDataset.expIdMask[ampName]
                 finalMuVec = localDataset.rawMeans[ampName][maskAmp]
                 finalTimeVec = localDataset.rawExpTimes[ampName][maskAmp]
-                linearPart = self.flux*finalTimeVec
-                inputFracNonLinearityResiduals = 100*(linearPart - finalMuVec)/linearPart
+                linearPart = self.flux * finalTimeVec
+                inputFracNonLinearityResiduals = (
+                    100 * (linearPart - finalMuVec) / linearPart
+                )
                 self.assertEqual(fitType, localDataset.ptcFitType)
                 self.assertAlmostEqual(self.gain, localDataset.gain[ampName])
-                if fitType == 'POLYNOMIAL':
+                if fitType == "POLYNOMIAL":
                     self.assertAlmostEqual(self.c1, localDataset.ptcFitPars[ampName][1])
-                    self.assertAlmostEqual(np.sqrt(self.noiseSq)*self.gain, localDataset.noise[ampName])
-                if fitType == 'EXPAPPROXIMATION':
-                    self.assertAlmostEqual(self.a00, localDataset.ptcFitPars[ampName][0])
+                    self.assertAlmostEqual(
+                        np.sqrt(self.noiseSq) * self.gain, localDataset.noise[ampName]
+                    )
+                if fitType == "EXPAPPROXIMATION":
+                    self.assertAlmostEqual(
+                        self.a00, localDataset.ptcFitPars[ampName][0]
+                    )
                     # noise already in electrons for 'EXPAPPROXIMATION' fit
-                    self.assertAlmostEqual(np.sqrt(self.noiseSq), localDataset.noise[ampName])
+                    self.assertAlmostEqual(
+                        np.sqrt(self.noiseSq), localDataset.noise[ampName]
+                    )
 
             # check entries in returned dataset (a dict of , for nonlinearity)
             for ampName in self.ampNames:
                 maskAmp = localDataset.expIdMask[ampName]
                 finalMuVec = localDataset.rawMeans[ampName][maskAmp]
                 finalTimeVec = localDataset.rawExpTimes[ampName][maskAmp]
-                linearPart = self.flux*finalTimeVec
-                inputFracNonLinearityResiduals = 100*(linearPart - finalMuVec)/linearPart
+                linearPart = self.flux * finalTimeVec
+                inputFracNonLinearityResiduals = (
+                    100 * (linearPart - finalMuVec) / linearPart
+                )
 
                 # Nonlinearity fit parameters
                 # Polynomial fits are now normalized to unit flux scaling
                 self.assertAlmostEqual(0.0, linDataset.fitParams[ampName][0], places=1)
-                self.assertAlmostEqual(1.0, linDataset.fitParams[ampName][1],
-                                       places=5)
+                self.assertAlmostEqual(1.0, linDataset.fitParams[ampName][1], places=5)
 
                 # Non-linearity coefficient for linearizer
-                squaredCoeff = self.k2NonLinearity/(self.flux**2)
-                self.assertAlmostEqual(squaredCoeff, linDataset.fitParams[ampName][2],
-                                       places=placesTests)
-                self.assertAlmostEqual(-squaredCoeff, linDataset.linearityCoeffs[ampName][2],
-                                       places=placesTests)
+                squaredCoeff = self.k2NonLinearity / (self.flux**2)
+                self.assertAlmostEqual(
+                    squaredCoeff, linDataset.fitParams[ampName][2], places=placesTests
+                )
+                self.assertAlmostEqual(
+                    -squaredCoeff,
+                    linDataset.linearityCoeffs[ampName][2],
+                    places=placesTests,
+                )
 
-                linearPartModel = linDataset.fitParams[ampName][1]*finalTimeVec*self.flux
-                outputFracNonLinearityResiduals = 100*(linearPartModel - finalMuVec)/linearPartModel
+                linearPartModel = (
+                    linDataset.fitParams[ampName][1] * finalTimeVec * self.flux
+                )
+                outputFracNonLinearityResiduals = (
+                    100 * (linearPartModel - finalMuVec) / linearPartModel
+                )
                 # Fractional nonlinearity residuals
-                self.assertEqual(len(outputFracNonLinearityResiduals), len(inputFracNonLinearityResiduals))
-                for calc, truth in zip(outputFracNonLinearityResiduals, inputFracNonLinearityResiduals):
+                self.assertEqual(
+                    len(outputFracNonLinearityResiduals),
+                    len(inputFracNonLinearityResiduals),
+                )
+                for calc, truth in zip(
+                    outputFracNonLinearityResiduals, inputFracNonLinearityResiduals
+                ):
                     self.assertAlmostEqual(calc, truth, places=3)
 
     def test_ptcFit(self):
         for createArray in [True, False]:
             for doLegacy in [False, True]:
-                for (fitType, order) in [('POLYNOMIAL', 2), ('POLYNOMIAL', 3), ('EXPAPPROXIMATION', None)]:
+                for fitType, order in [
+                    ("POLYNOMIAL", 2),
+                    ("POLYNOMIAL", 3),
+                    ("EXPAPPROXIMATION", None),
+                ]:
                     self.ptcFitAndCheckPtc(
                         fitType=fitType,
                         order=order,
@@ -495,8 +749,9 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
     def test_meanVarMeasurement(self):
         task = self.defaultTaskExtract
-        im1Area, im2Area, imStatsCtrl, mu1, mu2 = task.getImageAreasMasksStats(self.flatExp1,
-                                                                               self.flatExp2)
+        im1Area, im2Area, imStatsCtrl, mu1, mu2 = task.getImageAreasMasksStats(
+            self.flatExp1, self.flatExp2
+        )
         mu, varDiff, _ = task.measureMeanVarCov(im1Area, im2Area, imStatsCtrl, mu1, mu2)
 
         self.assertLess(self.flatWidth - np.sqrt(varDiff), 1)
@@ -511,13 +766,14 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         flatExp1.image.array[20:30, :] = np.nan
         flatExp2.image.array[20:30, :] = np.nan
 
-        im1Area, im2Area, imStatsCtrl, mu1, mu2 = task.getImageAreasMasksStats(flatExp1,
-                                                                               flatExp2)
+        im1Area, im2Area, imStatsCtrl, mu1, mu2 = task.getImageAreasMasksStats(
+            flatExp1, flatExp2
+        )
         mu, varDiff, _ = task.measureMeanVarCov(im1Area, im2Area, imStatsCtrl, mu1, mu2)
 
         expectedMu1 = np.nanmean(flatExp1.image.array)
         expectedMu2 = np.nanmean(flatExp2.image.array)
-        expectedMu = 0.5*(expectedMu1 + expectedMu2)
+        expectedMu = 0.5 * (expectedMu1 + expectedMu2)
 
         # Now the variance of the difference. First, create the diff image.
         im1 = flatExp1.maskedImage
@@ -532,7 +788,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
         # Divide by two as it is what measureMeanVarCov returns
         # (variance of difference)
-        expectedVar = 0.5*np.nanvar(diffIm.image.array)
+        expectedVar = 0.5 * np.nanvar(diffIm.image.array)
 
         # Check that the standard deviations and the emans agree to
         # less than 1 ADU
@@ -547,9 +803,12 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         flatExp1.image.array[:, :] = np.nan
         flatExp2.image.array[:, :] = np.nan
 
-        im1Area, im2Area, imStatsCtrl, mu1, mu2 = task.getImageAreasMasksStats(flatExp1,
-                                                                               flatExp2)
-        mu, varDiff, covDiff = task.measureMeanVarCov(im1Area, im2Area, imStatsCtrl, mu1, mu2)
+        im1Area, im2Area, imStatsCtrl, mu1, mu2 = task.getImageAreasMasksStats(
+            flatExp1, flatExp2
+        )
+        mu, varDiff, covDiff = task.measureMeanVarCov(
+            im1Area, im2Area, imStatsCtrl, mu1, mu2
+        )
 
         self.assertTrue(np.isnan(mu))
         self.assertTrue(np.isnan(varDiff))
@@ -560,17 +819,20 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         flatExp1 = self.flatExp1.clone()
         flatExp2 = self.flatExp2.clone()
 
-        flatExp1.image.array[0: 190, :] = np.nan
-        flatExp2.image.array[0: 190, :] = np.nan
+        flatExp1.image.array[0:190, :] = np.nan
+        flatExp2.image.array[0:190, :] = np.nan
 
         bit = flatExp1.mask.getMaskPlaneDict()["NO_DATA"]
-        flatExp1.mask.array[0: 190, :] &= 2**bit
-        flatExp2.mask.array[0: 190, :] &= 2**bit
+        flatExp1.mask.array[0:190, :] &= 2**bit
+        flatExp2.mask.array[0:190, :] &= 2**bit
 
-        im1Area, im2Area, imStatsCtrl, mu1, mu2 = task.getImageAreasMasksStats(flatExp1,
-                                                                               flatExp2)
+        im1Area, im2Area, imStatsCtrl, mu1, mu2 = task.getImageAreasMasksStats(
+            flatExp1, flatExp2
+        )
         with self.assertLogs(level=logging.WARNING) as cm:
-            mu, varDiff, covDiff = task.measureMeanVarCov(im1Area, im2Area, imStatsCtrl, mu1, mu2)
+            mu, varDiff, covDiff = task.measureMeanVarCov(
+                im1Area, im2Area, imStatsCtrl, mu1, mu2
+            )
         self.assertIn("Number of good points", cm.output[0])
 
         self.assertTrue(np.isnan(mu))
@@ -586,21 +848,24 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         flatExp1 = self.flatExp1.clone()
         flatExp2 = self.flatExp2.clone()
 
-        flatExp1.image.array[0: 195, :] = np.nan
-        flatExp2.image.array[0: 195, :] = np.nan
-        flatExp1.image.array[:, 0: 195] = np.nan
-        flatExp2.image.array[:, 0: 195] = np.nan
+        flatExp1.image.array[0:195, :] = np.nan
+        flatExp2.image.array[0:195, :] = np.nan
+        flatExp1.image.array[:, 0:195] = np.nan
+        flatExp2.image.array[:, 0:195] = np.nan
 
         bit = flatExp1.mask.getMaskPlaneDict()["NO_DATA"]
-        flatExp1.mask.array[0: 195, :] &= 2**bit
-        flatExp2.mask.array[0: 195, :] &= 2**bit
-        flatExp1.mask.array[:, 0: 195] &= 2**bit
-        flatExp2.mask.array[:, 0: 195] &= 2**bit
+        flatExp1.mask.array[0:195, :] &= 2**bit
+        flatExp2.mask.array[0:195, :] &= 2**bit
+        flatExp1.mask.array[:, 0:195] &= 2**bit
+        flatExp2.mask.array[:, 0:195] &= 2**bit
 
-        im1Area, im2Area, imStatsCtrl, mu1, mu2 = task.getImageAreasMasksStats(flatExp1,
-                                                                               flatExp2)
+        im1Area, im2Area, imStatsCtrl, mu1, mu2 = task.getImageAreasMasksStats(
+            flatExp1, flatExp2
+        )
         with self.assertLogs(level=logging.WARNING) as cm:
-            mu, varDiff, covDiff = task.measureMeanVarCov(im1Area, im2Area, imStatsCtrl, mu1, mu2)
+            mu, varDiff, covDiff = task.measureMeanVarCov(
+                im1Area, im2Area, imStatsCtrl, mu1, mu2
+            )
         self.assertIn("Not enough pixels", cm.output[0])
 
         self.assertTrue(np.isnan(mu))
@@ -608,21 +873,32 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         self.assertTrue(covDiff is None)
 
     def test_makeZeroSafe(self):
-        noZerosArray = [1., 20, -35, 45578.98, 90.0, 897, 659.8]
-        someZerosArray = [1., 20, 0, 0, 90, 879, 0]
-        allZerosArray = [0., 0.0, 0, 0, 0.0, 0, 0]
+        noZerosArray = [1.0, 20, -35, 45578.98, 90.0, 897, 659.8]
+        someZerosArray = [1.0, 20, 0, 0, 90, 879, 0]
+        allZerosArray = [0.0, 0.0, 0, 0, 0.0, 0, 0]
 
         substituteValue = 1e-10
 
-        expectedSomeZerosArray = [1., 20, substituteValue, substituteValue, 90, 879, substituteValue]
+        expectedSomeZerosArray = [
+            1.0,
+            20,
+            substituteValue,
+            substituteValue,
+            90,
+            879,
+            substituteValue,
+        ]
         expectedAllZerosArray = np.repeat(substituteValue, len(allZerosArray))
 
-        measuredSomeZerosArray = self.defaultTaskSolve._makeZeroSafe(someZerosArray,
-                                                                     substituteValue=substituteValue)
-        measuredAllZerosArray = self.defaultTaskSolve._makeZeroSafe(allZerosArray,
-                                                                    substituteValue=substituteValue)
-        measuredNoZerosArray = self.defaultTaskSolve._makeZeroSafe(noZerosArray,
-                                                                   substituteValue=substituteValue)
+        measuredSomeZerosArray = self.defaultTaskSolve._makeZeroSafe(
+            someZerosArray, substituteValue=substituteValue
+        )
+        measuredAllZerosArray = self.defaultTaskSolve._makeZeroSafe(
+            allZerosArray, substituteValue=substituteValue
+        )
+        measuredNoZerosArray = self.defaultTaskSolve._makeZeroSafe(
+            noZerosArray, substituteValue=substituteValue
+        )
 
         for exp, meas in zip(expectedSomeZerosArray, measuredSomeZerosArray):
             self.assertEqual(exp, meas)
@@ -633,18 +909,20 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
     def test_getInitialGoodPoints(self):
         xs = [1, 2, 3, 4, 5, 6]
-        ys = [2*x for x in xs]
-        points = self.defaultTaskSolve._getInitialGoodPoints(xs, ys, minVarPivotSearch=0.,
-                                                             consecutivePointsVarDecreases=2)
+        ys = [2 * x for x in xs]
+        points = self.defaultTaskSolve._getInitialGoodPoints(
+            xs, ys, minVarPivotSearch=0.0, consecutivePointsVarDecreases=2
+        )
         assert np.all(points) == np.all(np.array([True for x in xs]))
 
         ys[4] = 7  # Variance decreases in two consecutive points after ys[3]=8
         ys[5] = 6
-        points = self.defaultTaskSolve._getInitialGoodPoints(xs, ys, minVarPivotSearch=0.,
-                                                             consecutivePointsVarDecreases=2)
+        points = self.defaultTaskSolve._getInitialGoodPoints(
+            xs, ys, minVarPivotSearch=0.0, consecutivePointsVarDecreases=2
+        )
         assert np.all(points) == np.all(np.array([True, True, True, True, False]))
 
-    def runGetGainFromFlatPair(self, correctionType='NONE'):
+    def runGetGainFromFlatPair(self, correctionType="NONE"):
         extractConfig = self.defaultConfigExtract
         extractConfig.gainCorrectionType = correctionType
         extractConfig.minNumberGoodPixelsForCovariance = 5000
@@ -656,40 +934,57 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         inputGain = self.gain  # 1.5 e/ADU
         for expTime in self.timeVec:
             # Approximation works better at low flux, e.g., < 10000 ADU
-            mockExp1, mockExp2 = makeMockFlats(expTime, gain=inputGain,
-                                               readNoiseElectrons=np.sqrt(self.noiseSq),
-                                               fluxElectrons=100,
-                                               expId1=idCounter, expId2=idCounter+1)
+            mockExp1, mockExp2 = makeMockFlats(
+                expTime,
+                gain=inputGain,
+                readNoiseElectrons=np.sqrt(self.noiseSq),
+                fluxElectrons=100,
+                expId1=idCounter,
+                expId2=idCounter + 1,
+            )
             mockExpRef1 = PretendRef(mockExp1)
             mockExpRef2 = PretendRef(mockExp2)
-            expDict[expTime] = ((mockExpRef1, idCounter), (mockExpRef2, idCounter+1))
+            expDict[expTime] = ((mockExpRef1, idCounter), (mockExpRef2, idCounter + 1))
             expIds.append(idCounter)
-            expIds.append(idCounter+1)
+            expIds.append(idCounter + 1)
             idCounter += 2
 
-        resultsExtract = extractTask.run(inputExp=expDict, inputDims=expIds,
-                                         taskMetadata=[self.metadataContents for x in expIds])
+        resultsExtract = extractTask.run(
+            inputExp=expDict,
+            inputDims=expIds,
+            taskMetadata=[self.metadataContents for x in expIds],
+        )
         for exposurePair in resultsExtract.outputCovariances:
             for ampName in self.ampNames:
                 if exposurePair.gain[ampName] is np.nan:
                     continue
-                self.assertAlmostEqual(exposurePair.gain[ampName], inputGain, delta=0.04)
+                self.assertAlmostEqual(
+                    exposurePair.gain[ampName], inputGain, delta=0.04
+                )
 
     def test_getGainFromFlatPair(self):
-        for gainCorrectionType in ['NONE', 'SIMPLE', 'FULL', ]:
+        for gainCorrectionType in [
+            "NONE",
+            "SIMPLE",
+            "FULL",
+        ]:
             self.runGetGainFromFlatPair(gainCorrectionType)
 
 
 class MeasurePhotonTransferCurveDatasetTestCase(lsst.utils.tests.TestCase):
     def setUp(self):
-        self.ptcData = PhotonTransferCurveDataset(['C00', 'C01'], " ")
-        self.ptcData.inputExpIdPairs = {'C00': [(123, 234), (345, 456), (567, 678)],
-                                        'C01': [(123, 234), (345, 456), (567, 678)]}
+        self.ptcData = PhotonTransferCurveDataset(["C00", "C01"], " ")
+        self.ptcData.inputExpIdPairs = {
+            "C00": [(123, 234), (345, 456), (567, 678)],
+            "C01": [(123, 234), (345, 456), (567, 678)],
+        }
 
     def test_generalBehaviour(self):
-        test = PhotonTransferCurveDataset(['C00', 'C01'], " ")
-        test.inputExpIdPairs = {'C00': [(123, 234), (345, 456), (567, 678)],
-                                'C01': [(123, 234), (345, 456), (567, 678)]}
+        test = PhotonTransferCurveDataset(["C00", "C01"], " ")
+        test.inputExpIdPairs = {
+            "C00": [(123, 234), (345, 456), (567, 678)],
+            "C01": [(123, 234), (345, 456), (567, 678)],
+        }
 
 
 class TestMemory(lsst.utils.tests.MemoryTestCase):
