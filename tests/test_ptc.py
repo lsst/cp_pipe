@@ -204,6 +204,11 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
         ptc = resultsSolve.outputPtcDataset
 
+        # Some expected values for noise matrix, just to check that
+        # it was calculated.
+        noiseMatrixNoBExpected = {(0, 0): 6.53126505, (1, 1): -23.20924747, (2, 2): 35.69834113}
+        noiseMatrixExpected = {(0, 0): 29.37146918, (1, 1): -14.6849025, (2, 2): 24.7328517}
+
         for amp in self.ampNames:
             self.assertAlmostEqual(ptc.gain[amp], inputGain, places=2)
             for v1, v2 in zip(varStandard[amp], ptc.finalVars[amp]):
@@ -252,6 +257,30 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                 self.assertFloatsAlmostEqual(
                     extractPtc.covariancesSqrtWeights[ampName][0],
                     ptc.covariancesSqrtWeights[ampName][i],
+                )
+                self.assertFloatsAlmostEqual(
+                    ptc.noiseMatrix[ampName][0, 0],
+                    noiseMatrixExpected[(0, 0)], atol=1e-8, rtol=None
+                )
+                self.assertFloatsAlmostEqual(
+                    ptc.noiseMatrix[ampName][1, 1],
+                    noiseMatrixExpected[(1, 1)], atol=1e-8, rtol=None
+                )
+                self.assertFloatsAlmostEqual(
+                    ptc.noiseMatrix[ampName][2, 2],
+                    noiseMatrixExpected[(2, 2)], atol=1e-8, rtol=None
+                )
+                self.assertFloatsAlmostEqual(
+                    ptc.noiseMatrixNoB[ampName][0, 0],
+                    noiseMatrixNoBExpected[(0, 0)], atol=1e-8, rtol=None
+                )
+                self.assertFloatsAlmostEqual(
+                    ptc.noiseMatrixNoB[ampName][1, 1],
+                    noiseMatrixNoBExpected[(1, 1)], atol=1e-8, rtol=None
+                )
+                self.assertFloatsAlmostEqual(
+                    ptc.noiseMatrixNoB[ampName][2, 2],
+                    noiseMatrixNoBExpected[(2, 2)], atol=1e-8, rtol=None
                 )
 
             mask = ptc.getGoodPoints(amp)
