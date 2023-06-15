@@ -25,10 +25,11 @@ __all__ = ['ddict2dict', 'CovFastFourierTransform']
 import numpy as np
 from scipy.optimize import leastsq
 import numpy.polynomial.polynomial as poly
-from scipy.stats import norm
+from scipy.stats import median_abs_deviation, norm
 
 from lsst.ip.isr import isrMock
 import lsst.afw.image
+import lsst.afw.math
 
 import galsim
 
@@ -764,3 +765,196 @@ def ddict2dict(d):
         if isinstance(v, dict):
             d[k] = ddict2dict(v)
     return dict(d)
+
+
+class AstierLinearityFitter:
+    """Class to fit the Astier linarity model.
+
+    This is a spline fit with photodiode data based on a model
+    from Pierre Astier.
+    This model fits a spline with (optional) nuisance parameters
+    to allow for different linearity coefficients with different
+    photodiode settings.  The minimization is a least-squares
+    fit with the residual of
+    Sum[(S(mu_i) + mu_i)/(k_j * D_i) - 1]**2, where mu_i is the
+    observed flat-pair mean; D_j is the photo-diode measurement
+    corresponding to that flat-pair; and k_j is a constant of
+    proportionality which is over index j as it is allowed to
+    be different based on different photodiode settings (e.g.
+    CCOBCURR).
+
+    The fit has additional constraints to ensure that the spline
+    goes through the (0, 0) point, as well as a normalization
+    condition so that the average of the spline over the full
+    range is 0.
+
+    Parameters
+    ----------
+    nodes : `np.ndarray` (N,)
+        Array of spline node locations.
+    grouping_values : `np.ndarray` (M,)
+        Array of values to group values for different proportionality
+        constants (e.g. CCOBCURR).
+    pd : `np.ndarray` (M,)
+        Array of photodiode measurements.
+    mu : `np.ndarray` (M,)
+        Array of flat mean values.
+    """
+    def __init__(self, nodes, grouping_values, pd, mu, log=None):
+        self._pd = pd
+        self._mu = mu
+        self._grouping_values = grouping_values
+        self.log = log
+
+        self._nodes = nodes
+        if nodes[0] != 0.0:
+            raise ValueError("First node must be 0.0")
+        if not np.all(np.diff(nodes) > 0):
+            raise ValueError("Nodes must be sorted with no repeats.")
+
+        # Check if sorted (raise otherwise)
+        if not np.all(np.diff(self._grouping_values) >= 0):
+            raise ValueError("Grouping values must be sorted.")
+
+        _, uindex, ucounts = np.unique(self._grouping_values, return_index=True, return_counts=True)
+        self.ngroup = len(uindex)
+
+        self.group_indices = []
+        for i in range(self.ngroup):
+            self.group_indices.append(np.arange(uindex[i], uindex[i] + ucounts[i]))
+
+        # Values to regularize spline fit.
+        self._x_regularize = np.linspace(self._fobs.min(), self._fobs.max(), 100)
+
+        # Outlier weight values.  Will be 1 (in) or 0 (out).
+        self._w = np.ones(len(self._fpd))
+
+    def estimate_p0(self):
+        """Estimate initial fit parameters.
+
+        Returns
+        -------
+        p0 : `np.ndarray`
+            Parameter array, with spline values (one for each node) followed
+            by proportionality constants (one for each group).
+        """
+        npt = len(self._nodes) + self.ngroup
+        p0 = np.zeros(npt)
+
+        # Do a simple linear fit and set all the constants to this.
+        linfit = np.polyfit(self._fpd, self._fobs, 1)
+        p0[-self.ngroup:] = linfit[0]
+
+        return p0
+
+    @staticmethod
+    def compute_ratio_model(nodes, group_indices, pars, pd, mu, return_spline=False):
+        """Compute the ratio model values.
+
+        Parameters
+        ----------
+        nodes : `np.ndarray` (M,)
+            Array of node positions.
+        group_indices : `list` [`np.ndarray`]
+            List of group indices, one array for each group.
+        pars : `np.ndarray`
+            Parameter array, with spline values (one for each node) followed
+            by proportionality constants (one for each group.)
+        pd : `np.ndarray` (N,)
+            Array of photodiode measurements.
+        mu : `np.ndarray` (N,)
+            Array of flat means.
+        return_spline : `bool`, optional
+            Return the spline interpolation as well as the model ratios?
+
+        Returns
+        -------
+        ratio_models : `np.ndarray` (N,)
+            Model ratio, (mu_i + S(mu_i))/(k_j * D_i)
+        spl : `lsst.afw.math.thing`
+            Spline interpolator (returned if return_spline=True).
+        """
+        spl = lsst.afw.math.makeInterpolate(
+            nodes,
+            pars[0: len(nodes)],
+            lsst.afw.math.stringToInterpStyle("AKIMA_SPLINE"),
+        )
+
+        numerator = mu + spl.interpolate(mu)
+        denominator = pd.copy()
+        ngroup = len(group_indices)
+        kj = pars[-ngroup:]
+        for j in range(ngroup):
+            denominator[group_indices[j]] *= kj[j]
+
+        if return_spline:
+            return numerator / denominator, spl
+        else:
+            return numerator / denominator
+
+    def fit(self, p0, max_iter=20, max_rejection_per_iteration=5):
+        """
+        """
+        init_params = p0
+        for k in range(max_iter):
+            params, cov_params, _, msg, ierr = leastsq(
+                self,
+                init_params,
+                full_output=True,
+                ftol=1e-5,
+                maxfev=12000,
+            )
+            init_params = params
+
+            # We need to cut off the constraints at the end (there are more
+            # residuals than data points.)
+            res = self(params)[: len(self._w)]
+            std_res = median_abs_deviation(res[self.good_points], scale="normal")
+            sample = len(self.good_points)
+
+            # We don't want to reject too many outliers at once.
+            if sample > max_rejection_per_iteration:
+                sres = np.sort(np.abs(res))
+                cut = max(sres[-max_rejection_per_iteration], std_res*5)
+            else:
+                cut = std_res*5
+
+            outliers = np.abs(res) > cut
+            self._w[outliers] = 0
+            if outliers.sum() != 0:
+                if self.log:
+                    self.log.info(
+                        "After iteration %d there are %d outliers (of %d).",
+                        k,
+                        outliers.sum(),
+                        sample,
+                    )
+            else:
+                if self.log:
+                    self.log.info("After iteration %d there are no more outliers.", k)
+                break
+
+        return params
+
+    @property
+    def good_points(self):
+        return (self._w > 0).nonzero()[0]
+
+    def __call__(self, pars):
+
+        ratio_model, spl = self.compute_ratio_model(
+            self._nodes,
+            self.group_indices,
+            pars,
+            self._fpd,
+            self._fobs,
+            return_spline=True,
+        )
+
+        resid = self._w*(ratio_model - 1.0)
+
+        constraint = [1e3 * np.mean(spl.interpolate(self._x_regularize))]
+        # 0 should transform to 0
+        constraint.append(spl.interpolate(0)*1e10)
+
+        return np.hstack([resid, constraint])
