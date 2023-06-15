@@ -504,6 +504,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 dataset.bMatrix[ampName] = nanMatrix
                 dataset.covariancesModelNoB[ampName] = listNanMatrix
                 dataset.aMatrixNoB[ampName] = nanMatrix
+                dataset.noiseMatrix[ampName] = nanMatrix
+                dataset.noiseMatrixNoB[ampName] = nanMatrix
 
                 dataset.expIdMask[ampName] = np.repeat(False, lenInputTimes)
                 dataset.gain[ampName] = np.nan
@@ -591,6 +593,9 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             dataset.noise[ampName] = readoutNoise
             readoutNoiseSigma = fitResults['fullModel']['paramsErr'][2*lenParams]
             dataset.noiseErr[ampName] = 0.5*(readoutNoiseSigma/np.fabs(readoutNoise))*readoutNoiseSqrt
+            dataset.noiseMatrix[ampName] = fitResults['fullModel']['noise']
+            dataset.noiseMatrixNoB[ampName] = fitResults['fullModelNoB']['noise']
+
             dataset.finalVars[ampName] = covAtAmp[:, 0, 0]
             dataset.finalModelVars[ampName] = dataset.covariancesModel[ampName][:, 0, 0]
             dataset.finalMeans[ampName] = muAtAmp
@@ -947,6 +952,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             dataset.bMatrix[amp] = nanMatrix
             dataset.covariancesModelNoB[amp] = listNanMatrix
             dataset.aMatrixNoB[amp] = nanMatrix
+            dataset.noiseMatrix[amp] = nanMatrix
+            dataset.noiseMatrixNoB[amp] = nanMatrix
 
         def errFunc(p, x, y):
             return ptcFunc(p, x) - y
