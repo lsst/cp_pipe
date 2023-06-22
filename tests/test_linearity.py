@@ -117,6 +117,9 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
         solve_task = PhotonTransferCurveSolveTask(config=config)
         ptc = solve_task.run(datasets).outputPtcDataset
 
+        # Make the last amp a bad amp.
+        ptc.badAmps = [amp_names[-1]]
+
         return ptc
 
     def _check_linearity(self, linearity_type, min_adu=0.0, max_adu=100000.0):
@@ -155,7 +158,8 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
             signal_uncorrected = funcPolynomial(np.array([0.0, flux, k2_non_linearity]), time_range)
             linearizer_table_row = signal_ideal - signal_uncorrected
 
-        for i, amp_name in enumerate(ptc.ampNames):
+        # Skip the last amp which is marked bad.
+        for i, amp_name in enumerate(ptc.ampNames[:-1]):
             if linearity_type in ["Squared", "Polynomial"]:
                 self.assertFloatsAlmostEqual(linearizer.fitParams[amp_name][0], 0.0, atol=1e-2)
                 self.assertFloatsAlmostEqual(linearizer.fitParams[amp_name][1], 1.0, rtol=1e-5)
@@ -325,7 +329,8 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
             inputPhotodiodeData=pd_handles,
         ).outputLinearizer
 
-        for amp_name in ptc.ampNames:
+        # Skip the last amp which is marked bad.
+        for amp_name in ptc.ampNames[:-1]:
             lin_mask = np.isfinite(linearizer.fitResiduals[amp_name])
 
             # Make sure that anything in the input mask is still masked.

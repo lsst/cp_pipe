@@ -353,6 +353,8 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 groupingValue = inputPtc.auxValues[self.config.splineGroupingColumn]
             else:
                 groupingValue = np.ones(len(inputPtc.rawMeans[inputPtc.ampNames[0]]), dtype=int)
+            # We set this to have a value to fill the bad amps.
+            fitOrder = self.config.splineKnots
         else:
             fitOrder = self.config.polynomialOrder
 
