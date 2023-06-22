@@ -104,14 +104,13 @@ class LinearitySolveConnections(pipeBase.PipelineTaskConnections,
         lookupFunction=ptcLookup,
     )
 
-    inputPhotodiodeData = cT.PrerequisiteInput(
+    inputPhotodiodeData = cT.Input(
         name="photodiode",
         doc="Photodiode readings data.",
         storageClass="IsrCalib",
         dimensions=("instrument", "exposure"),
         multiple=True,
         deferLoad=True,
-        minimum=0,
     )
 
     inputPhotodiodeCorrection = cT.Input(
