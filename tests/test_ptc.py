@@ -978,6 +978,11 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         ]:
             self.runGetGainFromFlatPair(gainCorrectionType)
 
+    def test_ptcFitBootstrap(self):
+        """Test the bootstrap fit option for the PTC"""
+        for (fitType, order) in [('POLYNOMIAL', 2), ('POLYNOMIAL', 3), ('EXPAPPROXIMATION', None)]:
+            self.ptcFitAndCheckPtc(fitType=fitType, order=order, doFitBootstrap=True)
+
 
 class MeasurePhotonTransferCurveDatasetTestCase(lsst.utils.tests.TestCase):
     def setUp(self):
