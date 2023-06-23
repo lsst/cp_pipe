@@ -605,18 +605,18 @@ class CrosstalkSolveTask(pipeBase.PipelineTask):
             ordering = list(ratios.keys())
 
         # Calibration stores coefficients as a numpy ndarray.
-        for ii, jj in itertools.product(range(calib.nAmp), range(calib.nAmp)):
-            if ii == jj:
+        for ss, tt in itertools.product(range(calib.nAmp), range(calib.nAmp)):
+            if ss == tt:
                 values = [0.0]
             else:
                 # ratios is ratios[Target][Source]
-                # use jj for Target, use ii for Source, to match ip_isr.
-                values = np.array(ratios[ordering[jj]][ordering[ii]])
+                # use tt for Target, use ss for Source, to match ip_isr.
+                values = np.array(ratios[ordering[tt]][ordering[ss]])
                 values = values[np.abs(values) < 1.0]  # Discard unreasonable values
 
             # Sigma clip using the inter-quartile distance and a
             # normal distribution.
-            if ii != jj:
+            if ss != tt:
                 for rej in range(rejIter):
                     if len(values) == 0:
                         break
@@ -628,36 +628,36 @@ class CrosstalkSolveTask(pipeBase.PipelineTask):
                     values = values[good]
 
             # Crosstalk calib is property[Source][Target].
-            calib.coeffNum[ii][jj] = len(values)
+            calib.coeffNum[ss][tt] = len(values)
             significanceThreshold = 0.0
             if len(values) == 0:
-                self.log.warning("No values for matrix element %d,%d" % (ii, jj))
-                calib.coeffs[ii][jj] = np.nan
-                calib.coeffErr[ii][jj] = np.nan
-                calib.coeffValid[ii][jj] = False
+                self.log.warning("No values for matrix element %d,%d" % (ss, tt))
+                calib.coeffs[ss][tt] = np.nan
+                calib.coeffErr[ss][tt] = np.nan
+                calib.coeffValid[ss][tt] = False
             else:
-                calib.coeffs[ii][jj] = np.mean(values)
-                if self.config.rejectNegativeSolutions and calib.coeffs[ii][jj] < 0.0:
-                    calib.coeffs[ii][jj] = 0.0
+                calib.coeffs[ss][tt] = np.mean(values)
+                if self.config.rejectNegativeSolutions and calib.coeffs[ss][tt] < 0.0:
+                    calib.coeffs[ss][tt] = 0.0
 
-                if calib.coeffNum[ii][jj] == 1:
-                    calib.coeffErr[ii][jj] = np.nan
-                    calib.coeffValid[ii][jj] = False
+                if calib.coeffNum[ss][tt] == 1:
+                    calib.coeffErr[ss][tt] = np.nan
+                    calib.coeffValid[ss][tt] = False
                 else:
                     correctionFactor = sigmaClipCorrection(rejSigma)
-                    calib.coeffErr[ii][jj] = np.std(values) * correctionFactor
+                    calib.coeffErr[ss][tt] = np.std(values) * correctionFactor
 
                     # Use sample stdev.
-                    significanceThreshold = self.config.significanceLimit * calib.coeffErr[ii][jj]
+                    significanceThreshold = self.config.significanceLimit * calib.coeffErr[ss][tt]
                     if self.config.doSignificanceScaling is True:
                         # Enabling this calculates the stdev of the mean.
-                        significanceThreshold /= np.sqrt(calib.coeffNum[ii][jj])
-                    calib.coeffValid[ii][jj] = np.abs(calib.coeffs[ii][jj]) > significanceThreshold
-                    self.debugRatios('measure', ratios, ordering[ii], ordering[jj],
-                                     calib.coeffs[ii][jj], calib.coeffValid[ii][jj])
+                        significanceThreshold /= np.sqrt(calib.coeffNum[ss][tt])
+                    calib.coeffValid[ss][tt] = np.abs(calib.coeffs[ss][tt]) > significanceThreshold
+                    self.debugRatios('measure', ratios, ordering[ss], ordering[tt],
+                                     calib.coeffs[ss][tt], calib.coeffValid[ss][tt])
             self.log.info("Measured %s -> %s Coeff: %e Err: %e N: %d Valid: %s Limit: %e",
-                          ordering[ii], ordering[jj], calib.coeffs[ii][jj], calib.coeffErr[ii][jj],
-                          calib.coeffNum[ii][jj], calib.coeffValid[ii][jj], significanceThreshold)
+                          ordering[ss], ordering[tt], calib.coeffs[ss][tt], calib.coeffErr[ss][tt],
+                          calib.coeffNum[ss][tt], calib.coeffValid[ss][tt], significanceThreshold)
 
         return calib
 
