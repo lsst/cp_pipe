@@ -29,9 +29,10 @@ import lsst.pipe.base.connectionTypes as cT
 from lsstDebug import getDebugFrame
 from lsst.afw.detection import FootprintSet, Threshold
 from lsst.afw.display import getDisplay
-from lsst.pex.config import Field, ListField
+from lsst.pex.config import ConfigurableField, Field, ListField
 from lsst.ip.isr import CrosstalkCalib, IsrProvenance
 from lsst.cp.pipe.utils import (ddict2dict, sigmaClipCorrection)
+from lsst.meas.algorithms import SubtractBackgroundTask
 
 from ._lookupStaticCalibration import lookupStaticCalibration
 
@@ -109,6 +110,10 @@ class CrosstalkExtractConfig(pipeBase.PipelineTaskConfig,
         default=True,
         doc="Is the input exposure trimmed?"
     )
+    background = ConfigurableField(
+        target=SubtractBackgroundTask,
+        doc="Background estimation task.",
+    )
 
     def validate(self):
         super().validate()
@@ -129,6 +134,10 @@ class CrosstalkExtractTask(pipeBase.PipelineTask):
 
     ConfigClass = CrosstalkExtractConfig
     _DefaultName = 'cpCrosstalkExtract'
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.makeSubtask("background")
 
     def run(self, inputExp, sourceExps=[]):
         """Measure pixel ratios between amplifiers in inputExp.
@@ -186,6 +195,8 @@ class CrosstalkExtractTask(pipeBase.PipelineTask):
         FootprintSet(targetIm, Threshold(threshold), "DETECTED")
         detected = targetIm.getMask().getPlaneBitMask("DETECTED")
         bg = CrosstalkCalib.calculateBackground(targetIm, badPixels + ["DETECTED"])
+        backgroundModel = self.background.fitBackground(inputExp.maskedImage)
+        backgroundIm = backgroundModel.getImageF()
 
         self.debugView('extract', inputExp)
 
@@ -224,18 +235,29 @@ class CrosstalkExtractTask(pipeBase.PipelineTask):
                     if sourceAmpName == targetAmpName and sourceChip == targetChip:
                         ratioDict[targetAmpName][sourceAmpName] = []
                         continue
+
                     self.log.debug("    Target amplifier: %s", targetAmpName)
 
-                    targetAmpImage = CrosstalkCalib.extractAmp(targetIm.image,
+                    targetAmpImage = CrosstalkCalib.extractAmp(targetIm,
                                                                targetAmp, sourceAmp,
                                                                isTrimmed=self.config.isTrimmed)
-                    ratios = (targetAmpImage.array[select] - bg)/sourceAmpImage.image.array[select]
+                    targetBkgImage = CrosstalkCalib.extractAmp(backgroundIm,
+                                                               targetAmp, sourceAmp,
+                                                               isTrimmed=self.config.isTrimmed)
+
+                    bg = CrosstalkCalib.calculateBackground(targetIm, badPixels + ["DETECTED"])
+
+                    ratios = ((targetAmpImage.image.array[select] - targetBkgImage.array[select])
+                              / sourceAmpImage.image.array[select])
+
                     ratioDict[targetAmpName][sourceAmpName] = ratios.tolist()
+                    self.log.info("Amp extracted %d pixels from %s -> %s",
+                                  count, sourceAmpName, targetAmpName)
                     extractedCount += count
 
                     self.debugPixels('pixels',
                                      sourceAmpImage.image.array[select],
-                                     targetAmpImage.array[select] - bg,
+                                     targetAmpImage.image.array[select] - bg,
                                      sourceAmpName, targetAmpName)
 
             self.log.info("Extracted %d pixels from %s -> %s (targetBG: %f)",
@@ -368,6 +390,13 @@ class CrosstalkSolveConfig(pipeBase.PipelineTaskConfig,
         default=0,
         doc="Polynomial order in source flux to fit crosstalk.",
     )
+
+    rejectNegativeSolutions = Field(
+        dtype=bool,
+        default=True,
+        doc="Should solutions with negative coefficients (which add flux to the target) be excluded?",
+    )
+
     significanceLimit = Field(
         dtype=float,
         default=3.0,
@@ -471,6 +500,7 @@ class CrosstalkSolveTask(pipeBase.PipelineTask):
 
         combinedRatios = defaultdict(lambda: defaultdict(list))
         combinedFluxes = defaultdict(lambda: defaultdict(list))
+
         for ratioDict, fluxDict in zip(inputRatios, inputFluxes):
             for targetChip in ratioDict:
                 if calibChip and targetChip != calibChip and targetChip != calibDetector.getName():
@@ -494,7 +524,7 @@ class CrosstalkSolveTask(pipeBase.PipelineTask):
             for sourceAmp in combinedRatios[targetAmp]:
                 self.log.info("Read %d pixels for %s -> %s",
                               len(combinedRatios[targetAmp][sourceAmp]),
-                              targetAmp, sourceAmp)
+                              sourceAmp, targetAmp)
                 if len(combinedRatios[targetAmp][sourceAmp]) > 1:
                     self.debugRatios('reduce', combinedRatios, targetAmp, sourceAmp)
 
@@ -575,16 +605,18 @@ class CrosstalkSolveTask(pipeBase.PipelineTask):
             ordering = list(ratios.keys())
 
         # Calibration stores coefficients as a numpy ndarray.
-        for ii, jj in itertools.product(range(calib.nAmp), range(calib.nAmp)):
-            if ii == jj:
+        for ss, tt in itertools.product(range(calib.nAmp), range(calib.nAmp)):
+            if ss == tt:
                 values = [0.0]
             else:
-                values = np.array(ratios[ordering[ii]][ordering[jj]])
+                # ratios is ratios[Target][Source]
+                # use tt for Target, use ss for Source, to match ip_isr.
+                values = np.array(ratios[ordering[tt]][ordering[ss]])
                 values = values[np.abs(values) < 1.0]  # Discard unreasonable values
 
             # Sigma clip using the inter-quartile distance and a
             # normal distribution.
-            if ii != jj:
+            if ss != tt:
                 for rej in range(rejIter):
                     if len(values) == 0:
                         break
@@ -595,33 +627,37 @@ class CrosstalkSolveTask(pipeBase.PipelineTask):
                         break
                     values = values[good]
 
-            calib.coeffNum[ii][jj] = len(values)
+            # Crosstalk calib is property[Source][Target].
+            calib.coeffNum[ss][tt] = len(values)
             significanceThreshold = 0.0
             if len(values) == 0:
-                self.log.warning("No values for matrix element %d,%d" % (ii, jj))
-                calib.coeffs[ii][jj] = np.nan
-                calib.coeffErr[ii][jj] = np.nan
-                calib.coeffValid[ii][jj] = False
+                self.log.warning("No values for matrix element %d,%d" % (ss, tt))
+                calib.coeffs[ss][tt] = np.nan
+                calib.coeffErr[ss][tt] = np.nan
+                calib.coeffValid[ss][tt] = False
             else:
-                calib.coeffs[ii][jj] = np.mean(values)
-                if calib.coeffNum[ii][jj] == 1:
-                    calib.coeffErr[ii][jj] = np.nan
-                    calib.coeffValid[ii][jj] = False
+                calib.coeffs[ss][tt] = np.mean(values)
+                if self.config.rejectNegativeSolutions and calib.coeffs[ss][tt] < 0.0:
+                    calib.coeffs[ss][tt] = 0.0
+
+                if calib.coeffNum[ss][tt] == 1:
+                    calib.coeffErr[ss][tt] = np.nan
+                    calib.coeffValid[ss][tt] = False
                 else:
                     correctionFactor = sigmaClipCorrection(rejSigma)
-                    calib.coeffErr[ii][jj] = np.std(values) * correctionFactor
+                    calib.coeffErr[ss][tt] = np.std(values) * correctionFactor
 
                     # Use sample stdev.
-                    significanceThreshold = self.config.significanceLimit * calib.coeffErr[ii][jj]
+                    significanceThreshold = self.config.significanceLimit * calib.coeffErr[ss][tt]
                     if self.config.doSignificanceScaling is True:
                         # Enabling this calculates the stdev of the mean.
-                        significanceThreshold /= np.sqrt(calib.coeffNum[ii][jj])
-                    calib.coeffValid[ii][jj] = np.abs(calib.coeffs[ii][jj]) > significanceThreshold
-                    self.debugRatios('measure', ratios, ordering[ii], ordering[jj],
-                                     calib.coeffs[ii][jj], calib.coeffValid[ii][jj])
+                        significanceThreshold /= np.sqrt(calib.coeffNum[ss][tt])
+                    calib.coeffValid[ss][tt] = np.abs(calib.coeffs[ss][tt]) > significanceThreshold
+                    self.debugRatios('measure', ratios, ordering[ss], ordering[tt],
+                                     calib.coeffs[ss][tt], calib.coeffValid[ss][tt])
             self.log.info("Measured %s -> %s Coeff: %e Err: %e N: %d Valid: %s Limit: %e",
-                          ordering[jj], ordering[ii], calib.coeffs[ii][jj], calib.coeffErr[ii][jj],
-                          calib.coeffNum[ii][jj], calib.coeffValid[ii][jj], significanceThreshold)
+                          ordering[ss], ordering[tt], calib.coeffs[ss][tt], calib.coeffErr[ss][tt],
+                          calib.coeffNum[ss][tt], calib.coeffValid[ss][tt], significanceThreshold)
 
         return calib
 
@@ -645,7 +681,7 @@ class CrosstalkSolveTask(pipeBase.PipelineTask):
              Filtered calibration.
         """
         outCalib = CrosstalkCalib()
-        outCalib.numAmps = inCalib.numAmps
+        outCalib.nAmp = inCalib.nAmp
 
         outCalib.coeffs = inCalib.coeffs
         outCalib.coeffs[~inCalib.coeffValid] = 0.0
@@ -669,9 +705,9 @@ class CrosstalkSolveTask(pipeBase.PipelineTask):
             Array of measured CT ratios, indexed by source/victim
             amplifier.  These arrays are one-dimensional.
         i : `str`
-            Index of the source amplifier.
-        j : `str`
             Index of the target amplifier.
+        j : `str`
+            Index of the source amplifier.
         coeff : `float`, optional
             Coefficient calculated to plot along with the simple mean.
         valid : `bool`, optional
@@ -700,7 +736,7 @@ class CrosstalkSolveTask(pipeBase.PipelineTask):
             plt.axvline(x=coeff, color='g')
             plt.axvline(x=(std / np.sqrt(len(ratioList))), color='r')
             plt.axvline(x=-(std / np.sqrt(len(ratioList))), color='r')
-            plt.title(f"(Source {i} -> Target {j}) mean: {mean:.2g} coeff: {coeff:.2g} valid: {valid}")
+            plt.title(f"(Source {j} -> Target {i}) mean: {mean:.2g} coeff: {coeff:.2g} valid: {valid}")
             figure.show()
 
             prompt = "Press Enter to continue: "
