@@ -24,7 +24,6 @@ __all__ = ["LinearitySolveTask", "LinearitySolveConfig"]
 
 import numpy as np
 import lsst.afw.image as afwImage
-import lsst.afw.math as afwMath
 import lsst.pipe.base as pipeBase
 import lsst.pipe.base.connectionTypes as cT
 import lsst.pex.config as pexConfig
@@ -32,7 +31,7 @@ import lsst.pex.config as pexConfig
 from lsstDebug import getDebugFrame
 from lsst.ip.isr import (Linearizer, IsrProvenance)
 
-from .utils import (funcPolynomial, irlsFit)
+from .utils import funcPolynomial, irlsFit, AstierSplineLinearityFitter
 from ._lookupStaticCalibration import lookupStaticCalibration
 
 
@@ -104,14 +103,13 @@ class LinearitySolveConnections(pipeBase.PipelineTaskConnections,
         lookupFunction=ptcLookup,
     )
 
-    inputPhotodiodeData = cT.PrerequisiteInput(
+    inputPhotodiodeData = cT.Input(
         name="photodiode",
         doc="Photodiode readings data.",
         storageClass="IsrCalib",
         dimensions=("instrument", "exposure"),
         multiple=True,
         deferLoad=True,
-        minimum=0,
     )
 
     inputPhotodiodeCorrection = cT.Input(
@@ -131,13 +129,11 @@ class LinearitySolveConnections(pipeBase.PipelineTaskConnections,
     )
 
     def __init__(self, *, config=None):
-        super().__init__(config=config)
+        if not config.applyPhotodiodeCorrection:
+            del self.inputPhotodiodeCorrection
 
-        if config.applyPhotodiodeCorrection is not True:
-            self.inputs.discard("inputPhotodiodeCorrection")
-
-        if config.usePhotodiode is not True:
-            self.inputs.discard("inputPhotodiodeData")
+        if not config.usePhotodiode:
+            del self.inputPhotodiodeData
 
 
 class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
@@ -156,10 +152,11 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
             "None": "Create a dummy solution.",
         }
     )
-    polynomialOrder = pexConfig.Field(
+    polynomialOrder = pexConfig.RangeField(
         dtype=int,
-        doc="Degree of polynomial to fit.",
+        doc="Degree of polynomial to fit.  Must be at least 2.",
         default=3,
+        min=2,
     )
     splineKnots = pexConfig.Field(
         dtype=int,
@@ -221,6 +218,29 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
         dtype=bool,
         doc="Calculate and apply a correction to the photodiode readings?",
         default=False,
+    )
+    splineGroupingColumn = pexConfig.Field(
+        dtype=str,
+        doc="Column to use for grouping together points for Spline mode, to allow "
+            "for different proportionality constants. If not set, no grouping "
+            "will be done.",
+        default=None,
+        optional=True,
+    )
+    splineFitMinIter = pexConfig.Field(
+        dtype=int,
+        doc="Minimum number of iterations for spline fit.",
+        default=3,
+    )
+    splineFitMaxIter = pexConfig.Field(
+        dtype=int,
+        doc="Maximum number of iterations for spline fit.",
+        default=20,
+    )
+    splineFitMaxRejectionPerIteration = pexConfig.Field(
+        dtype=int,
+        doc="Maximum number of rejections per iteration for spline fit.",
+        default=5,
     )
 
 
@@ -309,11 +329,6 @@ class LinearitySolveTask(pipeBase.PipelineTask):
             table = None
             tableIndex = None  # This will fail if we increment it.
 
-        if self.config.linearityType == 'Spline':
-            fitOrder = self.config.splineKnots
-        else:
-            fitOrder = self.config.polynomialOrder
-
         # Initialize the linearizer.
         linearizer = Linearizer(detector=detector, table=table, log=self.log)
         linearizer.updateMetadataFromExposures([inputPtc])
@@ -330,6 +345,19 @@ class LinearitySolveTask(pipeBase.PipelineTask):
             if self.config.applyPhotodiodeCorrection:
                 abscissaCorrections = inputPhotodiodeCorrection.abscissaCorrections
 
+        if self.config.linearityType == 'Spline':
+            if self.config.splineGroupingColumn is not None:
+                if self.config.splineGroupingColumn not in inputPtc.auxValues:
+                    raise ValueError(f"Config requests grouping by {self.config.splineGroupingColumn}, "
+                                     "but this column is not available in inputPtc.auxValues.")
+                groupingValue = inputPtc.auxValues[self.config.splineGroupingColumn]
+            else:
+                groupingValue = np.ones(len(inputPtc.rawMeans[inputPtc.ampNames[0]]), dtype=int)
+            # We set this to have a value to fill the bad amps.
+            fitOrder = self.config.splineKnots
+        else:
+            fitOrder = self.config.polynomialOrder
+
         for i, amp in enumerate(detector):
             ampName = amp.getName()
             if ampName in inputPtc.badAmps:
@@ -341,25 +369,24 @@ class LinearitySolveTask(pipeBase.PipelineTask):
             if (len(inputPtc.expIdMask[ampName]) == 0) or self.config.ignorePtcMask:
                 self.log.warning("Mask not found for %s in detector %s in fit. Using all points.",
                                  ampName, detector.getName())
-                mask = np.repeat(True, len(inputPtc.expIdMask[ampName]))
+                mask = np.ones(len(inputPtc.expIdMask[ampName]), dtype=bool)
             else:
-                mask = np.array(inputPtc.expIdMask[ampName], dtype=bool)
+                mask = inputPtc.expIdMask[ampName].copy()
 
             if self.config.usePhotodiode:
                 modExpTimes = []
-                for i, pair in enumerate(inputPtc.inputExpIdPairs[ampName]):
-                    pair = pair[0]
+                for j, pair in enumerate(inputPtc.inputExpIdPairs[ampName]):
                     modExpTime = 0.0
                     nExps = 0
-                    for j in range(2):
-                        expId = pair[j]
+                    for k in range(2):
+                        expId = pair[k]
                         if expId in monDiodeCharge:
                             modExpTime += monDiodeCharge[expId]
                             nExps += 1
                     if nExps > 0:
                         modExpTime = modExpTime / nExps
                     else:
-                        mask[i] = False
+                        mask[j] = False
 
                     # Get the photodiode correction
                     if self.config.applyPhotodiodeCorrection:
@@ -370,59 +397,70 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                     else:
                         correction = 0.0
                     modExpTimes.append(modExpTime + correction)
-                inputAbscissa = np.array(modExpTimes)[mask]
+                inputAbscissa = np.array(modExpTimes)
             else:
-                inputAbscissa = np.array(inputPtc.rawExpTimes[ampName])[mask]
+                inputAbscissa = np.array(inputPtc.rawExpTimes[ampName])
 
-            inputOrdinate = np.array(inputPtc.rawMeans[ampName])[mask]
-            # Determine proxy-to-linear-flux transformation
-            fluxMask = inputOrdinate < self.config.maxLinearAdu
-            lowMask = inputOrdinate > self.config.minLinearAdu
-            fluxMask = fluxMask & lowMask
-            linearAbscissa = inputAbscissa[fluxMask]
-            linearOrdinate = inputOrdinate[fluxMask]
-            if len(linearAbscissa) < 2:
+            inputOrdinate = inputPtc.rawMeans[ampName].copy()
+
+            mask &= (inputOrdinate < self.config.maxLinearAdu)
+            mask &= (inputOrdinate > self.config.minLinearAdu)
+
+            if mask.sum() < 2:
                 linearizer = self.fillBadAmp(linearizer, fitOrder, inputPtc, amp)
-                self.log.warning("Amp %s in detector %s has not enough points for linear fit. Skipping!",
+                self.log.warning("Amp %s in detector %s has not enough points for fit. Skipping!",
                                  ampName, detector.getName())
                 continue
 
-            linearFit, linearFitErr, chiSq, weights = irlsFit([0.0, 100.0], linearAbscissa,
-                                                              linearOrdinate, funcPolynomial)
-            # Convert this proxy-to-flux fit into an expected linear flux
-            linearOrdinate = linearFit[0] + linearFit[1] * inputAbscissa
-            # Exclude low end outliers
-            threshold = self.config.nSigmaClipLinear * np.sqrt(abs(linearOrdinate))
-            fluxMask = np.abs(inputOrdinate - linearOrdinate) < threshold
-            linearOrdinate = linearOrdinate[fluxMask]
-            fitOrdinate = inputOrdinate[fluxMask]
-            fitAbscissa = inputAbscissa[fluxMask]
-            if len(linearOrdinate) < 2:
-                linearizer = self.fillBadAmp(linearizer, fitOrder, inputPtc, amp)
-                self.log.warning("Amp %s in detector %s has not enough points in linear ordinate. Skipping!",
-                                 ampName, detector.getName())
-                continue
+            if self.config.linearityType != 'Spline':
+                linearFit, linearFitErr, chiSq, weights = irlsFit([0.0, 100.0], inputAbscissa[mask],
+                                                                  inputOrdinate[mask], funcPolynomial)
 
-            self.debugFit('linearFit', inputAbscissa, inputOrdinate, linearOrdinate, fluxMask, ampName)
+                # Convert this proxy-to-flux fit into an expected linear flux
+                linearOrdinate = linearFit[0] + linearFit[1] * inputAbscissa
+                # Exclude low end outliers.
+                # This is compared to the original values.
+                threshold = self.config.nSigmaClipLinear * np.sqrt(abs(inputOrdinate))
+
+                mask[np.abs(inputOrdinate - linearOrdinate) >= threshold] = False
+
+                if mask.sum() < 2:
+                    linearizer = self.fillBadAmp(linearizer, fitOrder, inputPtc, amp)
+                    self.log.warning("Amp %s in detector %s has not enough points in linear ordinate. "
+                                     "Skipping!", ampName, detector.getName())
+                    continue
+
+                self.debugFit('linearFit', inputAbscissa, inputOrdinate, linearOrdinate, mask, ampName)
+
             # Do fits
             if self.config.linearityType in ['Polynomial', 'Squared', 'LookupTable']:
                 polyFit = np.zeros(fitOrder + 1)
                 polyFit[1] = 1.0
-                polyFit, polyFitErr, chiSq, weights = irlsFit(polyFit, linearOrdinate,
-                                                              fitOrdinate, funcPolynomial)
+                polyFit, polyFitErr, chiSq, weights = irlsFit(polyFit, linearOrdinate[mask],
+                                                              inputOrdinate[mask], funcPolynomial)
 
-                # Truncate the polynomial fit
+                # Truncate the polynomial fit to the squared term.
                 k1 = polyFit[1]
-                linearityFit = [-coeff/(k1**order) for order, coeff in enumerate(polyFit)]
-                significant = np.where(np.abs(linearityFit) > 1e-10, True, False)
+                linearityCoeffs = np.array(
+                    [-coeff/(k1**order) for order, coeff in enumerate(polyFit)]
+                )[2:]
+                significant = np.where(np.abs(linearityCoeffs) > 1e-10)
                 self.log.info("Significant polynomial fits: %s", significant)
 
-                modelOrdinate = funcPolynomial(polyFit, fitAbscissa)
+                modelOrdinate = funcPolynomial(polyFit, linearOrdinate)
 
-                self.debugFit('polyFit', linearAbscissa, fitOrdinate, modelOrdinate, None, ampName)
+                self.debugFit(
+                    'polyFit',
+                    inputAbscissa[mask],
+                    inputOrdinate[mask],
+                    modelOrdinate[mask],
+                    None,
+                    ampName,
+                )
 
                 if self.config.linearityType == 'Squared':
-                    linearityFit = [linearityFit[2]]
+                    # The first term is the squared term.
+                    linearityCoeffs = linearityCoeffs[0: 1]
                 elif self.config.linearityType == 'LookupTable':
                     # Use linear part to get time at which signal is
                     # maxAduForLookupTableLinearizer DN
@@ -433,105 +471,120 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                     lookupTableRow = signalIdeal - signalUncorrected  # LinearizerLookupTable has correction
 
                     linearizer.tableData[tableIndex, :] = lookupTableRow
-                    linearityFit = [tableIndex, 0]
+                    linearityCoeffs = np.array([tableIndex, 0])
                     tableIndex += 1
             elif self.config.linearityType in ['Spline']:
-                # See discussion in `lsst.ip.isr.linearize.py` before
-                # modifying.
-                numPerBin, binEdges = np.histogram(linearOrdinate, bins=fitOrder)
-                with np.errstate(invalid="ignore"):
-                    # Algorithm note: With the counts of points per
-                    # bin above, the next histogram calculates the
-                    # values to put in each bin by weighting each
-                    # point by the correction value.
-                    values = np.histogram(linearOrdinate, bins=fitOrder,
-                                          weights=(inputOrdinate[fluxMask] - linearOrdinate))[0]/numPerBin
+                # This is a spline fit with photodiode data based on a model
+                # from Pierre Astier.
+                # This model fits a spline with (optional) nuisance parameters
+                # to allow for different linearity coefficients with different
+                # photodiode settings.  The minimization is a least-squares
+                # fit with the residual of
+                # Sum[(S(mu_i) + mu_i)/(k_j * D_i) - 1]**2, where S(mu_i) is
+                # an Akima Spline function of mu_i, the observed flat-pair
+                # mean; D_j is the photo-diode measurement corresponding to
+                # that flat-pair; and k_j is a constant of proportionality
+                # which is over index j as it is allowed to
+                # be different based on different photodiode settings (e.g.
+                # CCOBCURR).
 
-                    # After this is done, the binCenters are
-                    # calculated by weighting by the value we're
-                    # binning over.  This ensures that widely
-                    # spaced/poorly sampled data aren't assigned to
-                    # the midpoint of the bin (as could be done using
-                    # the binEdges above), but to the weighted mean of
-                    # the inputs.  Note that both histograms are
-                    # scaled by the count per bin to normalize what
-                    # the histogram returns (a sum of the points
-                    # inside) into an average.
-                    binCenters = np.histogram(linearOrdinate, bins=fitOrder,
-                                              weights=linearOrdinate)[0]/numPerBin
-                    values = values[numPerBin > 0]
-                    binCenters = binCenters[numPerBin > 0]
+                # The fit has additional constraints to ensure that the spline
+                # goes through the (0, 0) point, as well as a normalization
+                # condition so that the average of the spline over the full
+                # range is 0. The normalization ensures that the spline only
+                # fits deviations from linearity, rather than the linear
+                # function itself which is degenerate with the gain.
 
-                self.debugFit('splineFit', binCenters, np.abs(values), values, None, ampName)
-                # Anchor the spline to have zero correction at zero
-                # flux as well as at the lowest measured flux bin.
-                if np.any(np.array(binCenters) < 0):
-                    raise ValueError("Linearity correction has negative flux values!")
+                nodes = np.linspace(0.0, inputOrdinate.max(), self.config.splineKnots)
 
-                if binCenters[0] != 0.0:
-                    if values[0] != 0.0:
-                        offset = values[0]
-                        values -= offset
-                    np.concatenate(([0.0], binCenters))
-                    np.concatenate(([0.0], values))
+                fitter = AstierSplineLinearityFitter(
+                    nodes,
+                    groupingValue,
+                    inputAbscissa,
+                    inputOrdinate,
+                    mask=mask,
+                    log=self.log,
+                )
+                p0 = fitter.estimate_p0()
+                pars = fitter.fit(
+                    p0,
+                    min_iter=self.config.splineFitMinIter,
+                    max_iter=self.config.splineFitMaxIter,
+                    max_rejection_per_iteration=self.config.splineFitMaxRejectionPerIteration,
+                    n_sigma_clip=self.config.nSigmaClipLinear,
+                )
 
-                interp = afwMath.makeInterpolate(binCenters.tolist(), values.tolist(),
-                                                 afwMath.stringToInterpStyle("AKIMA_SPLINE"))
-                modelOrdinate = linearOrdinate + interp.interpolate(linearOrdinate)
-                self.debugFit('splineFit', linearOrdinate, fitOrdinate, modelOrdinate, None, ampName)
+                # Confirm that the first parameter is 0, and set it to
+                # exactly zero.
+                if not np.isclose(pars[0], 0):
+                    raise RuntimeError("Programmer error! First spline parameter must "
+                                       "be consistent with zero.")
+                pars[0] = 0.0
 
-                # If we exclude a lot of points, we may end up with
-                # less than fitOrder points.  Pad out the low-flux end
-                # to ensure equal lengths.
-                if len(binCenters) != fitOrder:
-                    padN = fitOrder - len(binCenters)
-                    binCenters = np.pad(binCenters, (padN, 0), 'linear_ramp',
-                                        end_values=(binCenters.min() - 1.0, ))
-                    # This stores the correction, which is zero at low values.
-                    values = np.pad(values, (padN, 0))
+                linearityCoeffs = np.concatenate([nodes, pars[0: len(nodes)]])
+                linearFit = np.array([0.0, np.mean(pars[len(nodes):])])
 
-                # Pack the spline into a single array.
-                linearityFit = np.concatenate((binCenters.tolist(), values.tolist())).tolist()
-                polyFit = [0.0]
-                polyFitErr = [0.0]
+                # We modify the inputAbscissa according to the linearity fits
+                # here, for proper residual computation.
+                for j, group_index in enumerate(fitter.group_indices):
+                    inputOrdinate[group_index] /= (pars[len(nodes) + j] / linearFit[1])
+
+                linearOrdinate = linearFit[1] * inputOrdinate
+                # For the spline fit, reuse the "polyFit -> fitParams"
+                # field to record the linear coefficients for the groups.
+                polyFit = pars[len(nodes):]
+                polyFitErr = np.zeros_like(polyFit)
                 chiSq = np.nan
+
+                # Update mask based on what the fitter rejected.
+                mask = fitter.mask
             else:
-                polyFit = [0.0]
-                polyFitErr = [0.0]
+                polyFit = np.zeros(1)
+                polyFitErr = np.zeros(1)
                 chiSq = np.nan
-                linearityFit = [0.0]
+                linearityCoeffs = np.zeros(1)
 
             linearizer.linearityType[ampName] = self.config.linearityType
-            linearizer.linearityCoeffs[ampName] = np.array(linearityFit)
+            linearizer.linearityCoeffs[ampName] = linearityCoeffs
             linearizer.linearityBBox[ampName] = amp.getBBox()
-            linearizer.fitParams[ampName] = np.array(polyFit)
-            linearizer.fitParamsErr[ampName] = np.array(polyFitErr)
+            linearizer.fitParams[ampName] = polyFit
+            linearizer.fitParamsErr[ampName] = polyFitErr
             linearizer.fitChiSq[ampName] = chiSq
             linearizer.linearFit[ampName] = linearFit
-            residuals = fitOrdinate - modelOrdinate
 
-            # The residuals only include flux values which are
-            # not masked out. To be able to access this later and
-            # associate it with the PTC flux values, we need to
-            # fill out the residuals with NaNs where the flux
-            # value is masked.
-
-            # First convert mask to a composite of the two masks:
-            mask[mask] = fluxMask
-            fullResiduals = np.full(len(mask), np.nan)
-            fullResiduals[mask] = residuals
-            linearizer.fitResiduals[ampName] = fullResiduals
             image = afwImage.ImageF(len(inputOrdinate), 1)
-            image.getArray()[:, :] = inputOrdinate
+            image.array[:, :] = inputOrdinate
             linearizeFunction = linearizer.getLinearityTypeByName(linearizer.linearityType[ampName])
-            linearizeFunction()(image,
-                                **{'coeffs': linearizer.linearityCoeffs[ampName],
-                                   'table': linearizer.tableData,
-                                   'log': linearizer.log})
-            linearizeModel = image.getArray()[0, :]
+            linearizeFunction()(
+                image,
+                **{'coeffs': linearizer.linearityCoeffs[ampName],
+                   'table': linearizer.tableData,
+                   'log': linearizer.log}
+            )
+            linearizeModel = image.array[0, :]
 
-            self.debugFit('solution', inputOrdinate[fluxMask], linearOrdinate,
-                          linearizeModel[fluxMask], None, ampName)
+            # The residuals that we record are the final residuals compared to
+            # a linear model, after everything has been (properly?) linearized.
+            postLinearFit, _, _, _ = irlsFit(
+                [0.0, 100.0],
+                inputAbscissa[mask],
+                linearizeModel[mask],
+                funcPolynomial,
+            )
+            residuals = linearizeModel - (postLinearFit[0] + postLinearFit[1] * inputAbscissa)
+            # We set masked residuals to nan.
+            residuals[~mask] = np.nan
+
+            linearizer.fitResiduals[ampName] = residuals
+
+            self.debugFit(
+                'solution',
+                inputOrdinate[mask],
+                linearOrdinate[mask],
+                linearizeModel[mask],
+                None,
+                ampName,
+            )
 
         linearizer.hasLinearity = True
         linearizer.validate()
@@ -626,6 +679,7 @@ class LinearitySolveTask(pipeBase.PipelineTask):
             axs[1].set_xscale('log')
 
             axs[1].scatter(yModel, yVector[mask] - yModel)
+            fig.tight_layout()
             fig.show()
 
             prompt = "Press Enter or c to continue [chpx]..."

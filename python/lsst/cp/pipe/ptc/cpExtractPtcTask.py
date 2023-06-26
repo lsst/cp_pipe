@@ -197,6 +197,11 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
         doc="Minimum number of good data values to compute KS test histogram.",
         default=100,
     )
+    auxiliaryHeaderKeys = pexConfig.ListField(
+        dtype=str,
+        doc="Auxiliary header keys to store with the PTC dataset.",
+        default=[],
+    )
 
 
 class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
@@ -435,6 +440,22 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                 isrTask.maskEdges(exp2, numEdgePixels=self.config.numEdgeSuspect,
                                   maskPlane="SUSPECT", level=self.config.edgeMaskLevel)
 
+            # Extract any metadata keys from the headers.
+            auxDict = {}
+            metadata = exp1.getMetadata()
+            for key in self.config.auxiliaryHeaderKeys:
+                if key not in metadata:
+                    self.log.warning(
+                        "Requested auxiliary keyword %s not found in exposure metadata for %d",
+                        key,
+                        expId1,
+                    )
+                    value = np.nan
+                else:
+                    value = metadata[key]
+
+                auxDict[key] = value
+
             nAmpsNan = 0
             partialPtcDataset = PhotonTransferCurveDataset(ampNames, 'PARTIAL',
                                                            self.config.maximumRangeCovariancesAstier)
@@ -567,6 +588,8 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                     histChi2Dof=histChi2Dof,
                     kspValue=kspValue,
                 )
+
+            partialPtcDataset.setAuxValuesPartialDataset(auxDict)
 
             # Use location of exp1 to save PTC dataset from (exp1, exp2) pair.
             # Below, np.where(expId1 == np.array(inputDims)) returns a tuple
