@@ -24,9 +24,12 @@ import lsst.pipe.base.connectionTypes as cT
 import lsst.cp.pipe.cpCombine as cpCombine
 import lsst.meas.algorithms as measAlg
 import lsst.afw.detection as afwDet
+import lsst.afw.image as afwImage
 
+from .cpCombine import CalibCombineByFilterTask, CalibCombineByFilterTaskConfig
 
-__all__ = ["CpFringeTask", "CpFringeTaskConfig"]
+__all__ = ["CpFringeTask", "CpFringeTaskConfig",
+           "CpFringeCombineTask", "CpFringeCombineTaskConfig"]
 
 
 class CpFringeConnections(pipeBase.PipelineTaskConnections,
@@ -118,3 +121,54 @@ class CpFringeTask(pipeBase.PipelineTask):
         return pipeBase.Struct(
             outputExp=inputExp,
         )
+
+
+class CpFringeCombineConnections(CalibCombineByFilterConnections):
+    # Use the parent version.  Do we need a special storageClass for
+    # the output for multiple images?
+    pass
+
+
+class CpFringeCombineTaskConfig(CalibCombineByFilterTaskConfig):
+    nComponent = pexConfig.Field(
+        dtype=int,
+        default=3,
+        doc="Number of PCA components to retain in the output fringe.",
+        check=lambda x: x >= 1
+    )
+
+
+class CpFringeCombineTask(CalibCombineByFilterTask):
+    """Task to combine input fringe frames into a final set of combined
+    fringes.
+    """
+
+    def combine(self, target, expHandleList, expScaleList, stats):
+        """Combine multiple images.
+
+        Parameters
+        ----------
+        target : `lsst.afw.image.Exposure`
+            Output exposure to construct.
+        expHandleList : `list` [`lsst.daf.butler.DeferredDatasetHandle`]
+            Input exposure handles to combine.
+        expScaleList : `list` [`float`]
+            List of scales to apply to each input image.
+        stats : `lsst.afw.math.StatisticsControl`
+            Control explaining how to combine the input images.
+        """
+        # combineType = afwMath.stringToStatisticsProperty(self.config.combine)
+
+        subregionSizeArr = self.config.subregionSize
+        subregionSize = geom.Extent2I(subregionSizeArr[0], subregionSizeArr[1])
+        for subBbox in self._subBBoxIter(target.getBBox(), subregionSize):
+            imageSet = afwImage.ImagePcaF()
+            for expHandle, expScale in zip(expHandleList, expScaleList):
+                inputExp = expHandle.get(parameters={"bbox": subBbox})
+                self.applyScale(inputExp, subBbox, expScale)
+                imageSet.addImage(inputExp.image, 1.0)  # Should this use the scale instead?
+            imageSet.analyse()
+
+            # This doesn't guarantee that eigenImage_0 is always the same, does it?
+            for eigenValue, eigenImage in zip(imageSet.getEigenImages(), imageSet.getEigenValues()):
+                target.image.assign(eigenImage, subBox)  # this is wrong as well.
