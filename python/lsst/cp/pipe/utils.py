@@ -171,8 +171,8 @@ def makeMockFlats(expTime, gain=1.0, readNoiseElectrons=5, fluxElectrons=1000,
         flatExp1.image.array[:] = flatData1/gain   # ADU
         flatExp2.image.array[:] = flatData2/gain   # ADU
 
-    visitInfoExp1 = lsst.afw.image.VisitInfo(exposureId=expId1, exposureTime=expTime)
-    visitInfoExp2 = lsst.afw.image.VisitInfo(exposureId=expId2, exposureTime=expTime)
+    visitInfoExp1 = lsst.afw.image.VisitInfo(exposureTime=expTime)
+    visitInfoExp2 = lsst.afw.image.VisitInfo(exposureTime=expTime)
 
     flatExp1.info.id = expId1
     flatExp1.getInfo().setVisitInfo(visitInfoExp1)
