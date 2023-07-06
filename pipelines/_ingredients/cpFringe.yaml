@@ -14,7 +14,7 @@ tasks:
       connections.inputExp: "cpFringeIsrExp"
       connections.outputExp: "cpFringeMeasuredIsrExp"
   cpFringeCombine:
-    class: lsst.cp.pipe.CalibCombineByFilterTask
+    class: lsst.cp.pipe.cpCombine.FringeCombineTask
     config:
       connections.inputExpHandles: "cpFringeMeasuredIsrExp"
       connections.outputData: "fringe"
