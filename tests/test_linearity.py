@@ -30,7 +30,7 @@ import numpy as np
 import lsst.utils
 import lsst.utils.tests
 
-from lsst.ip.isr import PhotonTransferCurveDataset, PhotodiodeCalib
+from lsst.ip.isr import PhotonTransferCurveDataset
 
 import lsst.afw.image
 import lsst.afw.math
@@ -63,7 +63,7 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
         for amp in self.detector:
             self.amp_names.append(amp.getName())
 
-    def _create_ptc(self, amp_names, exp_times, means, ccobcurr=None):
+    def _create_ptc(self, amp_names, exp_times, means, ccobcurr=None, photo_charges=None):
         """
         Create a PTC with values for linearity tests.
 
@@ -77,6 +77,8 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
             Array of means.
         ccobcurr : `np.ndarray`, optional
             Array of CCOBCURR to put into auxiliary values.
+        photo_charges : `np.ndarray`, optional
+            Array of photoCharges to put into ptc.
 
         Returns
         -------
@@ -84,6 +86,9 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
             PTC filled with relevant values.
         """
         exp_id_pairs = np.arange(len(exp_times)*2).reshape((len(exp_times), 2)).tolist()
+
+        if photo_charges is None:
+            photo_charges = np.full(len(exp_times), np.nan)
 
         datasets = []
         for i in range(len(exp_times)):
@@ -103,6 +108,7 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
                     rawVar=1.0,
                     kspValue=1.0,
                     expIdMask=exp_id_mask,
+                    photoCharge=photo_charges[i],
                 )
 
             if ccobcurr is not None:
@@ -279,40 +285,17 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
             pd_values_offset[group2] *= pd_offset_factors[2]
             pd_values_offset[group3] *= pd_offset_factors[3]
 
-        ptc = self._create_ptc(self.amp_names, time_values, mu_values, ccobcurr=ccobcurr)
-
-        # And create a bunch of PD datasets.
-        amp_name = ptc.ampNames[0]
-        exp_id_pairs = ptc.inputExpIdPairs[amp_name]
-
-        pd_handles = []
-
-        for i, exp_id_pair in enumerate(exp_id_pairs):
-            time_samples = np.linspace(0, 20.0, 100)
-            current_samples = np.zeros(100)
-            current_samples[50] = -1.0*pd_values_offset[i]
-
-            pd_calib = PhotodiodeCalib(timeSamples=time_samples, currentSamples=current_samples)
-            pd_calib.currentScale = -1.0
-            pd_calib.integrationMethod = "CHARGE_SUM"
-
-            pd_handles.append(
-                lsst.pipe.base.InMemoryDatasetHandle(
-                    pd_calib,
-                    dataId={"exposure": exp_id_pair[0]},
-                )
-            )
-            pd_handles.append(
-                lsst.pipe.base.InMemoryDatasetHandle(
-                    pd_calib,
-                    dataId={"exposure": exp_id_pair[1]},
-                )
-            )
+        ptc = self._create_ptc(
+            self.amp_names,
+            time_values,
+            mu_values,
+            ccobcurr=ccobcurr,
+            photo_charges=pd_values_offset,
+        )
 
         config = LinearitySolveTask.ConfigClass()
         config.linearityType = "Spline"
         config.usePhotodiode = True
-        config.photodiodeIntegrationMethod = "CHARGE_SUM"
         config.minLinearAdu = 0.0
         config.maxLinearAdu = np.max(mu_values) + 1.0
         config.splineKnots = n_nodes
@@ -326,7 +309,6 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
             [self.dummy_exposure],
             self.camera,
             self.input_dims,
-            inputPhotodiodeData=pd_handles,
         ).outputLinearizer
 
         # Skip the last amp which is marked bad.
