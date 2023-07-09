@@ -296,6 +296,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                                                          partialPtcDataset.rawMeans[ampName][0])
                 datasetPtc.rawVars[ampName] = np.append(datasetPtc.rawVars[ampName],
                                                         partialPtcDataset.rawVars[ampName][0])
+                datasetPtc.photoCharges[ampName] = np.append(datasetPtc.photoCharges[ampName],
+                                                             partialPtcDataset.photoCharges[ampName][0])
                 datasetPtc.histVars[ampName] = np.append(datasetPtc.histVars[ampName],
                                                          partialPtcDataset.histVars[ampName][0])
                 datasetPtc.histChi2Dofs[ampName] = np.append(datasetPtc.histChi2Dofs[ampName],
@@ -367,6 +369,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             datasetPtc.rawExpTimes[ampName] = datasetPtc.rawExpTimes[ampName][index]
             datasetPtc.rawMeans[ampName] = datasetPtc.rawMeans[ampName][index]
             datasetPtc.rawVars[ampName] = datasetPtc.rawVars[ampName][index]
+            datasetPtc.photoCharges[ampName] = datasetPtc.photoCharges[ampName][index]
             datasetPtc.histVars[ampName] = datasetPtc.histVars[ampName][index]
             datasetPtc.histChi2Dofs[ampName] = datasetPtc.histChi2Dofs[ampName][index]
             datasetPtc.kspValues[ampName] = datasetPtc.kspValues[ampName][index]
