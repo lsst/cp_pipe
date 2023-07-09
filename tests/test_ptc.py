@@ -35,10 +35,10 @@ import lsst.utils.tests
 
 import lsst.cp.pipe as cpPipe
 import lsst.ip.isr.isrMock as isrMock
-from lsst.ip.isr import PhotonTransferCurveDataset
+from lsst.ip.isr import PhotonTransferCurveDataset, PhotodiodeCalib
 from lsst.cp.pipe.utils import makeMockFlats
 
-from lsst.pipe.base import TaskMetadata
+from lsst.pipe.base import InMemoryDatasetHandle, TaskMetadata
 
 
 class FakeCamera(list):
@@ -114,6 +114,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         self.a00 = -1.2e-6
         self.c2 = -1.5e-6
         self.c3 = -4.7e-12  # tuned so that it turns over for 200k mean
+        self.photoCharges = np.linspace(1e-8, 1e-5, len(self.timeVec))
 
         self.ampNames = [
             amp.getName() for amp in self.flatExp1.getDetector().getAmplifiers()
@@ -152,6 +153,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         extractConfig = self.defaultConfigExtract
         extractConfig.minNumberGoodPixelsForCovariance = 5000
         extractConfig.detectorMeasurementRegion = "FULL"
+        extractConfig.doExtractPhotodiodeData = True
         extractConfig.auxiliaryHeaderKeys = ["CCOBCURR", "CCDTEMP"]
         extractTask = cpPipe.ptc.PhotonTransferCurveExtractTask(config=extractConfig)
 
@@ -171,8 +173,9 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         muStandard, varStandard = {}, {}
         expDict = {}
         expIds = []
+        pdHandles = []
         idCounter = 0
-        for expTime in self.timeVec:
+        for i, expTime in enumerate(self.timeVec):
             mockExp1, mockExp2 = makeMockFlats(
                 expTime,
                 gain=inputGain,
@@ -207,12 +210,35 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                 )
                 muStandard.setdefault(ampName, []).append(muDiff)
                 varStandard.setdefault(ampName, []).append(varDiff)
+
+            # Make a photodiode dataset to integrate.
+            timeSamples = np.linspace(0, 20.0, 100)
+            currentSamples = np.zeros(100)
+            currentSamples[50] = -1.0*self.photoCharges[i]
+
+            pdCalib = PhotodiodeCalib(timeSamples=timeSamples, currentSamples=currentSamples)
+            pdCalib.currentScale = -1.0
+            pdCalib.integrationMethod = "CHARGE_SUM"
+
+            pdHandles.append(
+                InMemoryDatasetHandle(
+                    pdCalib,
+                    dataId={"exposure": idCounter},
+                )
+            )
+            pdHandles.append(
+                InMemoryDatasetHandle(
+                    pdCalib,
+                    dataId={"exposure": idCounter + 1},
+                )
+            )
             idCounter += 2
 
         resultsExtract = extractTask.run(
             inputExp=expDict,
             inputDims=expIds,
             taskMetadata=[self.metadataContents for x in expIds],
+            inputPhotodiodeData=pdHandles,
         )
 
         # Force the last PTC dataset to have a NaN, and ensure that the
@@ -451,6 +477,10 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                 self.assertFloatsAlmostEqual(
                     extractPtc.rawVars[ampName][0],
                     ptc.rawVars[ampName][i],
+                )
+                self.assertFloatsAlmostEqual(
+                    extractPtc.photoCharges[ampName][0],
+                    ptc.photoCharges[ampName][i],
                 )
                 self.assertFloatsAlmostEqual(
                     extractPtc.histVars[ampName][0],
