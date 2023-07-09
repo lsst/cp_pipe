@@ -103,15 +103,6 @@ class LinearitySolveConnections(pipeBase.PipelineTaskConnections,
         lookupFunction=ptcLookup,
     )
 
-    inputPhotodiodeData = cT.Input(
-        name="photodiode",
-        doc="Photodiode readings data.",
-        storageClass="IsrCalib",
-        dimensions=("instrument", "exposure"),
-        multiple=True,
-        deferLoad=True,
-    )
-
     inputPhotodiodeCorrection = cT.Input(
         name="pdCorrection",
         doc="Input photodiode correction.",
@@ -131,9 +122,6 @@ class LinearitySolveConnections(pipeBase.PipelineTaskConnections,
     def __init__(self, *, config=None):
         if not config.applyPhotodiodeCorrection:
             del self.inputPhotodiodeCorrection
-
-        if not config.usePhotodiode:
-            del self.inputPhotodiodeData
 
 
 class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
@@ -206,13 +194,15 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
             "CHARGE_SUM": ("Treat the current values as integrated charge "
                            "over the sampling interval and simply sum "
                            "the values, after subtracting a baseline level."),
-        }
+        },
+        deprecated="This config has been moved to cpExtractPtcTask, and will be removed after v27.",
     )
     photodiodeCurrentScale = pexConfig.Field(
         dtype=float,
         doc="Scale factor to apply to photodiode current values for the "
             "``CHARGE_SUM`` integration method.",
         default=-1.0,
+        deprecated="This config has been moved to cpExtractPtcTask, and will be removed after v27.",
     )
     applyPhotodiodeCorrection = pexConfig.Field(
         dtype=bool,
@@ -271,7 +261,7 @@ class LinearitySolveTask(pipeBase.PipelineTask):
         outputs = self.run(**inputs)
         butlerQC.put(outputs, outputRefs)
 
-    def run(self, inputPtc, dummy, camera, inputDims, inputPhotodiodeData=None,
+    def run(self, inputPtc, dummy, camera, inputDims,
             inputPhotodiodeCorrection=None):
         """Fit non-linearity to PTC data, returning the correct Linearizer
         object.
@@ -289,8 +279,6 @@ class LinearitySolveTask(pipeBase.PipelineTask):
             applyPhotodiodeCorrection=True.
         camera : `lsst.afw.cameraGeom.Camera`
             Camera geometry.
-        inputPhotodiodeData : `dict` [`str`, `lsst.ip.isr.PhotodiodeCalib`]
-            Photodiode readings data.
         inputDims : `lsst.daf.butler.DataCoordinate` or `dict`
             DataIds to use to populate the output calibration.
 
@@ -332,18 +320,8 @@ class LinearitySolveTask(pipeBase.PipelineTask):
         # Initialize the linearizer.
         linearizer = Linearizer(detector=detector, table=table, log=self.log)
         linearizer.updateMetadataFromExposures([inputPtc])
-        if self.config.usePhotodiode:
-            # Compute the photodiode integrals once, outside the loop
-            # over amps.
-            monDiodeCharge = {}
-            for handle in inputPhotodiodeData:
-                expId = handle.dataId['exposure']
-                pd_calib = handle.get()
-                pd_calib.integrationMethod = self.config.photodiodeIntegrationMethod
-                pd_calib.currentScale = self.config.photodiodeCurrentScale
-                monDiodeCharge[expId] = pd_calib.integrate()
-            if self.config.applyPhotodiodeCorrection:
-                abscissaCorrections = inputPhotodiodeCorrection.abscissaCorrections
+        if self.config.usePhotodiode and self.config.applyPhotodiodeCorrection:
+            abscissaCorrections = inputPhotodiodeCorrection.abscissaCorrections
 
         if self.config.linearityType == 'Spline':
             if self.config.splineGroupingColumn is not None:
@@ -374,32 +352,23 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 mask = inputPtc.expIdMask[ampName].copy()
 
             if self.config.usePhotodiode:
-                modExpTimes = []
-                for j, pair in enumerate(inputPtc.inputExpIdPairs[ampName]):
-                    modExpTime = 0.0
-                    nExps = 0
-                    for k in range(2):
-                        expId = pair[k]
-                        if expId in monDiodeCharge:
-                            modExpTime += monDiodeCharge[expId]
-                            nExps += 1
-                    if nExps > 0:
-                        modExpTime = modExpTime / nExps
-                    else:
-                        mask[j] = False
+                modExpTimes = inputPtc.photoCharges[ampName].copy()
+                # Make sure any exposure pairs that do not have photodiode data
+                # are masked.
+                mask[~np.isfinite(modExpTimes)] = False
 
-                    # Get the photodiode correction
-                    if self.config.applyPhotodiodeCorrection:
+                # Get the photodiode correction.
+                if self.config.applyPhotodiodeCorrection:
+                    for j, pair in enumerate(inputPtc.inputExpIdPairs[ampName]):
                         try:
                             correction = abscissaCorrections[str(pair)]
                         except KeyError:
                             correction = 0.0
-                    else:
-                        correction = 0.0
-                    modExpTimes.append(modExpTime + correction)
-                inputAbscissa = np.array(modExpTimes)
+                        modExpTimes[j] += correction
+
+                inputAbscissa = modExpTimes
             else:
-                inputAbscissa = np.array(inputPtc.rawExpTimes[ampName])
+                inputAbscissa = inputPtc.rawExpTimes[ampName].copy()
 
             inputOrdinate = inputPtc.rawMeans[ampName].copy()
 
