@@ -285,6 +285,12 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
             pd_values_offset[group2] *= pd_offset_factors[2]
             pd_values_offset[group3] *= pd_offset_factors[3]
 
+        # Add one bad photodiode value, but don't put it at the very
+        # end because that would change the spline node positions
+        # and make comparisons to the "truth" here in the tests
+        # more difficult.
+        pd_values_offset[-2] = np.nan
+
         ptc = self._create_ptc(
             self.amp_names,
             time_values,

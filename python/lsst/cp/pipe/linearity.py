@@ -464,7 +464,7 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 # fits deviations from linearity, rather than the linear
                 # function itself which is degenerate with the gain.
 
-                nodes = np.linspace(0.0, inputOrdinate.max(), self.config.splineKnots)
+                nodes = np.linspace(0.0, np.max(inputOrdinate[mask]), self.config.splineKnots)
 
                 fitter = AstierSplineLinearityFitter(
                     nodes,
