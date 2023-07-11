@@ -12,3 +12,6 @@ tasks:
     config:
       edgeMaskLevel: AMP
       numEdgeSuspect: 20
+      doExtractPhotodiodeData: true
+      auxiliaryHeaderKeys: ["CCOBCURR", "CCOBFLUX"]
+      matchExposuresType: FLUX
