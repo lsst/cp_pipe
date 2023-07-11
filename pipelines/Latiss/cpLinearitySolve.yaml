@@ -3,7 +3,7 @@ instrument: lsst.obs.lsst.Latiss
 imports:
   - location: $CP_PIPE_DIR/pipelines/_ingredients/cpLinearitySolve.yaml
 tasks:
-  linearitySolve:
+  linearitySolveBase:
     class: lsst.cp.pipe.LinearitySolveTask
     config:
       linearityType: Spline

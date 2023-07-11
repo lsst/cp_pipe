@@ -1,6 +1,6 @@
 description: cp_pipe linearity calibration construction.
 tasks:
-  linearitySolve:
+  linearitySolveBase:
     class: lsst.cp.pipe.LinearitySolveTask
     config:
       connections.inputPtc: ptc
