@@ -453,7 +453,7 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask):
         output : `np.array`, (2*N + 1, 2*N + 1)
             The full, tiled array
         """
-        assert(in_array.shape[0] == in_array.shape[1])
+        assert in_array.shape[0] == in_array.shape[1]
         length = in_array.shape[0] - 1
         output = np.zeros((2*length + 1, 2*length + 1))
 

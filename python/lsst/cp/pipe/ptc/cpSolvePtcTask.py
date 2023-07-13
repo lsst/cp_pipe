@@ -660,7 +660,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                     # model equation (Eq. 20) in Astier+19, with c=a*b=0:
                     a[i, j] += parsFit[0]
                     noise[i, j] += parsFit[2]
-                    if(i + j == 0):
+                    if i + j == 0:
                         gain = 1./(1/gain+parsFit[1])
             weightedRes = (model - cov)*sqrtW
             chi2 = (weightedRes.flatten()**2).sum()
@@ -801,7 +801,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
     # EXPAPPROXIMATION and POLYNOMIAL fit methods
     @staticmethod
     def _initialParsForPolynomial(order):
-        assert(order >= 2)
+        assert order >= 2
         pars = np.zeros(order, dtype=float)
         pars[0] = 10
         pars[1] = 1
