@@ -578,8 +578,8 @@ class CovFastFourierTransform:
     def __init__(self, diff, w, fftShape, maxRangeCov):
         # check that the zero padding implied by "fft_shape"
         # is large enough for the required correlation range
-        assert(fftShape[0] > diff.shape[0]+maxRangeCov+1)
-        assert(fftShape[1] > diff.shape[1]+maxRangeCov+1)
+        assert fftShape[0] > diff.shape[0]+maxRangeCov+1
+        assert fftShape[1] > diff.shape[1]+maxRangeCov+1
         # for some reason related to numpy.fft.rfftn,
         # the second dimension should be even, so
         if fftShape[1]%2 == 1:
