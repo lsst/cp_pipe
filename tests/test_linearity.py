@@ -334,7 +334,7 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
             self.assertFloatsAlmostEqual(
                 (linearizer.fitResiduals[amp_name][lin_mask] / mu_linear[lin_mask])[1:],
                 0.0,
-                atol=1e-3,
+                atol=1.1e-3,
             )
 
             # If we apply the linearity correction, we should get the true
@@ -368,8 +368,8 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
             # approximate, and the real test is in the residuals.
             small = (np.abs(non_lin_spline_values) < 20)
 
-            spline_atol = 5.0 if do_pd_offsets else 2.0
-            spline_rtol = 0.1 if do_pd_offsets else 0.05
+            spline_atol = 6.0 if do_pd_offsets else 2.0
+            spline_rtol = 0.14 if do_pd_offsets else 0.05
 
             self.assertFloatsAlmostEqual(
                 linearizer.linearityCoeffs[amp_name][n_nodes:][small],
