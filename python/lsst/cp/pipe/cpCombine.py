@@ -424,7 +424,7 @@ class CalibCombineTask(pipeBase.PipelineTask):
             expScales.append(scale)
             self.log.info("Scaling input %d by %s", index, scale)
 
-        self.combine(combinedExp, inputExpHandles, expScales, stats)
+        combinedExp = self.combine(combinedExp, inputExpHandles, expScales, stats)
 
         # The calibration should _never_ have NO_DATA set, as this is
         # handled poorly downstream, and so we raise here after
@@ -447,9 +447,9 @@ class CalibCombineTask(pipeBase.PipelineTask):
 
         self.interpolateNans(combined, maskPlane=self.config.noGoodPixelsMask)
 
-        if self.config.doVignette:
-            polygon = inputExpHandles[0].get(component="validPolygon")
-            maskVignettedRegion(combined, polygon=polygon, vignetteValue=0.0)
+            if self.config.doVignette:
+                polygon = inputExpHandles[0].get(component="validPolygon")
+                maskVignettedRegion(combined, polygon=polygon, vignetteValue=0.0)
 
         # Set the detector
         combinedExp.setDetector(inputDetector)
@@ -622,6 +622,7 @@ class CalibCombineTask(pipeBase.PipelineTask):
 
             combinedSubregion = afwMath.statisticsStack(images, combineType, stats)
             target.maskedImage.assign(combinedSubregion, subBbox)
+        return target
 
     def combineHeaders(self, expHandleList, calib=None, calibType="CALIB", scales=None, metadata=None):
         """Combine input headers to determine the set of common headers,
