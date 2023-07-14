@@ -329,24 +329,25 @@ class CalibCombineTask(pipeBase.PipelineTask):
             expScales.append(scale)
             self.log.info("Scaling input %d by %s", index, scale)
 
-        self.combine(combinedExp, inputExpHandles, expScales, stats)
+        combinedExp = self.combine(combinedExp, inputExpHandles, expScales, stats)
 
-        self.interpolateNans(combined)
+        if isinstance(combinedExp, afwImage.Exposure):
+            self.interpolateNans(combined)
 
-        if self.config.doVignette:
-            polygon = inputExpHandles[0].get(component="validPolygon")
-            maskVignettedRegion(combined, polygon=polygon, vignetteValue=0.0)
+            if self.config.doVignette:
+                polygon = inputExpHandles[0].get(component="validPolygon")
+                maskVignettedRegion(combined, polygon=polygon, vignetteValue=0.0)
 
-        # Combine headers
-        self.combineHeaders(inputExpHandles, combinedExp,
-                            calibType=self.config.calibrationType, scales=expScales)
+                # Combine headers
+                self.combineHeaders(inputExpHandles, combinedExp,
+                                    calibType=self.config.calibrationType, scales=expScales)
 
-        # Set the detector
-        combinedExp.setDetector(inputDetector)
+                # Set the detector
+                combinedExp.setDetector(inputDetector)
 
-        # Do we need to set a filter?
-        filterLabel = inputExpHandles[0].get(component="filter")
-        self.setFilter(combinedExp, filterLabel)
+                # Do we need to set a filter?
+                filterLabel = inputExpHandles[0].get(component="filter")
+                self.setFilter(combinedExp, filterLabel)
 
         # Return
         return pipeBase.Struct(
@@ -483,6 +484,7 @@ class CalibCombineTask(pipeBase.PipelineTask):
 
             combinedSubregion = afwMath.statisticsStack(images, combineType, stats)
             target.maskedImage.assign(combinedSubregion, subBbox)
+        return target
 
     def combineHeaders(self, expHandleList, calib, calibType="CALIB", scales=None):
         """Combine input headers to determine the set of common headers,

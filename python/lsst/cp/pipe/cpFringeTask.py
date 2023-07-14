@@ -18,6 +18,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
+import lsst.geom as geom
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 import lsst.pipe.base.connectionTypes as cT
@@ -26,7 +27,8 @@ import lsst.meas.algorithms as measAlg
 import lsst.afw.detection as afwDet
 import lsst.afw.image as afwImage
 
-from .cpCombine import CalibCombineByFilterTask, CalibCombineByFilterTaskConfig
+from lsst.meas.algorithms import ImagePlane, MultiImage
+from .cpCombine import CalibCombineByFilterTask, CalibCombineByFilterConfig
 
 __all__ = ["CpFringeTask", "CpFringeTaskConfig",
            "CpFringeCombineTask", "CpFringeCombineTaskConfig"]
@@ -123,18 +125,53 @@ class CpFringeTask(pipeBase.PipelineTask):
         )
 
 
-class CpFringeCombineConnections(CalibCombineByFilterConnections):
-    # Use the parent version.  Do we need a special storageClass for
+class CpFringeCombineConnections(pipeBase.PipelineTaskConnections,
+                                 dimensions=("instrument", "detector", "physical_filter")):
+    # Use the grand-parent version.  Do we need a special storageClass for
     # the output for multiple images?
-    pass
+    inputExpHandles = cT.Input(
+        name="cpInputs",
+        doc="Input pre-processed exposures to combine.",
+        storageClass="Exposure",
+        dimensions=("instrument", "detector", "exposure"),
+        multiple=True,
+        deferLoad=True,
+    )
+    inputScales = cT.Input(
+        name="cpScales",
+        doc="Input scale factors to use.",
+        storageClass="StructuredDataDict",
+        dimensions=("instrument", ),
+        multiple=False,
+    )
+
+    outputData = cT.Output(
+        name="cpFringeProposal",
+        doc="Output combined fringe.",
+        storageClass="StampsBase",
+        dimensions=("instrument", "detector", "physical_filter"),
+        isCalibration=True,
+    )
+
+    def __init__(self, *, config=None):
+        super().__init__(config=config)
+
+        if config and config.exposureScaling != "InputList":
+            self.inputs.discard("inputScales")
 
 
-class CpFringeCombineTaskConfig(CalibCombineByFilterTaskConfig):
+class CpFringeCombineTaskConfig(CalibCombineByFilterConfig,
+                                pipelineConnections=CpFringeCombineConnections):
     nComponent = pexConfig.Field(
         dtype=int,
         default=3,
         doc="Number of PCA components to retain in the output fringe.",
         check=lambda x: x >= 1
+    )
+    badMaskList = pexConfig.ListField(
+        dtype=str,
+        doc="List of mask planes to exclude from the fringe analysis.",
+        default=["BAD", "SAT", "NO_DATA", "DETECTED"]
     )
 
 
@@ -142,6 +179,9 @@ class CpFringeCombineTask(CalibCombineByFilterTask):
     """Task to combine input fringe frames into a final set of combined
     fringes.
     """
+
+    ConfigClass = CpFringeCombineTaskConfig
+    _DefaultName = "cpFringeCombine"
 
     def combine(self, target, expHandleList, expScaleList, stats):
         """Combine multiple images.
@@ -161,14 +201,31 @@ class CpFringeCombineTask(CalibCombineByFilterTask):
 
         subregionSizeArr = self.config.subregionSize
         subregionSize = geom.Extent2I(subregionSizeArr[0], subregionSizeArr[1])
+        # Hard code a size to skip needing to guarantee subregions
+        # have the same eigenvalue.
+        subregionSize = geom.Extent2I(4200, 4200)
+
+        bitMask = target.mask.getPlaneBitMask(self.config.badMaskList)
+
+        eigenList = []
+        metadata = target.getMetadata()
         for subBbox in self._subBBoxIter(target.getBBox(), subregionSize):
             imageSet = afwImage.ImagePcaF()
+            imageSet.updateBadPixels(bitMask, self.config.nComponent)
+
             for expHandle, expScale in zip(expHandleList, expScaleList):
                 inputExp = expHandle.get(parameters={"bbox": subBbox})
                 self.applyScale(inputExp, subBbox, expScale)
                 imageSet.addImage(inputExp.image, 1.0)  # Should this use the scale instead?
-            imageSet.analyse()
-
-            # This doesn't guarantee that eigenImage_0 is always the same, does it?
-            for eigenValue, eigenImage in zip(imageSet.getEigenImages(), imageSet.getEigenValues()):
-                target.image.assign(eigenImage, subBox)  # this is wrong as well.
+            imageSet.analyze()
+            # This doesn't guarantee that eigenImage_0
+            # is always the same, does it?
+            for eigenCounter, (eigenValue, eigenImage) in enumerate(zip(imageSet.getEigenValues(),
+                                                                        imageSet.getEigenImages())):
+                eigenList.append(ImagePlane.factory(eigenImage,
+                                                    metadata, eigenCounter, archive_element=None))
+                metadata[f"FRINGE_EIGEN_VALUE_{eigenCounter}"] = eigenValue
+                # target.image.assign(eigenImage, subBox) # this is
+                # wrong as well.
+        output = MultiImage(eigenList, metadata=metadata, use_mask=False, use_variance=False)
+        return output

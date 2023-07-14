@@ -13,10 +13,10 @@ tasks:
       connections.inputExp: 'cpFringeIsr'
       connections.outputExp: 'cpFringeProc'
   cpFringeCombine:
-    class: lsst.cp.pipe.cpCombine.FringeCombineTask
+    class: lsst.cp.pipe.cpFringeTask.CpFringeCombineTask
     config:
       connections.inputExpHandles: 'cpFringeProc'
-      connections.outputData: 'fringe'
+      connections.outputData: 'fringeQ'
       calibrationType: 'fringe'
       exposureScaling: "Unity"
 contracts:
