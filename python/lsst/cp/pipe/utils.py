@@ -855,7 +855,7 @@ class AstierSplineLinearityFitter:
         p0 = np.zeros(npt)
 
         # Do a simple linear fit and set all the constants to this.
-        linfit = np.polyfit(self._pd, self._mu, 1)
+        linfit = np.polyfit(self._pd[self.mask], self._mu[self.mask], 1)
         p0[-self.ngroup:] = linfit[0]
 
         # Look at the residuals...
@@ -867,7 +867,7 @@ class AstierSplineLinearityFitter:
             self._mu,
         )
         # ...and adjust the linear parameters accordingly.
-        p0[-self.ngroup:] *= np.median(ratio_model)
+        p0[-self.ngroup:] *= np.median(ratio_model[self.mask])
 
         # Re-compute the residuals.
         ratio_model2 = self.compute_ratio_model(
@@ -879,10 +879,10 @@ class AstierSplineLinearityFitter:
         )
 
         # And compute a first guess of the spline nodes.
-        bins = np.searchsorted(self._nodes, self._mu)
+        bins = np.searchsorted(self._nodes, self._mu[self.mask])
         tot_arr = np.zeros(len(self._nodes))
         n_arr = np.zeros(len(self._nodes), dtype=int)
-        np.add.at(tot_arr, bins, ratio_model2)
+        np.add.at(tot_arr, bins, ratio_model2[self.mask])
         np.add.at(n_arr, bins, 1)
 
         ratio = np.ones(len(self._nodes))
@@ -1014,6 +1014,8 @@ class AstierSplineLinearityFitter:
         )
 
         resid = self._w*(ratio_model - 1.0)
+        # Ensure masked points have 0 residual.
+        resid[~self.mask] = 0.0
 
         constraint = [1e3 * np.mean(spl.interpolate(self._x_regularize))]
         # 0 should transform to 0

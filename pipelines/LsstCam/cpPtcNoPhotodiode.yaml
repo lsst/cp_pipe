@@ -1,0 +1,9 @@
+description: LSSTCam Photon-Transfer Curve calibration construction (no photodiode data).
+instrument: lsst.obs.lsst.LsstCam
+imports:
+  - location: $CP_PIPE_DIR/pipelines/LSSTCam/cpPtc.yaml
+tasks:
+  ptcExtract:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
+    config:
+      doExtractPhotodiodeData: false

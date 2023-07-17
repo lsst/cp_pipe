@@ -51,6 +51,14 @@ class PhotonTransferCurveExtractConnections(pipeBase.PipelineTaskConnections,
         multiple=True,
         deferLoad=True,
     )
+    inputPhotodiodeData = cT.Input(
+        name="photodiode",
+        doc="Photodiode readings data.",
+        storageClass="IsrCalib",
+        dimensions=("instrument", "exposure"),
+        multiple=True,
+        deferLoad=True,
+    )
     taskMetadata = cT.Input(
         name="isr_metadata",
         doc="Input task metadata to extract statistics from.",
@@ -66,6 +74,10 @@ class PhotonTransferCurveExtractConnections(pipeBase.PipelineTaskConnections,
         isCalibration=True,
         multiple=True,
     )
+
+    def __init__(self, *, config=None):
+        if not config.doExtractPhotodiodeData:
+            del self.inputPhotodiodeData
 
 
 class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
@@ -202,6 +214,32 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
         doc="Auxiliary header keys to store with the PTC dataset.",
         default=[],
     )
+    doExtractPhotodiodeData = pexConfig.Field(
+        dtype=bool,
+        doc="Extract photodiode data?",
+        default=False,
+    )
+    photodiodeIntegrationMethod = pexConfig.ChoiceField(
+        dtype=str,
+        doc="Integration method for photodiode monitoring data.",
+        default="CHARGE_SUM",
+        allowed={
+            "DIRECT_SUM": ("Use numpy's trapz integrator on all photodiode "
+                           "readout entries"),
+            "TRIMMED_SUM": ("Use numpy's trapz integrator, clipping the "
+                            "leading and trailing entries, which are "
+                            "nominally at zero baseline level."),
+            "CHARGE_SUM": ("Treat the current values as integrated charge "
+                           "over the sampling interval and simply sum "
+                           "the values, after subtracting a baseline level."),
+        },
+    )
+    photodiodeCurrentScale = pexConfig.Field(
+        dtype=float,
+        doc="Scale factor to apply to photodiode current values for the "
+            "``CHARGE_SUM`` integration method.",
+        default=-1.0,
+    )
 
 
 class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
@@ -319,7 +357,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                 newCovariances.append(newPtc)
         return pipeBase.Struct(outputCovariances=newCovariances)
 
-    def run(self, inputExp, inputDims, taskMetadata):
+    def run(self, inputExp, inputDims, taskMetadata, inputPhotodiodeData=None):
 
         """Measure covariances from difference of flat pairs
 
@@ -334,6 +372,8 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
             List of exposure IDs.
         taskMetadata : `list` [`lsst.pipe.base.TaskMetadata`]
             List of exposures metadata from ISR.
+        inputPhotodiodeData : `dict` [`str`, `lsst.ip.isr.PhotodiodeCalib`]
+            Photodiode readings data (optional).
 
         Returns
         -------
@@ -376,6 +416,18 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                                                      self.config.maximumRangeCovariancesAstier)
         for ampName in ampNames:
             dummyPtcDataset.setAmpValuesPartialDataset(ampName)
+
+        # Extract the photodiode data if requested.
+        if self.config.doExtractPhotodiodeData:
+            # Compute the photodiode integrals once, at the start.
+            monitorDiodeCharge = {}
+            for handle in inputPhotodiodeData:
+                expId = handle.dataId['exposure']
+                pdCalib = handle.get()
+                pdCalib.integrationMethod = self.config.photodiodeIntegrationMethod
+                pdCalib.currentScale = self.config.photodiodeCurrentScale
+                monitorDiodeCharge[expId] = pdCalib.integrate()
+
         # Get read noise.  Try from the exposure, then try
         # taskMetadata.  This adds a get() for the exposures.
         readNoiseLists = {}
@@ -573,12 +625,27 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                     histChi2Dof = np.nan
                     kspValue = 0.0
 
+                if self.config.doExtractPhotodiodeData:
+                    nExps = 0
+                    photoCharge = 0.0
+                    for expId in [expId1, expId2]:
+                        if expId in monitorDiodeCharge:
+                            photoCharge += monitorDiodeCharge[expId]
+                            nExps += 1
+                    if nExps > 0:
+                        photoCharge /= nExps
+                    else:
+                        photoCharge = np.nan
+                else:
+                    photoCharge = np.nan
+
                 partialPtcDataset.setAmpValuesPartialDataset(
                     ampName,
                     inputExpIdPair=(expId1, expId2),
                     rawExpTime=expTime,
                     rawMean=muDiff,
                     rawVar=varDiff,
+                    photoCharge=photoCharge,
                     expIdMask=expIdMask,
                     covariance=covArray[0, :, :],
                     covSqrtWeights=covSqrtWeights[0, :, :],
