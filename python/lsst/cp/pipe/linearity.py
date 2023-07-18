@@ -195,6 +195,7 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
                            "over the sampling interval and simply sum "
                            "the values, after subtracting a baseline level."),
         },
+        # TODO: remove on DM-40065.
         deprecated="This config has been moved to cpExtractPtcTask, and will be removed after v26.",
     )
     photodiodeCurrentScale = pexConfig.Field(
@@ -202,6 +203,7 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
         doc="Scale factor to apply to photodiode current values for the "
             "``CHARGE_SUM`` integration method.",
         default=-1.0,
+        # TODO: remove on DM-40065.
         deprecated="This config has been moved to cpExtractPtcTask, and will be removed after v26.",
     )
     applyPhotodiodeCorrection = pexConfig.Field(
