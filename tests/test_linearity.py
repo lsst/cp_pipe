@@ -97,14 +97,16 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
                 # For the first amp, we add a few bad points.
                 if amp_name == amp_names[0] and i >= 5 and i < 7:
                     exp_id_mask = False
+                    raw_mean = np.nan
                 else:
                     exp_id_mask = True
+                    raw_mean = means[i]
 
                 partial.setAmpValuesPartialDataset(
                     amp_name,
                     inputExpIdPair=exp_id_pairs[i],
                     rawExpTime=exp_times[i],
-                    rawMean=means[i],
+                    rawMean=raw_mean,
                     rawVar=1.0,
                     kspValue=1.0,
                     expIdMask=exp_id_mask,
@@ -303,7 +305,7 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
         config.linearityType = "Spline"
         config.usePhotodiode = True
         config.minLinearAdu = 0.0
-        config.maxLinearAdu = np.max(mu_values) + 1.0
+        config.maxLinearAdu = np.nanmax(mu_values) + 1.0
         config.splineKnots = n_nodes
 
         if do_pd_offsets:

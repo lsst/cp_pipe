@@ -833,14 +833,14 @@ class AstierSplineLinearityFitter:
         for i in range(self.ngroup):
             self.group_indices.append(np.arange(uindex[i], uindex[i] + ucounts[i]))
 
-        # Values to regularize spline fit.
-        self._x_regularize = np.linspace(self._mu.min(), self._mu.max(), 100)
-
         # Outlier weight values.  Will be 1 (in) or 0 (out).
         self._w = np.ones(len(self._pd))
 
         if mask is not None:
             self._w[~mask] = 0.0
+
+        # Values to regularize spline fit.
+        self._x_regularize = np.linspace(self._mu[self.mask].min(), self._mu[self.mask].max(), 100)
 
     def estimate_p0(self):
         """Estimate initial fit parameters.
