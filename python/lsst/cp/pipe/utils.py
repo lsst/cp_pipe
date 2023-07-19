@@ -1017,7 +1017,7 @@ class AstierSplineLinearityFitter:
         # Ensure masked points have 0 residual.
         resid[~self.mask] = 0.0
 
-        constraint = [1e3 * np.mean(spl.interpolate(self._x_regularize))]
+        constraint = [1e30 * np.mean(spl.interpolate(self._x_regularize))]
         # 0 should transform to 0
         constraint.append(spl.interpolate(0)*1e10)
 
