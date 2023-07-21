@@ -227,7 +227,7 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
         """Test linearity with polynomial and ADU cuts."""
         self._check_linearity("Polynomial", min_adu=10000.0, max_adu=90000.0)
 
-    def _check_linearity_spline(self, do_pd_offsets=False):
+    def _check_linearity_spline(self, do_pd_offsets=False, n_points=200):
         """Check linearity with a spline solution.
 
         Parameters
@@ -238,7 +238,7 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
         np.random.seed(12345)
 
         # Create a test dataset representative of real data.
-        pd_values = np.linspace(1e-8, 2e-5, 200)
+        pd_values = np.linspace(1e-8, 2e-5, n_points)
         time_values = pd_values * 1000000.
         linear_ratio = 5e9
         mu_linear = linear_ratio * pd_values
@@ -265,7 +265,10 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
         mu_values += np.random.normal(scale=mu_values, size=len(mu_values)) / 10000.
 
         # Add some outlier values.
-        outlier_indices = np.arange(5) + 170
+        if n_points >= 200:
+            outlier_indices = np.arange(5) + 170
+        else:
+            outlier_indices = []
         mu_values[outlier_indices] += 200.0
 
         # Add some small offsets to the pd_values if requested.
@@ -273,10 +276,11 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
         ccobcurr = None
         if do_pd_offsets:
             ccobcurr = np.zeros(pd_values.size)
-            group0 = np.arange(50)
-            group1 = np.arange(50) + 50
-            group2 = np.arange(50) + 100
-            group3 = np.arange(50) + 150
+            n_points_group = n_points//4
+            group0 = np.arange(n_points_group)
+            group1 = np.arange(n_points_group) + n_points_group
+            group2 = np.arange(n_points_group) + 2*n_points_group
+            group3 = np.arange(n_points_group) + 3*n_points_group
             ccobcurr[group0] = 0.01
             ccobcurr[group1] = 0.02
             ccobcurr[group2] = 0.03
@@ -307,6 +311,7 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
         config.minLinearAdu = 0.0
         config.maxLinearAdu = np.nanmax(mu_values) + 1.0
         config.splineKnots = n_nodes
+        config.splineGroupingMinPoints = 101
 
         if do_pd_offsets:
             config.splineGroupingColumn = "CCOBCURR"
@@ -396,6 +401,10 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
 
     def test_linearity_spline_offsets(self):
         self._check_linearity_spline(do_pd_offsets=True)
+
+    def test_linearity_spline_offsets_too_few_points(self):
+        with self.assertRaisesRegex(RuntimeError, "too few points"):
+            self._check_linearity_spline(do_pd_offsets=True, n_points=100)
 
 
 class TestMemory(lsst.utils.tests.MemoryTestCase):
