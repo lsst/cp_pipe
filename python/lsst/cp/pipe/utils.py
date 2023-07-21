@@ -840,7 +840,7 @@ class AstierSplineLinearityFitter:
             self._w[~mask] = 0.0
 
         # Values to regularize spline fit.
-        self._x_regularize = np.linspace(self._mu[self.mask].min(), self._mu[self.mask].max(), 100)
+        self._x_regularize = np.linspace(0.0, self._mu[self.mask].max(), 100)
 
     def estimate_p0(self):
         """Estimate initial fit parameters.
