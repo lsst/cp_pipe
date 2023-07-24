@@ -219,6 +219,13 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
         default=None,
         optional=True,
     )
+    splineGroupingMinPoints = pexConfig.Field(
+        dtype=int,
+        doc="Minimum number of linearity points to allow grouping together points "
+            "for Spline mode with splineGroupingColumn. This configuration is here "
+            "to prevent misuse of the Spline code to avoid over-fitting.",
+        default=100,
+    )
     splineFitMinIter = pexConfig.Field(
         dtype=int,
         doc="Minimum number of iterations for spline fit.",
@@ -345,6 +352,16 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 self.log.warning("Amp %s in detector %s has no usable PTC information. Skipping!",
                                  ampName, detector.getName())
                 continue
+
+            # Check for too few points.
+            if self.config.linearityType == "Spline" \
+               and self.config.splineGroupingColumn is not None \
+               and len(inputPtc.inputExpIdPairs[ampName]) < self.config.splineGroupingMinPoints:
+                raise RuntimeError(
+                    "The input PTC has too few points to reliably run with PD grouping. "
+                    "The recommended course of action is to set splineGroupingColumn to None. "
+                    "If you really know what you are doing, you may reduce "
+                    "config.splineGroupingMinPoints.")
 
             if (len(inputPtc.expIdMask[ampName]) == 0) or self.config.ignorePtcMask:
                 self.log.warning("Mask not found for %s in detector %s in fit. Using all points.",
