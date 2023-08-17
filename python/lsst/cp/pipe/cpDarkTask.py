@@ -21,12 +21,15 @@
 import math
 import numpy as np
 
+import lsst.afw.geom as afwGeom
+import lsst.meas.algorithms as measAlg
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 import lsst.pipe.base.connectionTypes as cT
+
+from lsst.ip.isr import gainContext
+from lsst.pex.exceptions import LengthError
 from lsst.pipe.tasks.repair import RepairTask
-import lsst.meas.algorithms as measAlg
-import lsst.afw.geom as afwGeom
 
 
 __all__ = ["CpDarkTask", "CpDarkTaskConfig"]
@@ -106,26 +109,52 @@ class CpDarkTask(pipeBase.PipelineTask):
                                         self.config.psfSize,
                                         self.config.psfFwhm/(2*math.sqrt(2*math.log(2))))
         inputExp.setPsf(psf)
-        scaleExp = inputExp.clone()
-        mi = scaleExp.getMaskedImage()
 
-        # DM-23680:
-        # Darktime scaling necessary for repair.run() to ID CRs correctly.
-        scale = inputExp.getInfo().getVisitInfo().getDarkTime()
-        if np.isfinite(scale) and scale != 0.0:
-            mi /= scale
+        gains = self._get_gains(inputExp)
+        with gainContext(inputExp, inputExp.getVariance(), apply=True, gains=gains):
+            self.log.info("Median image and variance: %f %f",
+                          np.median(inputExp.image.array), np.median(inputExp.variance.array))
+            try:
+                self.repair.run(inputExp, keepCRs=False)
+            except LengthError:
+                self.log.warning("CR rejection failed!")
+            self.log.info("Number of CR pixels: %d",
+                          np.count_nonzero(np.bitwise_and(inputExp.mask.array,
+                                                          inputExp.mask.getPlaneBitMask('CR'))))
 
-        self.repair.run(scaleExp, keepCRs=False)
         if self.config.crGrow > 0:
             crMask = inputExp.getMaskedImage().getMask().getPlaneBitMask("CR")
             spans = afwGeom.SpanSet.fromMask(inputExp.mask, crMask)
             spans = spans.dilated(self.config.crGrow)
+            spans = spans.clippedTo(inputExp.getBBox())
             spans.setMask(inputExp.mask, crMask)
-
-        # Undo scaling; as above, DM-23680.
-        if np.isfinite(scale) and scale != 0.0:
-            mi *= scale
 
         return pipeBase.Struct(
             outputExp=inputExp,
         )
+
+    @staticmethod
+    def _get_gains(exposure):
+        """Get the per-amplifier gains used for this exposure.
+
+        Parameters
+        ----------
+        exposure : `lsst.afw.image.Exposure`
+            The exposure to find gains for.
+
+        Returns
+        -------
+        gains : `dict` [`str`m `float`]
+            Dictionary of gain values, keyed by amplifier name.
+        """
+        det = exposure.getDetector()
+        metadata = exposure.getMetadata()
+        gains = {}
+        for amp in det:
+            ampName = amp.getName()
+            key = f"LSST GAIN {ampName}"
+            if key in metadata:
+                gains[ampName] = metadata[key]
+            else:
+                gains[ampName] = amp.getGain()
+        return gains
