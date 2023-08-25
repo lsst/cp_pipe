@@ -34,8 +34,6 @@ from lsst.ip.isr import CrosstalkCalib, IsrProvenance
 from lsst.cp.pipe.utils import (ddict2dict, sigmaClipCorrection)
 from lsst.meas.algorithms import SubtractBackgroundTask
 
-from ._lookupStaticCalibration import lookupStaticCalibration
-
 __all__ = ["CrosstalkExtractConfig", "CrosstalkExtractTask",
            "CrosstalkSolveTask", "CrosstalkSolveConfig"]
 
@@ -351,7 +349,6 @@ class CrosstalkSolveConnections(pipeBase.PipelineTaskConnections,
         storageClass="Camera",
         dimensions=("instrument",),
         isCalibration=True,
-        lookupFunction=lookupStaticCalibration,
     )
 
     outputCrosstalk = cT.Output(

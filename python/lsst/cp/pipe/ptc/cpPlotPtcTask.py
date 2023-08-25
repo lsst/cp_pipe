@@ -30,7 +30,6 @@ from matplotlib import gridspec
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 import lsst.pipe.base.connectionTypes as cT
-from lsst.cp.pipe._lookupStaticCalibration import lookupStaticCalibration
 
 from lsst.cp.pipe.utils import (
     funcAstier,
@@ -57,7 +56,6 @@ class PlotPhotonTransferCurveConnections(
         storageClass="Camera",
         dimensions=("instrument",),
         isCalibration=True,
-        lookupFunction=lookupStaticCalibration,
     )
     # ptcFitType = "FULLCOVARIANCE" produces 12 plots
     ptcPlot1 = cT.Output(

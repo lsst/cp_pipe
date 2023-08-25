@@ -33,7 +33,6 @@ import lsst.pipe.base.connectionTypes as cT
 
 from lsst.ip.isr import (BrighterFatterKernel)
 from .utils import (funcPolynomial, irlsFit)
-from ._lookupStaticCalibration import lookupStaticCalibration
 
 
 class BrighterFatterKernelSolveConnections(pipeBase.PipelineTaskConnections,
@@ -52,7 +51,6 @@ class BrighterFatterKernelSolveConnections(pipeBase.PipelineTaskConnections,
         storageClass="Camera",
         dimensions=("instrument", ),
         isCalibration=True,
-        lookupFunction=lookupStaticCalibration,
     )
     inputPtc = cT.PrerequisiteInput(
         name="ptc",
