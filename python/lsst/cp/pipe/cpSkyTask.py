@@ -27,7 +27,6 @@ import lsst.pipe.base.connectionTypes as cT
 from lsst.pipe.tasks.background import (FocalPlaneBackground, MaskObjectsTask, SkyMeasurementTask,
                                         FocalPlaneBackgroundConfig)
 from lsst.daf.base import PropertyList
-from ._lookupStaticCalibration import lookupStaticCalibration
 from .cpCombine import CalibCombineTask
 
 __all__ = ['CpSkyImageTask', 'CpSkyImageConfig',
@@ -49,7 +48,6 @@ class CpSkyImageConnections(pipeBase.PipelineTaskConnections,
         doc="Input camera to use for geometry.",
         storageClass="Camera",
         dimensions=("instrument",),
-        lookupFunction=lookupStaticCalibration,
         isCalibration=True,
     )
 

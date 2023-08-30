@@ -39,8 +39,6 @@ import lsst.pex.config as pexConfig
 from lsst.ip.isr import DeferredChargeCalib, SerialTrap
 from lmfit import Minimizer, Parameters
 
-from ._lookupStaticCalibration import lookupStaticCalibration
-
 
 class CpCtiSolveConnections(pipeBase.PipelineTaskConnections,
                             dimensions=("instrument", "detector")):
@@ -56,7 +54,6 @@ class CpCtiSolveConnections(pipeBase.PipelineTaskConnections,
         doc="Camera geometry to use.",
         storageClass="Camera",
         dimensions=("instrument", ),
-        lookupFunction=lookupStaticCalibration,
         isCalibration=True,
     )
 

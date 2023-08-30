@@ -29,8 +29,6 @@ import lsst.pipe.base.connectionTypes as cT
 from lsst.ip.isr.vignette import maskVignettedRegion
 from lsst.cp.pipe.utils import ddict2dict
 
-from ._lookupStaticCalibration import lookupStaticCalibration
-
 __all__ = ["CpFlatMeasureTask", "CpFlatMeasureTaskConfig",
            "CpFlatNormalizationTask", "CpFlatNormalizationTaskConfig"]
 
@@ -153,7 +151,6 @@ class CpFlatNormalizationConnections(pipeBase.PipelineTaskConnections,
         doc="Input camera to use for gain lookup.",
         storageClass="Camera",
         dimensions=("instrument",),
-        lookupFunction=lookupStaticCalibration,
         isCalibration=True,
     )
 

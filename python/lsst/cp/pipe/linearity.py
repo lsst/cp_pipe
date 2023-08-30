@@ -32,7 +32,6 @@ from lsstDebug import getDebugFrame
 from lsst.ip.isr import (Linearizer, IsrProvenance)
 
 from .utils import funcPolynomial, irlsFit, AstierSplineLinearityFitter
-from ._lookupStaticCalibration import lookupStaticCalibration
 
 
 def ptcLookup(datasetType, registry, quantumDataId, collections):
@@ -91,7 +90,6 @@ class LinearitySolveConnections(pipeBase.PipelineTaskConnections,
         storageClass="Camera",
         dimensions=("instrument", ),
         isCalibration=True,
-        lookupFunction=lookupStaticCalibration,
     )
 
     inputPtc = cT.PrerequisiteInput(

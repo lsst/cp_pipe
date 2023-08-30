@@ -35,8 +35,6 @@ import lsst.pipe.base.connectionTypes as cT
 
 from lsst.ip.isr import PhotonTransferCurveDataset
 
-from lsst.cp.pipe._lookupStaticCalibration import lookupStaticCalibration
-
 import copy
 
 
@@ -59,7 +57,6 @@ class PhotonTransferCurveSolveConnections(pipeBase.PipelineTaskConnections,
         storageClass="Camera",
         dimensions=("instrument",),
         isCalibration=True,
-        lookupFunction=lookupStaticCalibration,
     )
     outputPtcDataset = cT.Output(
         name="ptcDatsetProposal",

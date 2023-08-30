@@ -43,8 +43,6 @@ from lsst.meas.algorithms import SourceDetectionTask
 from lsst.ip.isr import Defects, countMaskedPixels
 from lsst.pex.exceptions import InvalidParameterError
 
-from ._lookupStaticCalibration import lookupStaticCalibration
-
 
 class MeasureDefectsConnections(pipeBase.PipelineTaskConnections,
                                 dimensions=("instrument", "exposure", "detector")):
@@ -61,7 +59,6 @@ class MeasureDefectsConnections(pipeBase.PipelineTaskConnections,
         storageClass="Camera",
         dimensions=("instrument", ),
         isCalibration=True,
-        lookupFunction=lookupStaticCalibration,
     )
 
     outputDefects = cT.Output(
@@ -624,7 +621,6 @@ class MeasureDefectsCombinedConnections(MeasureDefectsConnections,
         storageClass="Camera",
         dimensions=("instrument", ),
         isCalibration=True,
-        lookupFunction=lookupStaticCalibration,
     )
 
     outputDefects = cT.Output(
@@ -666,7 +662,6 @@ class MeasureDefectsCombinedWithFilterConnections(MeasureDefectsCombinedConnecti
         storageClass="Camera",
         dimensions=("instrument", ),
         isCalibration=True,
-        lookupFunction=lookupStaticCalibration,
     )
 
     outputDefects = cT.Output(
@@ -707,7 +702,6 @@ class MergeDefectsConnections(pipeBase.PipelineTaskConnections,
         storageClass="Camera",
         dimensions=("instrument", ),
         isCalibration=True,
-        lookupFunction=lookupStaticCalibration,
     )
 
     mergedDefects = cT.Output(
@@ -897,7 +891,6 @@ class MergeDefectsCombinedConnections(pipeBase.PipelineTaskConnections,
         storageClass="Camera",
         dimensions=("instrument", ),
         isCalibration=True,
-        lookupFunction=lookupStaticCalibration,
     )
 
     mergedDefects = cT.Output(

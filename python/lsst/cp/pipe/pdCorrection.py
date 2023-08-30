@@ -25,7 +25,6 @@ import lsst.pipe.base as pipeBase
 import lsst.pipe.base.connectionTypes as cT
 
 from lsst.ip.isr import (PhotodiodeCorrection, IsrProvenance)
-from ._lookupStaticCalibration import lookupStaticCalibration
 
 __all__ = ["PhotodiodeCorrectionTask", "PhotodiodeCorrectionConfig"]
 
@@ -39,7 +38,6 @@ class PhotodiodeCorrectionConnections(pipeBase.PipelineTaskConnections,
         storageClass="Camera",
         dimensions=("instrument", ),
         isCalibration=True,
-        lookupFunction=lookupStaticCalibration,
     )
 
     inputPtc = cT.PrerequisiteInput(
