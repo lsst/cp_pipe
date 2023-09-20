@@ -605,7 +605,7 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
             plt.close()
 
 
-class MeasureDefectsCombinedConnections(MeasureDefectsConnections,
+class MeasureDefectsCombinedConnections(pipeBase.PipelineTaskConnections,
                                         dimensions=("instrument", "detector")):
     inputExp = cT.Input(
         name="dark",
@@ -645,8 +645,8 @@ class MeasureDefectsCombinedTask(MeasureDefectsTask):
     _DefaultName = "cpDefectMeasureCombined"
 
 
-class MeasureDefectsCombinedWithFilterConnections(MeasureDefectsCombinedConnections,
-                                                  dimensions=("instrument", "detector")):
+class MeasureDefectsCombinedWithFilterConnections(pipeBase.PipelineTaskConnections,
+                                                  dimensions=("instrument", "detector", "physical_filter")):
     """Task to measure defects in combined flats under a certain filter."""
     inputExp = cT.Input(
         name="flat",
@@ -871,14 +871,14 @@ class MergeDefectsTask(pipeBase.PipelineTask):
 
 class MergeDefectsCombinedConnections(pipeBase.PipelineTaskConnections,
                                       dimensions=("instrument", "detector")):
-    inputFlatDefects = cT.Input(
+    inputDarkDefects = cT.Input(
         name="cpPartialDefectsFromDarkCombined",
         doc="Measured defect lists.",
         storageClass="Defects",
         dimensions=("instrument", "detector",),
         multiple=False,
     )
-    inputDarkDefects = cT.Input(
+    inputFlatDefects = cT.Input(
         name="cpPartialDefectsFromFlatCombinedWithFilter",
         doc="Additional measured defect lists.",
         storageClass="Defects",
