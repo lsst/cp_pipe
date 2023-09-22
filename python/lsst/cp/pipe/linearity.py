@@ -238,6 +238,15 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
         dtype=int,
         doc="Maximum number of rejections per iteration for spline fit.",
         default=5,
+        # TODO: remove on TODO: FILE TICKET
+        deprecated="This config has been renamed to splineFitMaxRejectionFractionPerIteration, "
+                   "and will be removed after v27.",
+    )
+    splineFitMaxRejectionFractionPerIteration = pexConfig.Field(
+        dtype=float,
+        doc="Maximum fraction of total points to reject per iteration for spline fit. "
+            "The minimum number of points that can be rejected is 1.",
+        default=0.01,
     )
 
 
@@ -483,6 +492,12 @@ class LinearitySolveTask(pipeBase.PipelineTask):
 
                 nodes = np.linspace(0.0, np.max(inputOrdinate[mask]), self.config.splineKnots)
 
+                maxRejectionPerIteration = int(np.clip(
+                    len(inputOrdinate)*self.config.splineFitMaxRejectionFractionPerIteration,
+                    1,
+                    None,
+                ))
+
                 fitter = AstierSplineLinearityFitter(
                     nodes,
                     groupingValue,
@@ -496,7 +511,7 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                     p0,
                     min_iter=self.config.splineFitMinIter,
                     max_iter=self.config.splineFitMaxIter,
-                    max_rejection_per_iteration=self.config.splineFitMaxRejectionPerIteration,
+                    max_rejection_per_iteration=maxRejectionPerIteration,
                     n_sigma_clip=self.config.nSigmaClipLinear,
                 )
 
