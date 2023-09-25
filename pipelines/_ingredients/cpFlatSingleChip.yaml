@@ -6,6 +6,7 @@ tasks:
       connections.ccdExposure: 'raw'
       connections.outputExposure: 'cpFlatProc'
       doWrite: true
+      doDefect: false
       doBrighterFatter: false
       doFlat: false
       doFringe: false
