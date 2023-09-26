@@ -492,6 +492,8 @@ class LinearitySolveTask(pipeBase.PipelineTask):
 
                 nodes = np.linspace(0.0, np.max(inputOrdinate[mask]), self.config.splineKnots)
 
+                zero_nodes, = np.where((nodes == 0.0) | (nodes < np.min(inputOrdinate[mask])))
+
                 maxRejectionPerIteration = int(np.clip(
                     len(inputOrdinate)*self.config.splineFitMaxRejectionFractionPerIteration,
                     1,
@@ -505,6 +507,7 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                     inputOrdinate,
                     mask=mask,
                     log=self.log,
+                    zero_nodes=zero_nodes,
                 )
                 p0 = fitter.estimate_p0()
                 pars = fitter.fit(
@@ -515,12 +518,13 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                     n_sigma_clip=self.config.nSigmaClipLinear,
                 )
 
-                # Confirm that the first parameter is 0, and set it to
+                # Confirm that the first parameters are 0, and set them to
                 # exactly zero.
-                if not np.isclose(pars[0], 0):
-                    raise RuntimeError("Programmer error! First spline parameter must "
-                                       "be consistent with zero.")
-                pars[0] = 0.0
+                for zero_node in zero_nodes:
+                    if not np.isclose(pars[zero_node], 0):
+                        raise RuntimeError("Programmer error! First spline parameters must "
+                                           "be consistent with zero.")
+                    pars[zero_node] = 0.0
 
                 linearityCoeffs = np.concatenate([nodes, pars[0: len(nodes)]])
                 linearFit = np.array([0.0, np.mean(pars[len(nodes):])])

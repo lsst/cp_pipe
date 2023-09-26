@@ -809,12 +809,15 @@ class AstierSplineLinearityFitter:
         Input mask (True is good point, False is bad point).
     log : `logging.logger`, optional
         Logger object to use for logging.
+    zero_nodes : `np.ndarray`
+        Nodes that should be constrained to be zero.
     """
-    def __init__(self, nodes, grouping_values, pd, mu, mask=None, log=None):
+    def __init__(self, nodes, grouping_values, pd, mu, mask=None, log=None, zero_nodes=[0]):
         self._pd = pd
         self._mu = mu
         self._grouping_values = grouping_values
         self.log = log if log else logging.getLogger(__name__)
+        self._zero_nodes = zero_nodes
 
         self._nodes = nodes
         if nodes[0] != 0.0:
@@ -1018,7 +1021,8 @@ class AstierSplineLinearityFitter:
         resid[~self.mask] = 0.0
 
         constraint = [1e3 * np.mean(spl.interpolate(self._x_regularize))]
-        # 0 should transform to 0
-        constraint.append(spl.interpolate(0)*1e10)
+        # Zero-nodes should transform to zero.
+        for zero_node in self._zero_nodes:
+            constraint.append(spl.interpolate(self._nodes[zero_node])*1e10)
 
         return np.hstack([resid, constraint])
