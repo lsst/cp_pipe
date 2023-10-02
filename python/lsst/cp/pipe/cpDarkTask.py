@@ -110,10 +110,16 @@ class CpDarkTask(pipeBase.PipelineTask):
                                         self.config.psfFwhm/(2*math.sqrt(2*math.log(2))))
         inputExp.setPsf(psf)
 
+        # Get the gain used to set the variance plane from the
+        # exposure, if possible.  Otherwise, use the cameraGeom value.
         gains = self._get_gains(inputExp)
+
         with gainContext(inputExp, inputExp.getVariance(), apply=True, gains=gains):
-            self.log.info("Median image and variance: %f %f",
-                          np.median(inputExp.image.array), np.median(inputExp.variance.array))
+            # Scale the variance to match the image plane.  A similar
+            # scaling happens during flat-field correction for science
+            # images.
+            self.log.debug("Median image and variance: %f %f",
+                           np.median(inputExp.image.array), np.median(inputExp.variance.array))
             try:
                 self.repair.run(inputExp, keepCRs=False)
             except LengthError:
@@ -144,7 +150,7 @@ class CpDarkTask(pipeBase.PipelineTask):
 
         Returns
         -------
-        gains : `dict` [`str`m `float`]
+        gains : `dict` [`str` `float`]
             Dictionary of gain values, keyed by amplifier name.
         """
         det = exposure.getDetector()
