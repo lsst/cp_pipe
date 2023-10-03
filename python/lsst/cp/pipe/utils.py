@@ -22,17 +22,18 @@
 
 __all__ = ['ddict2dict', 'CovFastFourierTransform']
 
-import numpy as np
-from scipy.optimize import leastsq
-import numpy.polynomial.polynomial as poly
-from scipy.stats import median_abs_deviation, norm
+
+import galsim
 import logging
+import numpy as np
+import numpy.polynomial.polynomial as poly
+
+from scipy.optimize import leastsq
+from scipy.stats import median_abs_deviation, norm
 
 from lsst.ip.isr import isrMock
 import lsst.afw.image
 import lsst.afw.math
-
-import galsim
 
 
 def sigmaClipCorrection(nSigClip):
