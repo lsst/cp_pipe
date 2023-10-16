@@ -1,6 +1,6 @@
 description: Sky frame generation pipeline definition.
 tasks:
-  isr:
+  skyIsr:
     class: lsst.ip.isr.isrTask.IsrTask
   cpSkyImage:
     class: lsst.cp.pipe.CpSkyImageTask

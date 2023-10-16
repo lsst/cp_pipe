@@ -3,7 +3,7 @@ instrument: lsst.obs.lsst.Latiss
 imports:
   - location: $CP_PIPE_DIR/pipelines/_ingredients/cpPtc.yaml
 tasks:
-  isr:
+  ptcIsr:
     class: lsst.ip.isr.IsrTask
     config:
       doCrosstalk: false

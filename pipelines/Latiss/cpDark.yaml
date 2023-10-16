@@ -3,7 +3,7 @@ instrument: lsst.obs.lsst.Latiss
 imports:
   -  location: $CP_PIPE_DIR/pipelines/_ingredients/cpDark.yaml
 tasks:
-  isr:
+  darkIsr:
     class: lsst.ip.isr.IsrTask
     config:
       # Disable these until valid calibrations exist.

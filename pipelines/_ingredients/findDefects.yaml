@@ -1,6 +1,6 @@
 description: cp_pipe DEFECT calibration construction.
 tasks:
-  isr:
+  defectIsr:
     class: lsst.ip.isr.IsrTask
     config:
       connections.ccdExposure: 'raw'

@@ -605,7 +605,7 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
             plt.close()
 
 
-class MeasureDefectsCombinedConnections(MeasureDefectsConnections,
+class MeasureDefectsCombinedConnections(pipeBase.PipelineTaskConnections,
                                         dimensions=("instrument", "detector")):
     inputExp = cT.Input(
         name="dark",
@@ -645,8 +645,8 @@ class MeasureDefectsCombinedTask(MeasureDefectsTask):
     _DefaultName = "cpDefectMeasureCombined"
 
 
-class MeasureDefectsCombinedWithFilterConnections(MeasureDefectsCombinedConnections,
-                                                  dimensions=("instrument", "detector")):
+class MeasureDefectsCombinedWithFilterConnections(pipeBase.PipelineTaskConnections,
+                                                  dimensions=("instrument", "detector", "physical_filter")):
     """Task to measure defects in combined flats under a certain filter."""
     inputExp = cT.Input(
         name="flat",
@@ -871,19 +871,19 @@ class MergeDefectsTask(pipeBase.PipelineTask):
 
 class MergeDefectsCombinedConnections(pipeBase.PipelineTaskConnections,
                                       dimensions=("instrument", "detector")):
-    inputFlatDefects = cT.Input(
+    inputDarkDefects = cT.Input(
         name="cpPartialDefectsFromDarkCombined",
         doc="Measured defect lists.",
         storageClass="Defects",
         dimensions=("instrument", "detector",),
-        multiple=False,
+        multiple=True,
     )
-    inputDarkDefects = cT.Input(
+    inputFlatDefects = cT.Input(
         name="cpPartialDefectsFromFlatCombinedWithFilter",
         doc="Additional measured defect lists.",
         storageClass="Defects",
         dimensions=("instrument", "detector", "physical_filter"),
-        multiple=False,
+        multiple=True,
     )
     camera = cT.PrerequisiteInput(
         name='camera',
@@ -919,11 +919,28 @@ class MergeDefectsCombinedTask(MergeDefectsTask):
     ConfigClass = MergeDefectsCombinedTaskConfig
     _DefaultName = "cpDefectMergeCombined"
 
+    @staticmethod
+    def chooseBest(inputs):
+        """Select the input with the most exposures used."""
+        best = 0
+        if len(inputs) > 1:
+            nInput = 0
+            for num, exp in enumerate(inputs):
+                # This technically overcounts by a factor of 3.
+                N = len([k for k, v in exp.getMetadata().toDict().items() if "CPP_INPUT_" in k])
+                if N > nInput:
+                    best = num
+                    nInput = N
+        return inputs[best]
+
     def runQuantum(self, butlerQC, inputRefs, outputRefs):
         inputs = butlerQC.get(inputRefs)
-        # Turn inputFlatDefects and inputDarkDefects into a list
-        # which is what MergeDefectsTask expects.
-        tempList = [inputs['inputFlatDefects'], inputs['inputDarkDefects']]
+        # Turn inputFlatDefects and inputDarkDefects into a list which
+        # is what MergeDefectsTask expects.  If there are multiple,
+        # use the one with the most inputs.
+        tempList = [self.chooseBest(inputs['inputFlatDefects']),
+                    self.chooseBest(inputs['inputDarkDefects'])]
+
         # Rename inputDefects
         inputsCombined = {'inputDefects': tempList, 'camera': inputs['camera']}
 

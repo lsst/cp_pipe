@@ -1,6 +1,6 @@
 description: cp_pipe BIAS calibration construction
 tasks:
-  isr:
+  biasIsr:
     class: lsst.ip.isr.IsrTask
     config:
       connections.ccdExposure: 'raw'
@@ -23,6 +23,6 @@ tasks:
       calibrationType: 'bias'
       exposureScaling: "Unity"
 contracts:
-  - isr.doBias == False
+  - biasIsr.doBias == False
   - cpBiasCombine.calibrationType == "bias"
   - cpBiasCombine.exposureScaling == "Unity"
