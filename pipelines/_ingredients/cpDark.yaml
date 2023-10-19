@@ -6,6 +6,7 @@ tasks:
       connections.ccdExposure: 'raw'
       connections.outputExposure: 'cpDarkIsr'
       doWrite: true
+      doDefect: false
       doBrighterFatter: false
       doDark: false
       doFlat: false

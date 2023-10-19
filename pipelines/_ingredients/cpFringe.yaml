@@ -6,6 +6,7 @@ tasks:
       connections.ccdExposure: 'raw'
       connections.outputExposure: 'cpFringeIsr'
       doWrite: true
+      doDefect: false
       doFringe: false
   cpFringe:
     class: lsst.cp.pipe.cpFringeTask.CpFringeTask
