@@ -894,7 +894,7 @@ class MergeDefectsCombinedConnections(pipeBase.PipelineTaskConnections,
     )
 
     mergedDefects = cT.Output(
-        name="defectsCombined",
+        name="defects",
         doc="Final merged defects.",
         storageClass="Defects",
         dimensions=("instrument", "detector"),
