@@ -20,7 +20,33 @@ tasks:
       connections.outputData: 'fringe'
       calibrationType: 'fringe'
       exposureScaling: "Unity"
+  cpFringeBin1:
+    class: lsst.pipe.tasks.visualizeVisit.VisualizeBinCalibTask
+    config:
+      connections.inputExp: 'fringe'
+      connections.outputExp: 'fringeBin1'
+      binning: 8
+  cpFringeBin2:
+    class: lsst.pipe.tasks.visualizeVisit.VisualizeBinCalibTask
+    config:
+      connections.inputExp: 'fringe'
+      connections.outputExp: 'fringeBin2'
+      binning: 64
+  cpFringeMosaic1:
+    class: lsst.pipe.tasks.visualizeVisit.VisualizeMosaicCalibTask
+    config:
+      connections.inputExp: 'fringeBin1'
+      connections.outputExp: 'fringeMosaic1'
+      binning: 8
+  cpFringeMosaic2:
+    class: lsst.pipe.tasks.visualizeVisit.VisualizeMosaicCalibTask
+    config:
+      connections.inputExp: 'fringeBin2'
+      connections.outputExp: 'fringeMosaic2'
+      binning: 64
 contracts:
   - fringeIsr.doFringe == False
   - cpFringeCombine.calibrationType == "fringe"
   - cpFringeCombine.exposureScaling == "Unity"
+  - cpFringeBin1.binning == cpFringeMosaic1.binning
+  - cpFringeBin2.binning == cpFringeMosaic2.binning
