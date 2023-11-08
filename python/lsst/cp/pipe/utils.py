@@ -500,7 +500,14 @@ def arrangeFlatsByExpFlux(exposureList, exposureIdList, fluxKeyword):
     assert len(exposureList) == len(exposureIdList), "Different lengths for exp. list and exp. ID lists"
     for expRef, expId in zip(exposureList, exposureIdList):
         # Get flux from header, assuming it is in the metadata.
-        expFlux = expRef.get().getMetadata()[fluxKeyword]
+        try:
+            expFlux = expRef.get().getMetadata()[fluxKeyword]
+        except KeyError:
+            # If it's missing from the header, continue; it will
+            # be caught and rejected when pairing exposures.
+            expFlux = None
+        if expFlux is None:
+            expFlux = np.nan
         listAtExpFlux = flatsAtExpFlux.setdefault(expFlux, [])
         listAtExpFlux.append((expRef, expId))
 

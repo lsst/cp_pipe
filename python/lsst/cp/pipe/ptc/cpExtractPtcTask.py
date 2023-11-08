@@ -469,7 +469,11 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
         # 'expTime' can stand for exposure time, flux, or ID.
         for expTime in inputExp:
             exposures = inputExp[expTime]
-            if len(exposures) == 1:
+            if not np.isfinite(expTime):
+                self.log.warning("Illegal/missing %s found (%f). Dropping exposure %d",
+                                 self.config.matchExposuresType, expTime, exposures[0][1])
+                continue
+            elif len(exposures) == 1:
                 self.log.warning("Only one exposure found at %s %f. Dropping exposure %d.",
                                  self.config.matchExposuresType, expTime, exposures[0][1])
                 continue
