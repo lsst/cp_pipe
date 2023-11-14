@@ -46,14 +46,14 @@ tasks:
   cpBiasMosaic1:
     class: lsst.pipe.tasks.visualizeVisit.VisualizeMosaicCalibTask
     config:
-      connections.inputExp: 'biasBin1'
-      connections.outputExp: 'biasMosaic1'
+      connections.inputExps: 'biasBin1'
+      connections.outputData: 'biasMosaic1'
       binning: 8
   cpBiasMosaic2:
     class: lsst.pipe.tasks.visualizeVisit.VisualizeMosaicCalibTask
     config:
-      connections.inputExp: 'biasBin2'
-      connections.outputExp: 'biasMosaic2'
+      connections.inputExps: 'biasBin2'
+      connections.outputData: 'biasMosaic2'
       binning: 64
 contracts:
   - biasIsr.doBias == False

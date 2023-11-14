@@ -37,28 +37,28 @@ tasks:
       exposureScaling: InputList
       scalingLevel: AMP
   cpFlatBin1:
-    class: lsst.pipe.tasks.visualizeVisit.VisualizeBinCalibTask
+    class: lsst.pipe.tasks.visualizeVisit.VisualizeBinCalibFilterTask
     config:
       connections.inputExp: 'flat'
       connections.outputExp: 'flatBin1'
       binning: 8
   cpFlatBin2:
-    class: lsst.pipe.tasks.visualizeVisit.VisualizeBinCalibTask
+    class: lsst.pipe.tasks.visualizeVisit.VisualizeBinCalibFilterTask
     config:
       connections.inputExp: 'flat'
       connections.outputExp: 'flatBin2'
       binning: 64
   cpFlatMosaic1:
-    class: lsst.pipe.tasks.visualizeVisit.VisualizeMosaicCalibTask
+    class: lsst.pipe.tasks.visualizeVisit.VisualizeMosaicCalibFilterTask
     config:
-      connections.inputExp: 'flatBin1'
-      connections.outputExp: 'flatMosaic1'
+      connections.inputExps: 'flatBin1'
+      connections.outputData: 'flatMosaic1'
       binning: 8
   cpFlatMosaic2:
-    class: lsst.pipe.tasks.visualizeVisit.VisualizeMosaicCalibTask
+    class: lsst.pipe.tasks.visualizeVisit.VisualizeMosaicCalibFilterTask
     config:
-      connections.inputExp: 'flatBin2'
-      connections.outputExp: 'flatMosaic2'
+      connections.inputExps: 'flatBin2'
+      connections.outputData: 'flatMosaic2'
       binning: 64
 contracts:
   - flatIsr.doFlat == False

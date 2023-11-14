@@ -35,14 +35,14 @@ tasks:
   cpFringeMosaic1:
     class: lsst.pipe.tasks.visualizeVisit.VisualizeMosaicCalibTask
     config:
-      connections.inputExp: 'fringeBin1'
-      connections.outputExp: 'fringeMosaic1'
+      connections.inputExps: 'fringeBin1'
+      connections.outputData: 'fringeMosaic1'
       binning: 8
   cpFringeMosaic2:
     class: lsst.pipe.tasks.visualizeVisit.VisualizeMosaicCalibTask
     config:
-      connections.inputExp: 'fringeBin2'
-      connections.outputExp: 'fringeMosaic2'
+      connections.inputExps: 'fringeBin2'
+      connections.outputData: 'fringeMosaic2'
       binning: 64
 contracts:
   - fringeIsr.doFringe == False

@@ -46,14 +46,14 @@ tasks:
   cpDarkMosaic1:
     class: lsst.pipe.tasks.visualizeVisit.VisualizeMosaicCalibTask
     config:
-      connections.inputExp: 'darkBin1'
-      connections.outputExp: 'darkMosaic1'
+      connections.inputExps: 'darkBin1'
+      connections.outputData: 'darkMosaic1'
       binning: 8
   cpDarkMosaic2:
     class: lsst.pipe.tasks.visualizeVisit.VisualizeMosaicCalibTask
     config:
-      connections.inputExp: 'darkBin2'
-      connections.outputExp: 'darkMosaic2'
+      connections.inputExps: 'darkBin2'
+      connections.outputData: 'darkMosaic2'
       binning: 64
 contracts:
   - darkIsr.doDark == False
