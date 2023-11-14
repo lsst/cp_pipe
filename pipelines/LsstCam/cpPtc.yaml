@@ -7,6 +7,7 @@ tasks:
     class: lsst.ip.isr.IsrTask
     config:
       deferredChargeCorrection.useGains: true
+      doCrosstalk: false
   ptcExtract:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
     config:
