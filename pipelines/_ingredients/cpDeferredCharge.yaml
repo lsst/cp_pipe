@@ -27,3 +27,6 @@ tasks:
     config:
       connections.inputMeasurements: 'cpCtiStats'
       connections.outputCalib: 'cpCtiCalib'
+      useGains: true
+contracts:
+  - ctiIsr.doApplyGains == solveCti.useGains
