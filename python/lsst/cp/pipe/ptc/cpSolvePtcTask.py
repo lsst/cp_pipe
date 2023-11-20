@@ -24,7 +24,8 @@ from collections import Counter
 
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
-from lsst.cp.pipe.utils import (fitLeastSq, fitBootstrap, funcPolynomial, funcAstier, symmetrize)
+from lsst.cp.pipe.utils import (fitLeastSq, fitBootstrap, funcPolynomial,
+                                funcAstier, symmetrize, Pol2D)
 
 from scipy.signal import fftconvolve
 from scipy.optimize import least_squares
@@ -103,6 +104,23 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
         dtype=int,
         doc="Maximum range of covariances as in Astier+19",
         default=8,
+    )
+    doSubtractLongRangeCovariances = pexConfig.Field(
+        dtype=bool,
+        doc="Subtract long-range covariances?",
+        default=False,
+    )
+    startLongRangeCovariances = pexConfig.Field(
+        dtype=int,
+        doc="If doSubtractLongRangeCovariances is True, subtract covariances "
+            "beyond this range. ",
+        default=4,
+    )
+    polyDegLongRangeCovariances = pexConfig.Field(
+        dtype=int,
+        doc="If doSubtractLongRangeCovariances is True, polynomial "
+            "degree to fit data beyond startLongRangeCovariances.",
+        default=1,
     )
     sigmaClipFullFitCovariancesAstier = pexConfig.Field(
         dtype=float,
@@ -545,6 +563,22 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             covSqrtWeightsAtAmp = dataset.covariancesSqrtWeights[ampName]
             covSqrtWeightsAtAmpMasked = np.nan_to_num(covSqrtWeightsAtAmp)[maskAtAmp]
 
+            # Subtract long-range covariances
+            if self.config.doSubtractLongRangeCovariances:
+                startLag = self.config.startLongRangeCovariances
+                if matrixSide < startLag:
+                    raise RuntimeError("Covariance size %s is smaller than long"
+                                       "-range covariance starting point %s.",
+                                       matrixSide, startLag)
+                else:
+                    # covAtAmpMasked and covSqrtWeightsAtAmpMasked
+                    # will be modified.
+                    self.subtractDistantOffset(muAtAmpMasked, covAtAmpMasked,
+                                               covSqrtWeightsAtAmpMasked,
+                                               r=matrixSide,
+                                               start=startLag,
+                                               degree=self.config.polyDegLongRangeCovariances)
+
             # Initial fit, to approximate parameters, with c=0
             a0, c0, noise0, gain0 = self.initialFitFullCovariance(
                 muAtAmpMasked,
@@ -806,6 +840,63 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         covModel[:, 0, 0] += mu/gain
 
         return covModel
+
+    def subtractDistantOffset(self, muAtAmpMasked, covAtAmpMasked, covSqrtWeightsAtAmpMasked,
+                              r, start, degree=1):
+        """Subtract distant offset from the covariance matrices.
+
+        Parameters
+        ----------
+        muAtAmpMasked : `numpy.array`
+            Masked mean flux array for a particular amplifier.
+        covAtAmpMasked : `numpy.array`
+            Masked measured covariances for a particular amplifier.
+        covSqrtWeightsAtAmpMasked : `numpy.array`
+            Masked inverse covariance weights for a particular amplifier.
+        r : `int`
+            Covariance matrix size.
+        start : int, optional
+            The starting index to eliminate the core for the fit.
+        degree : int, optional
+            Degree of the polynomial fit.
+
+        Notes
+        -----
+        Ported from https://gitlab.in2p3.fr/astier/bfptc by P. Astier.
+
+        This function subtracts a distant offset from the
+        covariance matrices using polynomial fitting. The core
+        of the matrices is eliminated for the fit.
+
+        The parameters of the polynomial fit are determined
+        by the arguments:
+        - `r`: The new maximum lag considered for the covariances calculation.
+        - `start`: The starting index to eliminate the core for the fit.
+        - `degree`: Degree of the polynomial fit.
+
+        The function modifies the internal state of the object, updating the
+        covariance matrices and related attributes.
+        """
+        assert len(muAtAmpMasked) == len(covAtAmpMasked)
+        assert len(muAtAmpMasked) == len(covAtAmpMasked)
+        assert start < r
+
+        for k in range(len(muAtAmpMasked)):
+            # Make a copy because it will be altered
+            w = np.copy(covSqrtWeightsAtAmpMasked[k, ...])
+            wShape = w.shape
+            i, j = np.meshgrid(range(wShape[0]), range(wShape[1]), indexing='ij')
+
+            # Eliminate the core for the fit
+            w[:start, :start] = 0
+
+            poly = Pol2D(i, j, covAtAmpMasked[k, ...], degree, w=w)
+            back = poly.eval(i, j)
+
+            covAtAmpMasked[k, ...] -= back
+
+        covAtAmpMasked = covAtAmpMasked[:, :r, :r]
+        covSqrtWeightsAtAmpMasked = covSqrtWeightsAtAmpMasked[:, :r, :r]
 
     # EXPAPPROXIMATION and POLYNOMIAL fit methods
     @staticmethod
