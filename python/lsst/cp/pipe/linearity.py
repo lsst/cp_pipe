@@ -263,7 +263,7 @@ class LinearitySolveTask(pipeBase.PipelineTask):
         inputs = butlerQC.get(inputRefs)
 
         # Use the dimensions to set calib/provenance information.
-        inputs['inputDims'] = inputRefs.inputPtc.dataId.byName()
+        inputs['inputDims'] = dict(inputRefs.inputPtc.dataId.required)
 
         outputs = self.run(**inputs)
         butlerQC.put(outputs, outputRefs)

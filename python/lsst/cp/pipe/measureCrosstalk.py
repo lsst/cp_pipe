@@ -433,8 +433,8 @@ class CrosstalkSolveTask(pipeBase.PipelineTask):
         inputs = butlerQC.get(inputRefs)
 
         # Use the dimensions to set calib/provenance information.
-        inputs['inputDims'] = [exp.dataId.byName() for exp in inputRefs.inputRatios]
-        inputs['outputDims'] = outputRefs.outputCrosstalk.dataId.byName()
+        inputs['inputDims'] = [dict(exp.dataId.required) for exp in inputRefs.inputRatios]
+        inputs['outputDims'] = dict(outputRefs.outputCrosstalk.dataId.required)
 
         outputs = self.run(**inputs)
         butlerQC.put(outputs, outputRefs)
