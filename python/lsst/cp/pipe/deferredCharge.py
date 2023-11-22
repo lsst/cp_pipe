@@ -126,7 +126,7 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
     def runQuantum(self, butlerQC, inputRefs, outputRefs):
         inputs = butlerQC.get(inputRefs)
 
-        dimensions = [exp.dataId.byName() for exp in inputRefs.inputMeasurements]
+        dimensions = [dict(exp.dataId.required) for exp in inputRefs.inputMeasurements]
         inputs['inputDims'] = dimensions
 
         outputs = self.run(**inputs)

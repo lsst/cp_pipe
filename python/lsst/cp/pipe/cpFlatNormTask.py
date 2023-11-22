@@ -192,7 +192,7 @@ class CpFlatNormalizationTask(pipeBase.PipelineTask):
 
         # Use the dimensions of the inputs for generating
         # output scales.
-        dimensions = [exp.dataId.byName() for exp in inputRefs.inputMDs]
+        dimensions = [dict(exp.dataId.required) for exp in inputRefs.inputMDs]
         inputs['inputDims'] = dimensions
 
         outputs = self.run(**inputs)

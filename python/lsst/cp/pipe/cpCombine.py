@@ -228,7 +228,7 @@ class CalibCombineTask(pipeBase.PipelineTask):
     def runQuantum(self, butlerQC, inputRefs, outputRefs):
         inputs = butlerQC.get(inputRefs)
 
-        dimensions = [expHandle.dataId.byName() for expHandle in inputRefs.inputExpHandles]
+        dimensions = [dict(expHandle.dataId.required) for expHandle in inputRefs.inputExpHandles]
         inputs["inputDims"] = dimensions
 
         outputs = self.run(**inputs)

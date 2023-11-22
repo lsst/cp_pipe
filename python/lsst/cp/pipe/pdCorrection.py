@@ -95,7 +95,7 @@ class PhotodiodeCorrectionTask(pipeBase.PipelineTask):
         inputs = butlerQC.get(inputRefs)
 
         # Use the dimensions to set calib/provenance information.
-        inputs['inputDims'] = inputRefs.inputPtc[0].dataId.byName()
+        inputs['inputDims'] = dict(inputRefs.inputPtc[0].dataId.required)
 
         # Need to generate a joint list of detectors present in both
         # inputPtc and inputLinearizer.  We do this here because the
