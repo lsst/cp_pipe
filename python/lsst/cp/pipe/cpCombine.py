@@ -189,9 +189,14 @@ class CalibCombineConfig(pipeBase.PipelineTaskConfig,
         doc="Copy vignette polygon to output and censor vignetted pixels?"
     )
 
+    maskNegativeValues = pexConfig.Field(
+        dtype=bool,
+        default=False,
+        doc="Set negative values to 'BAD'?",
+    )
     mask = pexConfig.ListField(
         dtype=str,
-        default=["SAT", "DETECTED", "INTRP"],
+        default=["BAD", "SAT", "DETECTED", "INTRP"],
         doc="Mask planes to respect",
     )
     combine = pexConfig.Field(
@@ -422,6 +427,18 @@ class CalibCombineTask(pipeBase.PipelineTask):
                 scale = scaleExp[bbox]
             mi /= scale
 
+    def maskNegativeValues(self, exposure):
+        """Set negative values to 'BAD'.
+
+        Parameters
+        ----------
+        exposure : `lsst.afw.image.Exposure`
+            Exposure to mask.
+        """
+        maskPlane = exposure.getMask().getPlaneBitMask("BAD")
+        bad = np.where(exposure.image.array <= 0.0)
+        exposure.mask.array[bad] |= maskPlane
+
     @staticmethod
     def _subBBoxIter(bbox, subregionSize):
         """Iterate over subregions of a bbox.
@@ -479,6 +496,8 @@ class CalibCombineTask(pipeBase.PipelineTask):
             for expHandle, expScale in zip(expHandleList, expScaleList):
                 inputExp = expHandle.get(parameters={"bbox": subBbox})
                 self.applyScale(inputExp, subBbox, expScale)
+                if self.config.maskNegativeValues:
+                    self.maskNegativeValues(inputExp)
                 images.append(inputExp.getMaskedImage())
 
             combinedSubregion = afwMath.statisticsStack(images, combineType, stats)
