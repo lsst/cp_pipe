@@ -115,12 +115,12 @@ class MeasureDefectsTaskConfig(pipeBase.PipelineTaskConfig,
     nPixBorderUpDown = pexConfig.Field(
         dtype=int,
         doc="Number of pixels to exclude from top & bottom of image when looking for defects.",
-        default=7,
+        default=0,
     )
     nPixBorderLeftRight = pexConfig.Field(
         dtype=int,
         doc="Number of pixels to exclude from left & right of image when looking for defects.",
-        default=7,
+        default=0,
     )
     badOnAndOffPixelColumnThreshold = pexConfig.Field(
         dtype=int,
