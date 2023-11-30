@@ -594,6 +594,8 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
             # Create spline model for the trap, using the residual
             # between data and model as a function of the last image
             # column mean (new_signal) scaled by (1 - A_L).
+            # Note that this ``spline`` model is actually a piecewise
+            # linear interpolation and not a true spline.
             new_signal = np.asarray((1 - calib.driftScale[ampName])*new_signal, dtype=np.float64)
             x = new_signal
             y = np.maximum(0, res)
@@ -601,10 +603,6 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
             # Pad left with ramp
             y = np.pad(y, (10, 0), 'linear_ramp', end_values=(0, 0))
             x = np.pad(x, (10, 0), 'linear_ramp', end_values=(0, 0))
-
-            # Pad right with constant
-            y = np.pad(y, (1, 1), 'constant', constant_values=(0, y[-1]))
-            x = np.pad(x, (1, 1), 'constant', constant_values=(-1, 200000.))
 
             trap = SerialTrap(20000.0, 0.4, 1, 'spline', np.concatenate((x, y)).tolist())
             calib.serialTraps[ampName] = trap
