@@ -81,6 +81,12 @@ class CpCtiSolveConfig(pipeBase.PipelineTaskConfig,
         doc="First and last overscan column to use for local offset effect.",
     )
 
+    useGains = pexConfig.Field(
+        dtype=bool,
+        default=True,
+        doc="Use gains in calculation.",
+    )
+
     maxSignalForCti = pexConfig.Field(
         dtype=float,
         default=10000.0,
@@ -179,7 +185,7 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
         detector = camera[detectorId]
 
         # Initialize with detector.
-        calib = DeferredChargeCalib(camera=camera, detector=detector)
+        calib = DeferredChargeCalib(camera=camera, detector=detector, useGains=self.config.useGains)
 
         localCalib = self.solveLocalOffsets(inputMeasurements, calib, detector)
 
