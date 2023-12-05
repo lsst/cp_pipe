@@ -139,8 +139,17 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
     maxSignalInitialPtcOutlierFit = pexConfig.Field(
         dtype=float,
         doc="Maximum signal considered for intial outlier fit. This should be below "
-            "the PTC turnoff to ensure accurate outlier rejection.",
-        default=30_000.,
+            "the PTC turnoff to ensure accurate outlier rejection. If "
+            "scaleMaxSignalInitialPtcOutlierFit=True then the units are electrons; "
+            "otherwise ADU.",
+        default=50_0000.,
+    )
+    scaleMaxSignalInitialPtcOutlierFit = pexConfig.Field(
+        dtype=bool,
+        doc="Scale maxSignalInitialPtcOutlierFit by approximate gain?  If yes then "
+            "maxSignalInitialPtcOutlierFit is assumed to have units of electrons, "
+            "otherwise ADU.",
+        default=True,
     )
     minVarPivotSearch = pexConfig.Field(
         dtype=float,
@@ -1022,6 +1031,18 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             # This algorithm was initially developed by Seth Digel for
             # the EO Testing pipeline.
 
+            if self.config.scaleMaxSignalInitialPtcOutlierFit:
+                approxGain = np.nanmedian(meanVecOriginal/varVecOriginal)
+                maxADUInitialPtcOutlierFit = self.config.maxSignalInitialPtcOutlierFit/approxGain
+                self.log.info(
+                    "Using approximate gain %.3f and ADU signal cutoff of %.1f for amplifier %s",
+                    approxGain,
+                    maxADUInitialPtcOutlierFit,
+                    ampName,
+                )
+            else:
+                maxADUInitialPtcOutlierFit = self.config.maxSignalInitialPtcOutlierFit
+
             if maxIterationsPtcOutliers == 0:
                 # We are not doing any outlier rejection here, but we do want
                 # an initial fit.
@@ -1034,7 +1055,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 pars = res.x
                 newMask = mask.copy()
             else:
-                newMask = (mask & (meanVecOriginal <= self.config.maxSignalInitialPtcOutlierFit))
+                newMask = (mask & (meanVecOriginal <= maxADUInitialPtcOutlierFit))
 
                 count = 0
                 lastMask = mask.copy()
