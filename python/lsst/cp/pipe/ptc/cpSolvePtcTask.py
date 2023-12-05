@@ -1005,8 +1005,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 if self.config.binSize > 1:
                     bounds = self._boundsForAstier(parsIniPtc)
                 else:
-                    bounds = self._boundsForAstier(parsIniPtc, lowers=[-1e-4, 0.5, -2000],
-                                                   uppers=[1e-4, 2.5, 2000])
+                    bounds = self._boundsForAstier(parsIniPtc, lowers=[-1e-4, 0.1, -2000],
+                                                   uppers=[1e-4, 10.0, 2000])
             if ptcFitType == 'POLYNOMIAL':
                 ptcFunc = funcPolynomial
                 parsIniPtc = self._initialParsForPolynomial(self.config.polynomialFitDegree + 1)
