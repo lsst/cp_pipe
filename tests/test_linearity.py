@@ -107,7 +107,7 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
                     inputExpIdPair=exp_id_pairs[i],
                     rawExpTime=exp_times[i],
                     rawMean=raw_mean,
-                    rawVar=1.0,
+                    rawVar=raw_mean,
                     kspValue=1.0,
                     expIdMask=exp_id_mask,
                     photoCharge=photo_charges[i],
