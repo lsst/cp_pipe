@@ -312,10 +312,14 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
         # containing flat exposures and their IDs.
         matchType = self.config.matchExposuresType
         if matchType == 'TIME':
-            inputs['inputExp'] = arrangeFlatsByExpTime(inputs['inputExp'], inputs['inputDims'])
+            inputs['inputExp'] = arrangeFlatsByExpTime(inputs['inputExp'], inputs['inputDims'], log=self.log)
         elif matchType == 'FLUX':
-            inputs['inputExp'] = arrangeFlatsByExpFlux(inputs['inputExp'], inputs['inputDims'],
-                                                       self.config.matchExposuresByFluxKeyword)
+            inputs['inputExp'] = arrangeFlatsByExpFlux(
+                inputs['inputExp'],
+                inputs['inputDims'],
+                self.config.matchExposuresByFluxKeyword,
+                log=self.log,
+            )
         else:
             inputs['inputExp'] = arrangeFlatsByExpId(inputs['inputExp'], inputs['inputDims'])
 
@@ -470,7 +474,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
         for expTime in inputExp:
             exposures = inputExp[expTime]
             if not np.isfinite(expTime):
-                self.log.warning("Illegal/missing %s found (%f). Dropping exposure %d",
+                self.log.warning("Illegal/missing %s found (%s). Dropping exposure %d",
                                  self.config.matchExposuresType, expTime, exposures[0][1])
                 continue
             elif len(exposures) == 1:
