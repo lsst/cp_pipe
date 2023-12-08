@@ -142,7 +142,7 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
             "the PTC turnoff to ensure accurate outlier rejection. If "
             "scaleMaxSignalInitialPtcOutlierFit=True then the units are electrons; "
             "otherwise ADU.",
-        default=50_0000.,
+        default=50_000.,
     )
     scaleMaxSignalInitialPtcOutlierFit = pexConfig.Field(
         dtype=bool,
