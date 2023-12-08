@@ -102,18 +102,29 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
     )
     maximumRangeCovariancesAstier = pexConfig.Field(
         dtype=int,
-        doc="Maximum range of covariances as in Astier+19",
+        doc="Maximum range of measured covariances as in Astier+19",
+        default=8,
+    )
+    maximumRangeCovariancesAstierFullCovFit = pexConfig.Field(
+        dtype=int,
+        doc="Maximum range up to where to fit covariances as in Astier+19, "
+            "for the FULLCOVARIANCE model."
+            "It should be less or equal than maximumRangeCovariancesAstier."
+            "The number of parameters for this model is "
+            "3*maximumRangeCovariancesAstierFullCovFit^2 + 1, so increase with care "
+            "so that the fit is not too slow.",
         default=8,
     )
     doSubtractLongRangeCovariances = pexConfig.Field(
         dtype=bool,
-        doc="Subtract long-range covariances?",
+        doc="Subtract long-range covariances before FULLCOVARIANCE fit, "
+            "beyond startLongRangeCovariances?",
         default=False,
     )
     startLongRangeCovariances = pexConfig.Field(
         dtype=int,
         doc="If doSubtractLongRangeCovariances is True, subtract covariances "
-            "beyond this range. ",
+            "beyond this range. It should be less than maximumRangeCovariancesAstier. ",
         default=4,
     )
     polyDegLongRangeCovariances = pexConfig.Field(
@@ -196,7 +207,7 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
         doc="Use bootstrap for the PTC fit parameters and errors?.",
         default=False,
     )
-    binSize = pexConfig.Field(
+    binSide = pexConfig.Field(
         dtype=int,
         doc="Bin the image by this factor in both dimensions.",
         default=1,
@@ -278,6 +289,21 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 means, variances, and exposure times
                 (`lsst.ip.isr.PhotonTransferCurveDataset`).
         """
+        # Check parameters
+        fitMatrixSide = self.config.maximumRangeCovariancesAstierFullCovFit
+        measureMatrixSide = self.config.maximumRangeCovariancesAstier
+        if self.config.ptcFitType == "FULLCOVARIANCE":
+            if fitMatrixSide > measureMatrixSide:
+                raise RuntimeError("Covariance fit size %s is larger than"
+                                   "measurement size %s.",
+                                   fitMatrixSide, measureMatrixSide)
+            if self.config.doSubtractLongRangeCovariances:
+                startLag = self.config.startLongRangeCovariances
+                if measureMatrixSide < startLag:
+                    raise RuntimeError("Covariance measure size %s is smaller than long"
+                                       "-range covariance starting point %s.",
+                                       measureMatrixSide, startLag)
+
         # Find the ampNames from a non-dummy ptc.
         ampNames = []
         for partialPtcDataset in inputCovariances:
@@ -301,9 +327,11 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 minMeanSignalDict[ampName] = self.config.minMeanSignal[ampName]
 
         # Assemble individual PTC datasets into a single PTC dataset.
-        datasetPtc = PhotonTransferCurveDataset(ampNames=ampNames,
-                                                ptcFitType=self.config.ptcFitType,
-                                                covMatrixSide=self.config.maximumRangeCovariancesAstier)
+        datasetPtc = PhotonTransferCurveDataset(
+            ampNames=ampNames,
+            ptcFitType=self.config.ptcFitType,
+            covMatrixSide=self.config.maximumRangeCovariancesAstier,
+            covMatrixSideFullCovFit=self.config.maximumRangeCovariancesAstierFullCovFit)
         for partialPtcDataset in inputCovariances:
             # Ignore dummy datasets
             if partialPtcDataset.ptcFitType == 'DUMMY':
@@ -518,7 +546,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         have r^2 fewer entries.
         """
         matrixSide = self.config.maximumRangeCovariancesAstier
-        lenParams = matrixSide*matrixSide
+        matrixSideFit = self.config.maximumRangeCovariancesAstierFullCovFit
+        lenParams = matrixSideFit*matrixSideFit
 
         for ampName in dataset.ampNames:
             lenInputTimes = len(dataset.rawExpTimes[ampName])
@@ -531,16 +560,17 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 # Bad amp
                 # Entries need to have proper dimensions so read/write
                 # with astropy.Table works.
-                nanMatrix = np.full((matrixSide, matrixSide), np.nan)
+                nanMatrixFit = np.full((matrixSideFit, matrixSideFit), np.nan)
                 listNanMatrix = np.full((lenInputTimes, matrixSide, matrixSide), np.nan)
-                dataset.covariancesModel[ampName] = listNanMatrix
+                listNanMatrixFit = np.full((lenInputTimes, matrixSideFit, matrixSideFit), np.nan)
+                dataset.covariancesModel[ampName] = listNanMatrixFit
                 dataset.covariancesSqrtWeights[ampName] = listNanMatrix
-                dataset.aMatrix[ampName] = nanMatrix
-                dataset.bMatrix[ampName] = nanMatrix
-                dataset.covariancesModelNoB[ampName] = listNanMatrix
-                dataset.aMatrixNoB[ampName] = nanMatrix
-                dataset.noiseMatrix[ampName] = nanMatrix
-                dataset.noiseMatrixNoB[ampName] = nanMatrix
+                dataset.aMatrix[ampName] = nanMatrixFit
+                dataset.bMatrix[ampName] = nanMatrixFit
+                dataset.covariancesModelNoB[ampName] = listNanMatrixFit
+                dataset.aMatrixNoB[ampName] = nanMatrixFit
+                dataset.noiseMatrix[ampName] = nanMatrixFit
+                dataset.noiseMatrixNoB[ampName] = nanMatrixFit
 
                 dataset.expIdMask[ampName] = np.repeat(False, lenInputTimes)
                 dataset.gain[ampName] = np.nan
@@ -566,24 +596,23 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             # Subtract long-range covariances
             if self.config.doSubtractLongRangeCovariances:
                 startLag = self.config.startLongRangeCovariances
-                if matrixSide < startLag:
-                    raise RuntimeError("Covariance size %s is smaller than long"
-                                       "-range covariance starting point %s.",
-                                       matrixSide, startLag)
-                else:
-                    # covAtAmpMasked and covSqrtWeightsAtAmpMasked
-                    # will be modified.
-                    self.subtractDistantOffset(muAtAmpMasked, covAtAmpMasked,
-                                               covSqrtWeightsAtAmpMasked,
-                                               r=matrixSide,
-                                               start=startLag,
-                                               degree=self.config.polyDegLongRangeCovariances)
+                covAtAmpMasked, covSqrtWeightsAtAmpMasked = self.subtractDistantOffset(
+                    muAtAmpMasked, covAtAmpMasked,
+                    covSqrtWeightsAtAmpMasked,
+                    start=startLag,
+                    degree=self.config.polyDegLongRangeCovariances)
+
+            # In principle, we could fit to a lag smaller than the measured
+            # covariances.
+            r = self.config.maximumRangeCovariancesAstierFullCovFit
+            covAtAmpForFitMasked = covAtAmpMasked[:, :r, :r]
+            covSqrtWeightsAtAmpForFitMasked = covSqrtWeightsAtAmpMasked[:, :r, :r]
 
             # Initial fit, to approximate parameters, with c=0
             a0, c0, noise0, gain0 = self.initialFitFullCovariance(
                 muAtAmpMasked,
-                covAtAmpMasked,
-                covSqrtWeightsAtAmpMasked
+                covAtAmpForFitMasked,
+                covSqrtWeightsAtAmpForFitMasked
             )
 
             # Fit full model (Eq. 20 of Astier+19) and same model with
@@ -595,11 +624,11 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                           'fullModelNoB': {'a': [], 'c': [], 'noise': [], 'gain': [], 'paramsErr': []}}
             for key in functionsDict:
                 params, paramsErr, _ = fitLeastSq(pInit, muAtAmpMasked,
-                                                  covAtAmpMasked.ravel(), functionsDict[key],
-                                                  weightsY=covSqrtWeightsAtAmpMasked.ravel())
-                a = params[:lenParams].reshape((matrixSide, matrixSide))
-                c = params[lenParams:2*lenParams].reshape((matrixSide, matrixSide))
-                noise = params[2*lenParams:3*lenParams].reshape((matrixSide, matrixSide))
+                                                  covAtAmpForFitMasked.ravel(), functionsDict[key],
+                                                  weightsY=covSqrtWeightsAtAmpForFitMasked.ravel())
+                a = params[:lenParams].reshape((matrixSideFit, matrixSideFit))
+                c = params[lenParams:2*lenParams].reshape((matrixSideFit, matrixSideFit))
+                noise = params[2*lenParams:3*lenParams].reshape((matrixSideFit, matrixSideFit))
                 gain = params[-1]
 
                 fitResults[key]['a'] = a
@@ -680,12 +709,12 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         gain : `float`
             Amplifier gain (e/ADU)
         """
-        matrixSide = self.config.maximumRangeCovariancesAstier
+        matrixSideFit = self.config.maximumRangeCovariancesAstierFullCovFit
 
         # Initialize fit parameters
-        a = np.zeros((matrixSide, matrixSide))
-        c = np.zeros((matrixSide, matrixSide))
-        noise = np.zeros((matrixSide, matrixSide))
+        a = np.zeros((matrixSideFit, matrixSideFit))
+        c = np.zeros((matrixSideFit, matrixSideFit))
+        noise = np.zeros((matrixSideFit, matrixSideFit))
         gain = 1.
 
         # iterate the fit to account for higher orders
@@ -695,8 +724,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         for _ in range(5):
             model = np.nan_to_num(self.evalCovModel(mu, a, c, noise, gain, setBtoZero=True))
             # loop on lags
-            for i in range(matrixSide):
-                for j in range(matrixSide):
+            for i in range(matrixSideFit):
+                for j in range(matrixSideFit):
                     # fit a parabola for a given lag
                     parsFit = np.polyfit(mu, cov[:, i, j] - model[:, i, j],
                                          2, w=sqrtW[:, i, j])
@@ -730,11 +759,11 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         y : `numpy.array`, (N,)
             Covariance matrix.
         """
-        matrixSide = self.config.maximumRangeCovariancesAstier
-        lenParams = matrixSide*matrixSide
-        aMatrix = params[:lenParams].reshape((matrixSide, matrixSide))
-        cMatrix = params[lenParams:2*lenParams].reshape((matrixSide, matrixSide))
-        noiseMatrix = params[2*lenParams:3*lenParams].reshape((matrixSide, matrixSide))
+        matrixSideFit = self.config.maximumRangeCovariancesAstierFullCovFit
+        lenParams = matrixSideFit*matrixSideFit
+        aMatrix = params[:lenParams].reshape((matrixSideFit, matrixSideFit))
+        cMatrix = params[lenParams:2*lenParams].reshape((matrixSideFit, matrixSideFit))
+        noiseMatrix = params[2*lenParams:3*lenParams].reshape((matrixSideFit, matrixSideFit))
         gain = params[-1]
 
         return self.evalCovModel(x, aMatrix, cMatrix, noiseMatrix, gain).flatten()
@@ -756,11 +785,11 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         y : `numpy.array`, (N,)
             Covariance matrix.
         """
-        matrixSide = self.config.maximumRangeCovariancesAstier
-        lenParams = matrixSide*matrixSide
-        aMatrix = params[:lenParams].reshape((matrixSide, matrixSide))
-        cMatrix = params[lenParams:2*lenParams].reshape((matrixSide, matrixSide))
-        noiseMatrix = params[2*lenParams:3*lenParams].reshape((matrixSide, matrixSide))
+        matrixSideFit = self.config.maximumRangeCovariancesAstierFullCovFit
+        lenParams = matrixSideFit*matrixSideFit
+        aMatrix = params[:lenParams].reshape((matrixSideFit, matrixSideFit))
+        cMatrix = params[lenParams:2*lenParams].reshape((matrixSideFit, matrixSideFit))
+        noiseMatrix = params[2*lenParams:3*lenParams].reshape((matrixSideFit, matrixSideFit))
         gain = params[-1]
 
         return self.evalCovModel(x, aMatrix, cMatrix, noiseMatrix, gain, setBtoZero=True).flatten()
@@ -806,8 +835,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         "b" appears in Eq. 20 only through the "ab" combination, which
         is defined in this code as "c=ab".
         """
-        matrixSide = self.config.maximumRangeCovariancesAstier
-        sa = (matrixSide, matrixSide)
+        matrixSideFit = self.config.maximumRangeCovariancesAstierFullCovFit
+        sa = (matrixSideFit, matrixSideFit)
         # pad a with zeros and symmetrize
         aEnlarged = np.zeros((int(sa[0]*1.5)+1, int(sa[1]*1.5)+1))
         aEnlarged[0:sa[0], 0:sa[1]] = aMatrix
@@ -822,9 +851,9 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         (xc, yc) = np.unravel_index(np.abs(aSym).argmax(), a2.shape)
 
         a1 = aMatrix[np.newaxis, :, :]
-        a2 = a2[np.newaxis, xc:xc + matrixSide, yc:yc + matrixSide]
-        a3 = a3[np.newaxis, xc:xc + matrixSide, yc:yc + matrixSide]
-        ac = ac[np.newaxis, xc:xc + matrixSide, yc:yc + matrixSide]
+        a2 = a2[np.newaxis, xc:xc + matrixSideFit, yc:yc + matrixSideFit]
+        a3 = a3[np.newaxis, xc:xc + matrixSideFit, yc:yc + matrixSideFit]
+        ac = ac[np.newaxis, xc:xc + matrixSideFit, yc:yc + matrixSideFit]
         c1 = cMatrix[np.newaxis, ::]
 
         # assumes that mu is 1d
@@ -842,7 +871,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         return covModel
 
     def subtractDistantOffset(self, muAtAmpMasked, covAtAmpMasked, covSqrtWeightsAtAmpMasked,
-                              r, start, degree=1):
+                              start, degree=1):
         """Subtract distant offset from the covariance matrices.
 
         Parameters
@@ -853,12 +882,17 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             Masked measured covariances for a particular amplifier.
         covSqrtWeightsAtAmpMasked : `numpy.array`
             Masked inverse covariance weights for a particular amplifier.
-        r : `int`
-            Covariance matrix size.
         start : int, optional
             The starting index to eliminate the core for the fit.
         degree : int, optional
             Degree of the polynomial fit.
+
+        Returns
+        -------
+        covAtAmpMasked : `numpy.array`
+            Subtracted measured covariances for a particular amplifier.
+        covSqrtWeightsAtAmpMasked : `numpy.array`
+            Masked inverse covariance weights for a particular amplifier.
 
         Notes
         -----
@@ -868,19 +902,9 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         covariance matrices using polynomial fitting. The core
         of the matrices is eliminated for the fit.
 
-        The parameters of the polynomial fit are determined
-        by the arguments:
-        - `r`: The new maximum lag considered for the covariances calculation.
-        - `start`: The starting index to eliminate the core for the fit.
-        - `degree`: Degree of the polynomial fit.
-
         The function modifies the internal state of the object, updating the
         covariance matrices and related attributes.
         """
-        assert len(muAtAmpMasked) == len(covAtAmpMasked)
-        assert len(muAtAmpMasked) == len(covAtAmpMasked)
-        assert start < r
-
         for k in range(len(muAtAmpMasked)):
             # Make a copy because it will be altered
             w = np.copy(covSqrtWeightsAtAmpMasked[k, ...])
@@ -895,8 +919,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
 
             covAtAmpMasked[k, ...] -= back
 
-        covAtAmpMasked = covAtAmpMasked[:, :r, :r]
-        covSqrtWeightsAtAmpMasked = covSqrtWeightsAtAmpMasked[:, :r, :r]
+        return covAtAmpMasked, covSqrtWeightsAtAmpMasked
 
     # EXPAPPROXIMATION and POLYNOMIAL fit methods
     @staticmethod
@@ -1010,8 +1033,9 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         Astier+19 approximation (Eq. 16).
 
         Fit the photon transfer curve with either a polynomial of
-        the order specified in the task config, or using the
-        exponential approximation in Astier+19 (Eq. 16).
+        the order specified in the task config (POLNOMIAL),
+        or using the exponential approximation in Astier+19
+        (Eq. 16, FULLCOVARIANCE).
 
         Sigma clipping is performed iteratively for the fit, as
         well as an initial clipping of data points that are more
@@ -1046,22 +1070,23 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             ptcFitType = dataset.ptcFitType
         else:
             raise RuntimeError("ptcFitType is None of empty in PTC dataset.")
-        matrixSide = self.config.maximumRangeCovariancesAstier
-        nanMatrix = np.empty((matrixSide, matrixSide))
-        nanMatrix[:] = np.nan
+        # For FULLCOVARIANCE model fit
+        matrixSideFit = self.config.maximumRangeCovariancesAstierFullCovFit
+        nanMatrixFit = np.empty((matrixSideFit, matrixSideFit))
+        nanMatrixFit[:] = np.nan
 
         for amp in dataset.ampNames:
             lenInputTimes = len(dataset.rawExpTimes[amp])
-            listNanMatrix = np.empty((lenInputTimes, matrixSide, matrixSide))
-            listNanMatrix[:] = np.nan
+            listNanMatrixFit = np.empty((lenInputTimes, matrixSideFit, matrixSideFit))
+            listNanMatrixFit[:] = np.nan
 
-            dataset.covariancesModel[amp] = listNanMatrix
-            dataset.aMatrix[amp] = nanMatrix
-            dataset.bMatrix[amp] = nanMatrix
-            dataset.covariancesModelNoB[amp] = listNanMatrix
-            dataset.aMatrixNoB[amp] = nanMatrix
-            dataset.noiseMatrix[amp] = nanMatrix
-            dataset.noiseMatrixNoB[amp] = nanMatrix
+            dataset.covariancesModel[amp] = listNanMatrixFit
+            dataset.aMatrix[amp] = nanMatrixFit
+            dataset.bMatrix[amp] = nanMatrixFit
+            dataset.covariancesModelNoB[amp] = listNanMatrixFit
+            dataset.aMatrixNoB[amp] = nanMatrixFit
+            dataset.noiseMatrix[amp] = nanMatrixFit
+            dataset.noiseMatrixNoB[amp] = nanMatrixFit
 
         def errFunc(p, x, y):
             return ptcFunc(p, x) - y
@@ -1102,7 +1127,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 parsIniPtc = [-1e-9, 1.0, 10.]  # a00, gain, noise^2
                 # lowers and uppers obtained from BOT data studies by
                 # C. Lage (UC Davis, 11/2020).
-                if self.config.binSize > 1:
+                if self.config.binSide > 1:
                     bounds = self._boundsForAstier(parsIniPtc)
                 else:
                     bounds = self._boundsForAstier(parsIniPtc, lowers=[-1e-4, 0.1, -2000],

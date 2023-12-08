@@ -826,9 +826,9 @@ class Pol2D:
         self.ordery = min(order, x.shape[1] - 1)
         G = self.monomials(x.ravel(), y.ravel())
         if w is None:
-            self.coeff, _, rank, _ = np.linalg.lstsq(G, z.ravel())
+            self.coeff, _, rank, _ = np.linalg.lstsq(G, z.ravel(), rcond=None)
         else:
-            self.coeff, _, rank, _ = np.linalg.lstsq((w.ravel() * G.T).T, z.ravel() * w.ravel())
+            self.coeff, _, rank, _ = np.linalg.lstsq((w.ravel() * G.T).T, z.ravel() * w.ravel(), rcond=None)
 
     def monomials(self, x, y):
         """
