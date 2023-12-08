@@ -448,7 +448,7 @@ def funcAstier(pars, x):
     return 0.5/(a00*gain*gain)*(np.exp(2*a00*x*gain)-1) + noise/(gain*gain)  # C_00
 
 
-def arrangeFlatsByExpTime(exposureList, exposureIdList):
+def arrangeFlatsByExpTime(exposureList, exposureIdList, log=None):
     """Arrange exposures by exposure time.
 
     Parameters
@@ -457,6 +457,8 @@ def arrangeFlatsByExpTime(exposureList, exposureIdList):
         Input list of exposure references.
     exposureIdList : `list` [`int`]
         List of exposure ids as obtained by dataId[`exposure`].
+    log : `lsst.utils.logging.LsstLogAdapter`, optional
+        Log object.
 
     Returns
     ------
@@ -470,13 +472,15 @@ def arrangeFlatsByExpTime(exposureList, exposureIdList):
     assert len(exposureList) == len(exposureIdList), "Different lengths for exp. list and exp. ID lists"
     for expRef, expId in zip(exposureList, exposureIdList):
         expTime = expRef.get(component='visitInfo').exposureTime
+        if not np.isfinite(expTime) and log is not None:
+            log.warning("Exposure %d has non-finite exposure time.", expId)
         listAtExpTime = flatsAtExpTime.setdefault(expTime, [])
         listAtExpTime.append((expRef, expId))
 
     return flatsAtExpTime
 
 
-def arrangeFlatsByExpFlux(exposureList, exposureIdList, fluxKeyword):
+def arrangeFlatsByExpFlux(exposureList, exposureIdList, fluxKeyword, log=None):
     """Arrange exposures by exposure flux.
 
     Parameters
@@ -487,6 +491,8 @@ def arrangeFlatsByExpFlux(exposureList, exposureIdList, fluxKeyword):
         List of exposure ids as obtained by dataId[`exposure`].
     fluxKeyword : `str`
         Header keyword that contains the flux per exposure.
+    log : `lsst.utils.logging.LsstLogAdapter`, optional
+        Log object.
 
     Returns
     -------
@@ -500,7 +506,16 @@ def arrangeFlatsByExpFlux(exposureList, exposureIdList, fluxKeyword):
     assert len(exposureList) == len(exposureIdList), "Different lengths for exp. list and exp. ID lists"
     for expRef, expId in zip(exposureList, exposureIdList):
         # Get flux from header, assuming it is in the metadata.
-        expFlux = expRef.get().getMetadata()[fluxKeyword]
+        try:
+            expFlux = expRef.get().getMetadata()[fluxKeyword]
+        except KeyError:
+            # If it's missing from the header, continue; it will
+            # be caught and rejected when pairing exposures.
+            expFlux = None
+        if expFlux is None:
+            if log is not None:
+                log.warning("Exposure %d does not have valid header keyword %s.", expId, fluxKeyword)
+            expFlux = np.nan
         listAtExpFlux = flatsAtExpFlux.setdefault(expFlux, [])
         listAtExpFlux.append((expRef, expId))
 
