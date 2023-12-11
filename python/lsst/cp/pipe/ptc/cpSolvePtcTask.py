@@ -207,7 +207,7 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
         doc="Use bootstrap for the PTC fit parameters and errors?.",
         default=False,
     )
-    binSide = pexConfig.Field(
+    binSize = pexConfig.Field(
         dtype=int,
         doc="Bin the image by this factor in both dimensions.",
         default=1,
