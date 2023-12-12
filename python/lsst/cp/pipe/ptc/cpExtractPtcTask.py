@@ -356,7 +356,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                 entry = inputDims.index(outputExpId)
                 newCovariances.append(outputs.outputCovariances[entry])
             else:
-                newPtc = PhotonTransferCurveDataset(['no amp'], 'DUMMY', 1)
+                newPtc = PhotonTransferCurveDataset(['no amp'], 'DUMMY', covMatrixSide=1)
                 newPtc.setAmpValuesPartialDataset('no amp')
                 newCovariances.append(newPtc)
         return pipeBase.Struct(outputCovariances=newCovariances)
@@ -416,8 +416,9 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
         # Create a dummy ptcDataset. Dummy datasets will be
         # used to ensure that the number of output and input
         # dimensions match.
-        dummyPtcDataset = PhotonTransferCurveDataset(ampNames, 'DUMMY',
-                                                     self.config.maximumRangeCovariancesAstier, 1)
+        dummyPtcDataset = PhotonTransferCurveDataset(
+            ampNames, 'DUMMY',
+            covMatrixSide=self.config.maximumRangeCovariancesAstier)
         for ampName in ampNames:
             dummyPtcDataset.setAmpValuesPartialDataset(ampName)
 
@@ -517,8 +518,9 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                 auxDict[key] = value
 
             nAmpsNan = 0
-            partialPtcDataset = PhotonTransferCurveDataset(ampNames, 'PARTIAL',
-                                                           self.config.maximumRangeCovariancesAstier, 1)
+            partialPtcDataset = PhotonTransferCurveDataset(
+                ampNames, 'PARTIAL',
+                covMatrixSide=self.config.maximumRangeCovariancesAstier)
             for ampNumber, amp in enumerate(detector):
                 ampName = amp.getName()
                 if self.config.detectorMeasurementRegion == 'AMP':
