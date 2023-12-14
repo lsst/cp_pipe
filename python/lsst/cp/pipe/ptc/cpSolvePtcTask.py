@@ -109,6 +109,7 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
         dtype=int,
         doc="Maximum range up to where to fit covariances as in Astier+19, "
             "for the FULLCOVARIANCE model."
+            "This is different from  maximumRangeCovariancesAstier."
             "It should be less or equal than maximumRangeCovariancesAstier."
             "The number of parameters for this model is "
             "3*maximumRangeCovariancesAstierFullCovFit^2 + 1, so increase with care "
@@ -213,6 +214,22 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
         default=1,
     )
 
+    def validate(self):
+        super().validate()
+        fitMatrixSide = self.maximumRangeCovariancesAstierFullCovFit
+        measureMatrixSide = self.maximumRangeCovariancesAstier
+        if self.ptcFitType == "FULLCOVARIANCE":
+            if fitMatrixSide > measureMatrixSide:
+                raise RuntimeError("Covariance fit size %s is larger than"
+                                   "measurement size %s.",
+                                   fitMatrixSide, measureMatrixSide)
+            if self.doSubtractLongRangeCovariances:
+                startLag = self.startLongRangeCovariances
+                if measureMatrixSide < startLag:
+                    raise RuntimeError("Covariance measure size %s is smaller than long"
+                                       "-range covariance starting point %s.",
+                                       measureMatrixSide, startLag)
+
 
 class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
     """Task to fit the PTC from flat covariances.
@@ -289,21 +306,6 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 means, variances, and exposure times
                 (`lsst.ip.isr.PhotonTransferCurveDataset`).
         """
-        # Check parameters
-        fitMatrixSide = self.config.maximumRangeCovariancesAstierFullCovFit
-        measureMatrixSide = self.config.maximumRangeCovariancesAstier
-        if self.config.ptcFitType == "FULLCOVARIANCE":
-            if fitMatrixSide > measureMatrixSide:
-                raise RuntimeError("Covariance fit size %s is larger than"
-                                   "measurement size %s.",
-                                   fitMatrixSide, measureMatrixSide)
-            if self.config.doSubtractLongRangeCovariances:
-                startLag = self.config.startLongRangeCovariances
-                if measureMatrixSide < startLag:
-                    raise RuntimeError("Covariance measure size %s is smaller than long"
-                                       "-range covariance starting point %s.",
-                                       measureMatrixSide, startLag)
-
         # Find the ampNames from a non-dummy ptc.
         ampNames = []
         for partialPtcDataset in inputCovariances:
@@ -545,8 +547,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         extra "1" is the gain. If "b" is 0, then "c" is 0, and len(pInit) will
         have r^2 fewer entries.
         """
-        matrixSide = self.config.maximumRangeCovariancesAstier
-        matrixSideFit = self.config.maximumRangeCovariancesAstierFullCovFit
+        matrixSide = dataset.covMatrixSide
+        matrixSideFit = dataset.covMatrixSideFullCovFit
         lenParams = matrixSideFit*matrixSideFit
 
         for ampName in dataset.ampNames:
@@ -1071,7 +1073,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         else:
             raise RuntimeError("ptcFitType is None of empty in PTC dataset.")
         # For FULLCOVARIANCE model fit
-        matrixSideFit = self.config.maximumRangeCovariancesAstierFullCovFit
+        matrixSideFit = dataset.covMatrixSideFullCovFit
         nanMatrixFit = np.empty((matrixSideFit, matrixSideFit))
         nanMatrixFit[:] = np.nan
 
@@ -1127,7 +1129,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 parsIniPtc = [-1e-9, 1.0, 10.]  # a00, gain, noise^2
                 # lowers and uppers obtained from BOT data studies by
                 # C. Lage (UC Davis, 11/2020).
-                if self.config.binSide > 1:
+                if self.config.binSize > 1:
                     bounds = self._boundsForAstier(parsIniPtc)
                 else:
                     bounds = self._boundsForAstier(parsIniPtc, lowers=[-1e-4, 0.1, -2000],
