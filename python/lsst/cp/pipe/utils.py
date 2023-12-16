@@ -26,6 +26,7 @@ __all__ = ['ddict2dict', 'CovFastFourierTransform']
 import galsim
 import logging
 import numpy as np
+import itertools
 import numpy.polynomial.polynomial as poly
 
 from scipy.optimize import leastsq
@@ -782,6 +783,94 @@ def ddict2dict(d):
         if isinstance(v, dict):
             d[k] = ddict2dict(v)
     return dict(d)
+
+
+class Pol2D:
+    """2D Polynomial Regression.
+
+    Parameters
+    ----------
+    x : numpy.ndarray
+        Input array for the x-coordinate.
+    y : numpy.ndarray
+        Input array for the y-coordinate.
+    z : numpy.ndarray
+        Input array for the dependent variable.
+    order : int
+        Order of the polynomial.
+    w : numpy.ndarray, optional
+        Weight array for weighted regression. Default is None.
+
+    Notes
+    -----
+    Ported from by https://gitlab.in2p3.fr/astier/bfptc P. Astier.
+
+    Example:
+        >>> x = np.array([1, 2, 3])
+        >>> y = np.array([4, 5, 6])
+        >>> z = np.array([7, 8, 9])
+        >>> order = 2
+        >>> poly_reg = Pol2D(x, y, z, order)
+        >>> result = poly_reg.eval(2.5, 5.5)
+    """
+    def __init__(self, x, y, z, order, w=None):
+        """
+        orderx : `int`
+            Effective order in the x-direction.
+        ordery : `int`
+            Effective order in the y-direction.
+        coeff : `numpy.ndarray`
+            Coefficients of the polynomial regression.
+        """
+        self.orderx = min(order, x.shape[0] - 1)
+        self.ordery = min(order, x.shape[1] - 1)
+        G = self.monomials(x.ravel(), y.ravel())
+        if w is None:
+            self.coeff, _, rank, _ = np.linalg.lstsq(G, z.ravel(), rcond=None)
+        else:
+            self.coeff, _, rank, _ = np.linalg.lstsq((w.ravel() * G.T).T, z.ravel() * w.ravel(), rcond=None)
+
+    def monomials(self, x, y):
+        """
+        Generate the monomials matrix for the given x and y.
+
+        Parameters
+        ----------
+        x : numpy.ndarray
+            Input array for the x-coordinate.
+        y : numpy.ndarray
+            Input array for the y-coordinate.
+
+        Returns
+        -------
+        G : numpy.ndarray
+            Monomials matrix.
+        """
+        ncols = (self.orderx + 1) * (self.ordery + 1)
+        G = np.zeros(x.shape + (ncols,))
+        ij = itertools.product(range(self.orderx + 1), range(self.ordery + 1))
+        for k, (i, j) in enumerate(ij):
+            G[..., k] = x**i * y**j
+        return G
+
+    def eval(self, x, y):
+        """
+        Evaluate the polynomial at the given x and y coordinates.
+
+        Parameters
+        ----------
+        x : `float`
+            x-coordinate for evaluation.
+        y : `float`
+            y-coordinate for evaluation.
+
+        Returns
+        -------
+        result : `float`
+            Result of the polynomial evaluation.
+        """
+        G = self.monomials(x, y)
+        return np.dot(G, self.coeff)
 
 
 class AstierSplineLinearityFitter:
