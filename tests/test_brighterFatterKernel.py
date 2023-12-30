@@ -63,8 +63,11 @@ class BfkSolveTaskTestCase(lsst.utils.tests.TestCase):
                           [0.025 * residual, 0.015 * residual, 0.01 * residual]]
             self.ptc.covariances['amp 1'].append(covariance)
 
+        self.ptc.covariancesModel = self.ptc.covariances
         self.ptc.gain['amp 1'] = 1.0
         self.ptc.noise['amp 1'] = 5.0
+        self.ptc.noiseMatrix['amp 1'] = np.zeros((3, 3))
+        self.ptc.noiseMatrix['amp 1'][0][0] = self.ptc.noise['amp 1']
 
         # This is empirically determined from the above parameters.
         self.ptc.aMatrix['amp 1'] = np.array([[2.14329806e-06, -4.28659612e-07, -5.35824515e-08],
@@ -104,6 +107,40 @@ class BfkSolveTaskTestCase(lsst.utils.tests.TestCase):
 
         results = task.run(self.ptc, ['this is a dummy exposure'], self.camera, {'detector': 1})
         self.assertFloatsAlmostEqual(results.outputBFK.ampKernels['amp 1'], self.expectation, atol=1e-5)
+
+    def test_covSample(self):
+        """Test solution from Broughton et al. 2024 eq. 4 preKernel
+        """
+        config = cpPipe.BrighterFatterKernelSolveConfig()
+        config.useCovModelSample = True
+        config.covModelFluxSample = {'ALL_AMPS': 30000.}
+        task = cpPipe.BrighterFatterKernelSolveTask(config=config)
+
+        results = task.run(self.ptc, ['this is a dummy exposure'], self.camera, {'detector': 1})
+
+        expectation = np.array([[2.19577206e-08, 4.22977941e-08, 5.54871324e-08,
+                                 5.85845588e-08, 5.54871324e-08, 4.22977941e-08,
+                                 2.19577206e-08],
+                                [4.55330882e-08, 9.17463235e-08, 1.21066176e-07,
+                                 1.23363971e-07, 1.21066176e-07, 9.17463235e-08,
+                                 4.55330882e-08],
+                                [6.84283088e-08, 1.48088235e-07, 1.98667279e-07,
+                                 1.67738971e-07, 1.98667279e-07, 1.48088235e-07,
+                                 6.84283088e-08],
+                                [8.00919118e-08, 1.83511029e-07, 2.57775735e-07,
+                                 -4.97426471e-08, 2.57775735e-07, 1.83511029e-07,
+                                 8.00919118e-08],
+                                [6.84283088e-08, 1.48088235e-07, 1.98667279e-07,
+                                 1.67738971e-07, 1.98667279e-07, 1.48088235e-07,
+                                 6.84283088e-08],
+                                [4.55330882e-08, 9.17463235e-08, 1.21066176e-07,
+                                 1.23363971e-07, 1.21066176e-07, 9.17463235e-08,
+                                 4.55330882e-08],
+                                [2.19577206e-08, 4.22977941e-08, 5.54871324e-08,
+                                 5.85845588e-08, 5.54871324e-08, 4.22977941e-08,
+                                 2.19577206e-08]])
+
+        self.assertFloatsAlmostEqual(results.outputBFK.ampKernels['amp 1'], expectation, atol=1e-5)
 
     def test_quadratic(self):
         """Test quadratic correlation solver.
