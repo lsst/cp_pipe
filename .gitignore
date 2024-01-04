@@ -1,5 +1,7 @@
 .sconsign.dblite
 config.log
+.coverage*
+_build.*
 .cache
 .sconf_temp
 *.o
