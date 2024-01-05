@@ -85,11 +85,11 @@ class PhotodiodeCorrectionTask(pipeBase.PipelineTask):
 
         Parameters
         ----------
-        butlerQC : `lsst.daf.butler.butlerQuantumContext.ButlerQuantumContext`
+        butlerQC : `lsst.daf.butler.QuantumContext`
             Butler to operate on.
-        inputRefs : `lsst.pipe.base.connections.InputQuantizedConnection`
+        inputRefs : `lsst.pipe.base.InputQuantizedConnection`
             Input data refs to load.
-        outputRefs : `lsst.pipe.base.connections.OutputQuantizedConnection`
+        outputRefs : `lsst.pipe.base.OutputQuantizedConnection`
             Output data refs to persist.
         """
         inputs = butlerQC.get(inputRefs)
