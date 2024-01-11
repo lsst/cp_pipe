@@ -348,6 +348,9 @@ class CalibCombineTask(pipeBase.PipelineTask):
         filterLabel = inputExpHandles[0].get(component="filter")
         self.setFilter(combinedExp, filterLabel)
 
+        # Set QA headers
+        self.calibStats(combinedExp, self.config.calibrationType)
+
         # Return
         return pipeBase.Struct(
             outputData=combinedExp,
@@ -611,6 +614,33 @@ class CalibCombineTask(pipeBase.PipelineTask):
             Filter to assign.
         """
         pass
+
+    def calibStats(self, exp, calibrationType):
+        """Measure bulk statistics for the calibration.
+
+        Parameters
+        ----------
+        exp : `lsst.afw.image.Exposure`
+            Exposure to calculate statistics for.
+        calibrationType : `str`
+            Type of calibration to record in header.
+        """
+        metadata = exp.getMetadata()
+
+        # percentiles
+
+        for amp in exp.getDetector():
+            ampImage = exp[amp.getBBox()]
+            p0, p5, p16, p50, p84, p95, p100 = np.percentile(ampImage.image.array,
+                                                             [0, 5, 16, 50, 84, 95, 100])
+
+            metadata.set(f"LSST CALIB {calibrationType.upper()} {amp.getName()} DISTRIBUTION 0-PCT", p0)
+            metadata.set(f"LSST CALIB {calibrationType.upper()} {amp.getName()} DISTRIBUTION 5-PCT", p5)
+            metadata.set(f"LSST CALIB {calibrationType.upper()} {amp.getName()} DISTRIBUTION 16-PCT", p16)
+            metadata.set(f"LSST CALIB {calibrationType.upper()} {amp.getName()} DISTRIBUTION 50-PCT", p50)
+            metadata.set(f"LSST CALIB {calibrationType.upper()} {amp.getName()} DISTRIBUTION 84-PCT", p84)
+            metadata.set(f"LSST CALIB {calibrationType.upper()} {amp.getName()} DISTRIBUTION 95-PCT", p95)
+            metadata.set(f"LSST CALIB {calibrationType.upper()} {amp.getName()} DISTRIBUTION 100-PCT", p100)
 
 
 # Create versions of the Connections, Config, and Task that support
