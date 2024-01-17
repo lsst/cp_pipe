@@ -559,7 +559,11 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                 # returned is of the form:
                 # [(i, j, var (cov[0,0]), cov, npix) for (i,j) in
                 # {maxLag, maxLag}^2].
-                muDiff, varDiff, covAstier = self.measureMeanVarCov(im1Area, im2Area, imStatsCtrl, mu1, mu2)
+                muDiff, varDiff, covAstier, rowMeanVariance = self.measureMeanVarCov(im1Area,
+                                                                                     im2Area,
+                                                                                     imStatsCtrl,
+                                                                                     mu1,
+                                                                                     mu2)
                 # Estimate the gain from the flat pair
                 if self.config.doGain:
                     gain = self.getGainFromFlatPair(im1Area, im2Area, imStatsCtrl, mu1, mu2,
@@ -580,8 +584,9 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                 # Mask data point at this mean signal level if
                 # the signal, variance, or covariance calculations
                 # from `measureMeanVarCov` resulted in NaNs.
-                if np.isnan(muDiff) or np.isnan(varDiff) or (covAstier is None):
-                    self.log.warning("NaN mean or var, or None cov in amp %s in exposure pair %d, %d of "
+                if np.isnan(muDiff) or np.isnan(varDiff) or (covAstier is None) or (rowMeanVariance is None):
+                    self.log.warning("NaN mean, var or rowmeanVariance, or None cov in amp %s "
+                                     "in exposure pair %d, %d of "
                                      "detector %d.", ampName, expId1, expId2, detNum)
                     nAmpsNan += 1
                     expIdMask = False
@@ -665,6 +670,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                     histVar=histVar,
                     histChi2Dof=histChi2Dof,
                     kspValue=kspValue,
+                    rowMeanVariance=rowMeanVariance,
                 )
 
             partialPtcDataset.setAuxValuesPartialDataset(auxDict)
