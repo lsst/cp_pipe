@@ -551,15 +551,20 @@ class LinearitySolveTask(pipeBase.PipelineTask):
 
             # The residuals that we record are the final residuals compared to
             # a linear model, after everything has been (properly?) linearized.
-            postLinearFit, _, _, _ = irlsFit(
-                [0.0, 100.0],
-                inputAbscissa[mask],
-                linearizeModel[mask],
-                funcPolynomial,
-            )
-            residuals = linearizeModel - (postLinearFit[0] + postLinearFit[1] * inputAbscissa)
-            # We set masked residuals to nan.
-            residuals[~mask] = np.nan
+            if mask.sum() < 2:
+                self.log.warning("Amp %s in detector %s has not enough points in linear ordinate "
+                                 "for residuals. Skipping!", ampName, detector.getName())
+                residuals = np.full_like(linearizeModel, np.nan)
+            else:
+                postLinearFit, _, _, _ = irlsFit(
+                    [0.0, 100.0],
+                    inputAbscissa[mask],
+                    linearizeModel[mask],
+                    funcPolynomial,
+                )
+                residuals = linearizeModel - (postLinearFit[0] + postLinearFit[1] * inputAbscissa)
+                # We set masked residuals to nan.
+                residuals[~mask] = np.nan
 
             linearizer.fitResiduals[ampName] = residuals
 
