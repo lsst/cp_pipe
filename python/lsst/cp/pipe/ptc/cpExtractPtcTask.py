@@ -27,6 +27,7 @@ import warnings
 import lsst.afw.math as afwMath
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
+from lsst.geom import (Box2I, Point2I, Extent2I)
 from lsst.cp.pipe.utils import (arrangeFlatsByExpTime, arrangeFlatsByExpId,
                                 arrangeFlatsByExpFlux, sigmaClipCorrection,
                                 CovFastFourierTransform)
@@ -809,12 +810,15 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                     Covariance at (dx, dy).
                 nPix : `int`
                     Number of pixel pairs used to evaluate var and cov.
+        rowMeanVariance : `float` or `NaN`
+            Variance of the means of each row in the difference image.
+            Taken from `github.com/lsst-camera-dh/eo_pipe`.
 
             If either mu1 or m2 are NaN's, the returned value is NaN.
         """
         if np.isnan(mu1) or np.isnan(mu2):
             self.log.warning("Mean of amp in image 1 or 2 is NaN: %f, %f.", mu1, mu2)
-            return np.nan, np.nan, None
+            return np.nan, np.nan, None, np.nan
         mu = 0.5*(mu1 + mu2)
 
         # Take difference of pairs
@@ -828,6 +832,20 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
 
         if self.config.binSize > 1:
             diffIm = afwMath.binImage(diffIm, self.config.binSize)
+
+        # Calculate the variance (in ADU^2) of the means of rows for diffIm.
+        # Taken from eo_pipe
+        region = diffIm.getBBox()
+        rowMeans = []
+        for row in range(region.minY, region.maxY):
+            regionRow = Box2I(Point2I(region.minX, row),
+                              Extent2I(region.width, 1))
+            rowMeans.append(afwMath.makeStatistics(diffIm[regionRow],
+                                                   afwMath.MEAN,
+                                                   imStatsCtrl).getValue())
+            rowMeanVariance = afwMath.makeStatistics(
+                np.array(rowMeans), afwMath.VARIANCECLIP,
+                imStatsCtrl).getValue()
 
         # Variance calculation via afwMath
         varDiff = 0.5*(afwMath.makeStatistics(diffIm, afwMath.VARIANCECLIP, imStatsCtrl).getValue())
@@ -851,7 +869,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
             self.log.warning("Number of good points for covariance calculation (%s) is less "
                              "(than threshold %s)", np.sum(w),
                              self.config.minNumberGoodPixelsForCovariance/(self.config.binSize**2))
-            return np.nan, np.nan, None
+            return np.nan, np.nan, None, np.nan
 
         maxRangeCov = self.config.maximumRangeCovariancesAstier
 
@@ -870,7 +888,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
             # This is raised if there are not enough pixels.
             self.log.warning("Not enough pixels covering the requested covariance range in x/y (%d)",
                              self.config.maximumRangeCovariancesAstier)
-            return np.nan, np.nan, None
+            return np.nan, np.nan, None, np.nan
 
         # Compare Cov[0,0] and afwMath.VARIANCECLIP covDiffAstier[0]
         # is the Cov[0,0] element, [3] is the variance, and there's a
@@ -881,7 +899,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
             self.log.warning("Absolute fractional difference between afwMatch.VARIANCECLIP and Cov[0,0] "
                              "is more than %f%%: %f", thresholdPercentage, fractionalDiff)
 
-        return mu, varDiff, covDiffAstier
+        return mu, varDiff, covDiffAstier, rowMeanVariance
 
     def getImageAreasMasksStats(self, exposure1, exposure2, region=None):
         """Get image areas in a region as well as masks and statistic objects.
