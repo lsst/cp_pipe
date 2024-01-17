@@ -205,7 +205,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                     mu1,
                     mu2,
                 ) = extractTask.getImageAreasMasksStats(mockExp1, mockExp2)
-                muDiff, varDiff, covAstier = extractTask.measureMeanVarCov(
+                muDiff, varDiff, covAstier, rowMeanVariance = extractTask.measureMeanVarCov(
                     im1Area, im2Area, imStatsCtrl, mu1, mu2
                 )
                 muStandard.setdefault(ampName, []).append(muDiff)
@@ -697,7 +697,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         im1Area, im2Area, imStatsCtrl, mu1, mu2 = task.getImageAreasMasksStats(
             self.flatExp1, self.flatExp2
         )
-        mu, varDiff, _ = task.measureMeanVarCov(im1Area, im2Area, imStatsCtrl, mu1, mu2)
+        mu, varDiff, _, _ = task.measureMeanVarCov(im1Area, im2Area, imStatsCtrl, mu1, mu2)
 
         self.assertLess(self.flatWidth - np.sqrt(varDiff), 1)
         self.assertLess(self.flatMean - mu, 1)
@@ -714,7 +714,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         im1Area, im2Area, imStatsCtrl, mu1, mu2 = task.getImageAreasMasksStats(
             flatExp1, flatExp2
         )
-        mu, varDiff, _ = task.measureMeanVarCov(im1Area, im2Area, imStatsCtrl, mu1, mu2)
+        mu, varDiff, _, _ = task.measureMeanVarCov(im1Area, im2Area, imStatsCtrl, mu1, mu2)
 
         expectedMu1 = np.nanmean(flatExp1.image.array)
         expectedMu2 = np.nanmean(flatExp2.image.array)
@@ -751,13 +751,14 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         im1Area, im2Area, imStatsCtrl, mu1, mu2 = task.getImageAreasMasksStats(
             flatExp1, flatExp2
         )
-        mu, varDiff, covDiff = task.measureMeanVarCov(
+        mu, varDiff, covDiff, rowMeanVariance = task.measureMeanVarCov(
             im1Area, im2Area, imStatsCtrl, mu1, mu2
         )
 
         self.assertTrue(np.isnan(mu))
         self.assertTrue(np.isnan(varDiff))
         self.assertTrue(covDiff is None)
+        self.assertTrue(np.isnan(rowMeanVariance))
 
     def test_meanVarMeasurementTooFewPixels(self):
         task = self.defaultTaskExtract
@@ -775,7 +776,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             flatExp1, flatExp2
         )
         with self.assertLogs(level=logging.WARNING) as cm:
-            mu, varDiff, covDiff = task.measureMeanVarCov(
+            mu, varDiff, covDiff, rowMeanVariance = task.measureMeanVarCov(
                 im1Area, im2Area, imStatsCtrl, mu1, mu2
             )
         self.assertIn("Number of good points", cm.output[0])
@@ -783,6 +784,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         self.assertTrue(np.isnan(mu))
         self.assertTrue(np.isnan(varDiff))
         self.assertTrue(covDiff is None)
+        self.assertTrue(np.isnan(rowMeanVariance))
 
     def test_meanVarMeasurementTooNarrowStrip(self):
         # We need a new config to make sure the second covariance cut is
@@ -808,7 +810,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             flatExp1, flatExp2
         )
         with self.assertLogs(level=logging.WARNING) as cm:
-            mu, varDiff, covDiff = task.measureMeanVarCov(
+            mu, varDiff, covDiff, rowMeanVariance = task.measureMeanVarCov(
                 im1Area, im2Area, imStatsCtrl, mu1, mu2
             )
         self.assertIn("Not enough pixels", cm.output[0])
@@ -816,6 +818,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         self.assertTrue(np.isnan(mu))
         self.assertTrue(np.isnan(varDiff))
         self.assertTrue(covDiff is None)
+        self.assertTrue(np.isnan(rowMeanVariance))
 
     def test_makeZeroSafe(self):
         noZerosArray = [1.0, 20, -35, 45578.98, 90.0, 897, 659.8]
