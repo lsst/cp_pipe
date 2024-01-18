@@ -189,6 +189,11 @@ class CalibCombineConfig(pipeBase.PipelineTaskConfig,
         doc="Copy vignette polygon to output and censor vignetted pixels?"
     )
 
+    distributionPercentiles = pexConfig.ListField(
+        dtype=float,
+        default=[0, 5, 16, 50, 84, 95, 100],
+        doc="Percentile levels to measure on the final combined calibration.",
+    )
     mask = pexConfig.ListField(
         dtype=str,
         default=["SAT", "DETECTED", "INTRP"],
@@ -628,19 +633,13 @@ class CalibCombineTask(pipeBase.PipelineTask):
         metadata = exp.getMetadata()
 
         # percentiles
-
         for amp in exp.getDetector():
             ampImage = exp[amp.getBBox()]
-            p0, p5, p16, p50, p84, p95, p100 = np.percentile(ampImage.image.array,
-                                                             [0, 5, 16, 50, 84, 95, 100])
-
-            metadata.set(f"LSST CALIB {calibrationType.upper()} {amp.getName()} DISTRIBUTION 0-PCT", p0)
-            metadata.set(f"LSST CALIB {calibrationType.upper()} {amp.getName()} DISTRIBUTION 5-PCT", p5)
-            metadata.set(f"LSST CALIB {calibrationType.upper()} {amp.getName()} DISTRIBUTION 16-PCT", p16)
-            metadata.set(f"LSST CALIB {calibrationType.upper()} {amp.getName()} DISTRIBUTION 50-PCT", p50)
-            metadata.set(f"LSST CALIB {calibrationType.upper()} {amp.getName()} DISTRIBUTION 84-PCT", p84)
-            metadata.set(f"LSST CALIB {calibrationType.upper()} {amp.getName()} DISTRIBUTION 95-PCT", p95)
-            metadata.set(f"LSST CALIB {calibrationType.upper()} {amp.getName()} DISTRIBUTION 100-PCT", p100)
+            percentileValues = np.percentile(ampImage.image.array,
+                                             self.config.distributionPercentiles)
+            for level, value in zip(self.config.distributionPercentiles, percentileValues):
+                key = f"LSST CALIB {calibrationType.upper()} {amp.getName()} DISTRIBUTION {level}-PCT"
+                metadata[key] = value
 
 
 # Create versions of the Connections, Config, and Task that support
