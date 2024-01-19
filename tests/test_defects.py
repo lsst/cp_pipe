@@ -136,7 +136,7 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
         task = self.defaultTask
         task.config = config
 
-        defectsWithColumns = task.maskBlocksIfIntermitentBadPixelsInColumn(inputDefects)
+        defectsWithColumns, count = task.maskBlocksIfIntermitentBadPixelsInColumn(inputDefects)
         boxesMeasured = []
         for defect in defectsWithColumns:
             boxesMeasured.append(defect.getBBox())
