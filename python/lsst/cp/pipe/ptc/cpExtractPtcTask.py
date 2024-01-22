@@ -584,7 +584,8 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                 # Mask data point at this mean signal level if
                 # the signal, variance, or covariance calculations
                 # from `measureMeanVarCov` resulted in NaNs.
-                if np.isnan(muDiff) or np.isnan(varDiff) or (covAstier is None) or (rowMeanVariance is None):
+                if (np.isnan(muDiff) or np.isnan(varDiff) or (covAstier is None)
+                   or (rowMeanVariance is np.nan)):
                     self.log.warning("NaN mean, var or rowmeanVariance, or None cov in amp %s "
                                      "in exposure pair %d, %d of "
                                      "detector %d.", ampName, expId1, expId2, detNum)
@@ -796,11 +797,11 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
 
         Returns
         -------
-        mu : `float` or `NaN`
+        mu : `float`
             0.5*(mu1 + mu2), where mu1, and mu2 are the clipped means
             of the regions in both exposures. If either mu1 or m2 are
             NaN's, the returned value is NaN.
-        varDiff : `float` or `NaN`
+        varDiff : `float`
             Half of the clipped variance of the difference of the
             regions inthe two input exposures. If either mu1 or m2 are
             NaN's, the returned value is NaN.
@@ -816,7 +817,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                     Covariance at (dx, dy).
                 nPix : `int`
                     Number of pixel pairs used to evaluate var and cov.
-        rowMeanVariance : `float` or `NaN`
+        rowMeanVariance : `float`
             Variance of the means of each row in the difference image.
             Taken from `github.com/lsst-camera-dh/eo_pipe`.
 
