@@ -189,6 +189,11 @@ class CalibCombineConfig(pipeBase.PipelineTaskConfig,
         doc="Copy vignette polygon to output and censor vignetted pixels?"
     )
 
+    distributionPercentiles = pexConfig.ListField(
+        dtype=float,
+        default=[0, 5, 16, 50, 84, 95, 100],
+        doc="Percentile levels to measure on the final combined calibration.",
+    )
     mask = pexConfig.ListField(
         dtype=str,
         default=["SAT", "DETECTED", "INTRP"],
@@ -347,6 +352,9 @@ class CalibCombineTask(pipeBase.PipelineTask):
         # Do we need to set a filter?
         filterLabel = inputExpHandles[0].get(component="filter")
         self.setFilter(combinedExp, filterLabel)
+
+        # Set QA headers
+        self.calibStats(combinedExp, self.config.calibrationType)
 
         # Return
         return pipeBase.Struct(
@@ -611,6 +619,27 @@ class CalibCombineTask(pipeBase.PipelineTask):
             Filter to assign.
         """
         pass
+
+    def calibStats(self, exp, calibrationType):
+        """Measure bulk statistics for the calibration.
+
+        Parameters
+        ----------
+        exp : `lsst.afw.image.Exposure`
+            Exposure to calculate statistics for.
+        calibrationType : `str`
+            Type of calibration to record in header.
+        """
+        metadata = exp.getMetadata()
+
+        # percentiles
+        for amp in exp.getDetector():
+            ampImage = exp[amp.getBBox()]
+            percentileValues = np.percentile(ampImage.image.array,
+                                             self.config.distributionPercentiles)
+            for level, value in zip(self.config.distributionPercentiles, percentileValues):
+                key = f"LSST CALIB {calibrationType.upper()} {amp.getName()} DISTRIBUTION {level}-PCT"
+                metadata[key] = value
 
 
 # Create versions of the Connections, Config, and Task that support
