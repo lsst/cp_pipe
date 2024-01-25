@@ -635,8 +635,8 @@ class CalibCombineTask(pipeBase.PipelineTask):
         # percentiles
         for amp in exp.getDetector():
             ampImage = exp[amp.getBBox()]
-            percentileValues = np.percentile(ampImage.image.array,
-                                             self.config.distributionPercentiles)
+            percentileValues = np.nanpercentile(ampImage.image.array,
+                                                self.config.distributionPercentiles)
             for level, value in zip(self.config.distributionPercentiles, percentileValues):
                 key = f"LSST CALIB {calibrationType.upper()} {amp.getName()} DISTRIBUTION {level}-PCT"
                 metadata[key] = value
