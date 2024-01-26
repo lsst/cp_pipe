@@ -109,6 +109,21 @@ class BrighterFatterKernelSolveConfig(pipeBase.PipelineTaskConfig,
         default=False,
     )
 
+    useCovModelSample = pexConfig.Field(
+        dtype=bool,
+        doc="Use the covariance matrix sampled from the full covariance model "
+        "(Astier et al. 2019 equation 20) instead of the average measured covariances?",
+        default=False,
+    )
+
+    covModelFluxSample = pexConfig.DictField(
+        keytype=str,
+        itemtype=float,
+        doc="Flux level in electrons at which to sample the full covariance"
+        "model if useCovModelSample=True. The same level is applied to all"
+        "amps if this parameter [`dict`] is passed as {'ALL_AMPS': value}",
+        default={'ALL_AMPS': 25000.0},
+    )
     maxIterSuccessiveOverRelaxation = pexConfig.Field(
         dtype=int,
         doc="The maximum number of iterations allowed for the successive over-relaxation method",
@@ -119,7 +134,6 @@ class BrighterFatterKernelSolveConfig(pipeBase.PipelineTaskConfig,
         doc="The target residual error for the successive over-relaxation method",
         default=5.0e-14
     )
-
     correlationQuadraticFit = pexConfig.Field(
         dtype=bool,
         doc="Use a quadratic fit to find the correlations instead of simple averaging?",
@@ -200,6 +214,17 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask):
             detectorCorrList = list()
             detectorFluxes = list()
 
+        if not inputPtc.ptcFitType == "FULLCOVARIANCE" and self.config.useCovModelSample:
+            raise ValueError("ptcFitType must be FULLCOVARIANCE if useCovModelSample=True.")
+
+        # Get flux sample dictionary
+        fluxSampleDict = {ampName: 0.0 for ampName in inputPtc.ampNames}
+        for ampName in inputPtc.ampNames:
+            if 'ALL_AMPS' in self.config.covModelFluxSample:
+                fluxSampleDict[ampName] = self.config.covModelFluxSample['ALL_AMPS']
+            elif ampName in self.config.covModelFluxSample:
+                fluxSampleDict[ampName] = self.config.covModelFluxSample[ampName]
+
         bfk = BrighterFatterKernel(camera=camera, detectorId=detector.getId(), level=self.config.level)
         bfk.rawMeans = inputPtc.rawMeans  # ADU
         bfk.rawVariances = inputPtc.rawVars  # ADU^2
@@ -221,6 +246,7 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask):
         for amp in detector:
             ampName = amp.getName()
             gain = bfk.gain[ampName]
+            noiseMatrix = inputPtc.noiseMatrix[ampName]
             mask = inputPtc.expIdMask[ampName]
             if gain <= 0:
                 # We've received very bad data.
@@ -237,6 +263,8 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask):
             # covariances may now have the mask already applied.
             fluxes = np.array(bfk.rawMeans[ampName])[mask]
             variances = np.array(bfk.rawVariances[ampName])[mask]
+            covModelList = np.array(inputPtc.covariancesModel[ampName])
+
             xCorrList = np.array([np.array(xcorr) for xcorr in bfk.rawXcorrs[ampName]])
             if np.sum(mask) < len(xCorrList):
                 # Only apply the mask if needed.
@@ -305,6 +333,14 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask):
                 # Use a quadratic fit to the correlations as a
                 # function of flux.
                 preKernel = self.quadraticCorrelations(corrList, fluxes, f"Amp: {ampName}")
+            elif self.config.useCovModelSample:
+                # Sample the full covariance model at a given flux.
+                # Use the non-truncated fluxes for this
+                mu = bfk.rawMeans[ampName]
+                covTilde = self.sampleCovModel(mu, noiseMatrix, gain,
+                                               covModelList, fluxSampleDict[ampName],
+                                               f"Amp: {ampName}")
+                preKernel = np.pad(self._tileArray(-1.0 * covTilde), ((1, 1)))
             else:
                 # Use a simple average of the measured correlations.
                 preKernel = self.averageCorrelations(scaledCorrList, f"Amp: {ampName}")
@@ -422,6 +458,50 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask):
         meanXcorr = np.pad(meanXcorr, ((1, 1)))
 
         return meanXcorr
+
+    def sampleCovModel(self, fluxes, noiseMatrix, gain, covModelList, flux, name):
+        """Sample the correlation model and measure
+        widetile{C}_{ij} from Broughton et al. 2023 (eq. 4)
+
+        Parameters
+        ----------
+        fluxes : `list` [`float`]
+            List of fluxes (in ADU)
+        noiseMatrix : `numpy.array`, (N, N)
+            Noise matrix
+        gain : `float`
+            Amplifier gain
+        covModelList : `numpy.array`, (N, N)
+            List of covariance model matrices. These are
+            expected to be square arrays.
+        flux : `float`
+            Flux in electrons at which to sample the
+            covariance model.
+        name : `str`
+            Name for log messages.
+
+        Returns
+        -------
+        covTilde : `numpy.array`, (N, N)
+            The calculated C-tilde from Broughton et al. 2023 (eq. 4).
+        """
+
+        # Get the index of the flux sample
+        # (this must be done in electron units)
+        ix = np.argmin((fluxes*gain - flux)**2)
+        assert len(fluxes) == len(covModelList)
+
+        # Find the nearest measured flux level
+        # and the full covariance model at that point
+        nearestFlux = fluxes[ix]
+        covModelSample = covModelList[ix]
+
+        # Calculate flux sample
+        # covTilde returned in ADU units
+        covTilde = (covModelSample - noiseMatrix/gain**2)/(nearestFlux**2)
+        covTilde[0][0] -= (nearestFlux/gain)/(nearestFlux**2)
+
+        return covTilde
 
     @staticmethod
     def _tileArray(in_array):
