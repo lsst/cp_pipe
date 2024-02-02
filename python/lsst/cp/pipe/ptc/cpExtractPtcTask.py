@@ -434,31 +434,6 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                 pdCalib.currentScale = self.config.photodiodeCurrentScale
                 monitorDiodeCharge[expId] = pdCalib.integrate()
 
-        # Get read noise.  Try from the exposure, then try
-        # taskMetadata.  This adds a get() for the exposures.
-        readNoiseLists = {}
-        for pairIndex, expRefs in inputExp.items():
-            # This yields an index (exposure_time, seq_num, or flux)
-            # and a pair of references at that index.
-            for expRef, expId in expRefs:
-                # This yields an exposure ref and an exposureId.
-                exposureMetadata = expRef.get(component="metadata")
-                metadataIndex = inputDims.index(expId)
-                thisTaskMetadata = taskMetadata[metadataIndex]
-
-                for ampName in ampNames:
-                    if ampName not in readNoiseLists:
-                        readNoiseLists[ampName] = [self.getReadNoise(exposureMetadata,
-                                                                     thisTaskMetadata, ampName)]
-                    else:
-                        readNoiseLists[ampName].append(self.getReadNoise(exposureMetadata,
-                                                                         thisTaskMetadata, ampName))
-
-        readNoiseDict = {ampName: 0.0 for ampName in ampNames}
-        for ampName in ampNames:
-            # Take median read noise value
-            readNoiseDict[ampName] = np.nanmedian(readNoiseLists[ampName])
-
         # Output list with PTC datasets.
         partialPtcDatasetList = []
         # The number of output references needs to match that of input
@@ -535,6 +510,24 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                 im1Area, im2Area, imStatsCtrl, mu1, mu2 = self.getImageAreasMasksStats(exp1, exp2,
                                                                                        region=region)
 
+                # Get the read noise for each exposure
+                readNoise1 = dict()
+                readNoise2 = dict()
+                meanReadNoise = dict()
+
+                expMetadata1 = expRef1.get(component="metadata")
+                metadataIndex1 = inputDims.index(expId1)
+                thisTaskMetadata1 = taskMetadata[metadataIndex1]
+
+                expMetadata2 = expRef2.get(component="metadata")
+                metadataIndex2 = inputDims.index(expId2)
+                thisTaskMetadata2 = taskMetadata[metadataIndex2]
+
+                readNoise1[ampName] = self.getReadNoise(expMetadata1, thisTaskMetadata1, ampName)
+                readNoise2[ampName] = self.getReadNoise(expMetadata2, thisTaskMetadata2, ampName)
+
+                meanReadNoise[ampName] = np.nanmean([readNoise1[ampName], readNoise2[ampName]])
+
                 # We demand that both mu1 and mu2 be finite and greater than 0.
                 if not np.isfinite(mu1) or not np.isfinite(mu2) \
                    or ((np.nan_to_num(mu1) + np.nan_to_num(mu2)/2.) <= 0.0):
@@ -568,7 +561,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                 if self.config.doGain:
                     gain = self.getGainFromFlatPair(im1Area, im2Area, imStatsCtrl, mu1, mu2,
                                                     correctionType=self.config.gainCorrectionType,
-                                                    readNoise=readNoiseDict[ampName])
+                                                    readNoise=meanReadNoise[ampName])
                 else:
                     gain = np.nan
 
@@ -667,7 +660,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                     covariance=covArray[0, :, :],
                     covSqrtWeights=covSqrtWeights[0, :, :],
                     gain=gain,
-                    noise=readNoiseDict[ampName],
+                    noise=meanReadNoise[ampName],
                     histVar=histVar,
                     histChi2Dof=histChi2Dof,
                     kspValue=kspValue,

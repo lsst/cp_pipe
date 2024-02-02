@@ -334,6 +334,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             ptcFitType=self.config.ptcFitType,
             covMatrixSide=self.config.maximumRangeCovariancesAstier,
             covMatrixSideFullCovFit=self.config.maximumRangeCovariancesAstierFullCovFit)
+
         for partialPtcDataset in inputCovariances:
             # Ignore dummy datasets
             if partialPtcDataset.ptcFitType == 'DUMMY':
@@ -360,6 +361,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                                                              partialPtcDataset.histChi2Dofs[ampName][0])
                 datasetPtc.kspValues[ampName] = np.append(datasetPtc.kspValues[ampName],
                                                           partialPtcDataset.kspValues[ampName][0])
+                datasetPtc.noiseList[ampName] = np.append(datasetPtc.noiseList[ampName],
+                                                          partialPtcDataset.noise[ampName])
                 datasetPtc.covariances[ampName] = np.append(
                     datasetPtc.covariances[ampName].ravel(),
                     partialPtcDataset.covariances[ampName].ravel()
@@ -465,6 +468,17 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             # approximation (Eq. 16).  Fill up
             # PhotonTransferCurveDataset object.
             datasetPtc = self.fitMeasurementsToModel(datasetPtc)
+
+        # Initial validation of PTC fit.
+        for ampName in ampNames:
+            noise = np.nanmedian(datasetPtc.noiseList[ampName])
+            noiseFitted = np.sqrt(datasetPtc.noise[ampName])
+
+            # Check if noise is close to noiseFitted
+            if not np.isclose(noiseFitted, noise, rtol=0.05, atol=0.0):
+                self.log.warning(f"Read noise from PTC fit ({noiseFitted}) is not consistent "
+                                 f"with read noise measured from overscan ({noise}) for "
+                                 f"amplifier {ampName}. Try adjusting the fit range.")
 
         if camera:
             detector = camera[detId]
