@@ -240,7 +240,15 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
         # bright pixels, and both for flats, as they have bright and dark pix
         footprintList = []
 
+        hotPixelCount = {}
+        coldPixelCount = {}
+
         for amp in exp.getDetector():
+            ampName = amp.getName()
+
+            hotPixelCount[ampName] = 0
+            coldPixelCount[ampName] = 0
+
             ampImg = maskedIm[amp.getBBox()].clone()
 
             # crop ampImage depending on where the amp lies in the image
@@ -268,7 +276,7 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
             datasetType = exp.getMetadata().get('IMGTYPE', 'UNKNOWN')
             if np.isnan(expTime):
                 self.log.warning("expTime=%s for AMP %s in %s. Setting expTime to 1 second",
-                                 expTime, amp.getName(), datasetType)
+                                 expTime, ampName, datasetType)
                 expTime = 1.
             thresholdType = self.config.thresholdType
             if thresholdType == 'VALUE':
@@ -289,7 +297,7 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
                 # Find equivalent sigma values.
                 if stDev == 0.0:
                     self.log.warning("stDev=%s for AMP %s in %s. Setting nSigma to inf.",
-                                     stDev, amp.getName(), datasetType)
+                                     stDev, ampName, datasetType)
                     nSigmaList = [np.inf]
                 else:
                     nSigmaList = [valueThreshold/stDev]
@@ -305,7 +313,7 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
 
             self.log.info("Image type: %s. Amp: %s. Threshold Type: %s. Sigma values and Pixel"
                           "Values (hot and cold pixels thresholds): %s, %s",
-                          datasetType, amp.getName(), thresholdType, nSigmaList, valueThreshold)
+                          datasetType, ampName, thresholdType, nSigmaList, valueThreshold)
             mergedSet = None
             for sigma in nSigmaList:
                 nSig = np.abs(sigma)
@@ -330,13 +338,23 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
                 else:
                     mergedSet.merge(footprintSet)
 
+                if polarity:
+                    # hot pixels
+                    for fp in footprintSet.getFootprints():
+                        hotPixelCount[ampName] += fp.getArea()
+                else:
+                    # cold pixels
+                    for fp in footprintSet.getFootprints():
+                        coldPixelCount[ampName] += fp.getArea()
+
             footprintList += mergedSet.getFootprints()
 
             self.debugView('defectMap', ampImg,
                            Defects.fromFootprintList(mergedSet.getFootprints()), exp.getDetector())
 
         defects = Defects.fromFootprintList(footprintList)
-        defects = self.maskBlocksIfIntermitentBadPixelsInColumn(defects)
+        defects, count = self.maskBlocksIfIntermitentBadPixelsInColumn(defects)
+        defects.updateCounters(columns=count, hot=hotPixelCount, cold=coldPixelCount)
 
         return defects
 
@@ -390,7 +408,10 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
             equal than self.config.badPixelColumnThreshold, the input
             list is returned. Otherwise, the defects list returned
             will include boxes that mask blocks of on-and-of pixels.
+        badColumnCount : `int`
+            Number of bad columns masked.
         """
+        badColumnCount = 0
         # Get the (x, y) values of each bad pixel in amp.
         coordinates = []
         for defect in defects:
@@ -416,8 +437,9 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
                 multipleX.append(a)
         if len(multipleX) != 0:
             defects = self._markBlocksInBadColumn(x, y, multipleX, defects)
+            badColumnCount += 1
 
-        return defects
+        return defects, badColumnCount
 
     def _markBlocksInBadColumn(self, x, y, multipleX, defects):
         """Mask blocks in a column if number of on-and-off bad pixels is above
