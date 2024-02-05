@@ -573,6 +573,31 @@ def arrangeFlatsByExpId(exposureList, exposureIdList):
     return flatsAtExpId
 
 
+def extractCalibDate(calib):
+    """Extract common calibration metadata values that will be written to
+    output header.
+
+    Parameters
+    ----------
+    calib : `lsst.afw.image.Exposure` or `lsst.ip.isr.IsrCalib`
+        Calibration to pull date information from.
+
+    Returns
+    -------
+    dateString : `str`
+        Calibration creation date string to add to header.
+    """
+    if hasattr(calib, "getMetadata"):
+        if 'CALIB_CREATION_DATE' in calib.getMetadata():
+            return " ".join((calib.getMetadata().get("CALIB_CREATION_DATE", "Unknown"),
+                             calib.getMetadata().get("CALIB_CREATION_TIME", "Unknown")))
+        else:
+            return " ".join((calib.getMetadata().get("CALIB_CREATE_DATE", "Unknown"),
+                             calib.getMetadata().get("CALIB_CREATE_TIME", "Unknown")))
+    else:
+        return "Unknown Unknown"
+
+
 class CovFastFourierTransform:
     """A class to compute (via FFT) the nearby pixels correlation function.
 

@@ -31,7 +31,8 @@ import lsst.pex.config as pexConfig
 from lsstDebug import getDebugFrame
 from lsst.ip.isr import (Linearizer, IsrProvenance)
 
-from .utils import funcPolynomial, irlsFit, AstierSplineLinearityFitter
+from .utils import (funcPolynomial, irlsFit, AstierSplineLinearityFitter,
+                    extractCalibDate)
 
 
 def ptcLookup(datasetType, registry, quantumDataId, collections):
@@ -265,7 +266,28 @@ class LinearitySolveTask(pipeBase.PipelineTask):
         # Use the dimensions to set calib/provenance information.
         inputs['inputDims'] = dict(inputRefs.inputPtc.dataId.required)
 
+        # Add calibration provenance info to header.
+        kwargs = dict()
+        reference = getattr(inputRefs, "inputPtc", None)
+
+        if reference is not None and hasattr(reference, "run"):
+            runKey = "PTC_RUN"
+            runValue = reference.run
+            idKey = "PTC_UUID"
+            idValue = str(reference.id)
+            dateKey = "PTC_DATE"
+            calib = inputs.get("inputPtc", None)
+            dateValue = extractCalibDate(calib)
+
+            kwargs[runKey] = runValue
+            kwargs[idKey] = idValue
+            kwargs[dateKey] = dateValue
+
+            self.log.info("Using " + str(reference.run))
+
         outputs = self.run(**inputs)
+        outputs.outputLinearizer.updateMetadata(setDate=False, **kwargs)
+
         butlerQC.put(outputs, outputRefs)
 
     def run(self, inputPtc, dummy, camera, inputDims,
