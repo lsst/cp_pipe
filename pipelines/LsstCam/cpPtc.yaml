@@ -13,5 +13,6 @@ tasks:
       edgeMaskLevel: AMP
       numEdgeSuspect: 20
       doExtractPhotodiodeData: true
-      auxiliaryHeaderKeys: ["CCOBCURR", "CCOBFLUX"]
+      auxiliaryHeaderKeys: ["CCOBCURR", "CCOBFLUX", "TEMP6"]
       matchExposuresType: FLUX
+      minPhotodiodeCurrent: 3e-10

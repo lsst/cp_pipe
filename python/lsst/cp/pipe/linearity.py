@@ -185,6 +185,11 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
         doc="Calculate and apply a correction to the photodiode readings?",
         default=False,
     )
+    minPhotodiodeCurrent = pexConfig.Field(
+        dtype=float,
+        doc="Minimum value to trust photodiode signals.",
+        default=0.0,
+    )
     splineGroupingColumn = pexConfig.Field(
         dtype=str,
         doc="Column to use for grouping together points for Spline mode, to allow "
@@ -370,6 +375,10 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 # Make sure any exposure pairs that do not have photodiode data
                 # are masked.
                 mask[~np.isfinite(modExpTimes)] = False
+
+                # Make sure any photodiode measurements below the configured
+                # minimum are masked.
+                mask[modExpTimes < self.config.minPhotodiodeCurrent] = False
 
                 # Get the photodiode correction.
                 if self.config.applyPhotodiodeCorrection:
