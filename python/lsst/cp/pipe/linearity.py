@@ -250,6 +250,14 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
         doc="Fit a scattered light offset in the spline fit.",
         default=True,
     )
+    splineFitWeightPars = pexConfig.ListField(
+        dtype=float,
+        doc="Weighting parameters for spline fit, such that "
+            "sigma = sqrt(par[0]**2. + par[1]/mu). Set to [1.0, 0.0] "
+            "for the unweighted fit.",
+        length=2,
+        default=[7.2e-5, 1e-4],
+    )
 
 
 class LinearitySolveTask(pipeBase.PipelineTask):
@@ -528,6 +536,7 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                     mask=mask,
                     log=self.log,
                     fit_offset=self.config.splineFitUseOffset,
+                    weight_pars=self.config.splineFitWeightPars,
                 )
                 p0 = fitter.estimate_p0()
                 pars = fitter.fit(

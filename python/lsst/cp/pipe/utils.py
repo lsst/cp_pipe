@@ -942,13 +942,27 @@ class AstierSplineLinearityFitter:
         Logger object to use for logging.
     fit_offset : `bool`, optional
         Fit a constant offset to allow for light leaks?
+    weight_pars : `list` [ `float` ]
+        Iterable of 2 weight parameters for weighed fit.
     """
-    def __init__(self, nodes, grouping_values, pd, mu, mask=None, log=None, fit_offset=True):
+    def __init__(
+        self,
+        nodes,
+        grouping_values,
+        pd,
+        mu,
+        mask=None,
+        log=None,
+        fit_offset=True,
+        weight_pars=[1.0, 0.0],
+    ):
         self._pd = pd
         self._mu = mu
         self._grouping_values = grouping_values
         self.log = log if log else logging.getLogger(__name__)
         self._fit_offset = fit_offset
+        self._weight_pars_0 = weight_pars[0]
+        self._weight_pars_1 = weight_pars[1]
 
         self._nodes = nodes
         if nodes[0] != 0.0:
@@ -967,8 +981,8 @@ class AstierSplineLinearityFitter:
         for i in range(self.ngroup):
             self.group_indices.append(np.arange(uindex[i], uindex[i] + ucounts[i]))
 
-        # Outlier weight values.  Will be 1 (in) or 0 (out).
-        self._w = np.ones(len(self._pd))
+        # Weight values.  Outliers will be set to 0.
+        self._w = 1./np.sqrt(self._weight_pars_0**2. + self._weight_pars_1/self._mu)
 
         if mask is not None:
             self._w[~mask] = 0.0
