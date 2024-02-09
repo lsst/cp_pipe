@@ -228,13 +228,21 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
         """Test linearity with polynomial and ADU cuts."""
         self._check_linearity("Polynomial", min_adu=10000.0, max_adu=90000.0)
 
-    def _check_linearity_spline(self, do_pd_offsets=False, n_points=200):
+    def _check_linearity_spline(
+        self,
+        do_pd_offsets=False,
+        n_points=200,
+        fit_offset=False,
+        const_offset=False,
+    ):
         """Check linearity with a spline solution.
 
         Parameters
         ----------
         do_pd_offsets : `bool`, optional
             Apply offsets to the photodiode data.
+        const_offset : `bool`, optional
+            Apply constant offset to mu data.
         """
         np.random.seed(12345)
 
@@ -263,6 +271,15 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
         )
 
         mu_values = mu_linear + spl.interpolate(mu_linear)
+
+        # Add a constant offset if necessary.
+        if const_offset:
+            offset_value = 2.0
+            mu_values += offset_value
+        else:
+            offset_value = 0.0
+
+        # Add some noise.
         mu_values += np.random.normal(scale=mu_values, size=len(mu_values)) / 10000.
 
         # Add some outlier values.
@@ -313,6 +330,7 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
         config.maxLinearAdu = np.nanmax(mu_values) + 1.0
         config.splineKnots = n_nodes
         config.splineGroupingMinPoints = 101
+        config.splineFitUseOffset = const_offset
 
         if do_pd_offsets:
             config.splineGroupingColumn = "CCOBCURR"
@@ -359,10 +377,16 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
             # We scale by the median because of ambiguity in the overall
             # gain parameter which is not part of the non-linearity.
             ratio = image.array[0, lin_mask]/mu_linear[lin_mask]
+            if const_offset:
+                # When we have an offset, this test gets a bit confused
+                # mixing truth and offset values.
+                rtol = 5e-2
+            else:
+                rtol = 5e-4
             self.assertFloatsAlmostEqual(
                 ratio / np.median(ratio),
                 1.0,
-                rtol=5e-4,
+                rtol=rtol,
             )
 
             # Check that the spline parameters recovered are consistent,
@@ -394,14 +418,23 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
             if do_pd_offsets:
                 # The relative scaling is to group 1.
                 fit_offset_factors = linearizer.fitParams[amp_name][1] / linearizer.fitParams[amp_name]
-
+                if const_offset:
+                    fit_offset_factors = fit_offset_factors[:-1]
                 self.assertFloatsAlmostEqual(fit_offset_factors, np.array(pd_offset_factors), rtol=6e-4)
 
+            # And check if the offset is fit well.
+            if const_offset:
+                fit_offset = linearizer.fitParams[amp_name][-1]
+                self.assertFloatsAlmostEqual(fit_offset, offset_value, rtol=1e-3)
+
     def test_linearity_spline(self):
-        self._check_linearity_spline()
+        self._check_linearity_spline(do_pd_offsets=False, const_offset=False)
 
     def test_linearity_spline_offsets(self):
-        self._check_linearity_spline(do_pd_offsets=True)
+        self._check_linearity_spline(do_pd_offsets=True, const_offset=False)
+
+    def test_linearity_spline_const_offset(self):
+        self._check_linearity_spline(do_pd_offsets=True, const_offset=True)
 
     def test_linearity_spline_offsets_too_few_points(self):
         with self.assertRaisesRegex(RuntimeError, "too few points"):

@@ -220,6 +220,11 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
         doc="Maximum number of rejections per iteration for spline fit.",
         default=5,
     )
+    splineFitUseOffset = pexConfig.Field(
+        dtype=bool,
+        doc="Fit a scattered light offset in the spline fit.",
+        default=True,
+    )
 
 
 class LinearitySolveTask(pipeBase.PipelineTask):
@@ -472,13 +477,14 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 # to allow for different linearity coefficients with different
                 # photodiode settings.  The minimization is a least-squares
                 # fit with the residual of
-                # Sum[(S(mu_i) + mu_i)/(k_j * D_i) - 1]**2, where S(mu_i) is
-                # an Akima Spline function of mu_i, the observed flat-pair
+                # Sum[(S(mu_i) + mu_i - O)/(k_j * D_i) - 1]**2, where S(mu_i)
+                # is an Akima Spline function of mu_i, the observed flat-pair
                 # mean; D_j is the photo-diode measurement corresponding to
                 # that flat-pair; and k_j is a constant of proportionality
                 # which is over index j as it is allowed to
                 # be different based on different photodiode settings (e.g.
-                # CCOBCURR).
+                # CCOBCURR); and O is a constant offset to allow for light
+                # leaks (and is only fit if splineFitUseOffset=True).
 
                 # The fit has additional constraints to ensure that the spline
                 # goes through the (0, 0) point, as well as a normalization
@@ -496,6 +502,7 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                     inputOrdinate,
                     mask=mask,
                     log=self.log,
+                    fit_offset=self.config.splineFitUseOffset,
                 )
                 p0 = fitter.estimate_p0()
                 pars = fitter.fit(
@@ -513,18 +520,20 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                                        "be consistent with zero.")
                 pars[0] = 0.0
 
-                linearityCoeffs = np.concatenate([nodes, pars[0: len(nodes)]])
-                linearFit = np.array([0.0, np.mean(pars[len(nodes):])])
+                linearityCoeffs = np.concatenate([nodes, pars[fitter.par_indices["values"]]])
+                linearFit = np.array([0.0, np.mean(pars[fitter.par_indices["groups"]])])
 
                 # We modify the inputAbscissa according to the linearity fits
                 # here, for proper residual computation.
                 for j, group_index in enumerate(fitter.group_indices):
-                    inputOrdinate[group_index] /= (pars[len(nodes) + j] / linearFit[1])
+                    inputOrdinate[group_index] /= (pars[fitter.par_indices["groups"][j]] / linearFit[1])
 
                 linearOrdinate = linearFit[1] * inputOrdinate
                 # For the spline fit, reuse the "polyFit -> fitParams"
                 # field to record the linear coefficients for the groups.
-                polyFit = pars[len(nodes):]
+                polyFit = pars[fitter.par_indices["groups"]]
+                if len(fitter.par_indices["offset"]) == 1:
+                    polyFit = np.append(polyFit, pars[fitter.par_indices["offset"]])
                 polyFitErr = np.zeros_like(polyFit)
                 chiSq = np.nan
 
