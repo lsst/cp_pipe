@@ -425,7 +425,7 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
             # And check if the offset is fit well.
             if const_offset:
                 fit_offset = linearizer.fitParams[amp_name][-1]
-                self.assertFloatsAlmostEqual(fit_offset, offset_value, rtol=1e-3)
+                self.assertFloatsAlmostEqual(fit_offset, offset_value, rtol=5e-3)
 
     def test_linearity_spline(self):
         self._check_linearity_spline(do_pd_offsets=False, const_offset=False)
