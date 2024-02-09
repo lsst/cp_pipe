@@ -485,7 +485,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             noiseFitted = np.sqrt(datasetPtc.noise[ampName])
 
             # Check if noise is close to noiseFitted
-            if not np.isclose(noiseFitted, noise, rtol=0.05, atol=0.0):
+            if not np.isclose(noiseFitted, noise, rtol=0.05, atol=0.0, equal_nan=True):
                 self.log.warning(f"Read noise from PTC fit ({noiseFitted}) is not consistent "
                                  f"with read noise measured from overscan ({noise}) for "
                                  f"amplifier {ampName}. Try adjusting the fit range.")
