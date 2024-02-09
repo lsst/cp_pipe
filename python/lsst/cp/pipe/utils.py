@@ -909,13 +909,14 @@ class AstierSplineLinearityFitter:
     to allow for different linearity coefficients with different
     photodiode settings.  The minimization is a least-squares
     fit with the residual of
-    Sum[(S(mu_i) + mu_i)/(k_j * D_i) - 1]**2, where S(mu_i) is
-    an Akima Spline function of mu_i, the observed flat-pair
+    Sum[(S(mu_i) + mu_i)/(k_j * D_i - O) - 1]**2, where S(mu_i)
+    is an Akima Spline function of mu_i, the observed flat-pair
     mean; D_j is the photo-diode measurement corresponding to
     that flat-pair; and k_j is a constant of proportionality
     which is over index j as it is allowed to
     be different based on different photodiode settings (e.g.
-    CCOBCURR).
+    CCOBCURR); and O is a constant offset to allow for light
+    leaks (and is only fit if fitOffset=True).
 
     The fit has additional constraints to ensure that the spline
     goes through the (0, 0) point, as well as a normalization
@@ -939,12 +940,15 @@ class AstierSplineLinearityFitter:
         Input mask (True is good point, False is bad point).
     log : `logging.logger`, optional
         Logger object to use for logging.
+    fit_offset : `bool`, optional
+        Fit a constant offset to allow for light leaks?
     """
-    def __init__(self, nodes, grouping_values, pd, mu, mask=None, log=None):
+    def __init__(self, nodes, grouping_values, pd, mu, mask=None, log=None, fit_offset=True):
         self._pd = pd
         self._mu = mu
         self._grouping_values = grouping_values
         self.log = log if log else logging.getLogger(__name__)
+        self._fit_offset = fit_offset
 
         self._nodes = nodes
         if nodes[0] != 0.0:
@@ -972,6 +976,16 @@ class AstierSplineLinearityFitter:
         # Values to regularize spline fit.
         self._x_regularize = np.linspace(0.0, self._mu[self.mask].max(), 100)
 
+        # Set up the indices for the fit parameters.
+        self.par_indices = {
+            "values": np.arange(len(self._nodes)),
+            "groups": len(self._nodes) + np.arange(self.ngroup),
+            "offset": np.zeros(0, dtype=np.int64)
+        }
+        if self._fit_offset:
+            self.par_indices["offset"] = np.array([len(self.par_indices["values"])
+                                                   + len(self.par_indices["groups"])])
+
     def estimate_p0(self):
         """Estimate initial fit parameters.
 
@@ -979,33 +993,40 @@ class AstierSplineLinearityFitter:
         -------
         p0 : `np.ndarray`
             Parameter array, with spline values (one for each node) followed
-            by proportionality constants (one for each group).
+            by proportionality constants (one for each group), and one extra
+            for the offset O (if fitOffset was set to True).
         """
-        npt = len(self._nodes) + self.ngroup
+        npt = (len(self.par_indices["values"])
+               + len(self.par_indices["groups"])
+               + len(self.par_indices["offset"]))
         p0 = np.zeros(npt)
 
         # Do a simple linear fit and set all the constants to this.
         linfit = np.polyfit(self._pd[self.mask], self._mu[self.mask], 1)
-        p0[-self.ngroup:] = linfit[0]
+        p0[self.par_indices["groups"]] = linfit[0]
 
         # Look at the residuals...
         ratio_model = self.compute_ratio_model(
             self._nodes,
             self.group_indices,
+            self.par_indices,
             p0,
             self._pd,
             self._mu,
+            # has_offset=self._fit_offset,
         )
         # ...and adjust the linear parameters accordingly.
-        p0[-self.ngroup:] *= np.median(ratio_model[self.mask])
+        p0[self.par_indices["groups"]] *= np.median(ratio_model[self.mask])
 
         # Re-compute the residuals.
         ratio_model2 = self.compute_ratio_model(
             self._nodes,
             self.group_indices,
+            self.par_indices,
             p0,
             self._pd,
             self._mu,
+            # has_offset=self._fitOffset,
         )
 
         # And compute a first guess of the spline nodes.
@@ -1018,12 +1039,12 @@ class AstierSplineLinearityFitter:
         ratio = np.ones(len(self._nodes))
         ratio[n_arr > 0] = tot_arr[n_arr > 0]/n_arr[n_arr > 0]
         ratio[0] = 1.0
-        p0[0: len(self._nodes)] = (ratio - 1) * self._nodes
+        p0[self.par_indices["values"]] = (ratio - 1) * self._nodes
 
         return p0
 
     @staticmethod
-    def compute_ratio_model(nodes, group_indices, pars, pd, mu, return_spline=False):
+    def compute_ratio_model(nodes, group_indices, par_indices, pars, pd, mu, return_spline=False):
         """Compute the ratio model values.
 
         Parameters
@@ -1032,9 +1053,13 @@ class AstierSplineLinearityFitter:
             Array of node positions.
         group_indices : `list` [`np.ndarray`]
             List of group indices, one array for each group.
+        par_indices : `dict`
+            Dictionary showing which indices in the pars belong to
+            each set of fit values.
         pars : `np.ndarray`
             Parameter array, with spline values (one for each node) followed
-            by proportionality constants (one for each group.)
+            by proportionality constants (one for each group.), followed by
+            (optionally) one offset O.
         pd : `np.ndarray` (N,)
             Array of photodiode measurements.
         mu : `np.ndarray` (N,)
@@ -1045,20 +1070,22 @@ class AstierSplineLinearityFitter:
         Returns
         -------
         ratio_models : `np.ndarray` (N,)
-            Model ratio, (mu_i - S(mu_i))/(k_j * D_i)
+            Model ratio, (mu_i - S(mu_i) - O)/(k_j * D_i)
         spl : `lsst.afw.math.thing`
             Spline interpolator (returned if return_spline=True).
         """
         spl = lsst.afw.math.makeInterpolate(
             nodes,
-            pars[0: len(nodes)],
+            pars[par_indices["values"]],
             lsst.afw.math.stringToInterpStyle("AKIMA_SPLINE"),
         )
 
         numerator = mu - spl.interpolate(mu)
+        if len(par_indices["offset"]) == 1:
+            numerator -= pars[par_indices["offset"][0]]
         denominator = pd.copy()
         ngroup = len(group_indices)
-        kj = pars[-ngroup:]
+        kj = pars[par_indices["groups"]]
         for j in range(ngroup):
             denominator[group_indices[j]] *= kj[j]
 
@@ -1075,7 +1102,7 @@ class AstierSplineLinearityFitter:
         ----------
         p0 : `np.ndarray`
             Initial fit parameters (one for each knot, followed by one for
-            each grouping).
+            each grouping, and optionally one for the offset.)
         min_iter : `int`, optional
             Minimum number of fit iterations.
         max_iter : `int`, optional
@@ -1137,6 +1164,7 @@ class AstierSplineLinearityFitter:
         ratio_model, spl = self.compute_ratio_model(
             self._nodes,
             self.group_indices,
+            self.par_indices,
             pars,
             self._pd,
             self._mu,
