@@ -330,7 +330,8 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
         config.maxLinearAdu = np.nanmax(mu_values) + 1.0
         config.splineKnots = n_nodes
         config.splineGroupingMinPoints = 101
-        config.splineFitUseOffset = const_offset
+        config.doSplineFitOffset = const_offset
+        config.splineFitWeightPars = [7.2e-5, 1e-4]
 
         if do_pd_offsets:
             config.splineGroupingColumn = "CCOBCURR"

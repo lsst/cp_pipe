@@ -220,7 +220,7 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
         doc="Maximum number of rejections per iteration for spline fit.",
         default=5,
     )
-    splineFitUseOffset = pexConfig.Field(
+    doSplineFitOffset = pexConfig.Field(
         dtype=bool,
         doc="Fit a scattered light offset in the spline fit.",
         default=True,
@@ -492,7 +492,7 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 # which is over index j as it is allowed to
                 # be different based on different photodiode settings (e.g.
                 # CCOBCURR); and O is a constant offset to allow for light
-                # leaks (and is only fit if splineFitUseOffset=True).
+                # leaks (and is only fit if doSplineFitOffset=True).
 
                 # The fit has additional constraints to ensure that the spline
                 # goes through the (0, 0) point, as well as a normalization
@@ -510,7 +510,7 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                     inputOrdinate,
                     mask=mask,
                     log=self.log,
-                    fit_offset=self.config.splineFitUseOffset,
+                    fit_offset=self.config.doSplineFitOffset,
                     weight_pars=self.config.splineFitWeightPars,
                 )
                 p0 = fitter.estimate_p0()
