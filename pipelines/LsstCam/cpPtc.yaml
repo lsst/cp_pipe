@@ -15,4 +15,3 @@ tasks:
       doExtractPhotodiodeData: true
       auxiliaryHeaderKeys: ["CCOBCURR", "CCOBFLUX", "TEMP6"]
       matchExposuresType: FLUX
-      minPhotodiodeCurrent: 3e-10
