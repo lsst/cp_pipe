@@ -10,3 +10,7 @@ tasks:
       usePhotodiode: true
       splineGroupingColumn: CCOBCURR
       maxLinearAdu: 120000
+      splineFitTemperatureColumn: TEMP6
+      splineFitWeightParsStart: [7.2e-5, 1e-4]
+      doSplineFitTemperature: true
+      minPhotodiodeCurrent: 3e-10
