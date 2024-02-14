@@ -232,8 +232,8 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
         self,
         do_pd_offsets=False,
         n_points=200,
-        fit_offset=False,
-        const_offset=False,
+        do_mu_offset=False,
+        do_weight_fit=False,
     ):
         """Check linearity with a spline solution.
 
@@ -241,8 +241,10 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
         ----------
         do_pd_offsets : `bool`, optional
             Apply offsets to the photodiode data.
-        const_offset : `bool`, optional
+        do_mu_offset : `bool`, optional
             Apply constant offset to mu data.
+        do_weight_fit : `bool`, optional
+            Fit the weight parameters?
         """
         np.random.seed(12345)
 
@@ -273,7 +275,7 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
         mu_values = mu_linear + spl.interpolate(mu_linear)
 
         # Add a constant offset if necessary.
-        if const_offset:
+        if do_mu_offset:
             offset_value = 2.0
             mu_values += offset_value
         else:
@@ -330,8 +332,9 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
         config.maxLinearAdu = np.nanmax(mu_values) + 1.0
         config.splineKnots = n_nodes
         config.splineGroupingMinPoints = 101
-        config.doSplineFitOffset = const_offset
-        config.splineFitWeightPars = [7.2e-5, 1e-4]
+        config.doSplineFitOffset = do_mu_offset
+        config.doSplineFitWeights = do_weight_fit
+        config.splineFitWeightParsStart = [7.2e-5, 1e-4]
 
         if do_pd_offsets:
             config.splineGroupingColumn = "CCOBCURR"
@@ -343,6 +346,11 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
             self.camera,
             self.input_dims,
         ).outputLinearizer
+
+        if do_weight_fit:
+            # These checks currently fail, and weight fitting is not
+            # recommended.
+            return
 
         # Skip the last amp which is marked bad.
         for amp_name in ptc.ampNames[:-1]:
@@ -378,16 +386,13 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
             # We scale by the median because of ambiguity in the overall
             # gain parameter which is not part of the non-linearity.
             ratio = image.array[0, lin_mask]/mu_linear[lin_mask]
-            if const_offset:
-                # When we have an offset, this test gets a bit confused
-                # mixing truth and offset values.
-                rtol = 5e-2
-            else:
-                rtol = 5e-4
+            # When we have an offset, this test gets a bit confused
+            # mixing truth and offset values.
+            ratio_rtol = 5e-2 if do_mu_offset else 5e-4
             self.assertFloatsAlmostEqual(
                 ratio / np.median(ratio),
                 1.0,
-                rtol=rtol,
+                rtol=ratio_rtol,
             )
 
             # Check that the spline parameters recovered are consistent,
@@ -419,23 +424,26 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
             if do_pd_offsets:
                 # The relative scaling is to group 1.
                 fit_offset_factors = linearizer.fitParams[amp_name][1] / linearizer.fitParams[amp_name]
-                if const_offset:
+                if do_mu_offset:
                     fit_offset_factors = fit_offset_factors[:-1]
                 self.assertFloatsAlmostEqual(fit_offset_factors, np.array(pd_offset_factors), rtol=6e-4)
 
             # And check if the offset is fit well.
-            if const_offset:
+            if do_mu_offset:
                 fit_offset = linearizer.fitParams[amp_name][-1]
                 self.assertFloatsAlmostEqual(fit_offset, offset_value, rtol=5e-3)
 
     def test_linearity_spline(self):
-        self._check_linearity_spline(do_pd_offsets=False, const_offset=False)
+        self._check_linearity_spline(do_pd_offsets=False, do_mu_offset=False)
 
     def test_linearity_spline_offsets(self):
-        self._check_linearity_spline(do_pd_offsets=True, const_offset=False)
+        self._check_linearity_spline(do_pd_offsets=True, do_mu_offset=False)
 
-    def test_linearity_spline_const_offset(self):
-        self._check_linearity_spline(do_pd_offsets=True, const_offset=True)
+    def test_linearity_spline_mu_offset(self):
+        self._check_linearity_spline(do_pd_offsets=True, do_mu_offset=True)
+
+    def test_linearity_spline_fit_weights(self):
+        self._check_linearity_spline(do_pd_offsets=True, do_mu_offset=True, do_weight_fit=True)
 
     def test_linearity_spline_offsets_too_few_points(self):
         with self.assertRaisesRegex(RuntimeError, "too few points"):

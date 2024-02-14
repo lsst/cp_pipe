@@ -225,13 +225,17 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
         doc="Fit a scattered light offset in the spline fit.",
         default=True,
     )
-    splineFitWeightPars = pexConfig.ListField(
+    doSplineFitWeights = pexConfig.Field(
+        dtype=bool,
+        doc="Fit linearity weight parameters in the spline fit.",
+        default=False,
+    )
+    splineFitWeightParsStart = pexConfig.ListField(
         dtype=float,
-        doc="Weighting parameters for spline fit, such that "
-            "sigma = sqrt(par[0]**2. + par[1]/mu). Set to [1.0, 0.0] "
-            "for the unweighted fit.",
+        doc="Starting parameters for weight fit, if doSplineFitWeights=True. "
+            "Parameters are such that sigma = sqrt(par[0]**2. + par[1]**2./mu).",
         length=2,
-        default=[7.2e-5, 1e-4],
+        default=[1.0, 0.0],
     )
 
 
@@ -511,7 +515,8 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                     mask=mask,
                     log=self.log,
                     fit_offset=self.config.doSplineFitOffset,
-                    weight_pars=self.config.splineFitWeightPars,
+                    fit_weights=self.config.doSplineFitWeights,
+                    weight_pars_start=self.config.splineFitWeightParsStart,
                 )
                 p0 = fitter.estimate_p0()
                 pars = fitter.fit(
@@ -540,9 +545,14 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 linearOrdinate = linearFit[1] * inputOrdinate
                 # For the spline fit, reuse the "polyFit -> fitParams"
                 # field to record the linear coefficients for the groups.
-                polyFit = pars[fitter.par_indices["groups"]]
-                if len(fitter.par_indices["offset"]) == 1:
-                    polyFit = np.append(polyFit, pars[fitter.par_indices["offset"]])
+                # We additionally append the offset and weight_pars;
+                # however these will be zero-length arrays if these were
+                # not configured to be fit.
+                polyFit = np.concatenate((
+                    pars[fitter.par_indices["groups"]],
+                    pars[fitter.par_indices["offset"]],
+                    pars[fitter.par_indices["weight_pars"]],
+                ))
                 polyFitErr = np.zeros_like(polyFit)
                 chiSq = np.nan
 
