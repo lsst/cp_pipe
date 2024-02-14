@@ -916,7 +916,7 @@ class AstierSplineLinearityFitter:
     which is over index j as it is allowed to
     be different based on different photodiode settings (e.g.
     CCOBCURR); and O is a constant offset to allow for light
-    leaks (and is only fit if fitOffset=True).
+    leaks (and is only fit if fit_offset=True).
 
     The fit has additional constraints to ensure that the spline
     goes through the (0, 0) point, as well as a normalization
@@ -942,8 +942,11 @@ class AstierSplineLinearityFitter:
         Logger object to use for logging.
     fit_offset : `bool`, optional
         Fit a constant offset to allow for light leaks?
-    weight_pars : `list` [ `float` ]
-        Iterable of 2 weight parameters for weighed fit.
+    fit_weights : `bool`, optional
+        Fit for the weight parameters?
+    weight_pars_start : `list` [ `float` ]
+        Iterable of 2 weight parameters for weighed fit. These will
+        be used as input if the weight parameters are not fit.
     """
     def __init__(
         self,
@@ -954,15 +957,16 @@ class AstierSplineLinearityFitter:
         mask=None,
         log=None,
         fit_offset=True,
-        weight_pars=[1.0, 0.0],
+        fit_weights=False,
+        weight_pars_start=[1.0, 0.0],
     ):
         self._pd = pd
         self._mu = mu
         self._grouping_values = grouping_values
         self.log = log if log else logging.getLogger(__name__)
         self._fit_offset = fit_offset
-        self._weight_pars_0 = weight_pars[0]
-        self._weight_pars_1 = weight_pars[1]
+        self._fit_weights = fit_weights
+        self._weight_pars_start = weight_pars_start
 
         self._nodes = nodes
         if nodes[0] != 0.0:
@@ -982,10 +986,11 @@ class AstierSplineLinearityFitter:
             self.group_indices.append(np.arange(uindex[i], uindex[i] + ucounts[i]))
 
         # Weight values.  Outliers will be set to 0.
-        self._w = 1./np.sqrt(self._weight_pars_0**2. + self._weight_pars_1/self._mu)
-
-        if mask is not None:
-            self._w[~mask] = 0.0
+        if mask is None:
+            _mask = np.ones(len(mu), dtype=np.bool_)
+        else:
+            _mask = mask
+        self._w = self.compute_weights(self._weight_pars_start, self._mu, _mask)
 
         # Values to regularize spline fit.
         self._x_regularize = np.linspace(0.0, self._mu[self.mask].max(), 100)
@@ -994,11 +999,27 @@ class AstierSplineLinearityFitter:
         self.par_indices = {
             "values": np.arange(len(self._nodes)),
             "groups": len(self._nodes) + np.arange(self.ngroup),
-            "offset": np.zeros(0, dtype=np.int64)
+            "offset": np.zeros(0, dtype=np.int64),
+            "weight_pars": np.zeros(0, dtype=np.int64),
         }
         if self._fit_offset:
-            self.par_indices["offset"] = np.array([len(self.par_indices["values"])
-                                                   + len(self.par_indices["groups"])])
+            self.par_indices["offset"] = np.arange(1) + (
+                len(self.par_indices["values"])
+                + len(self.par_indices["groups"])
+            )
+        if self._fit_weights:
+            self.par_indices["weight_pars"] = np.arange(2) + (
+                len(self.par_indices["values"])
+                + len(self.par_indices["groups"])
+                + len(self.par_indices["offset"])
+            )
+
+    @staticmethod
+    def compute_weights(weight_pars, mu, mask):
+        w = 1./np.sqrt(weight_pars[0]**2. + weight_pars[1]**2./mu)
+        w[~mask] = 0.0
+
+        return w
 
     def estimate_p0(self):
         """Estimate initial fit parameters.
@@ -1012,7 +1033,8 @@ class AstierSplineLinearityFitter:
         """
         npt = (len(self.par_indices["values"])
                + len(self.par_indices["groups"])
-               + len(self.par_indices["offset"]))
+               + len(self.par_indices["offset"])
+               + len(self.par_indices["weight_pars"]))
         p0 = np.zeros(npt)
 
         # Do a simple linear fit and set all the constants to this.
@@ -1027,7 +1049,6 @@ class AstierSplineLinearityFitter:
             p0,
             self._pd,
             self._mu,
-            # has_offset=self._fit_offset,
         )
         # ...and adjust the linear parameters accordingly.
         p0[self.par_indices["groups"]] *= np.median(ratio_model[self.mask])
@@ -1040,7 +1061,6 @@ class AstierSplineLinearityFitter:
             p0,
             self._pd,
             self._mu,
-            # has_offset=self._fitOffset,
         )
 
         # And compute a first guess of the spline nodes.
@@ -1054,6 +1074,12 @@ class AstierSplineLinearityFitter:
         ratio[n_arr > 0] = tot_arr[n_arr > 0]/n_arr[n_arr > 0]
         ratio[0] = 1.0
         p0[self.par_indices["values"]] = (ratio - 1) * self._nodes
+
+        if self._fit_offset:
+            p0[self.par_indices["offset"]] = 0.0
+
+        if self._fit_weights:
+            p0[self.par_indices["weight_pars"]] = self._weight_pars_start
 
         return p0
 
@@ -1185,12 +1211,24 @@ class AstierSplineLinearityFitter:
             return_spline=True,
         )
 
+        _mask = self.mask
+        # Update the weights if we are fitting them.
+        if self._fit_weights:
+            self._w = self.compute_weights(pars[self.par_indices["weight_pars"]], self._mu, _mask)
         resid = self._w*(ratio_model - 1.0)
+
         # Ensure masked points have 0 residual.
-        resid[~self.mask] = 0.0
+        resid[~_mask] = 0.0
 
         constraint = [1e3 * np.mean(spl.interpolate(self._x_regularize))]
         # 0 should transform to 0
         constraint.append(spl.interpolate(0)*1e10)
+        # Use a Jeffreys prior on the weight if we are fitting it.
+        if self._fit_weights:
+            # This factor ensures that log(fact * w) is negative.
+            fact = 1e-3 / self._w.max()
+            # We only add non-zero weights to the constraint array.
+            log_w = np.sqrt(-2.*np.log(fact*self._w[self._w > 0]))
+            constraint = np.hstack([constraint, log_w])
 
         return np.hstack([resid, constraint])
