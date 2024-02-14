@@ -237,6 +237,25 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
         length=2,
         default=[1.0, 0.0],
     )
+    doSplineFitTemperature = pexConfig.Field(
+        dtype=bool,
+        doc="Fit temperature coefficient in spline fit?",
+        default=False,
+    )
+    splineFitTemperatureColumn = pexConfig.Field(
+        dtype=str,
+        doc="Name of the temperature column to use when fitting temperature "
+            "coefficients in spline fit; this must not be None if "
+            "doSplineFitTemperature is True.",
+        default=None,
+        optional=True,
+    )
+
+    def validate(self):
+        super().validate()
+
+        if self.doSplineFitTemperature and self.splineFitTemperatureColumn is None:
+            raise ValueError("Must set splineFitTemperatureColumn if doSplineFitTemperature is True.")
 
 
 class LinearitySolveTask(pipeBase.PipelineTask):
@@ -357,6 +376,16 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 groupingValue = inputPtc.auxValues[self.config.splineGroupingColumn]
             else:
                 groupingValue = np.ones(len(inputPtc.rawMeans[inputPtc.ampNames[0]]), dtype=int)
+
+            if self.config.doSplineFitTemperature:
+                if self.config.splineFitTemperatureColumn not in inputPtc.auxValues:
+                    raise ValueError("Config requests fitting temperature coefficient for "
+                                     f"{self.config.splineFitTemperatureColumn} but this column "
+                                     "is not available in inputPtc.auxValues.")
+                tempValue = inputPtc.auxValues[self.config.splineFitTemperatureColumn]
+            else:
+                tempValue = None
+
             # We set this to have a value to fill the bad amps.
             fitOrder = self.config.splineKnots
         else:
@@ -386,6 +415,9 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 mask = np.ones(len(inputPtc.expIdMask[ampName]), dtype=bool)
             else:
                 mask = inputPtc.expIdMask[ampName].copy()
+
+            if self.config.linearityType == "Spline" and tempValue is not None:
+                mask &= np.isfinite(tempValue)
 
             if self.config.usePhotodiode:
                 modExpTimes = inputPtc.photoCharges[ampName].copy()
@@ -496,7 +528,11 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 # which is over index j as it is allowed to
                 # be different based on different photodiode settings (e.g.
                 # CCOBCURR); and O is a constant offset to allow for light
-                # leaks (and is only fit if doSplineFitOffset=True).
+                # leaks (and is only fit if doSplineFitOffset=True). In
+                # addition, if config.doSplineFitTemperature is True then
+                # the fit will adjust mu such that
+                # mu = mu_input*(1 + alpha*(T - T_ref))
+                # and T_ref is taken as the median temperature of the run.
 
                 # The fit has additional constraints to ensure that the spline
                 # goes through the (0, 0) point, as well as a normalization
@@ -506,6 +542,11 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 # function itself which is degenerate with the gain.
 
                 nodes = np.linspace(0.0, np.max(inputOrdinate[mask]), self.config.splineKnots)
+
+                if tempValue is not None:
+                    tempValueScaled = tempValue - np.median(tempValue[~mask])
+                else:
+                    tempValueScaled = None
 
                 fitter = AstierSplineLinearityFitter(
                     nodes,
@@ -517,6 +558,8 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                     fit_offset=self.config.doSplineFitOffset,
                     fit_weights=self.config.doSplineFitWeights,
                     weight_pars_start=self.config.splineFitWeightParsStart,
+                    fit_temperature=self.config.doSplineFitTemperature,
+                    temperature_scaled=tempValueScaled,
                 )
                 p0 = fitter.estimate_p0()
                 pars = fitter.fit(
@@ -552,6 +595,7 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                     pars[fitter.par_indices["groups"]],
                     pars[fitter.par_indices["offset"]],
                     pars[fitter.par_indices["weight_pars"]],
+                    pars[fitter.par_indices["temperature_coeff"]],
                 ))
                 polyFitErr = np.zeros_like(polyFit)
                 chiSq = np.nan

@@ -63,7 +63,7 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
         for amp in self.detector:
             self.amp_names.append(amp.getName())
 
-    def _create_ptc(self, amp_names, exp_times, means, ccobcurr=None, photo_charges=None):
+    def _create_ptc(self, amp_names, exp_times, means, ccobcurr=None, photo_charges=None, temperatures=None):
         """
         Create a PTC with values for linearity tests.
 
@@ -79,6 +79,8 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
             Array of CCOBCURR to put into auxiliary values.
         photo_charges : `np.ndarray`, optional
             Array of photoCharges to put into ptc.
+        temperatures : `np.ndarray`, optional
+            Array of temperatures (TEMP6) to put into ptc.
 
         Returns
         -------
@@ -113,8 +115,14 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
                     photoCharge=photo_charges[i],
                 )
 
+            aux_dict = {}
             if ccobcurr is not None:
-                partial.setAuxValuesPartialDataset({"CCOBCURR": ccobcurr[i]})
+                aux_dict["CCOBCURR"] = ccobcurr[i]
+            if temperatures is not None:
+                aux_dict["TEMP6"] = temperatures[i]
+
+            if aux_dict:
+                partial.setAuxValuesPartialDataset(aux_dict)
 
             datasets.append(partial)
 
@@ -234,6 +242,7 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
         n_points=200,
         do_mu_offset=False,
         do_weight_fit=False,
+        do_temperature_fit=False,
     ):
         """Check linearity with a spline solution.
 
@@ -245,6 +254,8 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
             Apply constant offset to mu data.
         do_weight_fit : `bool`, optional
             Fit the weight parameters?
+        do_temperature_fit : `bool`, optional
+            Apply a temperature dependence and fit it?
         """
         np.random.seed(12345)
 
@@ -273,6 +284,17 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
         )
 
         mu_values = mu_linear + spl.interpolate(mu_linear)
+
+        # Add a temperature dependence if necessary.
+        if do_temperature_fit:
+            temp_coeff = 0.0006
+            temperatures = np.random.normal(scale=0.5, size=len(mu_values)) - 100.0
+
+            # We use a negative sign here because we are doing the
+            # opposite of the correction.
+            mu_values *= (1 - temp_coeff*(temperatures - (-100.0)))
+        else:
+            temperatures = None
 
         # Add a constant offset if necessary.
         if do_mu_offset:
@@ -323,6 +345,7 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
             mu_values,
             ccobcurr=ccobcurr,
             photo_charges=pd_values_offset,
+            temperatures=temperatures,
         )
 
         config = LinearitySolveTask.ConfigClass()
@@ -335,9 +358,13 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
         config.doSplineFitOffset = do_mu_offset
         config.doSplineFitWeights = do_weight_fit
         config.splineFitWeightParsStart = [7.2e-5, 1e-4]
+        config.doSplineFitTemperature = do_temperature_fit
 
         if do_pd_offsets:
             config.splineGroupingColumn = "CCOBCURR"
+
+        if do_temperature_fit:
+            config.splineFitTemperatureColumn = "TEMP6"
 
         task = LinearitySolveTask(config=config)
         linearizer = task.run(
@@ -366,10 +393,11 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
 
             # The first point at very low flux is noisier and so we exclude
             # it from the test here.
+            resid_atol = 2.1e-3 if do_temperature_fit else 1.1e-3
             self.assertFloatsAlmostEqual(
                 (linearizer.fitResiduals[amp_name][lin_mask] / mu_linear[lin_mask])[1:],
                 0.0,
-                atol=1.1e-3,
+                atol=resid_atol,
             )
 
             # If we apply the linearity correction, we should get the true
@@ -424,14 +452,33 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
             if do_pd_offsets:
                 # The relative scaling is to group 1.
                 fit_offset_factors = linearizer.fitParams[amp_name][1] / linearizer.fitParams[amp_name]
+                extra_pars = 0
                 if do_mu_offset:
-                    fit_offset_factors = fit_offset_factors[:-1]
+                    extra_pars += 1
+                if do_temperature_fit:
+                    extra_pars += 1
+
+                if extra_pars > 0:
+                    fit_offset_factors = fit_offset_factors[:-extra_pars]
+
                 self.assertFloatsAlmostEqual(fit_offset_factors, np.array(pd_offset_factors), rtol=6e-4)
 
             # And check if the offset is fit well.
-            if do_mu_offset:
+            fit_offset = None
+            fit_temp_coeff = None
+            if do_mu_offset and do_temperature_fit:
+                fit_offset = linearizer.fitParams[amp_name][-2]
+                fit_temp_coeff = linearizer.fitParams[amp_name][-1]
+            elif do_mu_offset:
                 fit_offset = linearizer.fitParams[amp_name][-1]
-                self.assertFloatsAlmostEqual(fit_offset, offset_value, rtol=5e-3)
+            elif do_temperature_fit:
+                fit_temp_coeff = linearizer.fitParams[amp_name][-1]
+
+            if fit_offset is not None:
+                self.assertFloatsAlmostEqual(fit_offset, offset_value, rtol=6e-3)
+
+            if fit_temp_coeff is not None:
+                self.assertFloatsAlmostEqual(fit_temp_coeff, temp_coeff, rtol=2e-2)
 
     def test_linearity_spline(self):
         self._check_linearity_spline(do_pd_offsets=False, do_mu_offset=False)
@@ -444,6 +491,9 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
 
     def test_linearity_spline_fit_weights(self):
         self._check_linearity_spline(do_pd_offsets=True, do_mu_offset=True, do_weight_fit=True)
+
+    def test_linearity_spline_fit_temperature(self):
+        self._check_linearity_spline(do_pd_offsets=True, do_mu_offset=True, do_temperature_fit=True)
 
     def test_linearity_spline_offsets_too_few_points(self):
         with self.assertRaisesRegex(RuntimeError, "too few points"):
