@@ -916,7 +916,11 @@ class AstierSplineLinearityFitter:
     which is over index j as it is allowed to
     be different based on different photodiode settings (e.g.
     CCOBCURR); and O is a constant offset to allow for light
-    leaks (and is only fit if fit_offset=True).
+    leaks (and is only fit if fit_offset=True). In
+    addition, if config.doSplineFitTemperature is True then
+    the fit will adjust mu such that
+    mu = mu_input*(1 + alpha*(temperature_scaled))
+    and temperature_scaled = T - T_ref.
 
     The fit has additional constraints to ensure that the spline
     goes through the (0, 0) point, as well as a normalization
@@ -947,6 +951,10 @@ class AstierSplineLinearityFitter:
     weight_pars_start : `list` [ `float` ]
         Iterable of 2 weight parameters for weighed fit. These will
         be used as input if the weight parameters are not fit.
+    fit_temperature : `bool`, optional
+        Fit for temperature scaling?
+    temperature_scaled : `np.ndarray` (M,), optional
+        Input scaled temperature values (T - T_ref).
     """
     def __init__(
         self,
@@ -959,6 +967,8 @@ class AstierSplineLinearityFitter:
         fit_offset=True,
         fit_weights=False,
         weight_pars_start=[1.0, 0.0],
+        fit_temperature=False,
+        temperature_scaled=None,
     ):
         self._pd = pd
         self._mu = mu
@@ -967,6 +977,7 @@ class AstierSplineLinearityFitter:
         self._fit_offset = fit_offset
         self._fit_weights = fit_weights
         self._weight_pars_start = weight_pars_start
+        self._fit_temperature = fit_temperature
 
         self._nodes = nodes
         if nodes[0] != 0.0:
@@ -992,6 +1003,13 @@ class AstierSplineLinearityFitter:
             _mask = mask
         self._w = self.compute_weights(self._weight_pars_start, self._mu, _mask)
 
+        if temperature_scaled is None:
+            temperature_scaled = np.zeros(len(self._mu))
+        else:
+            if len(np.atleast_1d(temperature_scaled)) != len(self._mu):
+                raise ValueError("temperature_scaled must be the same length as input mu.")
+        self._temperature_scaled = temperature_scaled
+
         # Values to regularize spline fit.
         self._x_regularize = np.linspace(0.0, self._mu[self.mask].max(), 100)
 
@@ -1001,6 +1019,7 @@ class AstierSplineLinearityFitter:
             "groups": len(self._nodes) + np.arange(self.ngroup),
             "offset": np.zeros(0, dtype=np.int64),
             "weight_pars": np.zeros(0, dtype=np.int64),
+            "temperature_coeff": np.zeros(0, dtype=np.int64),
         }
         if self._fit_offset:
             self.par_indices["offset"] = np.arange(1) + (
@@ -1012,6 +1031,13 @@ class AstierSplineLinearityFitter:
                 len(self.par_indices["values"])
                 + len(self.par_indices["groups"])
                 + len(self.par_indices["offset"])
+            )
+        if self._fit_temperature:
+            self.par_indices["temperature_coeff"] = np.arange(1) + (
+                len(self.par_indices["values"])
+                + len(self.par_indices["groups"])
+                + len(self.par_indices["offset"])
+                + len(self.par_indices["weight_pars"])
             )
 
     @staticmethod
@@ -1034,7 +1060,8 @@ class AstierSplineLinearityFitter:
         npt = (len(self.par_indices["values"])
                + len(self.par_indices["groups"])
                + len(self.par_indices["offset"])
-               + len(self.par_indices["weight_pars"]))
+               + len(self.par_indices["weight_pars"])
+               + len(self.par_indices["temperature_coeff"]))
         p0 = np.zeros(npt)
 
         # Do a simple linear fit and set all the constants to this.
@@ -1049,6 +1076,7 @@ class AstierSplineLinearityFitter:
             p0,
             self._pd,
             self._mu,
+            self._temperature_scaled,
         )
         # ...and adjust the linear parameters accordingly.
         p0[self.par_indices["groups"]] *= np.median(ratio_model[self.mask])
@@ -1061,6 +1089,7 @@ class AstierSplineLinearityFitter:
             p0,
             self._pd,
             self._mu,
+            self._temperature_scaled,
         )
 
         # And compute a first guess of the spline nodes.
@@ -1084,7 +1113,16 @@ class AstierSplineLinearityFitter:
         return p0
 
     @staticmethod
-    def compute_ratio_model(nodes, group_indices, par_indices, pars, pd, mu, return_spline=False):
+    def compute_ratio_model(
+        nodes,
+        group_indices,
+        par_indices,
+        pars,
+        pd,
+        mu,
+        temperature_scaled,
+        return_spline=False,
+    ):
         """Compute the ratio model values.
 
         Parameters
@@ -1104,6 +1142,8 @@ class AstierSplineLinearityFitter:
             Array of photodiode measurements.
         mu : `np.ndarray` (N,)
             Array of flat means.
+        temperature_scaled : `np.ndarray` (N,)
+            Array of scaled temperature values.
         return_spline : `bool`, optional
             Return the spline interpolation as well as the model ratios?
 
@@ -1120,7 +1160,13 @@ class AstierSplineLinearityFitter:
             lsst.afw.math.stringToInterpStyle("AKIMA_SPLINE"),
         )
 
-        numerator = mu - spl.interpolate(mu)
+        # Check if we want to do just the left or both with temp scale.
+        if len(par_indices["temperature_coeff"]) == 1:
+            mu_corr = mu*(1. + pars[par_indices["temperature_coeff"]]*temperature_scaled)
+        else:
+            mu_corr = mu
+
+        numerator = mu_corr - spl.interpolate(mu_corr)
         if len(par_indices["offset"]) == 1:
             numerator -= pars[par_indices["offset"][0]]
         denominator = pd.copy()
@@ -1208,6 +1254,7 @@ class AstierSplineLinearityFitter:
             pars,
             self._pd,
             self._mu,
+            self._temperature_scaled,
             return_spline=True,
         )
 
