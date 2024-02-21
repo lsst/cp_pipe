@@ -99,8 +99,9 @@ class BrighterFatterKernelSolveConfig(pipeBase.PipelineTaskConfig,
     )
     forceZeroSum = pexConfig.Field(
         dtype=bool,
-        doc="Force the correlation matrix to have zero sum by adjusting the (0,0) value?",
-        default=False,
+        doc="Force the correlation matrix to have zero sum by adjusting the (0,0) value?"
+        "Defaults to true bsed on recommendation of Broughton et al. 2024.",
+        default=True,
     )
     useAmatrix = pexConfig.Field(
         dtype=bool,
