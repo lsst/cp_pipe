@@ -985,16 +985,13 @@ class AstierSplineLinearityFitter:
         if not np.all(np.diff(nodes) > 0):
             raise ValueError("Nodes must be sorted with no repeats.")
 
-        # Check if sorted (raise otherwise)
-        if not np.all(np.diff(self._grouping_values) >= 0):
-            raise ValueError("Grouping values must be sorted.")
-
-        _, uindex, ucounts = np.unique(self._grouping_values, return_index=True, return_counts=True)
-        self.ngroup = len(uindex)
+        # Find the group indices.
+        u_group_values = np.unique(self._grouping_values)
+        self.ngroup = len(u_group_values)
 
         self.group_indices = []
         for i in range(self.ngroup):
-            self.group_indices.append(np.arange(uindex[i], uindex[i] + ucounts[i]))
+            self.group_indices.append(np.where(self._grouping_values == u_group_values[i])[0])
 
         # Weight values.  Outliers will be set to 0.
         if mask is None:
