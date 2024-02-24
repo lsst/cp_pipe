@@ -3,8 +3,8 @@ tasks:
   measureDefectsBias:
     class: lsst.cp.pipe.defects.MeasureDefectsCombinedTask
     config:
-      inputExp.name: "bias"
-      outputDefects.name: "cpPartialDefectsFromBiasCombined"
+      connections.inputExp.name: "bias"
+      connections.outputDefects.name: "cpPartialDefectsFromBiasCombined"
   measureDefectsDark:
     class: lsst.cp.pipe.defects.MeasureDefectsCombinedTask
   measureDefectsFlatx:
