@@ -5,6 +5,7 @@ tasks:
     config:
       connections.inputExp: "bias"
       connections.outputDefects: "cpPartialDefectsFromBiasCombined"
+      thresholdType: "VALUE"
   measureDefectsDark:
     class: lsst.cp.pipe.defects.MeasureDefectsCombinedTask
   measureDefectsFlatx:

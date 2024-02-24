@@ -89,6 +89,12 @@ class MeasureDefectsTaskConfig(pipeBase.PipelineTaskConfig,
              "hot/bright pixels in dark images. Unused if thresholdType==``STDEV``."),
         default=5,
     )
+    biasThreshold = pexConfig.Field(
+        dtype=float,
+        doc=("If thresholdType==``VALUE``, bias threshold (in ADU) to define "
+             "hot/bright pixels in bias frame. Unused if thresholdType==``STDEV``."),
+        default=10.0,
+    )
     fracThresholdFlat = pexConfig.Field(
         dtype=float,
         doc=("If thresholdType=``VALUE``, fractional threshold to define cold/dark "
@@ -286,6 +292,9 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
                 if datasetType.lower() == 'dark':
                     # hot pixel threshold
                     valueThreshold = self.config.darkCurrentThreshold*expTime/amp.getGain()
+                elif datasetType.lower() == 'bias':
+                    # hot pixel threshold, no exposure time.
+                    valueThreshold = self.config.biasThreshold
                 else:
                     # LCA-128 and eoTest: dark/cold pixels in flat images as
                     # defined as any pixel with photoresponse <80% of

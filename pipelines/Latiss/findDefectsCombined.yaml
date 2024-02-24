@@ -3,11 +3,6 @@ instrument: lsst.obs.lsst.Latiss
 imports:
   - location: $CP_PIPE_DIR/pipelines/_ingredients/findDefectsCombined.yaml
 tasks:
-  measureDefectsBias:
-    class: lsst.cp.pipe.defects.MeasureDefectsCombinedTask
-    config:
-      thresholdType: "VALUE"
-      darkCurrentThreshold: 3.0
   measureDefectsDark:
     class: lsst.cp.pipe.defects.MeasureDefectsCombinedTask
     config:
