@@ -1,7 +1,7 @@
 description: Latiss dark calibration construction for defects.
 instrument: lsst.obs.lsst.Latiss
 imports:
-  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpDark.yaml
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpDarkForDefects.yaml
 tasks:
   darkIsr:
     class: lsst.ip.isr.IsrTask
