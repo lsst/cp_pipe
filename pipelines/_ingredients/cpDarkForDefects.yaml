@@ -19,7 +19,7 @@ tasks:
     class: lsst.cp.pipe.cpCombine.CalibCombineTask
     config:
       connections.inputExpHandles: 'cpDarkProcForDefects'
-      connections.outputData: 'darkForDefects'
+      connections.outputData: 'dark'
       calibrationType: 'dark'
       exposureScaling: "DarkTime"
 contracts:
