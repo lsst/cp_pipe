@@ -1,0 +1,29 @@
+description: cp_pipe DARK calibration construction for defect finding.
+tasks:
+  darkIsrForDefects:
+    class: lsst.ip.isr.IsrTask
+    config:
+      connections.ccdExposure: 'raw'
+      connections.outputExposure: 'cpDarkProcForDefects'
+      doWrite: true
+      doDefect: false
+      doBrighterFatter: false
+      doBias: true
+      doDark: false
+      doFlat: false
+      doApplyGains: false
+      doFringe: false
+      doSaturation: false
+      maskNegativeVariance: false
+  cpDarkCombine:
+    class: lsst.cp.pipe.cpCombine.CalibCombineTask
+    config:
+      connections.inputExpHandles: 'cpDarkProcForDefects'
+      connections.outputData: 'darkForDefects'
+      calibrationType: 'dark'
+      exposureScaling: "DarkTime"
+contracts:
+  - darkIsr.doDark == False
+  - cpDarkCombine.calibrationType == "dark"
+  - cpDarkCombine.exposureScaling == "DarkTime"
+
