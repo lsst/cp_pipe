@@ -23,7 +23,7 @@ tasks:
       calibrationType: 'dark'
       exposureScaling: "DarkTime"
 contracts:
-  - darkIsr.doDark == False
+  - darkIsrForDefects.doDark == False
   - cpDarkCombine.calibrationType == "dark"
   - cpDarkCombine.exposureScaling == "DarkTime"
 
