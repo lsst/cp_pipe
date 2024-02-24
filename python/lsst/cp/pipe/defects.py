@@ -900,6 +900,13 @@ class MergeDefectsCombinedConnections(pipeBase.PipelineTaskConnections,
         dimensions=("instrument", "detector",),
         multiple=True,
     )
+    inputBiasDefects = cT.Input(
+        name="cpPartialDefectsFromBiasCombined",
+        doc="Additional measured defect lists.",
+        storageClass="Defects",
+        dimensions=("instrument", "detector",),
+        multiple=True,
+    )
     inputFlatDefects = cT.Input(
         name="cpPartialDefectsFromFlatCombinedWithFilter",
         doc="Additional measured defect lists.",
@@ -961,7 +968,8 @@ class MergeDefectsCombinedTask(MergeDefectsTask):
         # is what MergeDefectsTask expects.  If there are multiple,
         # use the one with the most inputs.
         tempList = [self.chooseBest(inputs['inputFlatDefects']),
-                    self.chooseBest(inputs['inputDarkDefects'])]
+                    self.chooseBest(inputs['inputDarkDefects']),
+                    self.chooseBest(inputs['inputBiasDefects'])]
 
         # Rename inputDefects
         inputsCombined = {'inputDefects': tempList, 'camera': inputs['camera']}
