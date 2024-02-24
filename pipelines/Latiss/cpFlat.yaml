@@ -6,7 +6,6 @@ tasks:
   flatIsr:
     class: lsst.ip.isr.IsrTask
     config:
-      # Disable these until useful calibrations exist.
       overscan.fitType: 'MEDIAN_PER_ROW'
       doLinearize: false
-      doCrosstalk: false
+      doCrosstalk: true
