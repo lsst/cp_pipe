@@ -6,8 +6,8 @@ tasks:
   darkIsr:
     class: lsst.ip.isr.IsrTask
     config:
-      # Disable these until valid calibrations exist.
       overscan.fitType: 'MEDIAN_PER_ROW'
       doLinearize: false
-      doCrosstalk: false
+      doCrosstalk: true
+      # This is necessary for cosmic ray rejection.
       doDefect: true

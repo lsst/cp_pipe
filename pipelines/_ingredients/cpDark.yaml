@@ -12,6 +12,8 @@ tasks:
       doFlat: false
       doApplyGains: false
       doFringe: false
+      doSaturation: false
+      maskNegativeVariance: false
   cpDark:
     class: lsst.cp.pipe.cpDarkTask.CpDarkTask
     config:
