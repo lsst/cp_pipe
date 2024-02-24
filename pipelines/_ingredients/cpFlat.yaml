@@ -11,6 +11,10 @@ tasks:
       doFlat: false
       doFringe: false
       doApplyGains: false
+      doSaturation: false
+      maskNegativeVariance: false
+      doBias: true
+      doDark: true
   cpFlatMeasure:
     class: lsst.cp.pipe.cpFlatNormTask.CpFlatMeasureTask
     config:
