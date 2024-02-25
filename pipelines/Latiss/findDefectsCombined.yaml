@@ -13,3 +13,7 @@ tasks:
     config:
       thresholdType: "VALUE"
       fracThresholdFlat: 0.9
+  mergeDefectsCombined:
+    class: lsst.cp.pipe.defects.MergeDefectsCombinedTask
+    config:
+      edgesAsDefects: true
