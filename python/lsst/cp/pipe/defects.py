@@ -38,7 +38,7 @@ import lsst.afw.math as afwMath
 import lsst.afw.detection as afwDetection
 import lsst.afw.display as afwDisplay
 from lsst.afw import cameraGeom
-from lsst.geom import Box2I, Point2I
+from lsst.geom import Box2I, Point2I, Extent2I
 from lsst.meas.algorithms import SourceDetectionTask
 from lsst.ip.isr import Defects, countMaskedPixels
 from lsst.pex.exceptions import InvalidParameterError
@@ -779,11 +779,19 @@ class MergeDefectsTaskConfig(pipeBase.PipelineTaskConfig,
         min=0,
         max=1,
     )
+    nPixBorderUpDown = pexConfig.Field(
+        dtype=int,
+        doc="Number of pixels on top & bottom of image to mask as defects if edgesAsDefects is True.",
+        default=5,
+    )
+    nPixBorderLeftRight = pexConfig.Field(
+        dtype=int,
+        doc="Number of pixels on left & right of image to mask as defects if edgesAsDefects is True.",
+        default=5,
+    )
     edgesAsDefects = pexConfig.Field(
         dtype=bool,
-        doc=("Mark all edge pixels, as defined by nPixBorder[UpDown, LeftRight], as defects."
-             " Normal treatment is to simply exclude this region from the defect finding, such that no"
-             " defect will be located there."),
+        doc="Mark all edge pixels, as defined by nPixBorder[UpDown, LeftRight], as defects.",
         default=False,
     )
 
@@ -871,11 +879,17 @@ class MergeDefectsTask(pipeBase.PipelineTask):
 
         if self.config.edgesAsDefects:
             self.log.info("Masking edge pixels as defects.")
-            # Do the same as IsrTask.maskEdges()
-            box = detector.getBBox()
-            subImage = finalImage[box]
-            box.grow(-self.nPixBorder)
-            SourceDetectionTask.setEdgeBits(subImage, box, BADBIT)
+            # This code follows the pattern from isrTask.maskEdges().
+            if self.config.nPixBorderLeftRight > 0:
+                box = detector.getBBox()
+                subImage = finalImage[box]
+                box.grow(Extent2I(-self.config.nPixBorderLeftRight, 0))
+                SourceDetectionTask.setEdgeBits(subImage, box, BADBIT)
+            if self.config.nPixBorderUpDown > 0:
+                box = detector.getBBox()
+                subImage = finalImage[box]
+                box.grow(Extent2I(0, -self.config.nPixBorderUpDown))
+                SourceDetectionTask.setEdgeBits(subImage, box, BADBIT)
 
         merged = Defects.fromMask(finalImage, 'BAD')
         merged.updateMetadataFromExposures(inputDefects)
