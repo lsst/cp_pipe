@@ -16,6 +16,7 @@ tasks:
       doSaturation: false
       maskNegativeVariance: false
       doInterpolate: false
+      doSetBadRegions: false
   cpDarkCombine:
     class: lsst.cp.pipe.cpCombine.CalibCombineTask
     config:
