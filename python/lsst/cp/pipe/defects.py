@@ -93,7 +93,7 @@ class MeasureDefectsTaskConfig(pipeBase.PipelineTaskConfig,
         dtype=float,
         doc=("If thresholdType==``VALUE``, bias threshold (in ADU) to define "
              "hot/bright pixels in bias frame. Unused if thresholdType==``STDEV``."),
-        default=10.0,
+        default=1000.0,
     )
     fracThresholdFlat = pexConfig.Field(
         dtype=float,
