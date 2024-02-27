@@ -353,7 +353,7 @@ class CalibCombineTask(pipeBase.PipelineTask):
         # The calibration should _never_ have NO_DATA set.
         if self.config.checkNoData:
             test = ((combinedExp.mask.array & afwImage.Mask.getPlaneBitMask("NO_DATA")) > 0)
-            if nnodata := test.sum() > 0:
+            if (nnodata := test.sum()) > 0:
                 raise RuntimeError(f"Combined calibration has {nnodata} pixels!")
 
         self.interpolateNans(combined)
