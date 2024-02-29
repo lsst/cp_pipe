@@ -9,4 +9,3 @@ tasks:
       overscan.fitType: 'MEDIAN_PER_ROW'
       doDefect: false
       doCrosstalk: true
-
