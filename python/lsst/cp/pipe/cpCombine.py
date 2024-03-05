@@ -484,7 +484,7 @@ class CalibCombineTask(pipeBase.PipelineTask):
                                        (bbox, subregionSize, colShift, rowShift))
                 yield subBBox
 
-    def combine(self, target, expHandleList, expScaleList, stats, maskForNoData="BAD"):
+    def combine(self, target, expHandleList, expScaleList, stats):
         """Combine multiple images.
 
         Parameters
