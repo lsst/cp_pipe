@@ -1,3 +1,5 @@
+# Note that if you edit this file you may also need to edit
+# cpDark.yaml.
 description: Latiss dark calibration construction for defects.
 instrument: lsst.obs.lsst.Latiss
 imports:

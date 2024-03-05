@@ -1,3 +1,5 @@
+# Note that if you edit this file you may also need to edit
+# cpDark.yaml.
 description: cp_pipe DARK calibration construction for defect finding.
 tasks:
   darkIsrForDefects:
