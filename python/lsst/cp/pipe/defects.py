@@ -316,6 +316,11 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
                 if datasetType.lower() == 'dark':
                     nSigmaList = [hotPixelThreshold]
                     valueThreshold = stDev*hotPixelThreshold
+                elif datasetType.lower() == 'bias':
+                    self.log.warning(
+                        "Bias frame detected, but thresholdType == STDEV; not looking for defects.",
+                    )
+                    return Defects.fromFootprintList([])
                 else:
                     nSigmaList = [hotPixelThreshold, coldPixelThreshold]
                     valueThreshold = [x*stDev for x in nSigmaList]
