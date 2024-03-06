@@ -89,12 +89,7 @@ class CpSkyImageConfig(pipeBase.PipelineTaskConfig,
     )
 
     def setDefaults(self):
-        # These values correspond to the HSC recommendation.  As noted
-        # below, the sizes are in millimeters, and correspond to an
-        # background image 8192x8192 pixels (8192*0.015=122.88).
-        self.largeScaleBackground.xSize = 122.88  # in mm
-        self.largeScaleBackground.ySize = 122.88  # in mm
-        self.largeScaleBackground.pixelSize = 0.015  # in mm per pixel
+        # These values correspond to the HSC recommendation.
         self.largeScaleBackground.minFrac = 0.1
         self.largeScaleBackground.mask = ['BAD', 'SAT', 'INTRP', 'DETECTED', 'DETECTED_NEGATIVE',
                                           'EDGE', 'NO_DATA']
