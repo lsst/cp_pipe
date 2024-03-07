@@ -135,6 +135,11 @@ class CpDarkTask(pipeBase.PipelineTask):
             spans = spans.clippedTo(inputExp.getBBox())
             spans.setMask(inputExp.mask, crMask)
 
+        # Clear the defect (BAD) mask plane, if it exists.
+        planes = inputExp.mask.getMaskPlaneDict()
+        if "BAD" in planes:
+            inputExp.mask.clearMaskPlane(planes["BAD"])
+
         return pipeBase.Struct(
             outputExp=inputExp,
         )

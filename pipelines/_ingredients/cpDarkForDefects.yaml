@@ -1,15 +1,16 @@
 # Note that if you edit this file you may also need to edit
-# cpDarkForDefects.yaml.
-description: cp_pipe DARK calibration construction
+# cpDark.yaml.
+description: cp_pipe DARK calibration construction for defect finding.
 tasks:
-  darkIsr:
+  darkIsrForDefects:
     class: lsst.ip.isr.IsrTask
     config:
       connections.ccdExposure: 'raw'
-      connections.outputExposure: 'cpDarkIsr'
+      connections.outputExposure: 'cpDarkProcForDefects'
       doWrite: true
       doDefect: false
       doBrighterFatter: false
+      doBias: true
       doDark: false
       doFlat: false
       doApplyGains: false
@@ -18,20 +19,15 @@ tasks:
       maskNegativeVariance: false
       doInterpolate: false
       doSetBadRegions: false
-  cpDark:
-    class: lsst.cp.pipe.cpDarkTask.CpDarkTask
-    config:
-      connections.inputExp: 'cpDarkIsr'
-      connections.outputExp: 'cpDarkProc'
   cpDarkCombine:
     class: lsst.cp.pipe.cpCombine.CalibCombineTask
     config:
-      connections.inputExpHandles: 'cpDarkProc'
+      connections.inputExpHandles: 'cpDarkProcForDefects'
       connections.outputData: 'dark'
       calibrationType: 'dark'
       exposureScaling: "DarkTime"
-      python: config.mask.append("CR")
 contracts:
-  - darkIsr.doDark == False
+  - darkIsrForDefects.doDark == False
   - cpDarkCombine.calibrationType == "dark"
   - cpDarkCombine.exposureScaling == "DarkTime"
+

@@ -8,6 +8,4 @@ tasks:
     config:
       overscan.fitType: 'MEDIAN_PER_ROW'
       doDefect: false
-      # Disable these until useful calibrations exist.
-      doLinearize: false
-      doCrosstalk: false
+      doCrosstalk: true

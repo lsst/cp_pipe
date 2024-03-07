@@ -2,3 +2,18 @@ description: cp_pipe DEFECT calibration construction from combined images.
 instrument: lsst.obs.lsst.Latiss
 imports:
   - location: $CP_PIPE_DIR/pipelines/_ingredients/findDefectsCombined.yaml
+tasks:
+  measureDefectsDark:
+    class: lsst.cp.pipe.defects.MeasureDefectsCombinedTask
+    config:
+      thresholdType: "VALUE"
+      darkCurrentThreshold: 3.0
+  measureDefectsFlatx:
+    class: lsst.cp.pipe.defects.MeasureDefectsCombinedWithFilterTask
+    config:
+      thresholdType: "VALUE"
+      fracThresholdFlat: 0.9
+  mergeDefectsCombined:
+    class: lsst.cp.pipe.defects.MergeDefectsCombinedTask
+    config:
+      edgesAsDefects: true

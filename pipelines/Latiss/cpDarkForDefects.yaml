@@ -1,15 +1,13 @@
 # Note that if you edit this file you may also need to edit
-# cpDarkForDefects.yaml.
-description: Latiss dark calibration construction
+# cpDark.yaml.
+description: Latiss dark calibration construction for defects.
 instrument: lsst.obs.lsst.Latiss
 imports:
-  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpDark.yaml
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpDarkForDefects.yaml
 tasks:
-  darkIsr:
+  darkIsrForDefects:
     class: lsst.ip.isr.IsrTask
     config:
       overscan.fitType: 'MEDIAN_PER_ROW'
       doLinearize: false
       doCrosstalk: true
-      # This is necessary for cosmic ray rejection.
-      doDefect: true

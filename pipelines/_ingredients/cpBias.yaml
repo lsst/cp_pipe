@@ -16,6 +16,10 @@ tasks:
       doFlat: false
       doApplyGains: false
       doFringe: false
+      doSaturation: false
+      maskNegativeVariance: false
+      doInterpolate: false
+      doSetBadRegions: false
   cpBiasCombine:
     class: lsst.cp.pipe.cpCombine.CalibCombineTask
     config:

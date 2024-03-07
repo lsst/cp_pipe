@@ -214,6 +214,16 @@ class CalibCombineConfig(pipeBase.PipelineTaskConfig,
         default=3,
         doc="Clipping iterations for combination",
     )
+    noGoodPixelsMask = pexConfig.Field(
+        dtype=str,
+        default="BAD",
+        doc="Mask bit to set when there are no good input pixels.",
+    )
+    checkNoData = pexConfig.Field(
+        dtype=bool,
+        default=True,
+        doc="Check that the calibration does not have NO_DATA set?",
+    )
     stats = pexConfig.ConfigurableField(
         target=CalibStatsTask,
         doc="Background statistics configuration",
@@ -276,8 +286,12 @@ class CalibCombineTask(pipeBase.PipelineTask):
             was not found.
         """
         width, height = self.getDimensions(inputExpHandles)
-        stats = afwMath.StatisticsControl(self.config.clip, self.config.nIter,
-                                          afwImage.Mask.getPlaneBitMask(self.config.mask))
+        stats = afwMath.StatisticsControl(
+            numSigmaClip=self.config.clip,
+            numIter=self.config.nIter,
+            andMask=afwImage.Mask.getPlaneBitMask(self.config.mask),
+        )
+        stats.setNoGoodPixelsMask(afwImage.Mask.getPlaneBitMask(self.config.noGoodPixelsMask))
         numExps = len(inputExpHandles)
         if numExps < 1:
             raise RuntimeError("No valid input data")
@@ -335,6 +349,12 @@ class CalibCombineTask(pipeBase.PipelineTask):
             self.log.info("Scaling input %d by %s", index, scale)
 
         self.combine(combinedExp, inputExpHandles, expScales, stats)
+
+        # The calibration should _never_ have NO_DATA set.
+        if self.config.checkNoData:
+            test = ((combinedExp.mask.array & afwImage.Mask.getPlaneBitMask("NO_DATA")) > 0)
+            if (nnodata := test.sum()) > 0:
+                raise RuntimeError(f"Combined calibration has {nnodata} pixels!")
 
         self.interpolateNans(combined)
 
@@ -632,6 +652,8 @@ class CalibCombineTask(pipeBase.PipelineTask):
         """
         metadata = exp.getMetadata()
 
+        noGoodPixelsBit = afwImage.Mask.getPlaneBitMask(self.config.noGoodPixelsMask)
+
         # percentiles
         for amp in exp.getDetector():
             ampImage = exp[amp.getBBox()]
@@ -640,6 +662,10 @@ class CalibCombineTask(pipeBase.PipelineTask):
             for level, value in zip(self.config.distributionPercentiles, percentileValues):
                 key = f"LSST CALIB {calibrationType.upper()} {amp.getName()} DISTRIBUTION {level}-PCT"
                 metadata[key] = value
+
+            bad = ((ampImage.mask.array & noGoodPixelsBit) > 0)
+            key = f"LSST CALIB {calibrationType.upper()} {amp.getName()} BADPIX-NUM"
+            metadata[key] = bad.sum()
 
 
 # Create versions of the Connections, Config, and Task that support

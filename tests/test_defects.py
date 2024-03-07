@@ -604,6 +604,7 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
     def test_defectFindingEdgeIgnore(self):
         config = copy.copy(self.defaultConfig)
         config.nPixBorderUpDown = 0
+        config.nPixBorderLeftRight = 7
         task = self.defaultTask
         task.config = config
         defects = task._findHotAndColdPixels(self.flatExp)

@@ -38,7 +38,7 @@ import lsst.afw.math as afwMath
 import lsst.afw.detection as afwDetection
 import lsst.afw.display as afwDisplay
 from lsst.afw import cameraGeom
-from lsst.geom import Box2I, Point2I
+from lsst.geom import Box2I, Point2I, Extent2I
 from lsst.meas.algorithms import SourceDetectionTask
 from lsst.ip.isr import Defects, countMaskedPixels
 from lsst.pex.exceptions import InvalidParameterError
@@ -89,6 +89,12 @@ class MeasureDefectsTaskConfig(pipeBase.PipelineTaskConfig,
              "hot/bright pixels in dark images. Unused if thresholdType==``STDEV``."),
         default=5,
     )
+    biasThreshold = pexConfig.Field(
+        dtype=float,
+        doc=("If thresholdType==``VALUE``, bias threshold (in ADU) to define "
+             "hot/bright pixels in bias frame. Unused if thresholdType==``STDEV``."),
+        default=1000.0,
+    )
     fracThresholdFlat = pexConfig.Field(
         dtype=float,
         doc=("If thresholdType=``VALUE``, fractional threshold to define cold/dark "
@@ -115,12 +121,12 @@ class MeasureDefectsTaskConfig(pipeBase.PipelineTaskConfig,
     nPixBorderUpDown = pexConfig.Field(
         dtype=int,
         doc="Number of pixels to exclude from top & bottom of image when looking for defects.",
-        default=7,
+        default=0,
     )
     nPixBorderLeftRight = pexConfig.Field(
         dtype=int,
         doc="Number of pixels to exclude from left & right of image when looking for defects.",
-        default=7,
+        default=0,
     )
     badOnAndOffPixelColumnThreshold = pexConfig.Field(
         dtype=int,
@@ -286,6 +292,9 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
                 if datasetType.lower() == 'dark':
                     # hot pixel threshold
                     valueThreshold = self.config.darkCurrentThreshold*expTime/amp.getGain()
+                elif datasetType.lower() == 'bias':
+                    # hot pixel threshold, no exposure time.
+                    valueThreshold = self.config.biasThreshold
                 else:
                     # LCA-128 and eoTest: dark/cold pixels in flat images as
                     # defined as any pixel with photoresponse <80% of
@@ -307,6 +316,11 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
                 if datasetType.lower() == 'dark':
                     nSigmaList = [hotPixelThreshold]
                     valueThreshold = stDev*hotPixelThreshold
+                elif datasetType.lower() == 'bias':
+                    self.log.warning(
+                        "Bias frame detected, but thresholdType == STDEV; not looking for defects.",
+                    )
+                    return Defects.fromFootprintList([])
                 else:
                     nSigmaList = [hotPixelThreshold, coldPixelThreshold]
                     valueThreshold = [x*stDev for x in nSigmaList]
@@ -779,11 +793,19 @@ class MergeDefectsTaskConfig(pipeBase.PipelineTaskConfig,
         min=0,
         max=1,
     )
+    nPixBorderUpDown = pexConfig.Field(
+        dtype=int,
+        doc="Number of pixels on top & bottom of image to mask as defects if edgesAsDefects is True.",
+        default=5,
+    )
+    nPixBorderLeftRight = pexConfig.Field(
+        dtype=int,
+        doc="Number of pixels on left & right of image to mask as defects if edgesAsDefects is True.",
+        default=5,
+    )
     edgesAsDefects = pexConfig.Field(
         dtype=bool,
-        doc=("Mark all edge pixels, as defined by nPixBorder[UpDown, LeftRight], as defects."
-             " Normal treatment is to simply exclude this region from the defect finding, such that no"
-             " defect will be located there."),
+        doc="Mark all edge pixels, as defined by nPixBorder[UpDown, LeftRight], as defects.",
         default=False,
     )
 
@@ -871,11 +893,17 @@ class MergeDefectsTask(pipeBase.PipelineTask):
 
         if self.config.edgesAsDefects:
             self.log.info("Masking edge pixels as defects.")
-            # Do the same as IsrTask.maskEdges()
-            box = detector.getBBox()
-            subImage = finalImage[box]
-            box.grow(-self.nPixBorder)
-            SourceDetectionTask.setEdgeBits(subImage, box, BADBIT)
+            # This code follows the pattern from isrTask.maskEdges().
+            if self.config.nPixBorderLeftRight > 0:
+                box = detector.getBBox()
+                subImage = finalImage[box]
+                box.grow(Extent2I(-self.config.nPixBorderLeftRight, 0))
+                SourceDetectionTask.setEdgeBits(subImage, box, BADBIT)
+            if self.config.nPixBorderUpDown > 0:
+                box = detector.getBBox()
+                subImage = finalImage[box]
+                box.grow(Extent2I(0, -self.config.nPixBorderUpDown))
+                SourceDetectionTask.setEdgeBits(subImage, box, BADBIT)
 
         merged = Defects.fromMask(finalImage, 'BAD')
         merged.updateMetadataFromExposures(inputDefects)
@@ -896,6 +924,13 @@ class MergeDefectsCombinedConnections(pipeBase.PipelineTaskConnections,
     inputDarkDefects = cT.Input(
         name="cpPartialDefectsFromDarkCombined",
         doc="Measured defect lists.",
+        storageClass="Defects",
+        dimensions=("instrument", "detector",),
+        multiple=True,
+    )
+    inputBiasDefects = cT.Input(
+        name="cpPartialDefectsFromBiasCombined",
+        doc="Additional measured defect lists.",
         storageClass="Defects",
         dimensions=("instrument", "detector",),
         multiple=True,
@@ -961,7 +996,8 @@ class MergeDefectsCombinedTask(MergeDefectsTask):
         # is what MergeDefectsTask expects.  If there are multiple,
         # use the one with the most inputs.
         tempList = [self.chooseBest(inputs['inputFlatDefects']),
-                    self.chooseBest(inputs['inputDarkDefects'])]
+                    self.chooseBest(inputs['inputDarkDefects']),
+                    self.chooseBest(inputs['inputBiasDefects'])]
 
         # Rename inputDefects
         inputsCombined = {'inputDefects': tempList, 'camera': inputs['camera']}

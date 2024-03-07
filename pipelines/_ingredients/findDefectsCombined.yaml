@@ -1,8 +1,14 @@
 description: cp_pipe DEFECT calibration construction from combined images.
 tasks:
+  measureDefectsBias:
+    class: lsst.cp.pipe.defects.MeasureDefectsCombinedTask
+    config:
+      connections.inputExp: "bias"
+      connections.outputDefects: "cpPartialDefectsFromBiasCombined"
+      thresholdType: "VALUE"
   measureDefectsDark:
     class: lsst.cp.pipe.defects.MeasureDefectsCombinedTask
-  measureDefectsFlat:
+  measureDefectsFlatx:
     class: lsst.cp.pipe.defects.MeasureDefectsCombinedWithFilterTask
   mergeDefectsCombined:
     class: lsst.cp.pipe.defects.MergeDefectsCombinedTask
