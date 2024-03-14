@@ -88,12 +88,6 @@ class CpSkyImageConfig(pipeBase.PipelineTaskConfig,
         doc="Large-scale background configuration.",
     )
 
-    def setDefaults(self):
-        # These values correspond to the HSC recommendation.
-        self.largeScaleBackground.minFrac = 0.1
-        self.largeScaleBackground.mask = ['BAD', 'SAT', 'INTRP', 'DETECTED', 'DETECTED_NEGATIVE',
-                                          'EDGE', 'NO_DATA']
-
 
 class CpSkyImageTask(pipeBase.PipelineTask):
     """Mask the detections on the postISRCCD.
