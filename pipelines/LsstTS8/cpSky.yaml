@@ -2,3 +2,14 @@ description: Sky frame generation pipeline definition.
 instrument: lsst.obs.lsst.LsstTS8
 imports:
   - location: $CP_PIPE_DIR/pipelines/_ingredients/cpSky.yaml
+tasks:
+  cpSkyImage:
+    class: lsst.cp.pipe.cpSkyTask.CpSkyImageTask
+    config:
+      # These values roughly equate to the dimensions of a single detector.
+      # As noted below, the sizes are in millimeters, and correspond to a
+      # background image of 4096*4096 pixels (4096*0.01=40.96).
+      # TODO: Revise these values on DM-43321.
+      largeScaleBackground.xSize: 40.96  # in mm
+      largeScaleBackground.ySize: 40.96  # in mm
+      largeScaleBackground.pixelSize: 0.01  # in mm per pixel
