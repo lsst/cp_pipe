@@ -582,6 +582,64 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
 
         self.check_maskBlocks(defects, expectedDefects)
 
+    def check_maskBadColumns(self, inputDefects, expectedDefects):
+        """A helper function for the tests of
+        maskBadColumns.
+
+        """
+        config = copy.copy(self.defaultConfig)
+        config.badPixelsToFillColumnThreshold = 25
+
+        task = self.defaultTask
+        task.config = config
+
+        defectsWithColumns, count = task.maskBadColumns(self.flatExp.getDetector(), inputDefects)
+
+        self.assertEqual(count, len(expectedDefects))
+
+        boxesMeasured = []
+        for defect in defectsWithColumns:
+            boxesMeasured.append(defect.getBBox())
+
+        for boxInput in expectedDefects:
+            self.assertIn(boxInput, boxesMeasured)
+
+        # Check that the code did not mask anything extra by
+        # looking in both the input list and "expanded-column" list.
+        unionInputExpectedBoxes = []
+        for defect in inputDefects:
+            unionInputExpectedBoxes.append(defect.getBBox())
+        for defect in expectedDefects:
+            unionInputExpectedBoxes.append(defect)
+
+        # Check that code doesn't mask more than it is supposed to.
+        for boxMeas in boxesMeasured:
+            self.assertIn(boxMeas, unionInputExpectedBoxes)
+
+    def test_maskBadColumns_extend_full_columns(self):
+        """Test maskBadColumns, extend to full column.
+        """
+        expectedDefects = [Box2I(corner=Point2I(20, 0), dimensions=Extent2I(1, 51)),
+                           Box2I(corner=Point2I(150, 0), dimensions=Extent2I(1, 51)),
+                           Box2I(corner=Point2I(50, 153), dimensions=Extent2I(1, 51))]
+        defects = self.allDefectsList
+        defects.append(Box2I(corner=Point2I(20, 10), dimensions=Extent2I(1, 30)))
+        defects.append(Box2I(corner=Point2I(150, 5), dimensions=Extent2I(1, 25)))
+        defects.append(Box2I(corner=Point2I(50, 170), dimensions=Extent2I(1, 30)))
+
+        self.check_maskBadColumns(defects, expectedDefects)
+
+    def test_maskBadColumns_no_extend_partial_columns(self):
+        """Test maskBadColumns, do not extend to full column.
+        """
+        expectedDefects = []
+        defects = self.allDefectsList
+        defects.append(Box2I(corner=Point2I(20, 10), dimensions=Extent2I(1, 20)))
+        defects.append(Box2I(corner=Point2I(150, 5), dimensions=Extent2I(1, 22)))
+        defects.append(Box2I(corner=Point2I(50, 170), dimensions=Extent2I(1, 24)))
+
+        self.check_maskBadColumns(defects, expectedDefects)
+
     def test_defectFindingAllSensor(self):
         config = copy.copy(self.defaultConfig)
         config.nPixBorderLeftRight = 0
