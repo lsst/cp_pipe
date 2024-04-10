@@ -145,6 +145,14 @@ class MeasureDefectsTaskConfig(pipeBase.PipelineTaskConfig,
              "'badOnAndOffPixelColumnThreshold')."),
         default=30,
     )
+    badPixelsToFillColumnThreshold = pexConfig.Field(
+        dtype=float,
+        doc=("If the number of bad pixels in an amplifier column is above this threshold "
+             "then the full amplifier column will be marked bad.  This operation is performed after "
+             "any merging of blinking columns performed with badOnAndOffPixelColumnThreshold. If this"
+             "value is less than 0 then no bad column filling will be performed."),
+        default=-1,
+    )
 
     def validate(self):
         super().validate()
@@ -367,7 +375,9 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
                            Defects.fromFootprintList(mergedSet.getFootprints()), exp.getDetector())
 
         defects = Defects.fromFootprintList(footprintList)
-        defects, count = self.maskBlocksIfIntermitentBadPixelsInColumn(defects)
+        defects, _ = self.maskBlocksIfIntermitentBadPixelsInColumn(defects)
+        defects, count = self.maskBadColumns(exp.getDetector(), defects)
+        # We want this to reflect the number of completely bad columns.
         defects.updateCounters(columns=count, hot=hotPixelCount, cold=coldPixelCount)
 
         return defects
@@ -423,7 +433,7 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
             list is returned. Otherwise, the defects list returned
             will include boxes that mask blocks of on-and-of pixels.
         badColumnCount : `int`
-            Number of bad columns masked.
+            Number of bad columns partially masked.
         """
         badColumnCount = 0
         # Get the (x, y) values of each bad pixel in amp.
@@ -452,6 +462,53 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
         if len(multipleX) != 0:
             defects = self._markBlocksInBadColumn(x, y, multipleX, defects)
             badColumnCount += 1
+
+        return defects, badColumnCount
+
+    def maskBadColumns(self, detector, defects):
+        """Mask full amplifier columns if they are sufficiently bad.
+
+        Parameters
+        ----------
+        defects : `lsst.ip.isr.Defects`
+            The defects found in the image so far
+
+        Returns
+        -------
+        detector : `lsst.afw.cameraGeom.Detector`
+            Detector to describe the amplifier boundaries.
+        defects : `lsst.ip.isr.Defects`
+            If the number of bad pixels in a column is not larger or
+            equal than self.config.badPixelColumnThreshold, the input
+            list is returned. Otherwise, the defects list returned
+            will include boxes that mask blocks of on-and-of pixels.
+        badColumnCount : `int`
+            Number of bad columns masked.
+        """
+        if self.config.badPixelsToFillColumnThreshold < 0:
+            return defects, 0
+
+        # Render the defects into an image.
+        defectImage = afwImage.ImageI(detector.getBBox())
+
+        for defect in defects:
+            defectImage[defect.getBBox()] = 1
+
+        badColumnCount = 0
+        with defects.bulk_update():
+            for amp in detector:
+                subImage = defectImage[amp.getBBox()].array
+                nInCol = np.sum(subImage, axis=0)
+
+                badColIndices, = (nInCol >= self.config.badPixelsToFillColumnThreshold).nonzero()
+                badColumns = badColIndices + amp.getBBox().getMinX()
+
+                for badColumn in badColumns:
+                    s = Box2I(minimum=Point2I(badColumn, amp.getBBox().getMinY()),
+                              maximum=Point2I(badColumn, amp.getBBox().getMaxY()))
+                    defects.append(s)
+
+                badColumnCount += len(badColIndices)
 
         return defects, badColumnCount
 
