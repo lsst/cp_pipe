@@ -30,6 +30,7 @@ tasks:
       connections.outputData: 'bias'
       calibrationType: 'bias'
       exposureScaling: "Unity"
+      mask: ["DETECTED", "INTRP"]
 contracts:
   - biasIsr.doBias == False
   - cpBiasCombine.calibrationType == "bias"
