@@ -16,7 +16,10 @@ tasks:
       doFlat: false
       doApplyGains: false
       doFringe: false
-      doSaturation: false
+      doSaturation: true
+      growSaturationFootprintSize: 0
+      doWidenSaturationTrails: false
+      doSaturationInterpolation: false
       maskNegativeVariance: false
       doInterpolate: false
       doSetBadRegions: false
