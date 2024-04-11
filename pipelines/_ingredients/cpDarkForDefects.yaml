@@ -29,6 +29,7 @@ tasks:
       connections.outputData: 'dark'
       calibrationType: 'dark'
       exposureScaling: "DarkTime"
+      mask: ["DETECTED", "INTRP"]
 contracts:
   - darkIsrForDefects.doDark == False
   - cpDarkCombine.calibrationType == "dark"
