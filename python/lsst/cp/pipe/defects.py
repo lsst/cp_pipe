@@ -153,6 +153,17 @@ class MeasureDefectsTaskConfig(pipeBase.PipelineTaskConfig,
              "value is less than 0 then no bad column filling will be performed."),
         default=-1,
     )
+    saturatedColumnMask = pexConfig.Field(
+        dtype=str,
+        default="SAT",
+        doc="Saturated mask plane for dilation.",
+    )
+    saturatedColumnDilationRadius = pexConfig.Field(
+        dtype=int,
+        doc=("Dilation radius (along rows) to use to expand saturated columns "
+             "to mitigate glow."),
+        default=0,
+    )
 
     def validate(self):
         super().validate()
@@ -375,6 +386,7 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
                            Defects.fromFootprintList(mergedSet.getFootprints()), exp.getDetector())
 
         defects = Defects.fromFootprintList(footprintList)
+        defects = self.dilateSaturatedColumns(exp, defects)
         defects, _ = self.maskBlocksIfIntermitentBadPixelsInColumn(defects)
         defects, count = self.maskBadColumns(exp.getDetector(), defects)
         # We want this to reflect the number of completely bad columns.
@@ -464,6 +476,45 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
             badColumnCount += 1
 
         return defects, badColumnCount
+
+    def dilateSaturatedColumns(self, exp, defects):
+        """Dilate saturated columns by a configurable amount.
+
+        Parameters
+        ----------
+        exp : `lsst.afw.image.exposure.Exposure`
+            The exposure in which to find defects.
+        defects : `lsst.ip.isr.Defects`
+            The defects found in the image so far
+
+        Returns
+        -------
+        defects : `lsst.ip.isr.Defects`
+            The expanded defects.
+        """
+        if self.config.saturatedColumnDilationRadius <= 0:
+            # This is a no-op.
+            return defects
+
+        mask = afwImage.Mask.getPlaneBitMask(self.config.saturatedColumnMask)
+
+        satY, satX = np.where((exp.mask.array & mask) > 0)
+
+        if len(satX) == 0:
+            # No saturated pixels, nothing to do.
+            return defects
+
+        radius = self.config.saturatedColumnDilationRadius
+
+        with defects.bulk_update():
+            for index in range(len(satX)):
+                minX = np.clip(satX[index] - radius, 0, None)
+                maxX = np.clip(satX[index] + radius, None, exp.image.array.shape[1] - 1)
+                s = Box2I(minimum=Point2I(minX, satY[index]),
+                          maximum=Point2I(maxX, satY[index]))
+                defects.append(s)
+
+        return defects
 
     def maskBadColumns(self, detector, defects):
         """Mask full amplifier columns if they are sufficiently bad.
