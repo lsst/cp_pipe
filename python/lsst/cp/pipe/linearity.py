@@ -180,31 +180,6 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
         doc="Use the photodiode info instead of the raw expTimes?",
         default=False,
     )
-    photodiodeIntegrationMethod = pexConfig.ChoiceField(
-        dtype=str,
-        doc="Integration method for photodiode monitoring data.",
-        default="DIRECT_SUM",
-        allowed={
-            "DIRECT_SUM": ("Use numpy's trapz integrator on all photodiode "
-                           "readout entries"),
-            "TRIMMED_SUM": ("Use numpy's trapz integrator, clipping the "
-                            "leading and trailing entries, which are "
-                            "nominally at zero baseline level."),
-            "CHARGE_SUM": ("Treat the current values as integrated charge "
-                           "over the sampling interval and simply sum "
-                           "the values, after subtracting a baseline level."),
-        },
-        # TODO: remove on DM-40065.
-        deprecated="This config has been moved to cpExtractPtcTask, and will be removed after v26.",
-    )
-    photodiodeCurrentScale = pexConfig.Field(
-        dtype=float,
-        doc="Scale factor to apply to photodiode current values for the "
-            "``CHARGE_SUM`` integration method.",
-        default=-1.0,
-        # TODO: remove on DM-40065.
-        deprecated="This config has been moved to cpExtractPtcTask, and will be removed after v26.",
-    )
     applyPhotodiodeCorrection = pexConfig.Field(
         dtype=bool,
         doc="Calculate and apply a correction to the photodiode readings?",
