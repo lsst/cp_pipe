@@ -583,18 +583,19 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
 
         self.check_maskBlocks(defects, expectedDefects)
 
-    def check_maskBadColumns(self, inputDefects, expectedDefects):
+    def check_maskBadColumns(self, exp, inputDefects, expectedDefects):
         """A helper function for the tests of
         maskBadColumns.
 
         """
         config = copy.copy(self.defaultConfig)
         config.badPixelsToFillColumnThreshold = 25
+        config.saturatedPixelsToFillColumnThreshold = 5
 
         task = self.defaultTask
         task.config = config
 
-        defectsWithColumns, count = task.maskBadColumns(self.flatExp.getDetector(), inputDefects)
+        defectsWithColumns, count = task.maskBadColumns(exp, inputDefects)
 
         self.assertEqual(count, len(expectedDefects))
 
@@ -628,7 +629,7 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
         defects.append(Box2I(corner=Point2I(150, 5), dimensions=Extent2I(1, 25)))
         defects.append(Box2I(corner=Point2I(50, 170), dimensions=Extent2I(1, 30)))
 
-        self.check_maskBadColumns(defects, expectedDefects)
+        self.check_maskBadColumns(self.flatExp, defects, expectedDefects)
 
     def test_maskBadColumns_no_extend_partial_columns(self):
         """Test maskBadColumns, do not extend to full column.
@@ -639,7 +640,31 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
         defects.append(Box2I(corner=Point2I(150, 5), dimensions=Extent2I(1, 22)))
         defects.append(Box2I(corner=Point2I(50, 170), dimensions=Extent2I(1, 24)))
 
-        self.check_maskBadColumns(defects, expectedDefects)
+        self.check_maskBadColumns(self.flatExp, defects, expectedDefects)
+
+    def test_maskBadColumns_extend_saturated_columns(self):
+        """Test maskBadColumns, extend saturation to full column.
+        """
+        exp = self.flatExp.clone()
+
+        mask = afwImage.Mask.getPlaneBitMask("SAT")
+
+        expectedDefects = [Box2I(corner=Point2I(20, 0), dimensions=Extent2I(1, 51)),
+                           Box2I(corner=Point2I(150, 0), dimensions=Extent2I(1, 51)),
+                           Box2I(corner=Point2I(50, 153), dimensions=Extent2I(1, 51))]
+        defects = self.allDefectsList
+
+        # These defects are too small to trigger the former column extension
+        # (as tested in test_maskBadColumns_no_extend_partial_columns) but
+        # should still trigger the saturation extension code.
+        satColumns = [Box2I(corner=Point2I(20, 10), dimensions=Extent2I(1, 5)),
+                      Box2I(corner=Point2I(150, 5), dimensions=Extent2I(1, 5)),
+                      Box2I(corner=Point2I(50, 170), dimensions=Extent2I(1, 5))]
+        for satColumn in satColumns:
+            exp.mask[satColumn] |= mask
+            defects.append(satColumn)
+
+        self.check_maskBadColumns(exp, defects, expectedDefects)
 
     def check_dilateSaturatedColumns(self, exp, inputDefects, expectedDefects):
         config = copy.copy(self.defaultConfig)

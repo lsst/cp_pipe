@@ -164,6 +164,13 @@ class MeasureDefectsTaskConfig(pipeBase.PipelineTaskConfig,
              "to mitigate glow."),
         default=0,
     )
+    saturatedPixelsToFillColumnThreshold = pexConfig.Field(
+        dtype=int,
+        doc=("If the number of saturated pixels in an amplifier column is above this threshold "
+             "then the full amplifier column will be marked bad. If this value is less than 0"
+             "then no saturated column filling will be performed."),
+        default=-1,
+    )
 
     def validate(self):
         super().validate()
@@ -388,7 +395,7 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
         defects = Defects.fromFootprintList(footprintList)
         defects = self.dilateSaturatedColumns(exp, defects)
         defects, _ = self.maskBlocksIfIntermitentBadPixelsInColumn(defects)
-        defects, count = self.maskBadColumns(exp.getDetector(), defects)
+        defects, count = self.maskBadColumns(exp, defects)
         # We want this to reflect the number of completely bad columns.
         defects.updateCounters(columns=count, hot=hotPixelCount, cold=coldPixelCount)
 
@@ -516,7 +523,7 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
 
         return defects
 
-    def maskBadColumns(self, detector, defects):
+    def maskBadColumns(self, exp, defects):
         """Mask full amplifier columns if they are sufficiently bad.
 
         Parameters
@@ -526,8 +533,8 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
 
         Returns
         -------
-        detector : `lsst.afw.cameraGeom.Detector`
-            Detector to describe the amplifier boundaries.
+        exp : `lsst.afw.image.exposure.Exposure`
+            The exposure in which to find defects.
         defects : `lsst.ip.isr.Defects`
             If the number of bad pixels in a column is not larger or
             equal than self.config.badPixelColumnThreshold, the input
@@ -536,30 +543,51 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
         badColumnCount : `int`
             Number of bad columns masked.
         """
-        if self.config.badPixelsToFillColumnThreshold < 0:
-            return defects, 0
-
         # Render the defects into an image.
-        defectImage = afwImage.ImageI(detector.getBBox())
+        defectImage = afwImage.ImageI(exp.getBBox())
 
         for defect in defects:
             defectImage[defect.getBBox()] = 1
 
         badColumnCount = 0
-        with defects.bulk_update():
-            for amp in detector:
-                subImage = defectImage[amp.getBBox()].array
-                nInCol = np.sum(subImage, axis=0)
 
-                badColIndices, = (nInCol >= self.config.badPixelsToFillColumnThreshold).nonzero()
-                badColumns = badColIndices + amp.getBBox().getMinX()
+        if self.config.badPixelsToFillColumnThreshold > 0:
+            with defects.bulk_update():
+                for amp in exp.getDetector():
+                    subImage = defectImage[amp.getBBox()].array
+                    nInCol = np.sum(subImage, axis=0)
 
-                for badColumn in badColumns:
-                    s = Box2I(minimum=Point2I(badColumn, amp.getBBox().getMinY()),
-                              maximum=Point2I(badColumn, amp.getBBox().getMaxY()))
-                    defects.append(s)
+                    badColIndices, = (nInCol >= self.config.badPixelsToFillColumnThreshold).nonzero()
+                    badColumns = badColIndices + amp.getBBox().getMinX()
 
-                badColumnCount += len(badColIndices)
+                    for badColumn in badColumns:
+                        s = Box2I(minimum=Point2I(badColumn, amp.getBBox().getMinY()),
+                                  maximum=Point2I(badColumn, amp.getBBox().getMaxY()))
+                        defects.append(s)
+
+                    badColumnCount += len(badColIndices)
+
+        if self.config.saturatedPixelsToFillColumnThreshold > 0:
+            mask = afwImage.Mask.getPlaneBitMask(self.config.saturatedColumnMask)
+
+            with defects.bulk_update():
+                for amp in exp.getDetector():
+                    subMask = exp.mask[amp.getBBox()].array
+                    # Turn all the SAT bits into 1s
+                    subMask &= mask
+                    subMask[subMask > 0] = 1
+
+                    nInCol = np.sum(subMask, axis=0)
+
+                    badColIndices, = (nInCol >= self.config.saturatedPixelsToFillColumnThreshold).nonzero()
+                    badColumns = badColIndices + amp.getBBox().getMinX()
+
+                    for badColumn in badColumns:
+                        s = Box2I(minimum=Point2I(badColumn, amp.getBBox().getMinY()),
+                                  maximum=Point2I(badColumn, amp.getBBox().getMaxY()))
+                        defects.append(s)
+
+                    badColumnCount += len(badColIndices)
 
         return defects, badColumnCount
 
