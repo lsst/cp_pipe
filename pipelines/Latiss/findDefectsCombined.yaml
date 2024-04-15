@@ -8,7 +8,7 @@ tasks:
     config:
       badPixelsToFillColumnThreshold: 1000
       saturatedPixelsToFillColumnThreshold: 20
-      saturatedColumnDilationRadius: 3
+      saturatedColumnDilationRadius: 2
   measureDefectsDark:
     class: lsst.cp.pipe.defects.MeasureDefectsCombinedTask
     config:
@@ -16,7 +16,7 @@ tasks:
       darkCurrentThreshold: 3.0
       badPixelsToFillColumnThreshold: 1000
       saturatedPixelsToFillColumnThreshold: 20
-      saturatedColumnDilationRadius: 3
+      saturatedColumnDilationRadius: 2
   measureDefectsFlatx:
     class: lsst.cp.pipe.defects.MeasureDefectsCombinedWithFilterTask
     config:
