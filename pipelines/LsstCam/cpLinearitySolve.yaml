@@ -17,3 +17,4 @@ tasks:
       minPhotodiodeCurrent: 3e-10
       doSplineFitOffset: true
       splineFitMaxIter: 40
+      splineKnots: 15
