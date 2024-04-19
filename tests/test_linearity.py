@@ -393,7 +393,7 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
 
             # The first point at very low flux is noisier and so we exclude
             # it from the test here.
-            resid_atol = 2.1e-3 if do_temperature_fit else 1.1e-3
+            resid_atol = 1.1e-3
             self.assertFloatsAlmostEqual(
                 (linearizer.fitResiduals[amp_name][lin_mask] / mu_linear[lin_mask])[1:],
                 0.0,
