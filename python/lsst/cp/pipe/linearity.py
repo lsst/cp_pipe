@@ -580,10 +580,20 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 linearityCoeffs = np.concatenate([nodes, pars[fitter.par_indices["values"]]])
                 linearFit = np.array([0.0, np.mean(pars[fitter.par_indices["groups"]])])
 
-                # We modify the inputAbscissa according to the linearity fits
-                # here, for proper residual computation.
+                # We must modify the inputOrdinate according to the
+                # nuisance terms in the linearity fit for the residual
+                # computationcode to work properly.
+                # The true mu (inputOrdinate) is given by
+                #  mu = mu_in * (1 + alpha*t_scale)
+                if self.config.doSplineFitTemperature:
+                    inputOrdinate *= (1.0
+                                      + pars[fitter.par_indices["temperature_coeff"]]*tempValueScaled)
+                # Divide by the relative scaling of the different groups.
                 for j, group_index in enumerate(fitter.group_indices):
                     inputOrdinate[group_index] /= (pars[fitter.par_indices["groups"][j]] / linearFit[1])
+                # And remove the offset term.
+                if self.config.doSplineFitOffset:
+                    inputOrdinate -= pars[fitter.par_indices["offset"]]
 
                 linearOrdinate = linearFit[1] * inputOrdinate
                 # For the spline fit, reuse the "polyFit -> fitParams"
