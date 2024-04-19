@@ -1242,6 +1242,31 @@ class AstierSplineLinearityFitter:
     def good_points(self):
         return self.mask.nonzero()[0]
 
+    def compute_chisq_dof(self, pars):
+        """Compute the chi-squared per degree of freedom for a set of pars.
+
+        Parameters
+        ----------
+        pars : `np.ndarray`
+            Parameter array.
+
+        Returns
+        -------
+        chisq_dof : `float`
+            Chi-squared per degree of freedom.
+        """
+        resids = self(pars)[0: len(self.mask)]
+        chisq = np.sum(resids[self.mask]**2.)
+        dof = self.mask.sum() - self.ngroup
+        if self._fit_temperature:
+            dof -= 1
+        if self._fit_offset:
+            dof -= 1
+        if self._fit_weights:
+            dof -= 2
+
+        return chisq/dof
+
     def __call__(self, pars):
 
         ratio_model, spl = self.compute_ratio_model(

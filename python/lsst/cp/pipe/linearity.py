@@ -577,6 +577,8 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                                        "be consistent with zero.")
                 pars[0] = 0.0
 
+                linearityChisq = fitter.compute_chisq_dof(pars)
+
                 linearityCoeffs = np.concatenate([nodes, pars[fitter.par_indices["values"]]])
                 linearFit = np.array([0.0, np.mean(pars[fitter.par_indices["groups"]])])
 
@@ -608,7 +610,7 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                     pars[fitter.par_indices["temperature_coeff"]],
                 ))
                 polyFitErr = np.zeros_like(polyFit)
-                chiSq = np.nan
+                chiSq = linearityChisq
 
                 # Update mask based on what the fitter rejected.
                 mask = fitter.mask
