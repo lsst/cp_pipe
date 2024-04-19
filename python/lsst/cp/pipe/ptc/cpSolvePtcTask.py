@@ -21,6 +21,7 @@
 #
 import numpy as np
 from collections import Counter
+import warnings
 
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
@@ -481,8 +482,12 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
 
         # Initial validation of PTC fit.
         for ampName in ampNames:
-            noise = np.nanmedian(datasetPtc.noiseList[ampName])
-            noiseFitted = np.sqrt(datasetPtc.noise[ampName])
+            # These may be all nan (esp. in tests) and will be filtered
+            # as appropriate later.
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                noise = np.nanmedian(datasetPtc.noiseList[ampName])
+                noiseFitted = np.sqrt(datasetPtc.noise[ampName])
 
             # Check if noise is close to noiseFitted
             if not np.isclose(noiseFitted, noise, rtol=0.05, atol=0.0, equal_nan=True):
