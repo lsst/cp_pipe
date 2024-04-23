@@ -174,11 +174,21 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
             "otherwise ADU.",
         default=50_000.,
     )
+    maxDeltaInitialPtcOutlierFit = pexConfig.Field(
+        dtype=float,
+        doc="If there are any outliers in the initial fit above "
+            "maxSignalInitialPtcOutlierFit, then no points that have this delta "
+            "from the previous ``good`` point are allowed. If "
+            "scaleMaxSignalInitialPtcOutlierFit=True then the units are electrons; "
+            "otherwise ADU.",
+        default=9_000.,
+    )
     scaleMaxSignalInitialPtcOutlierFit = pexConfig.Field(
         dtype=bool,
-        doc="Scale maxSignalInitialPtcOutlierFit by approximate gain?  If yes then "
-            "maxSignalInitialPtcOutlierFit is assumed to have units of electrons, "
-            "otherwise ADU.",
+        doc="Scale maxSignalInitialPtcOutlierFit and maxDeltaInitialPtcOutlierFit by "
+            "approximate gain?  If yes then "
+            "maxSignalInitialPtcOutlierFit and maxDeltaInitialPtcOutlierFit are assumed "
+            "to have units of electrons, otherwise ADU.",
         default=True,
     )
     minVarPivotSearch = pexConfig.Field(
@@ -1169,14 +1179,18 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             if self.config.scaleMaxSignalInitialPtcOutlierFit:
                 approxGain = np.nanmedian(meanVecOriginal/varVecOriginal)
                 maxADUInitialPtcOutlierFit = self.config.maxSignalInitialPtcOutlierFit/approxGain
+                maxDeltaADUInitialPtcOutlierFit = self.config.maxDeltaInitialPtcOutlierFit/approxGain
                 self.log.info(
-                    "Using approximate gain %.3f and ADU signal cutoff of %.1f for amplifier %s",
+                    "Using approximate gain %.3f and ADU signal cutoff of %.1f and delta %.1f "
+                    "for amplifier %s",
                     approxGain,
                     maxADUInitialPtcOutlierFit,
+                    maxDeltaADUInitialPtcOutlierFit,
                     ampName,
                 )
             else:
                 maxADUInitialPtcOutlierFit = self.config.maxSignalInitialPtcOutlierFit
+                maxDeltaADUInitialPtcOutlierFit = self.config.maxDeltaInitialPtcOutlierFit
 
             if maxIterationsPtcOutliers == 0:
                 # We are not doing any outlier rejection here, but we do want
@@ -1212,7 +1226,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                         & (np.abs(np.nan_to_num(sigResids)) < sigmaCutPtcOutliers)
                         & mask
                     )
-                    if np.count_nonzero(newMask) == 0:
+                    # Demand at least 2 points to continue.
+                    if np.count_nonzero(newMask) < 2:
                         msg = (f"SERIOUS: All points after outlier rejection are bad. "
                                f"Setting {ampName} to BAD.")
                         self.log.warning(msg)
@@ -1226,6 +1241,23 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                         np.count_nonzero(mask) - np.count_nonzero(newMask),
                         ampName,
                     )
+
+                    # Loop over all used (True) points. If one of them follows
+                    # a False point, then it must be within
+                    # maxDeltaADUInitialPtcOutlierFit of a True point. If it
+                    # is a large gap, everything above is marked False.
+                    useMask, = np.where(newMask)
+                    for useIndex, usePoint in enumerate(useMask):
+                        if useIndex == 0 or newMask[usePoint - 1]:
+                            # The previous point was good; continue.
+                            continue
+                        deltaADU = meanVecOriginal[usePoint] - meanVecOriginal[useMask[useIndex - 1]]
+                        if deltaADU < maxDeltaADUInitialPtcOutlierFit:
+                            # This jump is fine; continue.
+                            continue
+
+                        # Mark all further points bad.
+                        newMask[usePoint:] = False
 
                     # If the mask hasn't changed then break out.
                     if np.all(newMask == lastMask):
