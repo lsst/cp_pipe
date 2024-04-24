@@ -1284,6 +1284,19 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             # Save the maximum point after outlier detection as the
             # PTC turnoff point.
             dataset.ptcTurnoff[ampName] = meanVecFinal[-1]
+            # And compute the ptcTurnoffSamplingError as one half the
+            # difference between the previous and next point.
+            lastGoodIndex = np.where(mask)[0][-1]
+            ptcTurnoffLow = meanVecOriginal[lastGoodIndex - 1]
+            if lastGoodIndex == (len(meanVecOriginal) - 1):
+                # If it's the last index, just use the interval.
+                ptcTurnoffSamplingError = dataset.ptcTurnoff[ampName] - ptcTurnoffLow
+            elif not np.isfinite(meanVecOriginal[lastGoodIndex + 1]):
+                # If the next index is not finite, just use the interval.
+                ptcTurnoffSamplingError = dataset.ptcTurnoff[ampName] - ptcTurnoffLow
+            else:
+                ptcTurnoffSamplingError = (meanVecOriginal[lastGoodIndex + 1] - ptcTurnoffLow)/2.
+            dataset.ptcTurnoffSamplingError[ampName] = ptcTurnoffSamplingError
 
             if Counter(mask)[False] > 0:
                 self.log.info("Number of points discarded in PTC of amplifier %s:"

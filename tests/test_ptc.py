@@ -713,7 +713,10 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                 above = (solvedDataset.finalMeans[ampName] > solvedDataset.ptcTurnoff[ampName])
                 self.assertEqual(np.sum(above), 0)
 
-                # Check the sampling error on the turnoff (TK).
+                # Check the sampling error on the turnoff.
+                last = np.where(np.isfinite(solvedDataset.finalMeans[ampName]))[0][-1]
+                samplingError = (rawMeans[last + 1] - rawMeans[last - 1])/2.
+                self.assertFloatsAlmostEqual(solvedDataset.ptcTurnoffSamplingError[ampName], samplingError)
 
     def test_ptcFit(self):
         for doLegacy in [False, True]:
