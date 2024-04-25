@@ -1265,6 +1265,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
 
                         # Mark all further points bad.
                         newMask[usePoint:] = False
+                        break
 
                     # If the mask hasn't changed then break out.
                     if np.all(newMask == lastMask):
