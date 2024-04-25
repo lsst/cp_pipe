@@ -1128,10 +1128,15 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             varVecOriginal = dataset.rawVars[ampName].copy()
             varVecOriginal = self._makeZeroSafe(varVecOriginal)
 
+            # These must be sorted for the given amplifier.
+            meanVecSort = np.argsort(meanVecOriginal)
+            meanVecSorted = meanVecOriginal[meanVecSort]
+            varVecSorted = varVecOriginal[meanVecSort]
+
             if self.config.doLegacyTurnoffSelection:
                 # Discard points when the variance starts to decrease after two
                 # consecutive signal levels
-                goodPoints = self._getInitialGoodPoints(meanVecOriginal, varVecOriginal,
+                goodPoints = self._getInitialGoodPoints(meanVecSorted, varVecSorted,
                                                         self.config.minVarPivotSearch,
                                                         self.config.consecutivePointsVarDecreases)
             else:
@@ -1177,7 +1182,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             # the EO Testing pipeline.
 
             if self.config.scaleMaxSignalInitialPtcOutlierFit:
-                approxGain = np.nanmedian(meanVecOriginal/varVecOriginal)
+                approxGain = np.nanmedian(meanVecSorted/varVecSorted)
                 maxADUInitialPtcOutlierFit = self.config.maxSignalInitialPtcOutlierFit/approxGain
                 maxDeltaADUInitialPtcOutlierFit = self.config.maxDeltaInitialPtcOutlierFit/approxGain
                 self.log.info(
@@ -1199,12 +1204,12 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                     errFunc,
                     parsIniPtc,
                     bounds=bounds,
-                    args=(meanVecOriginal[mask], varVecOriginal[mask]),
+                    args=(meanVecSorted[mask], varVecSorted[mask]),
                 )
                 pars = res.x
                 newMask = mask.copy()
             else:
-                newMask = (mask & (meanVecOriginal <= maxADUInitialPtcOutlierFit))
+                newMask = (mask & (meanVecSorted <= maxADUInitialPtcOutlierFit))
 
                 count = 0
                 lastMask = mask.copy()
@@ -1213,11 +1218,11 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                         errFunc,
                         parsIniPtc,
                         bounds=bounds,
-                        args=(meanVecOriginal[newMask], varVecOriginal[newMask]),
+                        args=(meanVecSorted[newMask], varVecSorted[newMask]),
                     )
                     pars = res.x
 
-                    sigResids = (varVecOriginal - ptcFunc(pars, meanVecOriginal))/np.sqrt(varVecOriginal)
+                    sigResids = (varVecSorted - ptcFunc(pars, meanVecSorted))/np.sqrt(varVecSorted)
                     # The new mask includes points where the residuals are
                     # finite, are less than the cut, and include the original
                     # mask of known points that should not be used.
@@ -1251,7 +1256,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                         if useIndex == 0 or newMask[usePoint - 1]:
                             # The previous point was good; continue.
                             continue
-                        deltaADU = meanVecOriginal[usePoint] - meanVecOriginal[useMask[useIndex - 1]]
+                        deltaADU = meanVecSorted[usePoint] - meanVecSorted[useMask[useIndex - 1]]
                         if deltaADU < maxDeltaADUInitialPtcOutlierFit:
                             # This jump is fine; continue.
                             continue
@@ -1268,8 +1273,9 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
 
                     count += 1
 
-            # Set the mask to the new mask
-            mask = newMask.copy()
+            # Set the mask to the new mask, and reset the sorting.
+            mask = np.zeros(len(meanVecSort), dtype=np.bool_)
+            mask[meanVecSort[newMask]] = True
 
             if not mask.any():
                 # We hae already filled the bad amp above, so continue.
