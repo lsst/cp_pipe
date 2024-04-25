@@ -1276,6 +1276,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             # Set the mask to the new mask, and reset the sorting.
             mask = np.zeros(len(meanVecSort), dtype=np.bool_)
             mask[meanVecSort[newMask]] = True
+            maskSorted = newMask.copy()
 
             if not mask.any():
                 # We hae already filled the bad amp above, so continue.
@@ -1288,20 +1289,21 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             varVecFinal = varVecOriginal[mask]
 
             # Save the maximum point after outlier detection as the
-            # PTC turnoff point.
-            dataset.ptcTurnoff[ampName] = meanVecFinal[-1]
+            # PTC turnoff point. We need to pay attention to the sorting
+            # here.
+            dataset.ptcTurnoff[ampName] = np.max(meanVecFinal)
             # And compute the ptcTurnoffSamplingError as one half the
             # difference between the previous and next point.
-            lastGoodIndex = np.where(mask)[0][-1]
-            ptcTurnoffLow = meanVecOriginal[lastGoodIndex - 1]
-            if lastGoodIndex == (len(meanVecOriginal) - 1):
+            lastGoodIndex = np.where(maskSorted)[0][-1]
+            ptcTurnoffLow = meanVecSorted[lastGoodIndex - 1]
+            if lastGoodIndex == (len(meanVecSorted) - 1):
                 # If it's the last index, just use the interval.
                 ptcTurnoffSamplingError = dataset.ptcTurnoff[ampName] - ptcTurnoffLow
-            elif not np.isfinite(meanVecOriginal[lastGoodIndex + 1]):
+            elif not np.isfinite(meanVecSorted[lastGoodIndex + 1]):
                 # If the next index is not finite, just use the interval.
                 ptcTurnoffSamplingError = dataset.ptcTurnoff[ampName] - ptcTurnoffLow
             else:
-                ptcTurnoffSamplingError = (meanVecOriginal[lastGoodIndex + 1] - ptcTurnoffLow)/2.
+                ptcTurnoffSamplingError = (meanVecSorted[lastGoodIndex + 1] - ptcTurnoffLow)/2.
             dataset.ptcTurnoffSamplingError[ampName] = ptcTurnoffSamplingError
 
             if Counter(mask)[False] > 0:
