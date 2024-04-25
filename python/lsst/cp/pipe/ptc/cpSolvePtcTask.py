@@ -176,9 +176,9 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
     )
     maxDeltaInitialPtcOutlierFit = pexConfig.Field(
         dtype=float,
-        doc="If there are any outliers in the initial fit above "
+        doc="If there are any outliers in the initial fit that have mean greater than "
             "maxSignalInitialPtcOutlierFit, then no points that have this delta "
-            "from the previous ``good`` point are allowed. If "
+            "mean from the previous ``good`` point are allowed. If "
             "scaleMaxSignalInitialPtcOutlierFit=True then the units are electrons; "
             "otherwise ADU.",
         default=9_000.,
@@ -1213,6 +1213,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             else:
                 newMask = (mask & (meanVecSorted <= maxADUInitialPtcOutlierFit))
 
+                converged = False
                 count = 0
                 lastMask = mask.copy()
                 while count < maxIterationsPtcOutliers:
@@ -1270,11 +1271,19 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                     # If the mask hasn't changed then break out.
                     if np.all(newMask == lastMask):
                         self.log.debug("Convergence at iteration %d; breaking loop for %s.", count, ampName)
+                        converged = True
                         break
 
                     lastMask = newMask.copy()
 
                     count += 1
+
+            if not converged:
+                self.log.warning(
+                    "Outlier detection was not converged prior to %d iteration for %s",
+                    count,
+                    ampName
+                )
 
             # Set the mask to the new mask, and reset the sorting.
             mask = np.zeros(len(meanVecSort), dtype=np.bool_)
