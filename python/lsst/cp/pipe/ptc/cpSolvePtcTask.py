@@ -1140,10 +1140,12 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                                                         self.config.minVarPivotSearch,
                                                         self.config.consecutivePointsVarDecreases)
             else:
-                goodPoints = dataset.expIdMask[ampName]
+                # Make sure we have this properly sorted.
+                goodPoints = dataset.expIdMask[ampName].copy()
+                goodPoints = goodPoints[meanVecSort]
 
             # Check if all points are bad from the 'cpExtractPtcTask'
-            initialExpIdMask = dataset.expIdMask[ampName]
+            initialExpIdMask = dataset.expIdMask[ampName].copy()
 
             if not (goodPoints.any() and initialExpIdMask.any()):
                 msg = (f"SERIOUS: All points in goodPoints: {goodPoints} or "
@@ -1154,7 +1156,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 self.fillBadAmp(dataset, ptcFitType, ampName)
                 continue
 
-            mask = goodPoints
+            mask = goodPoints.copy()
 
             if ptcFitType == 'EXPAPPROXIMATION':
                 ptcFunc = funcAstier
