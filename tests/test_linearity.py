@@ -122,6 +122,7 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
 
         config = PhotonTransferCurveSolveTask.ConfigClass()
         config.maximumRangeCovariancesAstier = 1
+        config.maxDeltaInitialPtcOutlierFit = 100_000.0
         solve_task = PhotonTransferCurveSolveTask(config=config)
         ptc = solve_task.run(datasets).outputPtcDataset
 

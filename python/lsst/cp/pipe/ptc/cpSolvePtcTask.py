@@ -174,11 +174,21 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
             "otherwise ADU.",
         default=50_000.,
     )
+    maxDeltaInitialPtcOutlierFit = pexConfig.Field(
+        dtype=float,
+        doc="If there are any outliers in the initial fit that have mean greater than "
+            "maxSignalInitialPtcOutlierFit, then no points that have this delta "
+            "mean from the previous ``good`` point are allowed. If "
+            "scaleMaxSignalInitialPtcOutlierFit=True then the units are electrons; "
+            "otherwise ADU.",
+        default=9_000.,
+    )
     scaleMaxSignalInitialPtcOutlierFit = pexConfig.Field(
         dtype=bool,
-        doc="Scale maxSignalInitialPtcOutlierFit by approximate gain?  If yes then "
-            "maxSignalInitialPtcOutlierFit is assumed to have units of electrons, "
-            "otherwise ADU.",
+        doc="Scale maxSignalInitialPtcOutlierFit and maxDeltaInitialPtcOutlierFit by "
+            "approximate gain?  If yes then "
+            "maxSignalInitialPtcOutlierFit and maxDeltaInitialPtcOutlierFit are assumed "
+            "to have units of electrons, otherwise ADU.",
         default=True,
     )
     minVarPivotSearch = pexConfig.Field(
@@ -1118,17 +1128,24 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             varVecOriginal = dataset.rawVars[ampName].copy()
             varVecOriginal = self._makeZeroSafe(varVecOriginal)
 
+            # These must be sorted for the given amplifier.
+            meanVecSort = np.argsort(meanVecOriginal)
+            meanVecSorted = meanVecOriginal[meanVecSort]
+            varVecSorted = varVecOriginal[meanVecSort]
+
             if self.config.doLegacyTurnoffSelection:
                 # Discard points when the variance starts to decrease after two
                 # consecutive signal levels
-                goodPoints = self._getInitialGoodPoints(meanVecOriginal, varVecOriginal,
+                goodPoints = self._getInitialGoodPoints(meanVecSorted, varVecSorted,
                                                         self.config.minVarPivotSearch,
                                                         self.config.consecutivePointsVarDecreases)
             else:
-                goodPoints = dataset.expIdMask[ampName]
+                # Make sure we have this properly sorted.
+                goodPoints = dataset.expIdMask[ampName].copy()
+                goodPoints = goodPoints[meanVecSort]
 
             # Check if all points are bad from the 'cpExtractPtcTask'
-            initialExpIdMask = dataset.expIdMask[ampName]
+            initialExpIdMask = dataset.expIdMask[ampName].copy()
 
             if not (goodPoints.any() and initialExpIdMask.any()):
                 msg = (f"SERIOUS: All points in goodPoints: {goodPoints} or "
@@ -1139,7 +1156,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 self.fillBadAmp(dataset, ptcFitType, ampName)
                 continue
 
-            mask = goodPoints
+            mask = goodPoints.copy()
 
             if ptcFitType == 'EXPAPPROXIMATION':
                 ptcFunc = funcAstier
@@ -1167,16 +1184,20 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             # the EO Testing pipeline.
 
             if self.config.scaleMaxSignalInitialPtcOutlierFit:
-                approxGain = np.nanmedian(meanVecOriginal/varVecOriginal)
+                approxGain = np.nanmedian(meanVecSorted/varVecSorted)
                 maxADUInitialPtcOutlierFit = self.config.maxSignalInitialPtcOutlierFit/approxGain
+                maxDeltaADUInitialPtcOutlierFit = self.config.maxDeltaInitialPtcOutlierFit/approxGain
                 self.log.info(
-                    "Using approximate gain %.3f and ADU signal cutoff of %.1f for amplifier %s",
+                    "Using approximate gain %.3f and ADU signal cutoff of %.1f and delta %.1f "
+                    "for amplifier %s",
                     approxGain,
                     maxADUInitialPtcOutlierFit,
+                    maxDeltaADUInitialPtcOutlierFit,
                     ampName,
                 )
             else:
                 maxADUInitialPtcOutlierFit = self.config.maxSignalInitialPtcOutlierFit
+                maxDeltaADUInitialPtcOutlierFit = self.config.maxDeltaInitialPtcOutlierFit
 
             if maxIterationsPtcOutliers == 0:
                 # We are not doing any outlier rejection here, but we do want
@@ -1185,13 +1206,14 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                     errFunc,
                     parsIniPtc,
                     bounds=bounds,
-                    args=(meanVecOriginal[mask], varVecOriginal[mask]),
+                    args=(meanVecSorted[mask], varVecSorted[mask]),
                 )
                 pars = res.x
                 newMask = mask.copy()
             else:
-                newMask = (mask & (meanVecOriginal <= maxADUInitialPtcOutlierFit))
+                newMask = (mask & (meanVecSorted <= maxADUInitialPtcOutlierFit))
 
+                converged = False
                 count = 0
                 lastMask = mask.copy()
                 while count < maxIterationsPtcOutliers:
@@ -1199,11 +1221,11 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                         errFunc,
                         parsIniPtc,
                         bounds=bounds,
-                        args=(meanVecOriginal[newMask], varVecOriginal[newMask]),
+                        args=(meanVecSorted[newMask], varVecSorted[newMask]),
                     )
                     pars = res.x
 
-                    sigResids = (varVecOriginal - ptcFunc(pars, meanVecOriginal))/np.sqrt(varVecOriginal)
+                    sigResids = (varVecSorted - ptcFunc(pars, meanVecSorted))/np.sqrt(varVecSorted)
                     # The new mask includes points where the residuals are
                     # finite, are less than the cut, and include the original
                     # mask of known points that should not be used.
@@ -1212,7 +1234,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                         & (np.abs(np.nan_to_num(sigResids)) < sigmaCutPtcOutliers)
                         & mask
                     )
-                    if np.count_nonzero(newMask) == 0:
+                    # Demand at least 2 points to continue.
+                    if np.count_nonzero(newMask) < 2:
                         msg = (f"SERIOUS: All points after outlier rejection are bad. "
                                f"Setting {ampName} to BAD.")
                         self.log.warning(msg)
@@ -1227,17 +1250,45 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                         ampName,
                     )
 
+                    # Loop over all used (True) points. If one of them follows
+                    # a False point, then it must be within
+                    # maxDeltaADUInitialPtcOutlierFit of a True point. If it
+                    # is a large gap, everything above is marked False.
+                    useMask, = np.where(newMask)
+                    for useIndex, usePoint in enumerate(useMask):
+                        if useIndex == 0 or newMask[usePoint - 1]:
+                            # The previous point was good; continue.
+                            continue
+                        deltaADU = meanVecSorted[usePoint] - meanVecSorted[useMask[useIndex - 1]]
+                        if deltaADU < maxDeltaADUInitialPtcOutlierFit:
+                            # This jump is fine; continue.
+                            continue
+
+                        # Mark all further points bad.
+                        newMask[usePoint:] = False
+                        break
+
                     # If the mask hasn't changed then break out.
                     if np.all(newMask == lastMask):
                         self.log.debug("Convergence at iteration %d; breaking loop for %s.", count, ampName)
+                        converged = True
                         break
 
                     lastMask = newMask.copy()
 
                     count += 1
 
-            # Set the mask to the new mask
-            mask = newMask.copy()
+            if not converged:
+                self.log.warning(
+                    "Outlier detection was not converged prior to %d iteration for %s",
+                    count,
+                    ampName
+                )
+
+            # Set the mask to the new mask, and reset the sorting.
+            mask = np.zeros(len(meanVecSort), dtype=np.bool_)
+            mask[meanVecSort[newMask]] = True
+            maskSorted = newMask.copy()
 
             if not mask.any():
                 # We hae already filled the bad amp above, so continue.
@@ -1250,8 +1301,22 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             varVecFinal = varVecOriginal[mask]
 
             # Save the maximum point after outlier detection as the
-            # PTC turnoff point.
-            dataset.ptcTurnoff[ampName] = meanVecFinal[-1]
+            # PTC turnoff point. We need to pay attention to the sorting
+            # here.
+            dataset.ptcTurnoff[ampName] = np.max(meanVecFinal)
+            # And compute the ptcTurnoffSamplingError as one half the
+            # difference between the previous and next point.
+            lastGoodIndex = np.where(maskSorted)[0][-1]
+            ptcTurnoffLow = meanVecSorted[lastGoodIndex - 1]
+            if lastGoodIndex == (len(meanVecSorted) - 1):
+                # If it's the last index, just use the interval.
+                ptcTurnoffSamplingError = dataset.ptcTurnoff[ampName] - ptcTurnoffLow
+            elif not np.isfinite(meanVecSorted[lastGoodIndex + 1]):
+                # If the next index is not finite, just use the interval.
+                ptcTurnoffSamplingError = dataset.ptcTurnoff[ampName] - ptcTurnoffLow
+            else:
+                ptcTurnoffSamplingError = (meanVecSorted[lastGoodIndex + 1] - ptcTurnoffLow)/2.
+            dataset.ptcTurnoffSamplingError[ampName] = ptcTurnoffSamplingError
 
             if Counter(mask)[False] > 0:
                 self.log.info("Number of points discarded in PTC of amplifier %s:"
