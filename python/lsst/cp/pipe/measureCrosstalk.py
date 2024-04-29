@@ -689,6 +689,15 @@ class CrosstalkSolveTask(pipeBase.PipelineTask):
         outCalib.coeffNum = inCalib.coeffNum
         outCalib.coeffValid = inCalib.coeffValid
 
+        outCalib.coeffsSqr = inCalib.coeffsSqr
+        outCalib.coeffsSqr[~inCalib.coeffValid] = 0.0
+
+        outCalib.coeffErrSqr = inCalib.coeffErrSqr
+        outCalib.coeffErrSqr[~inCalib.coeffValid] = np.nan
+
+        outCalib.ampGainRatios = inCalib.ampGainRatios
+        outCalib.crosstalkRatiosUnits = inCalib.crosstalkRatiosUnits
+
         return outCalib
 
     def debugRatios(self, stepname, ratios, i, j, coeff=0.0, valid=False):
