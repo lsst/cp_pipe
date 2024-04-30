@@ -712,6 +712,7 @@ class LinearitySolveTask(pipeBase.PipelineTask):
         linearizer.fitParamsErr[ampName] = np.zeros(pEntries)
         linearizer.fitChiSq[ampName] = np.nan
         linearizer.fitResiduals[ampName] = np.zeros(len(inputPtc.expIdMask[ampName]))
+        linearizer.fitResidualsSigmaMad[ampName] = np.nan
         linearizer.linearFit[ampName] = np.zeros(2)
         return linearizer
 
