@@ -403,6 +403,9 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
             # Loose check on the chi-squared.
             self.assertLess(linearizer.fitChiSq[amp_name], 2.0)
 
+            # Check the residual sigma_mad.
+            self.assertLess(linearizer.fitResidualsSigmaMad[amp_name], 1.2e-4)
+
             # If we apply the linearity correction, we should get the true
             # linear values out.
             image = lsst.afw.image.ImageF(len(mu_values), 1)

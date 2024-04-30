@@ -23,6 +23,8 @@
 __all__ = ["LinearitySolveTask", "LinearitySolveConfig"]
 
 import numpy as np
+from scipy.stats import median_abs_deviation
+
 import lsst.afw.image as afwImage
 import lsst.pipe.base as pipeBase
 import lsst.pipe.base.connectionTypes as cT
@@ -657,6 +659,13 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 residuals[~mask] = np.nan
 
             linearizer.fitResiduals[ampName] = residuals
+
+            finite = np.isfinite(residuals)
+            if finite.sum() == 0:
+                sigmad = np.nan
+            else:
+                sigmad = median_abs_deviation(residuals[finite]/inputOrdinate[finite], scale="normal")
+            linearizer.fitResidualsSigmaMad[ampName] = sigmad
 
             self.debugFit(
                 'solution',
