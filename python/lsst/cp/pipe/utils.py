@@ -955,6 +955,8 @@ class AstierSplineLinearityFitter:
         Fit for temperature scaling?
     temperature_scaled : `np.ndarray` (M,), optional
         Input scaled temperature values (T - T_ref).
+    temperature_parameter_frozen : `float`, optional
+        Value for frozen temp parameter.
     """
     def __init__(
         self,
@@ -969,6 +971,7 @@ class AstierSplineLinearityFitter:
         weight_pars_start=[1.0, 0.0],
         fit_temperature=False,
         temperature_scaled=None,
+        temperature_parameter_frozen=None,
     ):
         self._pd = pd
         self._mu = mu
@@ -1006,6 +1009,7 @@ class AstierSplineLinearityFitter:
             if len(np.atleast_1d(temperature_scaled)) != len(self._mu):
                 raise ValueError("temperature_scaled must be the same length as input mu.")
         self._temperature_scaled = temperature_scaled
+        self._temperature_parameter_frozen = temperature_parameter_frozen
 
         # Values to regularize spline fit.
         self._x_regularize = np.linspace(0.0, self._mu[self.mask].max(), 100)
@@ -1074,6 +1078,7 @@ class AstierSplineLinearityFitter:
             self._pd,
             self._mu,
             self._temperature_scaled,
+            temperature_parameter_frozen=self._temperature_parameter_frozen,
         )
         # ...and adjust the linear parameters accordingly.
         p0[self.par_indices["groups"]] *= np.median(ratio_model[self.mask])
@@ -1118,6 +1123,7 @@ class AstierSplineLinearityFitter:
         pd,
         mu,
         temperature_scaled,
+        temperature_parameter_frozen=None,
         return_spline=False,
     ):
         """Compute the ratio model values.
@@ -1141,6 +1147,8 @@ class AstierSplineLinearityFitter:
             Array of flat means.
         temperature_scaled : `np.ndarray` (N,)
             Array of scaled temperature values.
+        temperature_parameter_frozen : `float`, optional
+            Value for frozen temp parameter.
         return_spline : `bool`, optional
             Return the spline interpolation as well as the model ratios?
 
@@ -1158,8 +1166,12 @@ class AstierSplineLinearityFitter:
         )
 
         # Check if we want to do just the left or both with temp scale.
-        if len(par_indices["temperature_coeff"]) == 1:
-            mu_corr = mu*(1. + pars[par_indices["temperature_coeff"]]*temperature_scaled)
+        if len(par_indices["temperature_coeff"]) == 1 or temperature_parameter_frozen:
+            if temperature_parameter_frozen:
+                alpha = temperature_parameter_frozen
+            else:
+                alpha = pars[par_indices["temperature_coeff"]]
+            mu_corr = mu*(1. + alpha*temperature_scaled)
         else:
             mu_corr = mu
 
@@ -1277,6 +1289,7 @@ class AstierSplineLinearityFitter:
             self._pd,
             self._mu,
             self._temperature_scaled,
+            temperature_parameter_frozen=self._temperature_parameter_frozen,
             return_spline=True,
         )
 
