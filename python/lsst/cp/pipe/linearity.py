@@ -252,6 +252,12 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
         default=None,
         optional=True,
     )
+    splineFitFrozenTemperatureCoefficient = pexConfig.DictField(
+        keytype=str,
+        itemtype=float,
+        doc="Frozen temperature coefficients, keyed by amp name.",
+        default={},
+    )
 
     def validate(self):
         super().validate()
@@ -550,6 +556,11 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 else:
                     tempValueScaled = None
 
+                if ampName in self.config.splineFitFrozenTemperatureCoefficient:
+                    frozenCoefficient = self.config.splineFitFrozenTemperatureCoefficient[ampName]
+                else:
+                    frozenCoefficient = None
+
                 fitter = AstierSplineLinearityFitter(
                     nodes,
                     groupingValue,
@@ -562,6 +573,7 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                     weight_pars_start=self.config.splineFitWeightParsStart,
                     fit_temperature=self.config.doSplineFitTemperature,
                     temperature_scaled=tempValueScaled,
+                    temperature_parameter_frozen=frozenCoefficient,
                 )
                 p0 = fitter.estimate_p0()
                 pars = fitter.fit(
