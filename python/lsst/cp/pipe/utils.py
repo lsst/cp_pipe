@@ -955,6 +955,8 @@ class AstierSplineLinearityFitter:
         Fit for temperature scaling?
     temperature_scaled : `np.ndarray` (M,), optional
         Input scaled temperature values (T - T_ref).
+    temperature_flux_pivot : `float`, optional
+        Temperature flux term pivot value.
     """
     def __init__(
         self,
@@ -969,6 +971,7 @@ class AstierSplineLinearityFitter:
         weight_pars_start=[1.0, 0.0],
         fit_temperature=False,
         temperature_scaled=None,
+        temperature_flux_pivot=None,
     ):
         self._pd = pd
         self._mu = mu
@@ -1002,10 +1005,14 @@ class AstierSplineLinearityFitter:
 
         if temperature_scaled is None:
             temperature_scaled = np.zeros(len(self._mu))
+            temperature_flux_pivot = np.median(self._mu)
         else:
             if len(np.atleast_1d(temperature_scaled)) != len(self._mu):
                 raise ValueError("temperature_scaled must be the same length as input mu.")
+            if temperature_flux_pivot is None:
+                raise ValueError("Must supply temperature_flux_pivot with temperature_scaled=True")
         self._temperature_scaled = temperature_scaled
+        self._temperature_flux_pivot = temperature_flux_pivot
 
         # Values to regularize spline fit.
         self._x_regularize = np.linspace(0.0, self._mu[self.mask].max(), 100)
@@ -1016,7 +1023,7 @@ class AstierSplineLinearityFitter:
             "groups": len(self._nodes) + np.arange(self.ngroup),
             "offset": np.zeros(0, dtype=np.int64),
             "weight_pars": np.zeros(0, dtype=np.int64),
-            "temperature_coeff": np.zeros(0, dtype=np.int64),
+            "temperature_coeffs": np.zeros(0, dtype=np.int64),
         }
         if self._fit_offset:
             self.par_indices["offset"] = np.arange(1) + (
@@ -1030,7 +1037,7 @@ class AstierSplineLinearityFitter:
                 + len(self.par_indices["offset"])
             )
         if self._fit_temperature:
-            self.par_indices["temperature_coeff"] = np.arange(1) + (
+            self.par_indices["temperature_coeffs"] = np.arange(2) + (
                 len(self.par_indices["values"])
                 + len(self.par_indices["groups"])
                 + len(self.par_indices["offset"])
@@ -1058,7 +1065,7 @@ class AstierSplineLinearityFitter:
                + len(self.par_indices["groups"])
                + len(self.par_indices["offset"])
                + len(self.par_indices["weight_pars"])
-               + len(self.par_indices["temperature_coeff"]))
+               + len(self.par_indices["temperature_coeffs"]))
         p0 = np.zeros(npt)
 
         # Do a simple linear fit and set all the constants to this.
@@ -1074,6 +1081,7 @@ class AstierSplineLinearityFitter:
             self._pd,
             self._mu,
             self._temperature_scaled,
+            self._temperature_flux_pivot,
         )
         # ...and adjust the linear parameters accordingly.
         p0[self.par_indices["groups"]] *= np.median(ratio_model[self.mask])
@@ -1087,6 +1095,7 @@ class AstierSplineLinearityFitter:
             self._pd,
             self._mu,
             self._temperature_scaled,
+            self._temperature_flux_pivot,
         )
 
         # And compute a first guess of the spline nodes.
@@ -1118,6 +1127,7 @@ class AstierSplineLinearityFitter:
         pd,
         mu,
         temperature_scaled,
+        temperature_flux_pivot,
         return_spline=False,
     ):
         """Compute the ratio model values.
@@ -1141,6 +1151,8 @@ class AstierSplineLinearityFitter:
             Array of flat means.
         temperature_scaled : `np.ndarray` (N,)
             Array of scaled temperature values.
+        temperature_flux_pivot : `float`
+            Flux value (ADU) for temperature term pivot.
         return_spline : `bool`, optional
             Return the spline interpolation as well as the model ratios?
 
@@ -1158,8 +1170,11 @@ class AstierSplineLinearityFitter:
         )
 
         # Check if we want to do just the left or both with temp scale.
-        if len(par_indices["temperature_coeff"]) == 1:
-            mu_corr = mu*(1. + pars[par_indices["temperature_coeff"]]*temperature_scaled)
+        if len(par_indices["temperature_coeffs"]) == 2:
+            alpha_par0 = pars[par_indices["temperature_coeffs"][0]]
+            alpha_par1 = pars[par_indices["temperature_coeffs"][1]]
+            alpha = alpha_par0 + alpha_par1*(mu - temperature_flux_pivot)
+            mu_corr = mu*(1. + alpha*temperature_scaled)
         else:
             mu_corr = mu
 
@@ -1259,7 +1274,7 @@ class AstierSplineLinearityFitter:
         chisq = np.sum(resids[self.mask]**2.)
         dof = self.mask.sum() - self.ngroup
         if self._fit_temperature:
-            dof -= 1
+            dof -= 2
         if self._fit_offset:
             dof -= 1
         if self._fit_weights:
@@ -1277,6 +1292,7 @@ class AstierSplineLinearityFitter:
             self._pd,
             self._mu,
             self._temperature_scaled,
+            self._temperature_flux_pivot,
             return_spline=True,
         )
 

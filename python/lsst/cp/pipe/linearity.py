@@ -241,7 +241,7 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
     )
     doSplineFitTemperature = pexConfig.Field(
         dtype=bool,
-        doc="Fit temperature coefficient in spline fit?",
+        doc="Fit temperature coefficient(s) in spline fit?",
         default=False,
     )
     splineFitTemperatureColumn = pexConfig.Field(
@@ -251,6 +251,11 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
             "doSplineFitTemperature is True.",
         default=None,
         optional=True,
+    )
+    splineFitTemperatureFluxPivot = pexConfig.Field(
+        dtype=float,
+        doc="Pivot flux (ADU) for second term in temp coeff.",
+        default=15_000.0,
     )
 
     def validate(self):
@@ -562,6 +567,7 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                     weight_pars_start=self.config.splineFitWeightParsStart,
                     fit_temperature=self.config.doSplineFitTemperature,
                     temperature_scaled=tempValueScaled,
+                    temperature_flux_pivot=self.config.splineFitTemperatureFluxPivot,
                 )
                 p0 = fitter.estimate_p0()
                 pars = fitter.fit(
@@ -590,8 +596,12 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 # The true mu (inputOrdinate) is given by
                 #  mu = mu_in * (1 + alpha*t_scale)
                 if self.config.doSplineFitTemperature:
-                    inputOrdinate *= (1.0
-                                      + pars[fitter.par_indices["temperature_coeff"]]*tempValueScaled)
+                    alpha_par0 = pars[fitter.par_indices["temperature_coeffs"][0]]
+                    alpha_par1 = pars[fitter.par_indices["temperature_coeffs"][1]]
+                    alpha = alpha_par0 + alpha_par1*(
+                        inputOrdinate - self.config.splineFitTemperatureFluxPivot
+                    )
+                    inputOrdinate *= (1.0 + alpha*tempValueScaled)
                 # Divide by the relative scaling of the different groups.
                 for j, group_index in enumerate(fitter.group_indices):
                     inputOrdinate[group_index] /= (pars[fitter.par_indices["groups"][j]] / linearFit[1])
@@ -609,7 +619,7 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                     pars[fitter.par_indices["groups"]],
                     pars[fitter.par_indices["offset"]],
                     pars[fitter.par_indices["weight_pars"]],
-                    pars[fitter.par_indices["temperature_coeff"]],
+                    pars[fitter.par_indices["temperature_coeffs"]],
                 ))
                 polyFitErr = np.zeros_like(polyFit)
                 chiSq = linearityChisq

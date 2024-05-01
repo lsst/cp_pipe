@@ -462,7 +462,7 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
                 if do_mu_offset:
                     extra_pars += 1
                 if do_temperature_fit:
-                    extra_pars += 1
+                    extra_pars += 2
 
                 if extra_pars > 0:
                     fit_offset_factors = fit_offset_factors[:-extra_pars]
@@ -473,18 +473,21 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
             fit_offset = None
             fit_temp_coeff = None
             if do_mu_offset and do_temperature_fit:
-                fit_offset = linearizer.fitParams[amp_name][-2]
-                fit_temp_coeff = linearizer.fitParams[amp_name][-1]
+                fit_offset = linearizer.fitParams[amp_name][-3]
+                fit_temp_coeff0 = linearizer.fitParams[amp_name][-2]
+                fit_temp_coeff1 = linearizer.fitParams[amp_name][-1]
             elif do_mu_offset:
                 fit_offset = linearizer.fitParams[amp_name][-1]
             elif do_temperature_fit:
-                fit_temp_coeff = linearizer.fitParams[amp_name][-1]
+                fit_temp_coeff0 = linearizer.fitParams[amp_name][-2]
+                fit_temp_coeff1 = linearizer.fitParams[amp_name][-1]
 
             if fit_offset is not None:
                 self.assertFloatsAlmostEqual(fit_offset, offset_value, rtol=6e-3)
 
             if fit_temp_coeff is not None:
-                self.assertFloatsAlmostEqual(fit_temp_coeff, temp_coeff, rtol=2e-2)
+                self.assertFloatsAlmostEqual(fit_temp_coeff0, temp_coeff, rtol=2e-2)
+                self.assertFloatsAlmostEqual(fit_temp_coeff1, 0.0, rtol=1e-7)
 
     def test_linearity_spline(self):
         self._check_linearity_spline(do_pd_offsets=False, do_mu_offset=False)
