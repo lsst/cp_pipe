@@ -19,7 +19,7 @@ tasks:
       doInterpolate: true
       doSetBadRegions: true
   cpFilterScanMerge:
-    class: lsst.cp.pipe.cpFilterTask.CpFilterScanTask
+    class: lsst.cp.pipe.cpFilterScan.CpFilterScanTask
     config:
       connections.inputExpHandles: 'cpFilterScanIsrExp'
       # This is still an intermediate product, although it's the end of this pipeline.
