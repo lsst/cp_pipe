@@ -28,7 +28,7 @@ import lsst.pipe.base as pipeBase
 import lsst.pipe.base.connectionTypes as cT
 
 from . import CalibCombineTask, CpEfdClient
-from lsst.daf.base import PropertyList
+from lsst.daf.base import PropertyList, DateTime
 
 __all__ = [
     "CpFilterScanTask", "CpFilterScanTaskConfig",
@@ -88,6 +88,11 @@ class CpFilterScanTaskConfig(pipeBase.PipelineTaskConfig,
     combine = pexConfig.ConfigurableField(
         target=CalibCombineTask,
         doc="Combine task to use for header merging.",
+    )
+    efdClientInstance = pexConfig.Field(
+        dtype=str,
+        doc="EFD instance to use for monochromator results.",
+        default="usdf_efd",
     )
 
 
@@ -157,7 +162,8 @@ class CpFilterScanTask(pipeBase.PipelineTask):
             }
             filterSet.add(physical_filter)
 
-            _, key = efdClient.parseMonochromatorStatus(monochromatorData, visitInfo.date)
+            _, key = efdClient.parseMonochromatorStatus(monochromatorData,
+                                                        visitInfo.date.toString(DateTime.TAI))
             key = float(key)
             if key in filterScanResults:
                 filterScanResults[key].append(scan)
@@ -189,7 +195,7 @@ class CpFilterScanTask(pipeBase.PipelineTask):
 
         catalog = Table(filterScan)
         catalog.meta = filteredMetadata
-
+        efdClient.close()
         return pipeBase.Struct(outputData=catalog)
 
 
@@ -268,10 +274,10 @@ class CpMonochromatorScanTask(pipeBase.PipelineTask):
         for handle in inputExpHandles:
             exposureId = handle.dataId['exposure']
             spectrum = handle.get()
-            fitMean, fitSigma, peakWavelength, fwhm, fitRange = self._fitPeak(spectrum, self.config.peakBoxSize)
+            fitMean, fitSigma, peakWavelength, fwhm, fitRange = self._fitPeak(spectrum,
+                                                                              self.config.peakBoxSize)
             date = spectrum.metadata[self.config.headerDateKey]
             monoDate, monoValue = efdClient.parseMonochromatorStatus(monochromatorData, date)
-            self.log.info(f"Monochromator: {date} {monoDate} {monoValue} {fitMean} {fitSigma} {peakWavelength} {fwhm}")
             entry = {
                 'exposure': exposureId,
                 'fit_mean': fitMean,
@@ -361,9 +367,6 @@ class CpMonochromatorScanTask(pipeBase.PipelineTask):
         sigma = np.sqrt(1 / (-2.0 * ff[0]))
         mean = -0.5 * ff[1] / ff[0]
 
-        if not np.isfinite(sigma) or not np.isfinite(mean):
-            import pdb;
-            pdb.set_trace()
         return (mean, sigma,
                 spectrum.wavelength[maxIdx].to_value(),
                 spectrum.wavelength[highHM].to_value() - spectrum.wavelength[lowHM].to_value(),
