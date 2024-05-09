@@ -174,7 +174,11 @@ class CpFilterScanTask(pipeBase.PipelineTask):
         for wavelength in filterScanResults.keys():
             scans = filterScanResults[wavelength]
 
-            referenceScan = [x for x in scans if x['physical_filter'] == self.config.referenceFilter][0]
+            referenceScan = [x for x in scans if x['physical_filter'] == self.config.referenceFilter]
+            if len(referenceScan) == 0:
+                # No reference scan at this wavelength.
+                continue
+            referenceScan = referenceScan[0]
             referenceValue = referenceScan['scale'] / referenceScan['flux']
 
             wavelengthScan = {'wavelength': float(wavelength)}
