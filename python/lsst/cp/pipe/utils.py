@@ -1051,8 +1051,11 @@ class AstierSplineLinearityFitter:
         -------
         p0 : `np.ndarray`
             Parameter array, with spline values (one for each node) followed
-            by proportionality constants (one for each group), and one extra
-            for the offset O (if fitOffset was set to True).
+            by proportionality constants (one for each group); one extra
+            for the offset O (if fit_offset was set to True); two extra
+            for the weights (if fit_weights was set to True); and one
+            extra for the temperature coefficient (if fit_temperature was
+            set to True).
         """
         npt = (len(self.par_indices["values"])
                + len(self.par_indices["groups"])
@@ -1133,8 +1136,11 @@ class AstierSplineLinearityFitter:
             each set of fit values.
         pars : `np.ndarray`
             Parameter array, with spline values (one for each node) followed
-            by proportionality constants (one for each group.), followed by
-            (optionally) one offset O.
+            by proportionality constants (one for each group); one extra
+            for the offset O (if fit_offset was set to True); two extra
+            for the weights (if fit_weights was set to True); and one
+            extra for the temperature coefficient (if fit_temperature was
+            set to True).
         pd : `np.ndarray` (N,)
             Array of photodiode measurements.
         mu : `np.ndarray` (N,)
@@ -1184,8 +1190,12 @@ class AstierSplineLinearityFitter:
         Parameters
         ----------
         p0 : `np.ndarray`
-            Initial fit parameters (one for each knot, followed by one for
-            each grouping, and optionally one for the offset.)
+            Initial parameter array, with spline values (one for each node)
+            followed by proportionality constants (one for each group); one
+            extra for the offset O (if fit_offset was set to True); two extra
+            for the weights (if fit_weights was set to True); and one
+            extra for the temperature coefficient (if fit_temperature was
+            set to True).
         min_iter : `int`, optional
             Minimum number of fit iterations.
         max_iter : `int`, optional

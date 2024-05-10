@@ -235,7 +235,9 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
     splineFitWeightParsStart = pexConfig.ListField(
         dtype=float,
         doc="Starting parameters for weight fit, if doSplineFitWeights=True. "
-            "Parameters are such that sigma = sqrt(par[0]**2. + par[1]**2./mu).",
+            "Parameters are such that sigma = sqrt(par[0]**2. + par[1]**2./mu)."
+            "If doSplineFitWeights=False then these are used as-is; otherwise "
+            "they are used as the initial values for fitting these parameters.",
         length=2,
         default=[1.0, 0.0],
     )
@@ -375,18 +377,18 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 if self.config.splineGroupingColumn not in inputPtc.auxValues:
                     raise ValueError(f"Config requests grouping by {self.config.splineGroupingColumn}, "
                                      "but this column is not available in inputPtc.auxValues.")
-                groupingValue = inputPtc.auxValues[self.config.splineGroupingColumn]
+                groupingValues = inputPtc.auxValues[self.config.splineGroupingColumn]
             else:
-                groupingValue = np.ones(len(inputPtc.rawMeans[inputPtc.ampNames[0]]), dtype=int)
+                groupingValues = np.ones(len(inputPtc.rawMeans[inputPtc.ampNames[0]]), dtype=int)
 
             if self.config.doSplineFitTemperature:
                 if self.config.splineFitTemperatureColumn not in inputPtc.auxValues:
                     raise ValueError("Config requests fitting temperature coefficient for "
                                      f"{self.config.splineFitTemperatureColumn} but this column "
                                      "is not available in inputPtc.auxValues.")
-                tempValue = inputPtc.auxValues[self.config.splineFitTemperatureColumn]
+                temperatureValues = inputPtc.auxValues[self.config.splineFitTemperatureColumn]
             else:
-                tempValue = None
+                temperatureValues = None
 
             # We set this to have a value to fill the bad amps.
             fitOrder = self.config.splineKnots
@@ -418,8 +420,8 @@ class LinearitySolveTask(pipeBase.PipelineTask):
             else:
                 mask = inputPtc.expIdMask[ampName].copy()
 
-            if self.config.linearityType == "Spline" and tempValue is not None:
-                mask &= np.isfinite(tempValue)
+            if self.config.linearityType == "Spline" and temperatureValues is not None:
+                mask &= np.isfinite(temperatureValues)
 
             if self.config.usePhotodiode:
                 modExpTimes = inputPtc.photoCharges[ampName].copy()
@@ -545,14 +547,14 @@ class LinearitySolveTask(pipeBase.PipelineTask):
 
                 nodes = np.linspace(0.0, np.max(inputOrdinate[mask]), self.config.splineKnots)
 
-                if tempValue is not None:
-                    tempValueScaled = tempValue - np.median(tempValue[~mask])
+                if temperatureValues is not None:
+                    temperatureValuesScaled = temperatureValues - np.median(temperatureValues[~mask])
                 else:
-                    tempValueScaled = None
+                    temperatureValuesScaled = None
 
                 fitter = AstierSplineLinearityFitter(
                     nodes,
-                    groupingValue,
+                    groupingValues,
                     inputAbscissa,
                     inputOrdinate,
                     mask=mask,
@@ -561,7 +563,7 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                     fit_weights=self.config.doSplineFitWeights,
                     weight_pars_start=self.config.splineFitWeightParsStart,
                     fit_temperature=self.config.doSplineFitTemperature,
-                    temperature_scaled=tempValueScaled,
+                    temperature_scaled=temperatureValuesScaled,
                 )
                 p0 = fitter.estimate_p0()
                 pars = fitter.fit(
@@ -586,12 +588,12 @@ class LinearitySolveTask(pipeBase.PipelineTask):
 
                 # We must modify the inputOrdinate according to the
                 # nuisance terms in the linearity fit for the residual
-                # computationcode to work properly.
+                # computation code to work properly.
                 # The true mu (inputOrdinate) is given by
                 #  mu = mu_in * (1 + alpha*t_scale)
                 if self.config.doSplineFitTemperature:
                     inputOrdinate *= (1.0
-                                      + pars[fitter.par_indices["temperature_coeff"]]*tempValueScaled)
+                                      + pars[fitter.par_indices["temperature_coeff"]]*temperatureValuesScaled)
                 # Divide by the relative scaling of the different groups.
                 for j, group_index in enumerate(fitter.group_indices):
                     inputOrdinate[group_index] /= (pars[fitter.par_indices["groups"][j]] / linearFit[1])
