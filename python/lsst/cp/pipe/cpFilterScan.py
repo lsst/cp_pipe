@@ -98,8 +98,36 @@ class CpFilterScanTaskConfig(pipeBase.PipelineTaskConfig,
 
 class CpFilterScanTask(pipeBase.PipelineTask):
     """Create filter scan from appropriate data.
-    """
 
+    This task constructs a filter scan from pairs of flat exposures,
+    one with a filter in the beam and one without a filter.  A
+    monochromator is also included in the beam for both exposures, so
+    that the beam can be limited to a narrow band of wavelengths small
+    than the full bandpass of the filter.
+
+    From these pairs of exposures, we can determine the filter
+    throughput by calculating the flux per second with the filter:
+        F_filter(\lambda0) = median(f_amplifiers) / t_exposure
+    And without:
+        F_reference(\lambda0) = median(f_amplifiers) / t_exposure
+    where the f_amplifiers are the per-amplifier statistics calculated
+    by IsrTask. If the illumination source was perfectly stable, the
+    filter throughput at that wavelength would simply be:
+        throughput_raw(\lambda0) = F_filter / F_reference
+
+    We can correct for any illumination changes by optionally using
+    the electrometer measurements, E, which provide an independent
+    measure of the incident flux for the two exposures, such that:
+        throughput(\lambda0) = throughput_raw * E_reference / E_filter
+
+    Repeating this procedure at multiple monochromator settings builds
+    up a catalog of throughput measurements across the filter
+    bandpass.  Additional differences between the monochromator
+    setting (retrieved here from the EFD) and the actual wavelengths
+    of light that are permitted can exist, so a matching
+    CpMonochromatorScan can be generated to determine what the actual
+    values of \lambda0 observed were.
+    """
     ConfigClass = CpFilterScanTaskConfig
     _DefaultName = "cpFilterScan"
 
@@ -162,13 +190,13 @@ class CpFilterScanTask(pipeBase.PipelineTask):
             }
             filterSet.add(physical_filter)
 
-            _, key = efdClient.parseMonochromatorStatus(monochromatorData,
-                                                        visitInfo.date.toString(DateTime.TAI))
-            key = float(key)
-            if key in filterScanResults:
-                filterScanResults[key].append(scan)
+            _, wavelengthKey = efdClient.parseMonochromatorStatus(monochromatorData,
+                                                                  visitInfo.date.toString(DateTime.TAI))
+            wavelengthKey = float(wavelengthKey)
+            if wavelengthKey in filterScanResults:
+                filterScanResults[wavelengthKey].append(scan)
             else:
-                filterScanResults[key] = [scan]
+                filterScanResults[wavelengthKey] = [scan]
 
         filterScan = []
         for wavelength in filterScanResults.keys():
@@ -177,6 +205,7 @@ class CpFilterScanTask(pipeBase.PipelineTask):
             referenceScan = [x for x in scans if x['physical_filter'] == self.config.referenceFilter]
             if len(referenceScan) == 0:
                 # No reference scan at this wavelength.
+                self.log.warning(f"No reference scan at this wavelength: {wavelengthKey}")
                 continue
             referenceScan = referenceScan[0]
             referenceValue = referenceScan['scale'] / referenceScan['flux']
@@ -187,7 +216,10 @@ class CpFilterScanTask(pipeBase.PipelineTask):
 
             for scan in scans:
                 if np.isfinite(wavelengthScan[scan['physical_filter']]):
-                    self.log.warn(f"Multiple instances of filter: {scan['physical_filter']}")
+                    self.log.warning(
+                        f"Multiple instances of filter {scan['physical_filter']} at {wavelength}"
+                    )
+
                 wavelengthScan[scan['physical_filter']] = referenceValue * scan['flux'] / scan['scale']
 
             filterScan.append(copy.copy(wavelengthScan))
@@ -247,8 +279,17 @@ class CpMonochromatorScanConfig(pipeBase.PipelineTaskConfig,
 
 class CpMonochromatorScanTask(pipeBase.PipelineTask):
     """Compare EFD monochromator results to fiber spectrograph spectra.
-    """
 
+    This task provides a complementary measurement to associate with
+    the CpFilterScan.  While taking the filter scan exposures used for
+    CpFilterScanTask, the attached fiber spectrograph can be used to
+    measure the spectrum of the light that passes through the
+    monochromator.  This task takes those spectra, fits a Gaussian to
+    the peak in each one, and records those fit parameters along with
+    the monochromator setting recorded in the EFD.  This information
+    can then be used to correct the CpFilterScan measurements from the
+    nominal wavelength values to those actually observed.
+    """
     ConfigClass = CpMonochromatorScanConfig
     _DefaultName = "cpMonochromatorScan"
 
@@ -295,7 +336,6 @@ class CpMonochromatorScanTask(pipeBase.PipelineTask):
             }
             monochromatorScanResults.append(entry)
 
-        # Will this silence the errors?
         efdClient.close()
         return pipeBase.Struct(
             outputData=Table(monochromatorScanResults)

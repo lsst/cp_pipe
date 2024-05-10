@@ -121,11 +121,15 @@ class CpEfdClient():
             Monochromator commanded peak.
         """
         dateValue = Time(dateStr, format='isot', scale='utc')
-        # I have words here.
+
+        # Check that the date we want to consider is contained in the
+        # EFD data.
         if data.index[0] > dateValue or data.index[-1] < dateValue:
             raise RuntimeError("Requested date is outside of data range.")
 
-        # I have more words.
+        # Binary search through the EFD entries in date, until the
+        # most recent monochromator state update prior to the spectrum
+        # in question is found.
         low = 0
         high = len(data)
         idx = (high + low) // 2
