@@ -83,7 +83,7 @@ class CpFilterScanTaskConfig(pipeBase.PipelineTaskConfig,
     referenceFilter = pexConfig.Field(
         dtype=str,
         doc="Filter to use as baseline reference.",
-        default="empty~empty",
+        default="empty",
     )
     combine = pexConfig.ConfigurableField(
         target=CalibCombineTask,

@@ -9,3 +9,7 @@ tasks:
       overscan.fitType: 'MEDIAN_PER_ROW'
       doLinearize: false
       doCrosstalk: false
+  cpFilterScanMerge:
+    class: lsst.cp.pipe.cpFilterScan.CpFilterScanTask
+    config:
+      referenceFilter: 'empty~empty'
