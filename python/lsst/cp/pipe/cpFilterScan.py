@@ -102,8 +102,8 @@ class CpFilterScanTask(pipeBase.PipelineTask):
     This task constructs a filter scan from pairs of flat exposures,
     one with a filter in the beam and one without a filter.  A
     monochromator is also included in the beam for both exposures, so
-    that the beam can be limited to a narrow band of wavelengths small
-    than the full bandpass of the filter.
+    that the beam can be limited to a narrow band of wavelengths
+    smaller than the full bandpass of the filter.
 
     From these pairs of exposures, we can determine the filter
     throughput by calculating the flux per second with the filter:
@@ -122,9 +122,9 @@ class CpFilterScanTask(pipeBase.PipelineTask):
 
     Repeating this procedure at multiple monochromator settings builds
     up a catalog of throughput measurements across the filter
-    bandpass.  Additional differences between the monochromator
-    setting (retrieved here from the EFD) and the actual wavelengths
-    of light that are permitted can exist, so a matching
+    bandpass.  Additional differences can exist between the
+    monochromator setting (retrieved here from the EFD) and the actual
+    wavelengths of light that are permitted, so a matching
     CpMonochromatorScan can be generated to determine what the actual
     values of :math:`\lambda0` observed were.
     """
@@ -164,6 +164,7 @@ class CpFilterScanTask(pipeBase.PipelineTask):
         efdClient = CpEfdClient(efdInstance=self.config.efdClientInstance)
         monochromatorData = efdClient.getEfdMonochromatorData()
 
+        # Iterate over input exposures:
         for handle in inputExpHandles:
             visitInfo = handle.get(component="visitInfo")
             metadata = handle.get(component="metadata")
@@ -172,7 +173,7 @@ class CpFilterScanTask(pipeBase.PipelineTask):
             exposureId = handle.dataId['exposure']
             exposureTime = visitInfo.exposureTime
 
-            values = [v for k, v in metadata.items() if "LSST ISR FINAL MEAN" in k]
+            values = [v for k, v in metadata.items() if "LSST ISR FINAL MEDIAN" in k]
 
             scaleFactor = exposureTime
             if self.config.useElectrometer:
@@ -183,6 +184,7 @@ class CpFilterScanTask(pipeBase.PipelineTask):
                             scaleFactor /= charge
                         break
 
+            # Create a scan entry for this exposure.
             scan = {
                 'physical_filter': physical_filter,
                 'scale': scaleFactor,
@@ -193,6 +195,8 @@ class CpFilterScanTask(pipeBase.PipelineTask):
             _, wavelengthKey = efdClient.parseMonochromatorStatus(monochromatorData,
                                                                   visitInfo.date.toString(DateTime.TAI))
             wavelengthKey = float(wavelengthKey)
+            # Append the scan for this exposure to the list of other
+            # scans taken at this wavelength setting:
             if wavelengthKey in filterScanResults:
                 filterScanResults[wavelengthKey].append(scan)
             else:
@@ -200,6 +204,12 @@ class CpFilterScanTask(pipeBase.PipelineTask):
 
         filterScan = []
         for wavelength in filterScanResults.keys():
+            # We expect there to be at least one pair of exposures
+            # with a given wavelength setting: One with a filter in
+            # the beam, and one with the "reference filter" (which
+            # should be the empty/white/no-filter setting).  The ratio
+            # of the scaled fluxes in this pair should give the filter
+            # transmission at that wavelength for that filter.
             scans = filterScanResults[wavelength]
 
             referenceScan = [x for x in scans if x['physical_filter'] == self.config.referenceFilter]
@@ -210,11 +220,21 @@ class CpFilterScanTask(pipeBase.PipelineTask):
             referenceScan = referenceScan[0]
             referenceValue = referenceScan['scale'] / referenceScan['flux']
 
+            # Create a dictionary of measurements at this wavelength,
+            # using the filter names as the keys.  Since we may do
+            # multiple filters in a single sequence (iterating through
+            # all filters at a certain monochromator setting),
+            # initialize all known filters (from our initial exposure
+            # scan) to NaN.  Note that the reference filter is a known
+            # filter, and should have a throughput of 1.0 relative to
+            # itself.
             wavelengthScan = {'wavelength': float(wavelength)}
             for filterName in filterSet:
                 wavelengthScan[filterName] = np.nan
 
             for scan in scans:
+                # If the entry for this filter already exists, then we
+                # have multiple entries at this wavelength.
                 if np.isfinite(wavelengthScan[scan['physical_filter']]):
                     self.log.warning(
                         f"Multiple instances of filter {scan['physical_filter']} at {wavelength}"
@@ -319,8 +339,12 @@ class CpMonochromatorScanTask(pipeBase.PipelineTask):
         for handle in inputExpHandles:
             exposureId = handle.dataId['exposure']
             spectrum = handle.get()
+
+            # Fit spectrum with Gaussian model.
             fitMean, fitSigma, peakWavelength, fwhm, fitRange = self._fitPeak(spectrum,
                                                                               self.config.peakBoxSize)
+
+            # Look up the monochromator state for this spectrum:
             date = spectrum.metadata[self.config.headerDateKey]
             monoDate, monoValue = efdClient.parseMonochromatorStatus(monochromatorData, date)
             entry = {
