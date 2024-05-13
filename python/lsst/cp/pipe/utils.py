@@ -909,13 +909,18 @@ class AstierSplineLinearityFitter:
     to allow for different linearity coefficients with different
     photodiode settings.  The minimization is a least-squares
     fit with the residual of
-    Sum[(S(mu_i) + mu_i)/(k_j * D_i) - 1]**2, where S(mu_i) is
-    an Akima Spline function of mu_i, the observed flat-pair
+    Sum[(S(mu_i) + mu_i)/(k_j * D_i - O) - 1]**2, where S(mu_i)
+    is an Akima Spline function of mu_i, the observed flat-pair
     mean; D_j is the photo-diode measurement corresponding to
     that flat-pair; and k_j is a constant of proportionality
     which is over index j as it is allowed to
     be different based on different photodiode settings (e.g.
-    CCOBCURR).
+    CCOBCURR); and O is a constant offset to allow for light
+    leaks (and is only fit if fit_offset=True). In
+    addition, if config.doSplineFitTemperature is True then
+    the fit will adjust mu such that
+    mu = mu_input*(1 + alpha*(temperature_scaled))
+    and temperature_scaled = T - T_ref.
 
     The fit has additional constraints to ensure that the spline
     goes through the (0, 0) point, as well as a normalization
@@ -939,12 +944,40 @@ class AstierSplineLinearityFitter:
         Input mask (True is good point, False is bad point).
     log : `logging.logger`, optional
         Logger object to use for logging.
+    fit_offset : `bool`, optional
+        Fit a constant offset to allow for light leaks?
+    fit_weights : `bool`, optional
+        Fit for the weight parameters?
+    weight_pars_start : `list` [ `float` ]
+        Iterable of 2 weight parameters for weighed fit. These will
+        be used as input if the weight parameters are not fit.
+    fit_temperature : `bool`, optional
+        Fit for temperature scaling?
+    temperature_scaled : `np.ndarray` (M,), optional
+        Input scaled temperature values (T - T_ref).
     """
-    def __init__(self, nodes, grouping_values, pd, mu, mask=None, log=None):
+    def __init__(
+        self,
+        nodes,
+        grouping_values,
+        pd,
+        mu,
+        mask=None,
+        log=None,
+        fit_offset=True,
+        fit_weights=False,
+        weight_pars_start=[1.0, 0.0],
+        fit_temperature=False,
+        temperature_scaled=None,
+    ):
         self._pd = pd
         self._mu = mu
         self._grouping_values = grouping_values
         self.log = log if log else logging.getLogger(__name__)
+        self._fit_offset = fit_offset
+        self._fit_weights = fit_weights
+        self._weight_pars_start = weight_pars_start
+        self._fit_temperature = fit_temperature
 
         self._nodes = nodes
         if nodes[0] != 0.0:
@@ -952,25 +985,64 @@ class AstierSplineLinearityFitter:
         if not np.all(np.diff(nodes) > 0):
             raise ValueError("Nodes must be sorted with no repeats.")
 
-        # Check if sorted (raise otherwise)
-        if not np.all(np.diff(self._grouping_values) >= 0):
-            raise ValueError("Grouping values must be sorted.")
-
-        _, uindex, ucounts = np.unique(self._grouping_values, return_index=True, return_counts=True)
-        self.ngroup = len(uindex)
+        # Find the group indices.
+        u_group_values = np.unique(self._grouping_values)
+        self.ngroup = len(u_group_values)
 
         self.group_indices = []
         for i in range(self.ngroup):
-            self.group_indices.append(np.arange(uindex[i], uindex[i] + ucounts[i]))
+            self.group_indices.append(np.where(self._grouping_values == u_group_values[i])[0])
 
-        # Outlier weight values.  Will be 1 (in) or 0 (out).
-        self._w = np.ones(len(self._pd))
+        # Weight values.  Outliers will be set to 0.
+        if mask is None:
+            _mask = np.ones(len(mu), dtype=np.bool_)
+        else:
+            _mask = mask
+        self._w = self.compute_weights(self._weight_pars_start, self._mu, _mask)
 
-        if mask is not None:
-            self._w[~mask] = 0.0
+        if temperature_scaled is None:
+            temperature_scaled = np.zeros(len(self._mu))
+        else:
+            if len(np.atleast_1d(temperature_scaled)) != len(self._mu):
+                raise ValueError("temperature_scaled must be the same length as input mu.")
+        self._temperature_scaled = temperature_scaled
 
         # Values to regularize spline fit.
         self._x_regularize = np.linspace(0.0, self._mu[self.mask].max(), 100)
+
+        # Set up the indices for the fit parameters.
+        self.par_indices = {
+            "values": np.arange(len(self._nodes)),
+            "groups": len(self._nodes) + np.arange(self.ngroup),
+            "offset": np.zeros(0, dtype=np.int64),
+            "weight_pars": np.zeros(0, dtype=np.int64),
+            "temperature_coeff": np.zeros(0, dtype=np.int64),
+        }
+        if self._fit_offset:
+            self.par_indices["offset"] = np.arange(1) + (
+                len(self.par_indices["values"])
+                + len(self.par_indices["groups"])
+            )
+        if self._fit_weights:
+            self.par_indices["weight_pars"] = np.arange(2) + (
+                len(self.par_indices["values"])
+                + len(self.par_indices["groups"])
+                + len(self.par_indices["offset"])
+            )
+        if self._fit_temperature:
+            self.par_indices["temperature_coeff"] = np.arange(1) + (
+                len(self.par_indices["values"])
+                + len(self.par_indices["groups"])
+                + len(self.par_indices["offset"])
+                + len(self.par_indices["weight_pars"])
+            )
+
+    @staticmethod
+    def compute_weights(weight_pars, mu, mask):
+        w = 1./np.sqrt(weight_pars[0]**2. + weight_pars[1]**2./mu)
+        w[~mask] = 0.0
+
+        return w
 
     def estimate_p0(self):
         """Estimate initial fit parameters.
@@ -979,33 +1051,45 @@ class AstierSplineLinearityFitter:
         -------
         p0 : `np.ndarray`
             Parameter array, with spline values (one for each node) followed
-            by proportionality constants (one for each group).
+            by proportionality constants (one for each group); one extra
+            for the offset O (if fit_offset was set to True); two extra
+            for the weights (if fit_weights was set to True); and one
+            extra for the temperature coefficient (if fit_temperature was
+            set to True).
         """
-        npt = len(self._nodes) + self.ngroup
+        npt = (len(self.par_indices["values"])
+               + len(self.par_indices["groups"])
+               + len(self.par_indices["offset"])
+               + len(self.par_indices["weight_pars"])
+               + len(self.par_indices["temperature_coeff"]))
         p0 = np.zeros(npt)
 
         # Do a simple linear fit and set all the constants to this.
         linfit = np.polyfit(self._pd[self.mask], self._mu[self.mask], 1)
-        p0[-self.ngroup:] = linfit[0]
+        p0[self.par_indices["groups"]] = linfit[0]
 
         # Look at the residuals...
         ratio_model = self.compute_ratio_model(
             self._nodes,
             self.group_indices,
+            self.par_indices,
             p0,
             self._pd,
             self._mu,
+            self._temperature_scaled,
         )
         # ...and adjust the linear parameters accordingly.
-        p0[-self.ngroup:] *= np.median(ratio_model[self.mask])
+        p0[self.par_indices["groups"]] *= np.median(ratio_model[self.mask])
 
         # Re-compute the residuals.
         ratio_model2 = self.compute_ratio_model(
             self._nodes,
             self.group_indices,
+            self.par_indices,
             p0,
             self._pd,
             self._mu,
+            self._temperature_scaled,
         )
 
         # And compute a first guess of the spline nodes.
@@ -1018,12 +1102,27 @@ class AstierSplineLinearityFitter:
         ratio = np.ones(len(self._nodes))
         ratio[n_arr > 0] = tot_arr[n_arr > 0]/n_arr[n_arr > 0]
         ratio[0] = 1.0
-        p0[0: len(self._nodes)] = (ratio - 1) * self._nodes
+        p0[self.par_indices["values"]] = (ratio - 1) * self._nodes
+
+        if self._fit_offset:
+            p0[self.par_indices["offset"]] = 0.0
+
+        if self._fit_weights:
+            p0[self.par_indices["weight_pars"]] = self._weight_pars_start
 
         return p0
 
     @staticmethod
-    def compute_ratio_model(nodes, group_indices, pars, pd, mu, return_spline=False):
+    def compute_ratio_model(
+        nodes,
+        group_indices,
+        par_indices,
+        pars,
+        pd,
+        mu,
+        temperature_scaled,
+        return_spline=False,
+    ):
         """Compute the ratio model values.
 
         Parameters
@@ -1032,33 +1131,50 @@ class AstierSplineLinearityFitter:
             Array of node positions.
         group_indices : `list` [`np.ndarray`]
             List of group indices, one array for each group.
+        par_indices : `dict`
+            Dictionary showing which indices in the pars belong to
+            each set of fit values.
         pars : `np.ndarray`
             Parameter array, with spline values (one for each node) followed
-            by proportionality constants (one for each group.)
+            by proportionality constants (one for each group); one extra
+            for the offset O (if fit_offset was set to True); two extra
+            for the weights (if fit_weights was set to True); and one
+            extra for the temperature coefficient (if fit_temperature was
+            set to True).
         pd : `np.ndarray` (N,)
             Array of photodiode measurements.
         mu : `np.ndarray` (N,)
             Array of flat means.
+        temperature_scaled : `np.ndarray` (N,)
+            Array of scaled temperature values.
         return_spline : `bool`, optional
             Return the spline interpolation as well as the model ratios?
 
         Returns
         -------
         ratio_models : `np.ndarray` (N,)
-            Model ratio, (mu_i - S(mu_i))/(k_j * D_i)
+            Model ratio, (mu_i - S(mu_i) - O)/(k_j * D_i)
         spl : `lsst.afw.math.thing`
             Spline interpolator (returned if return_spline=True).
         """
         spl = lsst.afw.math.makeInterpolate(
             nodes,
-            pars[0: len(nodes)],
+            pars[par_indices["values"]],
             lsst.afw.math.stringToInterpStyle("AKIMA_SPLINE"),
         )
 
-        numerator = mu - spl.interpolate(mu)
+        # Check if we want to do just the left or both with temp scale.
+        if len(par_indices["temperature_coeff"]) == 1:
+            mu_corr = mu*(1. + pars[par_indices["temperature_coeff"]]*temperature_scaled)
+        else:
+            mu_corr = mu
+
+        numerator = mu_corr - spl.interpolate(mu_corr)
+        if len(par_indices["offset"]) == 1:
+            numerator -= pars[par_indices["offset"][0]]
         denominator = pd.copy()
         ngroup = len(group_indices)
-        kj = pars[-ngroup:]
+        kj = pars[par_indices["groups"]]
         for j in range(ngroup):
             denominator[group_indices[j]] *= kj[j]
 
@@ -1074,8 +1190,12 @@ class AstierSplineLinearityFitter:
         Parameters
         ----------
         p0 : `np.ndarray`
-            Initial fit parameters (one for each knot, followed by one for
-            each grouping).
+            Initial parameter array, with spline values (one for each node)
+            followed by proportionality constants (one for each group); one
+            extra for the offset O (if fit_offset was set to True); two extra
+            for the weights (if fit_weights was set to True); and one
+            extra for the temperature coefficient (if fit_temperature was
+            set to True).
         min_iter : `int`, optional
             Minimum number of fit iterations.
         max_iter : `int`, optional
@@ -1132,23 +1252,62 @@ class AstierSplineLinearityFitter:
     def good_points(self):
         return self.mask.nonzero()[0]
 
+    def compute_chisq_dof(self, pars):
+        """Compute the chi-squared per degree of freedom for a set of pars.
+
+        Parameters
+        ----------
+        pars : `np.ndarray`
+            Parameter array.
+
+        Returns
+        -------
+        chisq_dof : `float`
+            Chi-squared per degree of freedom.
+        """
+        resids = self(pars)[0: len(self.mask)]
+        chisq = np.sum(resids[self.mask]**2.)
+        dof = self.mask.sum() - self.ngroup
+        if self._fit_temperature:
+            dof -= 1
+        if self._fit_offset:
+            dof -= 1
+        if self._fit_weights:
+            dof -= 2
+
+        return chisq/dof
+
     def __call__(self, pars):
 
         ratio_model, spl = self.compute_ratio_model(
             self._nodes,
             self.group_indices,
+            self.par_indices,
             pars,
             self._pd,
             self._mu,
+            self._temperature_scaled,
             return_spline=True,
         )
 
+        _mask = self.mask
+        # Update the weights if we are fitting them.
+        if self._fit_weights:
+            self._w = self.compute_weights(pars[self.par_indices["weight_pars"]], self._mu, _mask)
         resid = self._w*(ratio_model - 1.0)
+
         # Ensure masked points have 0 residual.
-        resid[~self.mask] = 0.0
+        resid[~_mask] = 0.0
 
         constraint = [1e3 * np.mean(spl.interpolate(self._x_regularize))]
         # 0 should transform to 0
         constraint.append(spl.interpolate(0)*1e10)
+        # Use a Jeffreys prior on the weight if we are fitting it.
+        if self._fit_weights:
+            # This factor ensures that log(fact * w) is negative.
+            fact = 1e-3 / self._w.max()
+            # We only add non-zero weights to the constraint array.
+            log_w = np.sqrt(-2.*np.log(fact*self._w[self._w > 0]))
+            constraint = np.hstack([constraint, log_w])
 
         return np.hstack([resid, constraint])

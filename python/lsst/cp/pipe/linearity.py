@@ -23,6 +23,8 @@
 __all__ = ["LinearitySolveTask", "LinearitySolveConfig"]
 
 import numpy as np
+from scipy.stats import median_abs_deviation
+
 import lsst.afw.image as afwImage
 import lsst.pipe.base as pipeBase
 import lsst.pipe.base.connectionTypes as cT
@@ -185,6 +187,11 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
         doc="Calculate and apply a correction to the photodiode readings?",
         default=False,
     )
+    minPhotodiodeCurrent = pexConfig.Field(
+        dtype=float,
+        doc="Minimum value to trust photodiode signals.",
+        default=0.0,
+    )
     splineGroupingColumn = pexConfig.Field(
         dtype=str,
         doc="Column to use for grouping together points for Spline mode, to allow "
@@ -215,6 +222,44 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
         doc="Maximum number of rejections per iteration for spline fit.",
         default=5,
     )
+    doSplineFitOffset = pexConfig.Field(
+        dtype=bool,
+        doc="Fit a scattered light offset in the spline fit.",
+        default=True,
+    )
+    doSplineFitWeights = pexConfig.Field(
+        dtype=bool,
+        doc="Fit linearity weight parameters in the spline fit.",
+        default=False,
+    )
+    splineFitWeightParsStart = pexConfig.ListField(
+        dtype=float,
+        doc="Starting parameters for weight fit, if doSplineFitWeights=True. "
+            "Parameters are such that sigma = sqrt(par[0]**2. + par[1]**2./mu)."
+            "If doSplineFitWeights=False then these are used as-is; otherwise "
+            "they are used as the initial values for fitting these parameters.",
+        length=2,
+        default=[1.0, 0.0],
+    )
+    doSplineFitTemperature = pexConfig.Field(
+        dtype=bool,
+        doc="Fit temperature coefficient in spline fit?",
+        default=False,
+    )
+    splineFitTemperatureColumn = pexConfig.Field(
+        dtype=str,
+        doc="Name of the temperature column to use when fitting temperature "
+            "coefficients in spline fit; this must not be None if "
+            "doSplineFitTemperature is True.",
+        default=None,
+        optional=True,
+    )
+
+    def validate(self):
+        super().validate()
+
+        if self.doSplineFitTemperature and self.splineFitTemperatureColumn is None:
+            raise ValueError("Must set splineFitTemperatureColumn if doSplineFitTemperature is True.")
 
 
 class LinearitySolveTask(pipeBase.PipelineTask):
@@ -332,9 +377,19 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 if self.config.splineGroupingColumn not in inputPtc.auxValues:
                     raise ValueError(f"Config requests grouping by {self.config.splineGroupingColumn}, "
                                      "but this column is not available in inputPtc.auxValues.")
-                groupingValue = inputPtc.auxValues[self.config.splineGroupingColumn]
+                groupingValues = inputPtc.auxValues[self.config.splineGroupingColumn]
             else:
-                groupingValue = np.ones(len(inputPtc.rawMeans[inputPtc.ampNames[0]]), dtype=int)
+                groupingValues = np.ones(len(inputPtc.rawMeans[inputPtc.ampNames[0]]), dtype=int)
+
+            if self.config.doSplineFitTemperature:
+                if self.config.splineFitTemperatureColumn not in inputPtc.auxValues:
+                    raise ValueError("Config requests fitting temperature coefficient for "
+                                     f"{self.config.splineFitTemperatureColumn} but this column "
+                                     "is not available in inputPtc.auxValues.")
+                temperatureValues = inputPtc.auxValues[self.config.splineFitTemperatureColumn]
+            else:
+                temperatureValues = None
+
             # We set this to have a value to fill the bad amps.
             fitOrder = self.config.splineKnots
         else:
@@ -365,11 +420,18 @@ class LinearitySolveTask(pipeBase.PipelineTask):
             else:
                 mask = inputPtc.expIdMask[ampName].copy()
 
+            if self.config.linearityType == "Spline" and temperatureValues is not None:
+                mask &= np.isfinite(temperatureValues)
+
             if self.config.usePhotodiode:
                 modExpTimes = inputPtc.photoCharges[ampName].copy()
                 # Make sure any exposure pairs that do not have photodiode data
                 # are masked.
                 mask[~np.isfinite(modExpTimes)] = False
+
+                # Make sure any photodiode measurements below the configured
+                # minimum are masked.
+                mask[modExpTimes < self.config.minPhotodiodeCurrent] = False
 
                 # Get the photodiode correction.
                 if self.config.applyPhotodiodeCorrection:
@@ -463,13 +525,18 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 # to allow for different linearity coefficients with different
                 # photodiode settings.  The minimization is a least-squares
                 # fit with the residual of
-                # Sum[(S(mu_i) + mu_i)/(k_j * D_i) - 1]**2, where S(mu_i) is
-                # an Akima Spline function of mu_i, the observed flat-pair
+                # Sum[(S(mu_i) + mu_i - O)/(k_j * D_i) - 1]**2, where S(mu_i)
+                # is an Akima Spline function of mu_i, the observed flat-pair
                 # mean; D_j is the photo-diode measurement corresponding to
                 # that flat-pair; and k_j is a constant of proportionality
                 # which is over index j as it is allowed to
                 # be different based on different photodiode settings (e.g.
-                # CCOBCURR).
+                # CCOBCURR); and O is a constant offset to allow for light
+                # leaks (and is only fit if doSplineFitOffset=True). In
+                # addition, if config.doSplineFitTemperature is True then
+                # the fit will adjust mu such that
+                # mu = mu_input*(1 + alpha*(T - T_ref))
+                # and T_ref is taken as the median temperature of the run.
 
                 # The fit has additional constraints to ensure that the spline
                 # goes through the (0, 0) point, as well as a normalization
@@ -480,13 +547,23 @@ class LinearitySolveTask(pipeBase.PipelineTask):
 
                 nodes = np.linspace(0.0, np.max(inputOrdinate[mask]), self.config.splineKnots)
 
+                if temperatureValues is not None:
+                    temperatureValuesScaled = temperatureValues - np.median(temperatureValues[~mask])
+                else:
+                    temperatureValuesScaled = None
+
                 fitter = AstierSplineLinearityFitter(
                     nodes,
-                    groupingValue,
+                    groupingValues,
                     inputAbscissa,
                     inputOrdinate,
                     mask=mask,
                     log=self.log,
+                    fit_offset=self.config.doSplineFitOffset,
+                    fit_weights=self.config.doSplineFitWeights,
+                    weight_pars_start=self.config.splineFitWeightParsStart,
+                    fit_temperature=self.config.doSplineFitTemperature,
+                    temperature_scaled=temperatureValuesScaled,
                 )
                 p0 = fitter.estimate_p0()
                 pars = fitter.fit(
@@ -504,20 +581,40 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                                        "be consistent with zero.")
                 pars[0] = 0.0
 
-                linearityCoeffs = np.concatenate([nodes, pars[0: len(nodes)]])
-                linearFit = np.array([0.0, np.mean(pars[len(nodes):])])
+                linearityChisq = fitter.compute_chisq_dof(pars)
 
-                # We modify the inputAbscissa according to the linearity fits
-                # here, for proper residual computation.
+                linearityCoeffs = np.concatenate([nodes, pars[fitter.par_indices["values"]]])
+                linearFit = np.array([0.0, np.mean(pars[fitter.par_indices["groups"]])])
+
+                # We must modify the inputOrdinate according to the
+                # nuisance terms in the linearity fit for the residual
+                # computation code to work properly.
+                # The true mu (inputOrdinate) is given by
+                #  mu = mu_in * (1 + alpha*t_scale)
+                if self.config.doSplineFitTemperature:
+                    inputOrdinate *= (1.0
+                                      + pars[fitter.par_indices["temperature_coeff"]]*temperatureValuesScaled)
+                # Divide by the relative scaling of the different groups.
                 for j, group_index in enumerate(fitter.group_indices):
-                    inputOrdinate[group_index] /= (pars[len(nodes) + j] / linearFit[1])
+                    inputOrdinate[group_index] /= (pars[fitter.par_indices["groups"][j]] / linearFit[1])
+                # And remove the offset term.
+                if self.config.doSplineFitOffset:
+                    inputOrdinate -= pars[fitter.par_indices["offset"]]
 
                 linearOrdinate = linearFit[1] * inputOrdinate
                 # For the spline fit, reuse the "polyFit -> fitParams"
                 # field to record the linear coefficients for the groups.
-                polyFit = pars[len(nodes):]
+                # We additionally append the offset and weight_pars;
+                # however these will be zero-length arrays if these were
+                # not configured to be fit.
+                polyFit = np.concatenate((
+                    pars[fitter.par_indices["groups"]],
+                    pars[fitter.par_indices["offset"]],
+                    pars[fitter.par_indices["weight_pars"]],
+                    pars[fitter.par_indices["temperature_coeff"]],
+                ))
                 polyFitErr = np.zeros_like(polyFit)
-                chiSq = np.nan
+                chiSq = linearityChisq
 
                 # Update mask based on what the fitter rejected.
                 mask = fitter.mask
@@ -565,6 +662,13 @@ class LinearitySolveTask(pipeBase.PipelineTask):
 
             linearizer.fitResiduals[ampName] = residuals
 
+            finite = np.isfinite(residuals)
+            if finite.sum() == 0:
+                sigmad = np.nan
+            else:
+                sigmad = median_abs_deviation(residuals[finite]/inputOrdinate[finite], scale="normal")
+            linearizer.fitResidualsSigmaMad[ampName] = sigmad
+
             self.debugFit(
                 'solution',
                 inputOrdinate[mask],
@@ -573,6 +677,8 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 None,
                 ampName,
             )
+
+        self.fixupBadAmps(linearizer)
 
         linearizer.hasLinearity = True
         linearizer.validate()
@@ -592,8 +698,9 @@ class LinearitySolveTask(pipeBase.PipelineTask):
         nEntries = 1
         pEntries = 1
         if self.config.linearityType in ['Polynomial']:
-            nEntries = fitOrder + 1
-            pEntries = fitOrder + 1
+            # We discard the first 2 entries in the polynomial.
+            nEntries = fitOrder + 1 - 2
+            pEntries = fitOrder + 1 - 2
         elif self.config.linearityType in ['Spline']:
             nEntries = fitOrder * 2
         elif self.config.linearityType in ['Squared', 'None']:
@@ -610,8 +717,29 @@ class LinearitySolveTask(pipeBase.PipelineTask):
         linearizer.fitParamsErr[ampName] = np.zeros(pEntries)
         linearizer.fitChiSq[ampName] = np.nan
         linearizer.fitResiduals[ampName] = np.zeros(len(inputPtc.expIdMask[ampName]))
+        linearizer.fitResidualsSigmaMad[ampName] = np.nan
         linearizer.linearFit[ampName] = np.zeros(2)
         return linearizer
+
+    def fixupBadAmps(self, linearizer):
+        """Fix nan padding in bad amplifiers.
+
+        Parameters
+        ----------
+        linearizer : `lsst.ip.isr.Linearizer`
+        """
+        fitParamsMaxLen = 0
+        for ampName in linearizer.ampNames:
+            if (length := len(linearizer.fitParams[ampName])) > fitParamsMaxLen:
+                fitParamsMaxLen = length
+
+        for ampName in linearizer.ampNames:
+            if linearizer.linearityType[ampName] == "None":
+                # Bad amplifier.
+                linearizer.fitParams[ampName] = np.zeros(fitParamsMaxLen)
+                linearizer.fitParamsErr[ampName] = np.zeros(fitParamsMaxLen)
+            elif len(linearizer.fitParams[ampName]) != fitParamsMaxLen:
+                raise RuntimeError("Linearity has mismatched fitParams; check code/data.")
 
     def debugFit(self, stepname, xVector, yVector, yModel, mask, ampName):
         """Debug method for linearity fitting.
