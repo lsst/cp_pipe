@@ -220,6 +220,49 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
             linear_signal = flux * time_vec
             self.assertFloatsAlmostEqual(image.array[0, :] / linear_signal, 1.0, rtol=1e-6)
 
+        self._check_linearizer_lengths(linearizer)
+
+    def _check_linearizer_lengths(self, linearizer):
+        # Check that the lengths of all the fields match.
+        lenCoeffs = -1
+        lenParams = -1
+        lenParamsErr = -1
+        lenResiduals = -1
+        lenFit = -1
+        for ampName in linearizer.ampNames:
+            if lenCoeffs < 0:
+                lenCoeffs = len(linearizer.linearityCoeffs[ampName])
+                lenParams = len(linearizer.fitParams[ampName])
+                lenParamsErr = len(linearizer.fitParamsErr[ampName])
+                lenResiduals = len(linearizer.fitResiduals[ampName])
+                lenFit = len(linearizer.linearFit[ampName])
+            else:
+                self.assertEqual(
+                    len(linearizer.linearityCoeffs[ampName]),
+                    lenCoeffs,
+                    msg=f"amp {ampName} linearityCoeffs length mismatch",
+                )
+                self.assertEqual(
+                    len(linearizer.fitParams[ampName]),
+                    lenParams,
+                    msg=f"amp {ampName} fitParams length mismatch",
+                )
+                self.assertEqual(
+                    len(linearizer.fitParamsErr[ampName]),
+                    lenParamsErr,
+                    msg=f"amp {ampName} fitParamsErr length mismatch",
+                )
+                self.assertEqual(
+                    len(linearizer.fitResiduals[ampName]),
+                    lenResiduals,
+                    msg=f"amp {ampName} fitResiduals length mismatch",
+                )
+                self.assertEqual(
+                    len(linearizer.linearFit[ampName]),
+                    lenFit,
+                    msg=f"amp {ampName} linearFit length mismatch",
+                )
+
     def test_linearity_polynomial(self):
         """Test linearity with polynomial fit."""
         self._check_linearity("Polynomial")
@@ -485,6 +528,8 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
 
             if fit_temp_coeff is not None:
                 self.assertFloatsAlmostEqual(fit_temp_coeff, temp_coeff, rtol=2e-2)
+
+        self._check_linearizer_lengths(linearizer)
 
     def test_linearity_spline(self):
         self._check_linearity_spline(do_pd_offsets=False, do_mu_offset=False)
