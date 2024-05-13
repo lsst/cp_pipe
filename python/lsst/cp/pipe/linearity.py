@@ -678,6 +678,8 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 ampName,
             )
 
+        self.fixupBadAmps(linearizer)
+
         linearizer.hasLinearity = True
         linearizer.validate()
         linearizer.updateMetadata(camera=camera, detector=detector, filterName='NONE')
@@ -696,8 +698,9 @@ class LinearitySolveTask(pipeBase.PipelineTask):
         nEntries = 1
         pEntries = 1
         if self.config.linearityType in ['Polynomial']:
-            nEntries = fitOrder + 1
-            pEntries = fitOrder + 1
+            # We discard the first 2 entries in the polynomial.
+            nEntries = fitOrder + 1 - 2
+            pEntries = fitOrder + 1 - 2
         elif self.config.linearityType in ['Spline']:
             nEntries = fitOrder * 2
         elif self.config.linearityType in ['Squared', 'None']:
@@ -717,6 +720,26 @@ class LinearitySolveTask(pipeBase.PipelineTask):
         linearizer.fitResidualsSigmaMad[ampName] = np.nan
         linearizer.linearFit[ampName] = np.zeros(2)
         return linearizer
+
+    def fixupBadAmps(self, linearizer):
+        """Fix nan padding in bad amplifiers.
+
+        Parameters
+        ----------
+        linearizer : `lsst.ip.isr.Linearizer`
+        """
+        fitParamsMaxLen = 0
+        for ampName in linearizer.ampNames:
+            if (length := len(linearizer.fitParams[ampName])) > fitParamsMaxLen:
+                fitParamsMaxLen = length
+
+        for ampName in linearizer.ampNames:
+            if linearizer.linearityType[ampName] == "None":
+                # Bad amplifier.
+                linearizer.fitParams[ampName] = np.zeros(fitParamsMaxLen)
+                linearizer.fitParamsErr[ampName] = np.zeros(fitParamsMaxLen)
+            elif len(linearizer.fitParams[ampName]) != fitParamsMaxLen:
+                raise RuntimeError("Linearity has mismatched fitParams; check code/data.")
 
     def debugFit(self, stepname, xVector, yVector, yModel, mask, ampName):
         """Debug method for linearity fitting.
