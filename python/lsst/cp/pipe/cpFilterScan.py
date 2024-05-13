@@ -97,7 +97,7 @@ class CpFilterScanTaskConfig(pipeBase.PipelineTaskConfig,
 
 
 class CpFilterScanTask(pipeBase.PipelineTask):
-    """Create filter scan from appropriate data.
+    r"""Create filter scan from appropriate data.
 
     This task constructs a filter scan from pairs of flat exposures,
     one with a filter in the beam and one without a filter.  A
@@ -107,18 +107,18 @@ class CpFilterScanTask(pipeBase.PipelineTask):
 
     From these pairs of exposures, we can determine the filter
     throughput by calculating the flux per second with the filter:
-        F_filter(\lambda0) = median(f_amplifiers) / t_exposure
+    :math:`F_filter(\lambda0) = median(f_amplifiers) / t_exposure`
     And without:
-        F_reference(\lambda0) = median(f_amplifiers) / t_exposure
+    :math:`F_reference(\lambda0) = median(f_amplifiers) / t_exposure`
     where the f_amplifiers are the per-amplifier statistics calculated
     by IsrTask. If the illumination source was perfectly stable, the
     filter throughput at that wavelength would simply be:
-        throughput_raw(\lambda0) = F_filter / F_reference
+    :math:`throughput_raw(\lambda0) = F_filter / F_reference`
 
     We can correct for any illumination changes by optionally using
     the electrometer measurements, E, which provide an independent
     measure of the incident flux for the two exposures, such that:
-        throughput(\lambda0) = throughput_raw * E_reference / E_filter
+    :math:`throughput(\lambda0) = throughput_raw * E_reference / E_filter`
 
     Repeating this procedure at multiple monochromator settings builds
     up a catalog of throughput measurements across the filter
@@ -126,7 +126,7 @@ class CpFilterScanTask(pipeBase.PipelineTask):
     setting (retrieved here from the EFD) and the actual wavelengths
     of light that are permitted can exist, so a matching
     CpMonochromatorScan can be generated to determine what the actual
-    values of \lambda0 observed were.
+    values of :math:`\lambda0` observed were.
     """
     ConfigClass = CpFilterScanTaskConfig
     _DefaultName = "cpFilterScan"
