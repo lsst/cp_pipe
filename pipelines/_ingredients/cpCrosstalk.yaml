@@ -1,0 +1,42 @@
+description: cp_pipe CROSSTALK calibration construction.
+tasks:
+  cpCrosstalkIsr:
+    class: lsst.ip.isr.IsrTask
+    config:
+      connections.ccdExposure: "raw"
+      connections.outputExposure: "cpCrosstalkIsrExp"
+      doWrite: true
+      doOverscan: true
+      doAssembleCcd: true
+      doBias: true
+      doVariance: false
+      doLinearize: true
+      doCrosstalk: false
+      doBrighterFatter: false
+      doDark: false
+      doStrayLight: false
+      doFlat: false
+      doFringe: false
+      doApplyGains: false
+      doDefect: true
+      doSaturationInterpolation: false
+      growSaturationFootprintSize: 0
+  cpCrosstalkExtract:
+    class: lsst.cp.pipe.CrosstalkExtractTask
+    config:
+      connections.inputExp: "cpCrosstalkIsrExp"
+      connections.outputRatios: "cpCrosstalkRatio"
+  cpCrosstalkSolve:
+    class: lsst.cp.pipe.CrosstalkSolveTask
+    config:
+      connections.inputRatios: "cpCrosstalkRatio"
+      connections.outputCrosstalk: "crosstalk"
+subsets:
+  cpCrosstalk:
+    subset:
+      - cpCrosstalkExtract
+      - cpCrosstalkSolve
+    description: Just the extract and solve.
+contracts:
+  - cpCrosstalkExtract.connections.inputExp == cpCrosstalkIsr.connections.outputExposure
+  - cpCrosstalkSolve.connections.inputRatios == cpCrosstalkExtract.connections.outputRatios
