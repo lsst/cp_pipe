@@ -195,6 +195,8 @@ class CpFilterScanTask(pipeBase.PipelineTask):
             _, wavelengthKey = efdClient.parseMonochromatorStatus(monochromatorData,
                                                                   visitInfo.date.toString(DateTime.TAI))
             wavelengthKey = float(wavelengthKey)
+            self.log.debug(f"Scan: {exposureId} {wavelengthKey} {scan}")
+
             # Append the scan for this exposure to the list of other
             # scans taken at this wavelength setting:
             if wavelengthKey in filterScanResults:
