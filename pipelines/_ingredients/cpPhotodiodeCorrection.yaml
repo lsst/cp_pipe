@@ -1,8 +1,0 @@
-description: cp_pipe photodiode correction construction.
-tasks:
-  photodiodeCorrection:
-    class: lsst.cp.pipe.PhotodiodeCorrectionTask
-    config:
-      connections.inputPtc: ptc
-      connections.inputLinearizer: linearizer
-      connections.outputPhotodiodeCorrection: pdCorrection

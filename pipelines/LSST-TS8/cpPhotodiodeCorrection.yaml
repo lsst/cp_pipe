@@ -1,4 +1,0 @@
-description: cp_pipe photodiode correction construction.
-instrument: lsst.obs.lsst.LsstTS8
-imports:
-  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpPhotodiodeCorrection.yaml
