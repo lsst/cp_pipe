@@ -3,7 +3,7 @@ instrument: lsst.obs.lsst.LsstComCam
 imports:
   - location: $CP_PIPE_DIR/pipelines/_ingredients/cpDark.yaml
 tasks:
-  darkIsr:
+  cpDarkIsr:
     class: lsst.ip.isr.IsrTask
     config:
       doLinearize: false

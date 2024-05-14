@@ -5,7 +5,7 @@ instrument: lsst.obs.lsst.Latiss
 imports:
   - location: $CP_PIPE_DIR/pipelines/_ingredients/cpDark.yaml
 tasks:
-  darkIsr:
+  cpDarkIsr:
     class: lsst.ip.isr.IsrTask
     config:
       overscan.fitType: 'MEDIAN_PER_ROW'

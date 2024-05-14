@@ -2,11 +2,11 @@
 # cpDarkForDefects.yaml.
 description: cp_pipe DARK calibration construction
 tasks:
-  darkIsr:
+  cpDarkIsr:
     class: lsst.ip.isr.IsrTask
     config:
       connections.ccdExposure: 'raw'
-      connections.outputExposure: 'cpDarkIsr'
+      connections.outputExposure: 'cpDarkIsrExp'
       doWrite: true
       doDefect: false
       doBrighterFatter: false
@@ -19,14 +19,14 @@ tasks:
       doInterpolate: false
       doSetBadRegions: false
   cpDark:
-    class: lsst.cp.pipe.cpDarkTask.CpDarkTask
+    class: lsst.cp.pipe.CpDarkTask
     config:
-      connections.inputExp: 'cpDarkIsr'
-      connections.outputExp: 'cpDarkProc'
+      connections.inputExp: 'cpDarkIsrExp'
+      connections.outputExp: 'cpDarkRemoveCRIsrExp'
   cpDarkCombine:
-    class: lsst.cp.pipe.cpCombine.CalibCombineTask
+    class: lsst.cp.pipe.CalibCombineTask
     config:
-      connections.inputExpHandles: 'cpDarkProc'
+      connections.inputExpHandles: 'cpDarkRemoveCRIsrExp'
       connections.outputData: 'dark'
       calibrationType: 'dark'
       exposureScaling: "DarkTime"
@@ -56,8 +56,14 @@ tasks:
       connections.outputData: 'darkMosaic64'
       binning: 64
 contracts:
-  - darkIsr.doDark == False
+  - cpDarkIsr.doDark == False
   - cpDarkCombine.calibrationType == "dark"
   - cpDarkCombine.exposureScaling == "DarkTime"
   - cpDarkBin8.binning == cpDarkMosaic8.binning
   - cpDarkBin64.binning == cpDarkMosaic64.binning
+  - cpDark.connections.inputExp == cpDarkIsr.connections.outputExposure
+  - cpDarkCombine.connections.inputExpHandles == cpDark.connections.outputExp
+  - cpDarkBin8.connections.inputExp == cpDarkCombine.calibrationType
+  - cpDarkBin64.connections.inputExp == cpDarkCombine.calibrationType
+  - cpDarkMosaic8.connections.inputExps == cpDarkBin8.connections.outputExp
+  - cpDarkMosaic64.connections.inputExps == cpDarkBin64.connections.outputExp
