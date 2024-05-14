@@ -1,11 +1,11 @@
 description: cp_pipe CTI calibration construction
 tasks:
-  ctiIsr:
+  cpCtiIsr:
     class: lsst.ip.isr.IsrTask
     config:
-      connections.ccdExposure: 'raw'
-      connections.outputExposure: 'cpCtiProc'
-      connections.outputStatistics: 'cpCtiStats'
+      connections.ccdExposure: "raw"
+      connections.outputExposure: "cpCtiIsrExp"
+      connections.outputStatistics: "cpCtiStatistics"
       doBias: false
       doCalculateStatistics: true
       isrStats.doCtiStatistics: true
@@ -22,11 +22,12 @@ tasks:
       doFlat: false
       doApplyGains: true
       doFringe: false
-  solveCti:
+  cpCtiSolve:
     class: lsst.cp.pipe.CpCtiSolveTask
     config:
-      connections.inputMeasurements: 'cpCtiStats'
-      connections.outputCalib: 'cpCtiCalib'
+      connections.inputMeasurements: "cpCtiStatistics"
+      connections.outputCalib: "cti"
       useGains: true
 contracts:
-  - ctiIsr.doApplyGains == solveCti.useGains
+  - cpCtiIsr.doApplyGains == cpCtiSolve.useGains
+  - cpCtiSolve.connections.inputMeasurements == cpCtiIsr.connections.outputStatistics

@@ -1,9 +1,9 @@
-description: Latiss bias calibration construction
+description: TS8 CTI calibration construction
 instrument: lsst.obs.lsst.LsstTS8
 imports:
-  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpDeferredCharge.yaml
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpCti.yaml
 tasks:
-  ctiIsr:
+  cpCtiIsr:
     class: lsst.ip.isr.IsrTask
     config:
       overscan.fitType: 'MEDIAN_PER_ROW'
