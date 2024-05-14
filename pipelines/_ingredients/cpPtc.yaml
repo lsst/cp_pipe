@@ -1,9 +1,9 @@
 description: cp_pipe PTC calibration construction.
 parameters:
-    exposureName: cpPtcProc
-    measuredCovariances: cpPtcExtract
+    exposureName: cpPtcIsrExp
+    measuredCovariances: cpPtcPartial
 tasks:
-  ptcIsr:
+  cpPtcIsr:
     class: lsst.ip.isr.IsrTask
     config:
       connections.ccdExposure: raw
@@ -31,19 +31,19 @@ tasks:
       doSaturation: false
       doSaturationInterpolation: false
       growSaturationFootprintSize: 0
-  ptcExtract:
+  cpPtcExtract:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
     config:
       connections.inputExp: parameters.exposureName
-      connections.taskMetadata: 'ptcIsr_metadata'
+      connections.taskMetadata: "cpPtcIsr_metadata"
       connections.outputCovariances: parameters.measuredCovariances
-  ptcSolve:
+  cpPtcSolve:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
     config:
       connections.inputCovariances: parameters.measuredCovariances
       connections.outputPtcDataset: ptc
       ptcFitType: EXPAPPROXIMATION
-  ptcPlot:
+  cpPtcPlot:
     class: lsst.cp.pipe.ptc.PlotPhotonTransferCurveTask
     config:
       connections.inputPtcDataset: ptc
@@ -59,12 +59,14 @@ tasks:
       connections.ptcPlot10: ptcAandBDistance
       connections.ptcPlot11: ptcACumulativeSum
       connections.ptcPlot12: ptcARelativeBias
-contracts:
-  - ptcSolve.maximumRangeCovariancesAstier == ptcExtract.maximumRangeCovariancesAstier
-  - ptcSolve.binSize == ptcExtract.binSize
 subsets:
-  gainFromFlatPairs:
+  cpPtcGainFromFlatPairs:
       subset:
-          - ptcIsr
-          - ptcExtract
+          - cpPtcIsr
+          - cpPtcExtract
       description: gain estimation from pairs of flats at the same exposure time.
+contracts:
+  - cpPtcSolve.maximumRangeCovariancesAstier == cpPtcExtract.maximumRangeCovariancesAstier
+  - cpPtcSolve.binSize == cpPtcExtract.binSize
+  - cpPtcExtract.connections.inputExp == cpPtcIsr.connections.outputExposure
+  - cpPtcSolve.connections.inputCovariances == cpPtcExtract.connections.outputCovariances

@@ -3,16 +3,16 @@ instrument: lsst.obs.lsst.Latiss
 imports:
   - location: $CP_PIPE_DIR/pipelines/_ingredients/cpPtc.yaml
 tasks:
-  ptcIsr:
+  cpPtcIsr:
     class: lsst.ip.isr.IsrTask
     config:
       doCrosstalk: false
       doDefect: true
-  ptcExtract:
+  cpPtcExtract:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
     config:
       matchExposuresType: TIME
-  ptcSolve:
+  cpPtcSolve:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
     config:
       ptcFitType: EXPAPPROXIMATION

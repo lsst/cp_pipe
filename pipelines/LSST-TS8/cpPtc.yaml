@@ -3,11 +3,11 @@ instrument: lsst.obs.lsst.LsstTS8
 imports:
   - location: $CP_PIPE_DIR/pipelines/_ingredients/cpPtc.yaml
 tasks:
-  ptcIsr:
+  cpPtcIsr:
     class: lsst.ip.isr.IsrTask
     config:
       deferredChargeCorrection.useGains: true
-  ptcExtract:
+  cpPtcExtract:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
     config:
       edgeMaskLevel: AMP
