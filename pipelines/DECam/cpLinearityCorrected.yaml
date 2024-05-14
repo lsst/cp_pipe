@@ -1,4 +1,0 @@
-description: linearizer with photodiode correction
-instrument: lsst.obs.decam.DarkEnergyCamera
-imports:
-  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpLinearityCorrected.yaml
