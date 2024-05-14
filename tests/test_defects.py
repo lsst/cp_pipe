@@ -20,7 +20,7 @@
 # the GNU General Public License along with this program.  If not,
 # see <https://www.lsstcorp.org/LegalNotices/>.
 #
-"""Test cases for lsst.cp.pipe.defects.MeasureDefectsTask."""
+"""Test cases for lsst.cp.pipe.MeasureDefectsTask."""
 
 import unittest
 import numpy as np
@@ -41,7 +41,7 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
     """A test case for the defect finding task."""
 
     def setUp(self):
-        self.defaultConfig = cpPipe.defects.MeasureDefectsTask.ConfigClass()
+        self.defaultConfig = cpPipe.MeasureDefectsTask.ConfigClass()
 
         self.flatMean = 2000
         self.darkMean = 1
@@ -97,7 +97,7 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
         self.flatExp.image.array[:] = flatData
         self.darkExp.image.array[:] = darkData
 
-        self.defaultTask = cpPipe.defects.MeasureDefectsTask()
+        self.defaultTask = cpPipe.MeasureDefectsTask()
 
         self.allDefectsList = ipIsr.Defects()
         self.brightDefectsList = ipIsr.Defects()
