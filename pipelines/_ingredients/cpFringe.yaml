@@ -1,24 +1,24 @@
 description: cp_pipe FRINGE calibration construction
 tasks:
-  fringeIsr:
+  cpFringeIsr:
     class: lsst.ip.isr.IsrTask
     config:
-      connections.ccdExposure: 'raw'
-      connections.outputExposure: 'cpFringeIsr'
+      connections.ccdExposure: "raw"
+      connections.outputExposure: "cpFringeIsrExp"
       doWrite: true
       doDefect: false
       doFringe: false
-  cpFringe:
-    class: lsst.cp.pipe.cpFringeTask.CpFringeTask
+  cpFringeMeasure:
+    class: lsst.cp.pipe.CpFringeTask
     config:
-      connections.inputExp: 'cpFringeIsr'
-      connections.outputExp: 'cpFringeProc'
+      connections.inputExp: "cpFringeIsrExp"
+      connections.outputExp: "cpFringeMeasuredIsrExp"
   cpFringeCombine:
-    class: lsst.cp.pipe.cpCombine.CalibCombineByFilterTask
+    class: lsst.cp.pipe.CalibCombineByFilterTask
     config:
-      connections.inputExpHandles: 'cpFringeProc'
-      connections.outputData: 'fringe'
-      calibrationType: 'fringe'
+      connections.inputExpHandles: "cpFringeMeasuredIsrExp"
+      connections.outputData: "fringe"
+      calibrationType: "fringe"
       exposureScaling: "Unity"
   cpFringeBin8:
     class: lsst.pipe.tasks.visualizeVisit.VisualizeBinCalibTask
@@ -45,8 +45,14 @@ tasks:
       connections.outputData: 'fringeMosaic64'
       binning: 64
 contracts:
-  - fringeIsr.doFringe == False
+  - cpFringeIsr.doFringe == False
   - cpFringeCombine.calibrationType == "fringe"
   - cpFringeCombine.exposureScaling == "Unity"
   - cpFringeBin8.binning == cpFringeMosaic8.binning
   - cpFringeBin64.binning == cpFringeMosaic64.binning
+  - cpFringeMeasure.connections.inputExp == cpFringeIsr.connections.outputExposure
+  - cpFringeCombine.connections.inputExpHandles == cpFringeMeasure.connections.outputExp
+  - cpFringeBin8.connections.inputExp == cpFringeCombine.calibrationType
+  - cpFringeBin64.connections.inputExp == cpFringeCombine.calibrationType
+  - cpFringeMosaic8.connections.inputExps == cpFringeBin8.connections.outputExp
+  - cpFringeMosaic64.connections.inputExps == cpFringeBin64.connections.outputExp
