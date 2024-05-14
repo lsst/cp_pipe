@@ -3,7 +3,7 @@ instrument: lsst.obs.lsst.LsstCamImSim
 imports:
   - location: $CP_PIPE_DIR/pipelines/_ingredients/cpBias.yaml
 tasks:
-  biasIsr:
+  cpBiasIsr:
     class: lsst.ip.isr.IsrTask
     config:
       doDefect: false
