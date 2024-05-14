@@ -1,10 +1,10 @@
 description: cp_pipe FLAT calibration construction optimized for single-CCD cameras
 tasks:
-  flatIsr:
+  cpFlatIsr:
     class: lsst.ip.isr.IsrTask
     config:
-      connections.ccdExposure: 'raw'
-      connections.outputExposure: 'cpFlatProc'
+      connections.ccdExposure: "raw"
+      connections.outputExposure: "cpFlatIsrExp"
       doWrite: true
       doDefect: false
       doBrighterFatter: false
@@ -18,22 +18,22 @@ tasks:
       doInterpolate: false
       doSetBadRegions: false
   cpFlatMeasure:
-    class: lsst.cp.pipe.cpFlatNormTask.CpFlatMeasureTask
+    class: lsst.cp.pipe.CpFlatMeasureTask
     config:
-      connections.inputExp: 'cpFlatProc'
-      connections.outputStats: 'flatStats'
-  cpFlatNorm:
-    class: lsst.cp.pipe.cpFlatNormTask.CpFlatNormalizationTask
+      connections.inputExp: "cpFlatIsrExp"
+      connections.outputStats: "cpFlatStatistics"
+  cpFlatNormalize:
+    class: lsst.cp.pipe.CpFlatNormalizationTask
     config:
-      connections.inputMDs: 'flatStats'
-      connections.outputScales: 'cpFlatNormScales'
+      connections.inputMDs: "cpFlatStatistics"
+      connections.outputScales: "cpFlatNormalizeScales"
   cpFlatCombine:
-    class: lsst.cp.pipe.cpCombine.CalibCombineByFilterTask
+    class: lsst.cp.pipe.CalibCombineByFilterTask
     config:
-      connections.inputExpHandles: 'cpFlatProc'
-      connections.inputScales: 'cpFlatNormScales'
-      connections.outputData: 'flat'
-      calibrationType: 'flat'
+      connections.inputExpHandles: "cpFlatIsrExp"
+      connections.inputScales: "cpFlatNormalizeScales"
+      connections.outputData: "flat"
+      calibrationType: "flat"
       exposureScaling: InputList
       scalingLevel: AMP
   cpFlatBin8:
@@ -61,6 +61,14 @@ tasks:
       connections.outputData: 'flatMosaic64'
       binning: 64
 contracts:
-  - flatIsr.doFlat == False
+  - cpFlatIsr.doFlat == False
   - cpFlatBin8.binning == cpFlatMosaic8.binning
   - cpFlatBin64.binning == cpFlatMosaic64.binning
+  - cpFlatMeasure.connections.inputExp == cpFlatIsr.connections.outputExposure
+  - cpFlatNormalize.connections.inputMDs == cpFlatMeasure.connections.outputStats
+  - cpFlatCombine.connections.inputExpHandles == cpFlatIsr.connections.outputExposure
+  - cpFlatCombine.connections.inputScales == cpFlatNormalize.connections.outputScales
+  - cpFlatBin8.connections.inputExp == cpFlatCombine.calibrationType
+  - cpFlatBin64.connections.inputExp == cpFlatCombine.calibrationType
+  - cpFlatMosaic8.connections.inputExps == cpFlatBin8.connections.outputExp
+  - cpFlatMosaic64.connections.inputExps == cpFlatBin64.connections.outputExp
