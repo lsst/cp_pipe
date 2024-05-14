@@ -38,7 +38,7 @@ __all__ = ['CpSkyImageTask', 'CpSkyImageConfig',
 class CpSkyImageConnections(pipeBase.PipelineTaskConnections,
                             dimensions=("instrument", "physical_filter", "exposure", "detector")):
     inputExp = cT.Input(
-        name="postISRCCD",
+        name="cpSkyIsrExp",
         doc="Input pre-processed exposures to combine.",
         storageClass="Exposure",
         dimensions=("instrument", "exposure", "detector"),
@@ -52,7 +52,7 @@ class CpSkyImageConnections(pipeBase.PipelineTaskConnections,
     )
 
     maskedExp = cT.Output(
-        name="cpSkyMaskedIsr",
+        name="cpSkyMaskedIsrExp",
         doc="Output masked post-ISR exposure.",
         storageClass="Exposure",
         dimensions=("instrument", "exposure", "detector"),
@@ -235,7 +235,7 @@ class CpSkySubtractBackgroundConnections(pipeBase.PipelineTaskConnections,
                                          dimensions=("instrument", "physical_filter",
                                                      "exposure", "detector")):
     inputExp = cT.Input(
-        name="cpSkyMaskedIsr",
+        name="cpSkyMaskedIsrExp",
         doc="Masked post-ISR image.",
         storageClass="Exposure",
         dimensions=("instrument", "exposure", "detector"),
@@ -254,7 +254,7 @@ class CpSkySubtractBackgroundConnections(pipeBase.PipelineTaskConnections,
     )
 
     outputBkg = cT.Output(
-        name="cpExpBackground",
+        name="cpSkyExpResidualBackground",
         doc="Normalized, static background.",
         storageClass="Background",
         dimensions=("instrument", "exposure", "detector"),
@@ -330,14 +330,14 @@ class CpSkySubtractBackgroundTask(pipeBase.PipelineTask):
 class CpSkyCombineConnections(pipeBase.PipelineTaskConnections,
                               dimensions=("instrument", "physical_filter", "detector")):
     inputBkgs = cT.Input(
-        name="cpExpBackground",
+        name="cpSkyExpResidualBackground",
         doc="Normalized, static background.",
         storageClass="Background",
         dimensions=("instrument", "exposure", "detector"),
         multiple=True,
     )
     inputExpHandles = cT.Input(
-        name="cpSkyMaskedIsr",
+        name="cpSkyMaskedIsrExp",
         doc="Masked post-ISR image.",
         storageClass="Exposure",
         dimensions=("instrument", "exposure", "detector"),

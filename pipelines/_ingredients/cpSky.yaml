@@ -1,14 +1,24 @@
 description: Sky frame generation pipeline definition.
 tasks:
-  skyIsr:
+  cpSkyIsr:
     class: lsst.ip.isr.isrTask.IsrTask
+    config:
+      connections.outputExposure: "cpSkyIsrExp"
   cpSkyImage:
     class: lsst.cp.pipe.CpSkyImageTask
     config:
-      connections.inputExp: postISRCCD
+      connections.inputExp: "cpSkyIsrExp"
   cpSkyScaleMeasure:
     class: lsst.cp.pipe.CpSkyScaleMeasureTask
   cpSkySubtractBackground:
     class: lsst.cp.pipe.CpSkySubtractBackgroundTask
   cpSkyCombine:
     class: lsst.cp.pipe.CpSkyCombineTask
+contracts:
+  - cpSkyImage.connections.inputExp == cpSkyIsr.connections.outputExposure
+  - cpSkyScaleMeasure.connections.inputBkgs == cpSkyImage.connections.maskedBkg
+  - cpSkySubtractBackground.connections.inputExp == cpSkyImage.connections.maskedExp
+  - cpSkySubtractBackground.connections.inputBkg == cpSkyScaleMeasure.connections.outputBkg
+  - cpSkySubtractBackground.connections.inputScale == cpSkyScaleMeasure.connections.outputScale
+  - cpSkyCombine.connections.inputBkgs == cpSkySubtractBackground.connections.outputBkg
+  - cpSkyCombine.connections.inputExpHandles == cpSkyImage.connections.maskedExp

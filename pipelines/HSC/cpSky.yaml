@@ -4,7 +4,7 @@ imports:
   - location: $CP_PIPE_DIR/pipelines/_ingredients/cpSky.yaml
 tasks:
   cpSkyImage:
-    class: lsst.cp.pipe.cpSkyTask.CpSkyImageTask
+    class: lsst.cp.pipe.CpSkyImageTask
     config:
       # These values correspond to the HSC recommendation. As noted
       # below, the sizes are in millimeters, and correspond to a
