@@ -1,29 +1,29 @@
 description: cp_pipe DEFECT calibration construction from combined images.
 instrument: lsst.obs.lsst.Latiss
 imports:
-  - location: $CP_PIPE_DIR/pipelines/_ingredients/findDefectsCombined.yaml
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpDefects.yaml
 tasks:
-  measureDefectsBias:
-    class: lsst.cp.pipe.defects.MeasureDefectsCombinedTask
+  cpMeasureBiasDefects:
+    class: lsst.cp.pipe.MeasureDefectsCombinedTask
     config:
       badPixelsToFillColumnThreshold: 1000
       saturatedPixelsToFillColumnThreshold: 20
       saturatedColumnDilationRadius: 2
-  measureDefectsDark:
-    class: lsst.cp.pipe.defects.MeasureDefectsCombinedTask
+  cpMeasureDarkDefects:
+    class: lsst.cp.pipe.MeasureDefectsCombinedTask
     config:
       thresholdType: "VALUE"
       darkCurrentThreshold: 3.0
       badPixelsToFillColumnThreshold: 1000
       saturatedPixelsToFillColumnThreshold: 20
       saturatedColumnDilationRadius: 2
-  measureDefectsFlatx:
-    class: lsst.cp.pipe.defects.MeasureDefectsCombinedWithFilterTask
+  cpMeasureFlatDefects:
+    class: lsst.cp.pipe.MeasureDefectsCombinedWithFilterTask
     config:
       thresholdType: "VALUE"
       fracThresholdFlat: 0.9
       badPixelsToFillColumnThreshold: 1000
-  mergeDefectsCombined:
-    class: lsst.cp.pipe.defects.MergeDefectsCombinedTask
+  cpMergeDefects:
+    class: lsst.cp.pipe.MergeDefectsCombinedTask
     config:
       edgesAsDefects: true

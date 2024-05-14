@@ -796,7 +796,7 @@ class MeasureDefectsCombinedConnections(pipeBase.PipelineTaskConnections,
     )
 
     outputDefects = cT.Output(
-        name="cpPartialDefectsFromDarkCombined",
+        name="cpDefectsFromDark",
         doc="Output measured defects.",
         storageClass="Defects",
         dimensions=("instrument", "detector"),
@@ -837,7 +837,7 @@ class MeasureDefectsCombinedWithFilterConnections(pipeBase.PipelineTaskConnectio
     )
 
     outputDefects = cT.Output(
-        name="cpPartialDefectsFromFlatCombinedWithFilter",
+        name="cpDefectsFromFlat",
         doc="Output measured defects.",
         storageClass="Defects",
         dimensions=("instrument", "detector", "physical_filter"),
@@ -1058,21 +1058,21 @@ class MergeDefectsTask(pipeBase.PipelineTask):
 class MergeDefectsCombinedConnections(pipeBase.PipelineTaskConnections,
                                       dimensions=("instrument", "detector")):
     inputDarkDefects = cT.Input(
-        name="cpPartialDefectsFromDarkCombined",
+        name="cpDefectsFromDark",
         doc="Measured defect lists.",
         storageClass="Defects",
         dimensions=("instrument", "detector",),
         multiple=True,
     )
     inputBiasDefects = cT.Input(
-        name="cpPartialDefectsFromBiasCombined",
+        name="cpDefectsFromBias",
         doc="Additional measured defect lists.",
         storageClass="Defects",
         dimensions=("instrument", "detector",),
         multiple=True,
     )
     inputFlatDefects = cT.Input(
-        name="cpPartialDefectsFromFlatCombinedWithFilter",
+        name="cpDefectsFromFlat",
         doc="Additional measured defect lists.",
         storageClass="Defects",
         dimensions=("instrument", "detector", "physical_filter"),
@@ -1110,7 +1110,7 @@ class MergeDefectsCombinedTask(MergeDefectsTask):
     """Task to measure defects in combined images."""
 
     ConfigClass = MergeDefectsCombinedTaskConfig
-    _DefaultName = "cpDefectMergeCombined"
+    _DefaultName = "cpMergeDefectsCombined"
 
     @staticmethod
     def chooseBest(inputs):
