@@ -29,6 +29,7 @@ import copy
 import lsst.utils
 import lsst.utils.tests
 
+import lsst.afw.image as afwImage
 import lsst.ip.isr as ipIsr
 import lsst.cp.pipe as cpPipe
 from lsst.ip.isr import isrMock, countMaskedPixels
@@ -581,6 +582,157 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
         defects._bulk_update = False
 
         self.check_maskBlocks(defects, expectedDefects)
+
+    def check_maskBadColumns(self, exp, inputDefects, expectedDefects):
+        """A helper function for the tests of
+        maskBadColumns.
+
+        """
+        config = copy.copy(self.defaultConfig)
+        config.badPixelsToFillColumnThreshold = 25
+        config.saturatedPixelsToFillColumnThreshold = 5
+
+        task = self.defaultTask
+        task.config = config
+
+        defectsWithColumns, count = task.maskBadColumns(exp, inputDefects)
+
+        self.assertEqual(count, len(expectedDefects))
+
+        boxesMeasured = []
+        for defect in defectsWithColumns:
+            boxesMeasured.append(defect.getBBox())
+
+        for boxInput in expectedDefects:
+            self.assertIn(boxInput, boxesMeasured)
+
+        # Check that the code did not mask anything extra by
+        # looking in both the input list and "expanded-column" list.
+        unionInputExpectedBoxes = []
+        for defect in inputDefects:
+            unionInputExpectedBoxes.append(defect.getBBox())
+        for defect in expectedDefects:
+            unionInputExpectedBoxes.append(defect)
+
+        # Check that code doesn't mask more than it is supposed to.
+        for boxMeas in boxesMeasured:
+            self.assertIn(boxMeas, unionInputExpectedBoxes)
+
+    def test_maskBadColumns_extend_full_columns(self):
+        """Test maskBadColumns, extend to full column.
+        """
+        expectedDefects = [Box2I(corner=Point2I(20, 0), dimensions=Extent2I(1, 51)),
+                           Box2I(corner=Point2I(150, 0), dimensions=Extent2I(1, 51)),
+                           Box2I(corner=Point2I(50, 153), dimensions=Extent2I(1, 51))]
+        defects = self.allDefectsList
+        defects.append(Box2I(corner=Point2I(20, 10), dimensions=Extent2I(1, 30)))
+        defects.append(Box2I(corner=Point2I(150, 5), dimensions=Extent2I(1, 25)))
+        defects.append(Box2I(corner=Point2I(50, 170), dimensions=Extent2I(1, 30)))
+
+        self.check_maskBadColumns(self.flatExp, defects, expectedDefects)
+
+    def test_maskBadColumns_no_extend_partial_columns(self):
+        """Test maskBadColumns, do not extend to full column.
+        """
+        expectedDefects = []
+        defects = self.allDefectsList
+        defects.append(Box2I(corner=Point2I(20, 10), dimensions=Extent2I(1, 20)))
+        defects.append(Box2I(corner=Point2I(150, 5), dimensions=Extent2I(1, 22)))
+        defects.append(Box2I(corner=Point2I(50, 170), dimensions=Extent2I(1, 24)))
+
+        self.check_maskBadColumns(self.flatExp, defects, expectedDefects)
+
+    def test_maskBadColumns_extend_saturated_columns(self):
+        """Test maskBadColumns, extend saturation to full column.
+        """
+        exp = self.flatExp.clone()
+
+        mask = afwImage.Mask.getPlaneBitMask("SAT")
+
+        expectedDefects = [Box2I(corner=Point2I(20, 0), dimensions=Extent2I(1, 51)),
+                           Box2I(corner=Point2I(150, 0), dimensions=Extent2I(1, 51)),
+                           Box2I(corner=Point2I(50, 153), dimensions=Extent2I(1, 51))]
+        defects = self.allDefectsList
+
+        # These defects are too small to trigger the former column extension
+        # (as tested in test_maskBadColumns_no_extend_partial_columns) but
+        # should still trigger the saturation extension code.
+        satColumns = [Box2I(corner=Point2I(20, 10), dimensions=Extent2I(1, 5)),
+                      Box2I(corner=Point2I(150, 5), dimensions=Extent2I(1, 5)),
+                      Box2I(corner=Point2I(50, 170), dimensions=Extent2I(1, 5))]
+        for satColumn in satColumns:
+            exp.mask[satColumn] |= mask
+            defects.append(satColumn)
+
+        self.check_maskBadColumns(exp, defects, expectedDefects)
+
+    def check_dilateSaturatedColumns(self, exp, inputDefects, expectedDefects):
+        config = copy.copy(self.defaultConfig)
+        config.saturatedColumnDilationRadius = 2
+
+        task = self.defaultTask
+        task.config = config
+
+        defectsDilated = task.dilateSaturatedColumns(exp, inputDefects)
+
+        boxesMeasured = []
+        for defect in defectsDilated:
+            boxesMeasured.append(defect.getBBox())
+
+        for boxInput in expectedDefects:
+            self.assertIn(boxInput, boxesMeasured)
+
+        # Check that the code did not mask anything extra by
+        # looking in both the input list and "expanded-column" list.
+        unionInputExpectedBoxes = []
+        for defect in inputDefects:
+            unionInputExpectedBoxes.append(defect.getBBox())
+        for defect in expectedDefects:
+            unionInputExpectedBoxes.append(defect)
+
+        # Check that code doesn't mask more than it is supposed to.
+        for boxMeas in boxesMeasured:
+            self.assertIn(boxMeas, unionInputExpectedBoxes)
+
+    def test_dilateSaturatedColumns_saturated_column(self):
+        exp = self.flatExp.clone()
+
+        mask = afwImage.Mask.getPlaneBitMask("SAT")
+
+        # We include saturated defects hitting the side to ensure we do not
+        # have any overflow.
+        # The dilation radius is set to 2 pixels.
+        expectedDefects = [Box2I(corner=Point2I(20, 5), dimensions=Extent2I(5, 20)),
+                           Box2I(corner=Point2I(197, 5), dimensions=Extent2I(3, 10)),
+                           Box2I(corner=Point2I(0, 160), dimensions=Extent2I(4, 15))]
+        defects = self.allDefectsList
+
+        satColumns = [Box2I(corner=Point2I(22, 5), dimensions=Extent2I(1, 20)),
+                      Box2I(corner=Point2I(199, 5), dimensions=Extent2I(1, 10)),
+                      Box2I(corner=Point2I(1, 160), dimensions=Extent2I(1, 15))]
+        for satColumn in satColumns:
+            exp.mask[satColumn] |= mask
+            defects.append(satColumn)
+
+        self.check_dilateSaturatedColumns(exp, defects, expectedDefects)
+
+    def test_dilateSaturatedColumns_no_saturated_column(self):
+        exp = self.flatExp.clone()
+
+        # These are marked BAD but not saturated.
+        mask = afwImage.Mask.getPlaneBitMask("BAD")
+
+        expectedDefects = []
+        defects = self.allDefectsList
+
+        satColumns = [Box2I(corner=Point2I(22, 5), dimensions=Extent2I(1, 20)),
+                      Box2I(corner=Point2I(199, 5), dimensions=Extent2I(1, 10)),
+                      Box2I(corner=Point2I(1, 160), dimensions=Extent2I(1, 15))]
+        for satColumn in satColumns:
+            exp.mask[satColumn] |= mask
+            defects.append(satColumn)
+
+        self.check_dilateSaturatedColumns(exp, defects, expectedDefects)
 
     def test_defectFindingAllSensor(self):
         config = copy.copy(self.defaultConfig)

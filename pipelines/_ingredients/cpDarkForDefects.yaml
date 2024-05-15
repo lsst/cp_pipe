@@ -15,7 +15,10 @@ tasks:
       doFlat: false
       doApplyGains: false
       doFringe: false
-      doSaturation: false
+      doSaturation: true
+      growSaturationFootprintSize: 0
+      doWidenSaturationTrails: false
+      doSaturationInterpolation: false
       maskNegativeVariance: false
       doInterpolate: false
       doSetBadRegions: false
@@ -26,6 +29,7 @@ tasks:
       connections.outputData: 'dark'
       calibrationType: 'dark'
       exposureScaling: "DarkTime"
+      mask: ["DETECTED", "INTRP"]
 contracts:
   - darkIsrForDefects.doDark == False
   - cpDarkCombine.calibrationType == "dark"

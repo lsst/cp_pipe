@@ -16,7 +16,10 @@ tasks:
       doFlat: false
       doApplyGains: false
       doFringe: false
-      doSaturation: false
+      doSaturation: true
+      growSaturationFootprintSize: 0
+      doWidenSaturationTrails: false
+      doSaturationInterpolation: false
       maskNegativeVariance: false
       doInterpolate: false
       doSetBadRegions: false
@@ -27,6 +30,7 @@ tasks:
       connections.outputData: 'bias'
       calibrationType: 'bias'
       exposureScaling: "Unity"
+      mask: ["DETECTED", "INTRP"]
 contracts:
   - biasIsr.doBias == False
   - cpBiasCombine.calibrationType == "bias"
