@@ -99,11 +99,20 @@ class CpFilterScanTaskConfig(pipeBase.PipelineTaskConfig,
 class CpFilterScanTask(pipeBase.PipelineTask):
     r"""Create filter scan from appropriate data.
 
-    This task constructs a filter scan from pairs of flat exposures,
-    one with a filter in the beam and one without a filter.  A
-    monochromator is also included in the beam for both exposures, so
-    that the beam can be limited to a narrow band of wavelengths
-    smaller than the full bandpass of the filter.
+    This task constructs a filter scan from a sequence of flat
+    exposures taken in the following manner:
+
+    - A monochromator is set to a target wavelength.
+    - An optional spectrum may be taken with the fiber spectrograph to
+      provide an independent measure of the peak wavelength and
+      bandpass.
+    - A flat exposure is taken with a "reference filter," usually a
+      white-band or empty filter, that provides a baseline source
+      brightness at the monochromator's target wavelength.
+    - A flat exposure is taken with the filter to be scanned.
+    - Optional electrometer/photodiode data may also be taken during
+      the two flat exposures to correct for source brightness
+      variations.
 
     From these pairs of exposures, we can determine the filter
     throughput by calculating the flux per second with the filter:
@@ -115,7 +124,7 @@ class CpFilterScanTask(pipeBase.PipelineTask):
     filter throughput at that wavelength would simply be:
     :math:`throughput_raw(\lambda0) = F_filter / F_reference`
 
-    We can correct for any illumination changes by optionally using
+    We can correct for any illumination changes with the optional
     the electrometer measurements, E, which provide an independent
     measure of the incident flux for the two exposures, such that:
     :math:`throughput(\lambda0) = throughput_raw * E_reference / E_filter`
