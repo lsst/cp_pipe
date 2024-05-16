@@ -262,7 +262,7 @@ class CpFilterScanTask(pipeBase.PipelineTask):
 
         catalog = Table(filterScan)
         catalog.meta = filteredMetadata
-        efdClient.close()
+
         return pipeBase.Struct(outputData=catalog)
 
 
@@ -371,7 +371,6 @@ class CpMonochromatorScanTask(pipeBase.PipelineTask):
             }
             monochromatorScanResults.append(entry)
 
-        efdClient.close()
         return pipeBase.Struct(
             outputData=Table(monochromatorScanResults)
         )

@@ -23,18 +23,12 @@
 __all__ = ['CpEfdClient']
 
 import logging
-import asyncio
-import nest_asyncio
+import numpy as np
+import requests
 
+from astropy.table import Table
 from astropy.time import Time
-
-haveEfd = True
-
-try:
-    from lsst_efd_client import EfdClient
-except ImportError:
-    haveEfd = False
-    pass
+from urllib.parse import urljoin
 
 
 class CpEfdClient():
@@ -51,21 +45,165 @@ class CpEfdClient():
     def __init__(self, efdInstance="usdf_efd", log=None):
         self.log = log if log else logging.getLogger(__name__)
 
-        nest_asyncio.apply()
-        if haveEfd:
-            self.client = EfdClient(efdInstance)
+        authDict = self._getAuth(efdInstance)
+        self._auth = (authDict["username"], authDict["password"])
+        self._databaseName = "efd"
+        self._databaseUrl = urljoin(f"https://{authDict['host']}", authDict["path"])
+
+    def _getAuth(self, instanceAlias):
+        """Get authorization credentials.
+
+        Parameters
+        ----------
+        instanceAlias : `str`
+            EFD instance to get credentials for.
+
+        Returns
+        -------
+        credentials : `dict` [`str`, `str`]
+            A dictionary of authorization credentials, including at
+            least these key/value pairs:
+
+            ``"username"``
+                Login username.
+            ``"password"``
+                Login passwords.
+            ``"host"``
+                Host to connect to.
+            ``"path"``
+                Directory path for EFD instance.
+
+        Raises
+        ------
+        RuntimeError :
+            Raised if the HTTPS request fails.
+        """
+        serviceEndpoint = "https://roundtable.lsst.codes/segwarides/"
+        url = urljoin(serviceEndpoint, f"creds/{instanceAlias}")
+        response = requests.get(url)
+
+        if response.status_code == 200:
+            return response.json()
         else:
-            self.client = None
-            self._emitWarning()
+            raise RuntimeError(f"Could not connect to {url}")
 
-    def _emitWarning(self):
-        if not haveEfd:
-            self.log.warning("EFD client not available.")
-            return None
+    def getSchemaDtype(self, topicName):
+        """Get datatypes for a topic.
 
-    def close(self):
-        """Delete self, which will close all open connections."""
-        del self
+        Parameters
+        ----------
+        topicName : `str`
+            Topic to get datatypes for
+
+        Returns
+        -------
+        datatypes : `list` [`tuple` [`str`, `str`]]
+            List of tuples of field names and data types.
+        """
+        query = f"SHOW FIELD KEYS FROM \"{topicName}\""
+        data = self.query(query)
+
+        values = data["results"][0]["series"][0]["values"]
+
+        dtype = [("time", "str")]
+        for (fieldName, fieldType) in values:
+            if fieldType == "float":
+                fieldDtype = np.float64
+            elif fieldType == "integer":
+                fieldDtype = np.int64
+            elif fieldType == "string":
+                fieldDtype = "str"
+            dtype.append((fieldName, fieldDtype))
+        return dtype
+
+    def query(self, query):
+        """Execute an EFD query.
+
+        Parameters
+        ----------
+        query : `str`
+            Query to run.
+
+        Returns
+        -------
+        results : `dict`
+            Dictionary of results returned.
+
+        Raises
+        ------
+        RuntimeError :
+            Raised if the the database could not be read from.
+        """
+        params = {
+            "db": self._databaseName,
+            "q": query,
+        }
+
+        try:
+            response = requests.get(f"{self._databaseUrl}/query", params=params, auth=self._auth)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            raise RuntimeError(f"Could not read data from database with query: {query}") from e
+
+    def selectTimeSeries(self, topicName, fields=[], startDate=None, endDate=None):
+        """Query a topic for a time series.
+
+        Parameters
+        ----------
+        topicName : `str`
+            Database "topic" to query.
+        fields : `list`, optional
+            List of fields to return.  If empty, all fields are
+            returned.
+        startDate : `astropy.time.Time`, optional
+            Start date (in UTC) to limit the results returned.
+        endDate : `astropy.time.Time`, optional
+            End date (in UTC) to limit the results returned.
+
+        Returns
+        -------
+        table : `astropy.table.Table`
+            A table containing the fields requested, with each row
+            corresponding to one date (available in the ``"time"``
+            column).
+        """
+        query = "SELECT "
+
+        if not fields:
+            query += "*"
+        else:
+            query += ",".join(fields)
+
+        query += f" FROM \"{topicName}\""
+
+        if startDate is not None or endDate is not None:
+            query += " WHERE"
+
+        if startDate is not None:
+            query += f" time >= '{startDate.utc.isot}Z'"
+            if endDate is not None:
+                query += " AND"
+        if endDate is not None:
+            query += f" time <= '{endDate.utc.isot}Z'"
+
+        data = self.query(query)
+
+        # data is a dictionary with one key, "results"
+        results = data["results"][0]
+        series = results["series"][0]
+
+        schemaDtype = self.getSchemaDtype(topicName)
+        tableDtype = []
+        for dtype in schemaDtype:
+            if dtype[0] in series["columns"]:
+                tableDtype.append(dtype[1])
+
+        table = Table(rows=series["values"], names=series["columns"], dtype=tableDtype)
+        table["time"] = Time(table["time"], scale="utc")
+        table.sort("time")
+
+        return table
 
     def getEfdMonochromatorData(self, dataSeries=None, dateMin=None, dateMax=None):
         """Retrieve Electrometer data from the EFD.
@@ -84,23 +222,22 @@ class CpEfdClient():
         results : `pandas.DataFrame`
             The table of results returned from the EFD.
         """
-        self._emitWarning()
         # This is currently the only monochromator available.
         dataSeries = dataSeries if dataSeries else "lsst.sal.ATMonochromator.logevent_wavelength"
 
         if dateMin:
-            start = Time(dateMin, format='isot', scale='tai')
+            startDate = Time(dateMin, format='isot', scale='tai')
         else:
-            start = Time("1970-01-01T00:00:00", format='isot', scale='tai')
+            startDate = None
         if dateMax:
-            stop = Time(dateMax, format='isot', scale='tai')
+            stopDate = Time(dateMax, format='isot', scale='tai')
         else:
-            stop = Time("2199-01-01T00:00:00", format='isot', scale='tai')
+            stopDate = None
 
-        loop = asyncio.get_event_loop()
-        results = loop.run_until_complete(self.client.select_time_series(dataSeries, ['wavelength', 'private_sndStamp'],
-                                                                         start.utc, stop.utc))
-        results.sort_index(inplace=True)
+        results = self.selectTimeSeries(dataSeries, ['wavelength', 'private_sndStamp'],
+                                        startDate, stopDate)
+        results['private_sndStamp'] = Time(results['private_sndStamp'], format='unix_tai')
+
         return results
 
     def parseMonochromatorStatus(self, data, dateStr):
@@ -108,7 +245,7 @@ class CpEfdClient():
 
         Parameters
         ----------
-        data : `pandas.DataFrame`
+        data : `astropy.table.Table`
             The dataframe of monochromator results from the EFD.
         dateStr : `str`
             The date to look up in the status for.
@@ -121,11 +258,11 @@ class CpEfdClient():
             Monochromator commanded peak.
         """
         dateValue = Time(dateStr, format='isot', scale='tai')
-        # Table is now sorted on index, which is in UTC.
+        # Table is now sorted on "time", which is in UTC.
 
         # Check that the date we want to consider is contained in the
         # EFD data.
-        if data.index[0] > dateValue or data.index[-1] < dateValue:
+        if data["time"][0] > dateValue or data["time"][-1] < dateValue:
             raise RuntimeError("Requested date is outside of data range.")
 
         # Binary search through the EFD entries in date, until the
@@ -139,10 +276,9 @@ class CpEfdClient():
         while not found:
             if idx < 0 or idx > len(data) or iteration > 10:
                 raise RuntimeError("Search for date failed?")
-            self.log.debug("parse search %d %d %d %d %s %s",
-                           low, high, idx, found, data.index[idx], dateValue)
 
-            myTime = Time(data['private_sndStamp'].iloc[idx], format='unix_tai')
+            myTime = data["private_sndStamp"][idx]
+
             if myTime <= dateValue:
                 low = idx
             elif myTime > dateValue:
@@ -152,7 +288,10 @@ class CpEfdClient():
             iteration += 1
             if high - low == 1:
                 found = True
+            self.log.debug("parse search %d %d %d %d %s %s",
+                           low, high, idx, found, myTime, dateValue)
+
         # End binary search.
 
-        myTime = Time(data['private_sndStamp'].iloc[idx], format='unix_tai')
-        return myTime.strftime("%Y-%m-%d %H:%M:%S.%f"), data['wavelength'].iloc[idx]
+        myTime = data["private_sndStamp"][idx]
+        return myTime.strftime("%Y-%m-%dT%H:%M:%S.%f"), data['wavelength'][idx]
