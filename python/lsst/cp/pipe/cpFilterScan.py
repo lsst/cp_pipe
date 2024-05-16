@@ -357,7 +357,7 @@ class CpMonochromatorScanTask(pipeBase.PipelineTask):
                 'fwhm': fwhm,
                 'fit_range': fitRange,
                 'exp_date': date,
-                'mono_date': monoDate.isoformat(),
+                'mono_date': monoDate,
                 'mono_state': monoValue,
             }
             monochromatorScanResults.append(entry)

@@ -89,16 +89,16 @@ class CpEfdClient():
         dataSeries = dataSeries if dataSeries else "lsst.sal.ATMonochromator.logevent_wavelength"
 
         if dateMin:
-            start = Time(dateMin, format='isot', scale='utc')
+            start = Time(dateMin, format='isot', scale='tai')
         else:
-            start = Time("1970-01-01T00:00:00", format='isot', scale='utc')
+            start = Time("1970-01-01T00:00:00", format='isot', scale='tai')
         if dateMax:
-            stop = Time(dateMax, format='isot', scale='utc')
+            stop = Time(dateMax, format='isot', scale='tai')
         else:
-            stop = Time("2199-01-01T00:00:00", format='isot', scale='utc')
+            stop = Time("2199-01-01T00:00:00", format='isot', scale='tai')
 
         loop = asyncio.get_event_loop()
-        results = loop.run_until_complete(self.client.select_time_series(dataSeries, ['wavelength'],
+        results = loop.run_until_complete(self.client.select_time_series(dataSeries, ['wavelength', 'private_sndStamp'],
                                                                          start.utc, stop.utc))
         results.sort_index(inplace=True)
         return results
@@ -120,7 +120,8 @@ class CpEfdClient():
         wavelength : `float`
             Monochromator commanded peak.
         """
-        dateValue = Time(dateStr, format='isot', scale='utc')
+        dateValue = Time(dateStr, format='isot', scale='tai')
+        # Table is now sorted on index, which is in UTC.
 
         # Check that the date we want to consider is contained in the
         # EFD data.
@@ -141,9 +142,10 @@ class CpEfdClient():
             self.log.debug("parse search %d %d %d %d %s %s",
                            low, high, idx, found, data.index[idx], dateValue)
 
-            if data.index[idx] <= dateValue:
+            myTime = Time(data['private_sndStamp'].iloc[idx], format='unix_tai')
+            if myTime <= dateValue:
                 low = idx
-            elif data.index[idx] > dateValue:
+            elif myTime > dateValue:
                 high = idx
 
             idx = (high + low) // 2
@@ -152,4 +154,5 @@ class CpEfdClient():
                 found = True
         # End binary search.
 
-        return data.index[idx], data['wavelength'].iloc[idx]
+        myTime = Time(data['private_sndStamp'].iloc[idx], format='unix_tai')
+        return myTime.strftime("%Y-%m-%d %H:%M:%S.%f"), data['wavelength'].iloc[idx]
