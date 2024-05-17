@@ -1,0 +1,26 @@
+description: cp_pipe pipeline to measure filter scans.
+tasks:
+  cpFilterScanIsr:
+    class: lsst.ip.isr.isrTask.IsrTask
+    config:
+      connections.ccdExposure: 'raw'
+      connections.outputExposure: 'cpFilterScanIsrExp'
+      # This is copied from cpFlat.yaml:
+      doWrite: true
+      doDefect: true
+      doBrighterFatter: false
+      doFlat: true
+      doFringe: false
+      doApplyGains: false
+      doSaturation: false
+      maskNegativeVariance: false
+      doBias: true
+      doDark: true
+      doInterpolate: true
+      doSetBadRegions: true
+  cpFilterScanMerge:
+    class: lsst.cp.pipe.cpFilterScan.CpFilterScanTask
+    config:
+      connections.inputExpHandles: 'cpFilterScanIsrExp'
+      # This is still an intermediate product, although it's the end of this pipeline.
+      connections.outputData: 'cpFilterScan'

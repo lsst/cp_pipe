@@ -512,7 +512,7 @@ class CalibCombineTask(pipeBase.PipelineTask):
             combinedSubregion = afwMath.statisticsStack(images, combineType, stats)
             target.maskedImage.assign(combinedSubregion, subBbox)
 
-    def combineHeaders(self, expHandleList, calib, calibType="CALIB", scales=None):
+    def combineHeaders(self, expHandleList, calib=None, calibType="CALIB", scales=None, metadata=None):
         """Combine input headers to determine the set of common headers,
         supplemented by calibration inputs.  The calibration header is
         set in-place.
@@ -521,20 +521,33 @@ class CalibCombineTask(pipeBase.PipelineTask):
         ----------
         expHandleList : `list` [`lsst.daf.butler.DeferredDatasetHandle`]
             Input list of exposure handles to combine.
-        calib : `lsst.afw.image.Exposure`
+        calib : `lsst.afw.image.Exposure`, optional
             Output calibration to construct headers for.
         calibType : `str`, optional
             OBSTYPE the output should claim.
         scales : `list` [`float`], optional
             Scale values applied to each input to record.
+        metadata : `lsst.daf.base.PropertyList`, optional
+            Output metadata to add headers to.
 
         Returns
         -------
         header : `lsst.daf.base.PropertyList`
             Constructed header.
+
+        Raises
+        ------
+        RuntimeError
+            Raised if neither a calib nor a metadata was supplied.
         """
         # Header
-        header = calib.getMetadata()
+        if calib is not None:
+            header = calib.getMetadata()
+        elif metadata is not None:
+            header = metadata
+        else:
+            raise RuntimeError("No calibration and no metadata passed to combineHeaders")
+
         header.set("OBSTYPE", calibType)
 
         # Keywords we care about
@@ -585,7 +598,8 @@ class CalibCombineTask(pipeBase.PipelineTask):
         inputVisitInfo = visitInfoList[0]
         visitInfo = afwImage.VisitInfo(exposureTime=expTime, darkTime=expTime,
                                        instrumentLabel=inputVisitInfo.instrumentLabel)
-        calib.getInfo().setVisitInfo(visitInfo)
+        if calib:
+            calib.getInfo().setVisitInfo(visitInfo)
 
         # Not yet working: DM-22302
         # Create an observation group so we can add some standard headers
