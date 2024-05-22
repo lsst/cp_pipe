@@ -24,32 +24,32 @@ tasks:
       connections.outputData: 'flat'
       calibrationType: 'flat'
       exposureScaling: MeanStats
-  cpFlatBin1:
+  cpFlatBin8:
     class: lsst.pipe.tasks.visualizeVisit.VisualizeBinCalibFilterTask
     config:
       connections.inputExp: 'flat'
-      connections.outputExp: 'flatBin1'
+      connections.outputExp: 'flatBin8'
       binning: 8
-  cpFlatBin2:
+  cpFlatBin64:
     class: lsst.pipe.tasks.visualizeVisit.VisualizeBinCalibFilterTask
     config:
       connections.inputExp: 'flat'
-      connections.outputExp: 'flatBin2'
+      connections.outputExp: 'flatBin64'
       binning: 64
-  cpFlatMosaic1:
+  cpFlatMosaic8:
     class: lsst.pipe.tasks.visualizeVisit.VisualizeMosaicCalibFilterTask
     config:
-      connections.inputExps: 'flatBin1'
-      connections.outputData: 'flatMosaic1'
+      connections.inputExps: 'flatBin8'
+      connections.outputData: 'flatMosaic8'
       binning: 8
-  cpFlatMosaic2:
+  cpFlatMosaic64:
     class: lsst.pipe.tasks.visualizeVisit.VisualizeMosaicCalibFilterTask
     config:
-      connections.inputExps: 'flatBin2'
-      connections.outputData: 'flatMosaic2'
+      connections.inputExps: 'flatBin64'
+      connections.outputData: 'flatMosaic64'
       binning: 64
 contracts:
   - flatIsr.doFlat == False
   - cpFlatCombine.calibrationType == "flat"
-  - cpFlatBin1.binning == cpFlatMosaic1.binning
-  - cpFlatBin2.binning == cpFlatMosaic2.binning
+  - cpFlatBin8.binning == cpFlatMosaic8.binning
+  - cpFlatBin64.binning == cpFlatMosaic64.binning

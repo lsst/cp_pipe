@@ -31,33 +31,33 @@ tasks:
       calibrationType: 'bias'
       exposureScaling: "Unity"
       mask: ["DETECTED", "INTRP"]
-  cpBiasBin1:
+  cpBiasBin8:
     class: lsst.pipe.tasks.visualizeVisit.VisualizeBinCalibTask
     config:
       connections.inputExp: 'bias'
-      connections.outputExp: 'biasBin1'
+      connections.outputExp: 'biasBin8'
       binning: 8
-  cpBiasBin2:
+  cpBiasBin64:
     class: lsst.pipe.tasks.visualizeVisit.VisualizeBinCalibTask
     config:
       connections.inputExp: 'bias'
-      connections.outputExp: 'biasBin2'
+      connections.outputExp: 'biasBin64'
       binning: 64
-  cpBiasMosaic1:
+  cpBiasMosaic8:
     class: lsst.pipe.tasks.visualizeVisit.VisualizeMosaicCalibTask
     config:
-      connections.inputExps: 'biasBin1'
-      connections.outputData: 'biasMosaic1'
+      connections.inputExps: 'biasBin8'
+      connections.outputData: 'biasMosaic8'
       binning: 8
-  cpBiasMosaic2:
+  cpBiasMosaic64:
     class: lsst.pipe.tasks.visualizeVisit.VisualizeMosaicCalibTask
     config:
-      connections.inputExps: 'biasBin2'
-      connections.outputData: 'biasMosaic2'
+      connections.inputExps: 'biasBin64'
+      connections.outputData: 'biasMosaic64'
       binning: 64
 contracts:
   - biasIsr.doBias == False
   - cpBiasCombine.calibrationType == "bias"
   - cpBiasCombine.exposureScaling == "Unity"
-  - cpBiasBin1.binning == cpBiasMosaic1.binning
-  - cpBiasBin2.binning == cpBiasMosaic2.binning
+  - cpBiasBin8.binning == cpBiasMosaic8.binning
+  - cpBiasBin64.binning == cpBiasMosaic64.binning
