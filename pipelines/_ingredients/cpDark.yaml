@@ -31,7 +31,33 @@ tasks:
       calibrationType: 'dark'
       exposureScaling: "DarkTime"
       python: config.mask.append("CR")
+  cpDarkBin8:
+    class: lsst.pipe.tasks.visualizeVisit.VisualizeBinCalibTask
+    config:
+      connections.inputExp: 'dark'
+      connections.outputExp: 'darkBin8'
+      binning: 8
+  cpDarkBin64:
+    class: lsst.pipe.tasks.visualizeVisit.VisualizeBinCalibTask
+    config:
+      connections.inputExp: 'dark'
+      connections.outputExp: 'darkBin64'
+      binning: 64
+  cpDarkMosaic8:
+    class: lsst.pipe.tasks.visualizeVisit.VisualizeMosaicCalibTask
+    config:
+      connections.inputExps: 'darkBin8'
+      connections.outputData: 'darkMosaic8'
+      binning: 8
+  cpDarkMosaic64:
+    class: lsst.pipe.tasks.visualizeVisit.VisualizeMosaicCalibTask
+    config:
+      connections.inputExps: 'darkBin64'
+      connections.outputData: 'darkMosaic64'
+      binning: 64
 contracts:
   - darkIsr.doDark == False
   - cpDarkCombine.calibrationType == "dark"
   - cpDarkCombine.exposureScaling == "DarkTime"
+  - cpDarkBin8.binning == cpDarkMosaic8.binning
+  - cpDarkBin64.binning == cpDarkMosaic64.binning
