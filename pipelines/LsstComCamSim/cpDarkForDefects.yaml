@@ -1,0 +1,13 @@
+# Note that if you edit this file you may also need to edit
+# cpDark.yaml.
+description: Latiss dark calibration construction for defects.
+instrument: lsst.obs.lsst.LsstComCamSim
+imports:
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpDarkForDefects.yaml
+tasks:
+  darkIsrForDefects:
+    class: lsst.ip.isr.IsrTask
+    config:
+      overscan.fitType: 'MEDIAN_PER_ROW'
+      doLinearize: false
+      doCrosstalk: false

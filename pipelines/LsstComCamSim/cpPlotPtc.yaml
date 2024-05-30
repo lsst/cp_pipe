@@ -1,0 +1,4 @@
+description: cp_pipe task to plot Photon Transfer Curve dataset
+instrument: lsst.obs.lsst.LsstComCamSim
+imports:
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpPlotPtc.yaml
