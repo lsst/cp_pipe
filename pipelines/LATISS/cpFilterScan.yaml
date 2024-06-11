@@ -10,6 +10,6 @@ tasks:
       doLinearize: false
       doCrosstalk: false
   cpFilterScanMerge:
-    class: lsst.cp.pipe.cpFilterScan.CpFilterScanTask
+    class: lsst.cp.pipe.CpFilterScanTask
     config:
       referenceFilter: 'empty~empty'
