@@ -13,3 +13,16 @@ pipetask build \
 -p $CP_PIPE_DIR/pipelines/Latiss/cpBias.yaml \
 --show pipeline
 ```
+
+and
+
+```bash
+pipetask build \
+-p $CP_PIPE_DIR/pipelines/Latiss/cpBias.yaml \
+--show config
+```
+
+All pipelines are checked for basic validity and importability in `test_pipelines.py`.
+If adding a new camera to this directory, please update the associated list of cameras in `test_pipelines.py` and add tests for the pipelines that are defined for that camera.
+The contents of this directory are checked against expectations, and you will get test failures otherwise.
+Your future self will thank you for adding validity tests for your new pipelines!
