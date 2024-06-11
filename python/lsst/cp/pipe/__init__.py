@@ -35,3 +35,4 @@ from .utilsEfd import *
 from .cpFilterScan import *
 from .cpDark import *
 from .cpFringe import *
+from .cpFlatMeasure import *
