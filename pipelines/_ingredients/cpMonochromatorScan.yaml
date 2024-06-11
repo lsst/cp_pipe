@@ -1,4 +1,4 @@
 description: Pipeline to measure monochromator response.
 tasks:
   cpMonochromatorScan:
-    class: lsst.cp.pipe.cpFilterScan.CpMonochromatorScanTask
+    class: lsst.cp.pipe.CpMonochromatorScanTask
