@@ -23,6 +23,7 @@
 __all__ = ['MeasureDefectsTaskConfig', 'MeasureDefectsTask',
            'MergeDefectsTaskConfig', 'MergeDefectsTask',
            'MeasureDefectsCombinedTaskConfig', 'MeasureDefectsCombinedTask',
+           'MeasureDefectsCombinedWithFilterTaskConfig', 'MeasureDefectsCombinedWithFilterTask',
            'MergeDefectsCombinedTaskConfig', 'MergeDefectsCombinedTask', ]
 
 import numpy as np
