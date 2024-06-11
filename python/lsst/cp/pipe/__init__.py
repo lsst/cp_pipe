@@ -33,3 +33,5 @@ from .cpPhotodiodeCorrection import *
 from .cpCtiSolve import *
 from .utilsEfd import *
 from .cpFilterScan import *
+from .cpDark import *
+from .cpFringe import *
