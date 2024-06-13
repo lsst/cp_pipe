@@ -27,7 +27,8 @@ import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 import lsst.pipe.base.connectionTypes as cT
 
-from . import CalibCombineTask, CpEfdClient
+from .cpCombine import CalibCombineTask
+from .utilsEfd import CpEfdClient
 from lsst.daf.base import PropertyList, DateTime
 
 __all__ = [
