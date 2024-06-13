@@ -190,8 +190,12 @@ class CpEfdClient():
         data = self.query(query)
 
         # data is a dictionary with one key, "results"
-        results = data["results"][0]
-        series = results["series"][0]
+        results = data["results"][0
+]
+        if "series" in results:
+            series = results["series"][0]
+        else:
+            raise RuntimeError(f"No results found for query: {query}")
 
         schemaDtype = self.getSchemaDtype(topicName)
         tableDtype = []
@@ -202,11 +206,65 @@ class CpEfdClient():
         table = Table(rows=series["values"], names=series["columns"], dtype=tableDtype)
         table["time"] = Time(table["time"], scale="utc")
         table.sort("time")
+        if 'private_sndStamp' in table.columns:
+            table['private_sndStamp'] = Time(table['private_sndStamp'], format='unix_tai')
+            table.sort("private_sndStamp")
 
         return table
 
+    def searchResults(self, data, dateStr):
+        """Determine the entry for a specific date.
+
+        Parameters
+        ----------
+        data : `astropy.table.Table`
+            The table of results from the EFD.
+        dateStr : `str`
+            The date to look up in the status for.
+
+        Returns
+        -------
+        result = `astropy.table.Row`
+            The row of the data table corresponding to ``dateStr``.
+        """
+        dateValue = Time(dateStr, format='isot', scale='tai')
+        # Table is now sorted on "time", which is in UTC.
+
+        # Check that the date we want to consider is contained in the
+        # EFD data.
+        if data["time"][0] > dateValue or data["time"][-1] < dateValue:
+            raise RuntimeError("Requested date is outside of data range.")
+
+        # Binary search through the EFD entries in date, until the
+        # most recent monochromator state update prior to the spectrum
+        # in question is found.
+        low = 0
+        high = len(data)
+        idx = (high + low) // 2
+        found = False
+        iteration = 0
+        while not found:
+            if idx < 0 or idx > len(data) or iteration > 20:
+                raise RuntimeError("Search for date failed?")
+
+            myTime = data["private_sndStamp"][idx]
+            if myTime <= dateValue:
+                low = idx
+            elif myTime > dateValue:
+                high = idx
+
+            idx = (high + low) // 2
+            iteration += 1
+            if high - low == 1:
+                found = True
+            self.log.info("parse search %d %d %d %d %s %s",
+                           low, high, idx, found, myTime, dateValue)
+
+        # End binary search.
+        return data[idx], idx
+
     def getEfdMonochromatorData(self, dataSeries=None, dateMin=None, dateMax=None):
-        """Retrieve Electrometer data from the EFD.
+        """Retrieve Monochromator data from the EFD.
 
         Parameters
         ----------
@@ -219,7 +277,7 @@ class CpEfdClient():
 
         Returns
         -------
-        results : `pandas.DataFrame`
+        results : `astropy.table.Table`
             The table of results returned from the EFD.
         """
         # This is currently the only monochromator available.
@@ -236,8 +294,6 @@ class CpEfdClient():
 
         results = self.selectTimeSeries(dataSeries, ['wavelength', 'private_sndStamp'],
                                         startDate, stopDate)
-        results['private_sndStamp'] = Time(results['private_sndStamp'], format='unix_tai')
-
         return results
 
     def parseMonochromatorStatus(self, data, dateStr):
@@ -257,41 +313,73 @@ class CpEfdClient():
         wavelength : `float`
             Monochromator commanded peak.
         """
-        dateValue = Time(dateStr, format='isot', scale='tai')
-        # Table is now sorted on "time", which is in UTC.
+        result, _ = self.searchResults(data, dateStr)
+        myTime = result["private_sndStamp"]
+        return myTime.strftime("%Y-%m-%dT%H:%M:%S.%f"), result['wavelength']
 
-        # Check that the date we want to consider is contained in the
-        # EFD data.
-        if data["time"][0] > dateValue or data["time"][-1] < dateValue:
-            raise RuntimeError("Requested date is outside of data range.")
+    def getEfdElectrometerData(self, dataSeries=None, dateMin=None, dateMax=None):
+        """Retrieve Electrometer data from the EFD.
 
-        # Binary search through the EFD entries in date, until the
-        # most recent monochromator state update prior to the spectrum
-        # in question is found.
-        low = 0
-        high = len(data)
-        idx = (high + low) // 2
-        found = False
-        iteration = 0
-        while not found:
-            if idx < 0 or idx > len(data) or iteration > 10:
-                raise RuntimeError("Search for date failed?")
+        Parameters
+        ----------
+        dataSeries : `str`, optional
+            Data series to request from the EFD.
+        dateMin : `str`, optional
+            Minimum date to retrieve from EFD.
+        dateMax : `str`, optional
+            Maximum date to retrieve from EFD.
 
-            myTime = data["private_sndStamp"][idx]
+        Returns
+        -------
+        results : `astropy.table.Table`
+            The table of results returned from the EFD.
+        """
+        # This is currently the only monochromator available.
+        dataSeries = dataSeries if dataSeries else "lsst.sal.Electrometer.logevent_intensity"
+        # "lsst.sal.Electrometer.logevent_intensity"
 
-            if myTime <= dateValue:
-                low = idx
-            elif myTime > dateValue:
-                high = idx
+        if dateMin:
+            startDate = Time(dateMin, format='isot', scale='tai')
+        else:
+            startDate = None
+        if dateMax:
+            stopDate = Time(dateMax, format='isot', scale='tai')
+        else:
+            stopDate = None
 
-            idx = (high + low) // 2
-            iteration += 1
-            if high - low == 1:
-                found = True
-            self.log.debug("parse search %d %d %d %d %s %s",
-                           low, high, idx, found, myTime, dateValue)
+        results = self.selectTimeSeries(dataSeries, [],
+                                        # ['intensity', 'private_sndStamp'],
+                                        startDate, stopDate)
 
-        # End binary search.
+        return results
 
-        myTime = data["private_sndStamp"][idx]
-        return myTime.strftime("%Y-%m-%dT%H:%M:%S.%f"), data['wavelength'][idx]
+    def parseElectrometerStatus(self, data, dateStr, index=201):
+        """Determine monochromator status for a specific date.
+
+        Parameters
+        ----------
+        data : `astropy.table.Table`
+            The dataframe of monochromator results from the EFD.
+        dateStr : `str`
+            The date to look up in the status for.
+        index : `int`
+            The salIndex of the device we want to read.  For LATISS,
+            this should be 201.
+
+        Returns
+        -------
+        indexDate : `str`
+            Date string indicating the monochromator state change.
+        wavelength : `float`
+            Monochromator commanded peak.
+
+        """
+        if index is not None:
+            mask = (data['salIndex'] == index)
+            data = data[mask]
+
+        result, idx = self.searchResults(data, dateStr)
+        myTime = result["private_sndStamp"]
+
+        # import pdb; pdb.set_trace()
+        return myTime.strftime("%Y-%m-%dT%H:%M:%S.%f"), result['intensity']
