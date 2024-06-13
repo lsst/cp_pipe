@@ -21,6 +21,6 @@
 # see <https://www.lsstcorp.org/LegalNotices/>.
 #
 
+from .cpPlotPtc import *
 from .cpPtcExtract import *
 from .cpPtcSolve import *
-from .cpPlotPtc import *
