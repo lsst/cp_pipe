@@ -3,16 +3,16 @@ instrument: lsst.obs.lsst.LsstComCamSim
 imports:
   - location: $CP_PIPE_DIR/pipelines/_ingredients/cpPtc.yaml
 tasks:
-  ptcIsr:
+  cpPtcIsr:
     class: lsst.ip.isr.IsrTask
     config:
       doCrosstalk: false
       doDefect: false
-  ptcExtract:
+  cpPtcExtract:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
     config:
       matchExposuresType: TIME
-  ptcSolve:
+  cpPtcSolve:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
     config:
       ptcFitType: EXPAPPROXIMATION

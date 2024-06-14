@@ -3,13 +3,13 @@ instrument: lsst.obs.lsst.LsstComCamSim
 imports:
   - location: $CP_PIPE_DIR/pipelines/_ingredients/cpFlat.yaml
 tasks:
-  flatIsr:
+  cpFlatIsr:
     class: lsst.ip.isr.IsrTask
     config:
       doLinearize: false
       doCrosstalk: false
       doDefect: false
   cpFlatMeasure:
-    class: lsst.cp.pipe.cpFlatNormTask.CpFlatMeasureTask
+    class: lsst.cp.pipe.CpFlatMeasureTask
     config:
       doVignette: false
