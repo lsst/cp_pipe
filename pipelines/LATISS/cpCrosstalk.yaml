@@ -1,0 +1,9 @@
+description: cp_pipe CROSSTALK calibration construction.
+instrument: lsst.obs.lsst.Latiss
+imports:
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpCrosstalk.yaml
+tasks:
+  cpCrosstalkIsr:
+    class: lsst.ip.isr.IsrTask
+    config:
+      overscan.fitType: "MEDIAN_PER_ROW"

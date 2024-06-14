@@ -1,5 +1,0 @@
-description: ImSim brighter-fatter kernel construction.
-instrument: lsst.obs.lsst.LsstCamImSim
-imports:
-  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpBfkSolve.yaml
-

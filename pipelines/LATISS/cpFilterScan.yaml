@@ -1,0 +1,15 @@
+description: Latiss filter scan construction
+instrument: lsst.obs.lsst.Latiss
+imports:
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpFilterScan.yaml
+tasks:
+  cpFilterIsr:
+    class: lsst.ip.isr.IsrTask
+    config:
+      overscan.fitType: 'MEDIAN_PER_ROW'
+      doLinearize: false
+      doCrosstalk: false
+  cpFilterScanMerge:
+    class: lsst.cp.pipe.CpFilterScanTask
+    config:
+      referenceFilter: 'empty~empty'

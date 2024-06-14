@@ -21,6 +21,6 @@
 # see <https://www.lsstcorp.org/LegalNotices/>.
 #
 
-from .cpExtractPtcTask import *
-from .cpSolvePtcTask import *
-from .cpPlotPtcTask import *
+from .cpPlotPtc import *
+from .cpPtcExtract import *
+from .cpPtcSolve import *

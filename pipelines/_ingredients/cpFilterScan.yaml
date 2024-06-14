@@ -19,8 +19,10 @@ tasks:
       doInterpolate: true
       doSetBadRegions: true
   cpFilterScanMerge:
-    class: lsst.cp.pipe.cpFilterScan.CpFilterScanTask
+    class: lsst.cp.pipe.CpFilterScanTask
     config:
       connections.inputExpHandles: 'cpFilterScanIsrExp'
       # This is still an intermediate product, although it's the end of this pipeline.
       connections.outputData: 'cpFilterScan'
+contracts:
+  - cpFilterScanMerge.connections.inputExpHandles == cpFilterScanIsr.connections.outputExposure

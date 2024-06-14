@@ -1,0 +1,15 @@
+description: ImSim flat calibration construction
+instrument: lsst.obs.lsst.LsstCamImSim
+imports:
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpFlat.yaml
+tasks:
+  cpFlatIsr:
+    class: lsst.ip.isr.IsrTask
+    config:
+      doLinearize: false
+      doCrosstalk: false
+      doDefect: false
+  cpFlatMeasure:
+    class: lsst.cp.pipe.CpFlatMeasureTask
+    config:
+      doVignette: false

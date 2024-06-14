@@ -1,4 +1,0 @@
-description: cp_pipe DEFECT calibration construction from combined images.
-instrument: lsst.obs.lsst.LsstCamImSim
-imports:
-  - location: $CP_PIPE_DIR/pipelines/_ingredients/findDefectsCombined.yaml

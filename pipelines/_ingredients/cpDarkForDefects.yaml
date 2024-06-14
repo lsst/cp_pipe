@@ -2,11 +2,11 @@
 # cpDark.yaml.
 description: cp_pipe DARK calibration construction for defect finding.
 tasks:
-  darkIsrForDefects:
+  cpDarkForDefectsIsr:
     class: lsst.ip.isr.IsrTask
     config:
-      connections.ccdExposure: 'raw'
-      connections.outputExposure: 'cpDarkProcForDefects'
+      connections.ccdExposure: "raw"
+      connections.outputExposure: "cpDarkForDefectsIsrExp"
       doWrite: true
       doDefect: false
       doBrighterFatter: false
@@ -22,16 +22,16 @@ tasks:
       maskNegativeVariance: false
       doInterpolate: false
       doSetBadRegions: false
-  cpDarkCombine:
-    class: lsst.cp.pipe.cpCombine.CalibCombineTask
+  cpDarkForDefectsCombine:
+    class: lsst.cp.pipe.CalibCombineTask
     config:
-      connections.inputExpHandles: 'cpDarkProcForDefects'
-      connections.outputData: 'dark'
-      calibrationType: 'dark'
+      connections.inputExpHandles: "cpDarkForDefectsIsrExp"
+      connections.outputData: "dark"
+      calibrationType: "dark"
       exposureScaling: "DarkTime"
       mask: ["DETECTED", "INTRP"]
 contracts:
-  - darkIsrForDefects.doDark == False
-  - cpDarkCombine.calibrationType == "dark"
-  - cpDarkCombine.exposureScaling == "DarkTime"
-
+  - cpDarkForDefectsIsr.doDark == False
+  - cpDarkForDefectsCombine.calibrationType == "dark"
+  - cpDarkForDefectsCombine.exposureScaling == "DarkTime"
+  - cpDarkForDefectsCombine.connections.inputExpHandles == cpDarkForDefectsIsr.connections.outputExposure

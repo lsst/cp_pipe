@@ -1,10 +1,10 @@
 description: cp_pipe BIAS calibration construction
 tasks:
-  biasIsr:
+  cpBiasIsr:
     class: lsst.ip.isr.IsrTask
     config:
       connections.ccdExposure: 'raw'
-      connections.outputExposure: 'cpBiasProc'
+      connections.outputExposure: 'cpBiasIsrExp'
       doWrite: true
       doDefect: false
       doBias: false
@@ -24,9 +24,9 @@ tasks:
       doInterpolate: false
       doSetBadRegions: false
   cpBiasCombine:
-    class: lsst.cp.pipe.cpCombine.CalibCombineTask
+    class: lsst.cp.pipe.CalibCombineTask
     config:
-      connections.inputExpHandles: 'cpBiasProc'
+      connections.inputExpHandles: 'cpBiasIsrExp'
       connections.outputData: 'bias'
       calibrationType: 'bias'
       exposureScaling: "Unity"
@@ -56,8 +56,13 @@ tasks:
       connections.outputData: 'biasMosaic64'
       binning: 64
 contracts:
-  - biasIsr.doBias == False
+  - cpBiasIsr.doBias == False
   - cpBiasCombine.calibrationType == "bias"
   - cpBiasCombine.exposureScaling == "Unity"
   - cpBiasBin8.binning == cpBiasMosaic8.binning
   - cpBiasBin64.binning == cpBiasMosaic64.binning
+  - cpBiasIsr.connections.outputExposure == cpBiasCombine.connections.inputExpHandles
+  - cpBiasBin8.connections.inputExp == cpBiasCombine.calibrationType
+  - cpBiasBin64.connections.inputExp == cpBiasCombine.calibrationType
+  - cpBiasMosaic8.connections.inputExps == cpBiasBin8.connections.outputExp
+  - cpBiasMosaic64.connections.inputExps == cpBiasBin64.connections.outputExp

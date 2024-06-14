@@ -1,0 +1,13 @@
+description: cp_pipe CTI calibration construction
+instrument: lsst.obs.lsst.Latiss
+imports:
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpCti.yaml
+tasks:
+  cpCtiIsr:
+    class: lsst.ip.isr.IsrTask
+    config:
+      overscan.fitType: "MEDIAN_PER_ROW"
+      # Skip the first five columns to remove CTI effects.  Skip the
+      # last two in case those columns are noisy.
+      overscan.leadingColumnsToSkip: 5
+      overscan.trailingColumnsToSkip: 2

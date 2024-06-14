@@ -24,8 +24,8 @@ import unittest
 import numpy as np
 
 import lsst.utils.tests
-from lsst.cp.pipe.measureCrosstalk import CrosstalkExtractTask, CrosstalkExtractConfig
-from lsst.cp.pipe.measureCrosstalk import CrosstalkSolveTask, CrosstalkSolveConfig
+from lsst.cp.pipe import CrosstalkExtractTask, CrosstalkExtractConfig
+from lsst.cp.pipe import CrosstalkSolveTask, CrosstalkSolveConfig
 import lsst.ip.isr.isrMock as isrMock
 
 

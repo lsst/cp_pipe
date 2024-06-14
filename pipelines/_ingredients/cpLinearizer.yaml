@@ -1,0 +1,7 @@
+description: cp_pipe linearity calibration construction.
+tasks:
+  cpLinearizerSolve:
+    class: lsst.cp.pipe.LinearitySolveTask
+    config:
+      connections.inputPtc: ptc
+      connections.outputLinearizer: linearizer
