@@ -1,4 +1,4 @@
-.. lsst-task-topic:: lsst.cp.pipe.cpSkyTask.CpSkyCombineTask
+.. lsst-task-topic:: lsst.cp.pipe.CpSkyCombineTask
 
 ################
 CpSkyCombineTask
@@ -6,7 +6,7 @@ CpSkyCombineTask
 
 ``CpSkyCombineTask`` averages the per-exposure background models into a final SKY calibration.
 
-.. _lsst.cp.pipe.cpSkyTask.CpSkyCombineTask-processing-summary:
+.. _lsst.cp.pipe.CpSkyCombineTask-processing-summary:
 
 Processing summary
 ==================
@@ -16,23 +16,23 @@ Processing summary
 #. Average input backgrounds with :lsst-task:`~lsst.pipe.tasks.background.SkyMeasurementTask`.
 #. Combine input headers for the output calibration.
 
-.. _lsst.cp.pipe.cpSkyTask.CpSkyCombineTask-api:
+.. _lsst.cp.pipe.CpSkyCombineTask-api:
 
 Python API summary
 ==================
 
-.. lsst-task-api-summary:: lsst.cp.pipe.cpSkyTask.CpSkyCombineTask
+.. lsst-task-api-summary:: lsst.cp.pipe.CpSkyCombineTask
 
-.. _lsst.cp.pipe.cpSkyTask.CpSkyCombineTask-subtasks:
+.. _lsst.cp.pipe.CpSkyCombineTask-subtasks:
 
 Retargetable subtasks
 =====================
 
-.. lsst-task-config-subtasks:: lsst.cp.pipe.cpSkyTask.CpSkyCombineTask
+.. lsst-task-config-subtasks:: lsst.cp.pipe.CpSkyCombineTask
 
-.. _lsst.cp.pipe.cpSkyTask.CpSkyCombineTask-configs:
+.. _lsst.cp.pipe.CpSkyCombineTask-configs:
 
 Configuration fields
 ====================
 
-.. lsst-task-config-fields:: lsst.cp.pipe.cpSkyTask.CpSkyCombineTask
+.. lsst-task-config-fields:: lsst.cp.pipe.CpSkyCombineTask
