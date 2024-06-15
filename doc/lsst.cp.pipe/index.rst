@@ -49,16 +49,6 @@ Tasks
    :root: lsst.cp.pipe
    :toctree: tasks
 
-.. _lsst.cp.pipe-scripts:
-
-Script reference
-================
-
-.. toctree::
-   :maxdepth: 1
-
-   scripts/plotPhotonTransferCurve.py
-
 .. _lsst.cp.pipe-pyapi:
 
 Python API reference
@@ -68,15 +58,15 @@ Python API reference
    :no-main-docstr:
    :no-inheritance-diagram:
 
-.. automodapi:: lsst.cp.pipe.cpFlatNormTask
+.. automodapi:: lsst.cp.pipe.cpFlatMeasure
    :no-main-docstr:
    :no-inheritance-diagram:
 
-.. automodapi:: lsst.cp.pipe.cpDarkTask
+.. automodapi:: lsst.cp.pipe.cpDark
    :no-main-docstr:
    :no-inheritance-diagram:
 
-.. automodapi:: lsst.cp.pipe.cpFringeTask
+.. automodapi:: lsst.cp.pipe.cpFringe
    :no-main-docstr:
    :no-inheritance-diagram:
 
