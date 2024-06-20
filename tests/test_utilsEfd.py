@@ -63,21 +63,50 @@ class UtilsEfdTestCase(lsst.utils.tests.TestCase):
             # dateMax="2024-05-30T15:00:00"
         )
 
-        for iDate, rDate in [("2024-05-30T04:21:48", "2024-05-30T04:22:08"),
-                             ("2024-05-30T04:21:50", "2024-05-30T04:22:10"),
-                             ("2024-05-30T04:21:53", "2024-05-30T04:22:13"),
-                             ("2024-05-30T04:21:58", "2024-05-30T04:22:18"),
-                             ("2024-05-30T04:22:17", "2024-05-30T04:22:37")]:
-            indexDate, intensity = self.client.parseElectrometerStatus(
+        # Test single lookups:
+        for (iDate, rDate), (iVal, rVal) in zip([("2024-05-30T04:21:48", "2024-05-30T04:22:08"),
+                                                 ("2024-05-30T04:21:50", "2024-05-30T04:22:10"),
+                                                 ("2024-05-30T04:21:53", "2024-05-30T04:22:13"),
+                                                 ("2024-05-30T04:21:58", "2024-05-30T04:22:18"),
+                                                 ("2024-05-30T04:22:17", "2024-05-30T04:22:37")],
+                                                [(-1.8932e-7, -1.5244e-07),
+                                                 (-1.5168e-07, -1.5137e-07),
+                                                 (-1.5165e-07, -1.5205e-07),
+                                                 (-1.5223e-07, -1.5147e-07),
+                                                 (-1.5226e-07, -1.5558e-07)]):
+            indexDate, intensity, _ = self.client.parseElectrometerStatus(
                 data,
                 iDate
             )
+            self.assertFloatsAlmostEqual(intensity, iVal, atol=1e-10)
 
-            indexDateReference, intensityReference = self.client.parseElectrometerStatus(
+            indexDateReference, intensityReference, _ = self.client.parseElectrometerStatus(
                 data,
                 rDate
             )
-            print(iDate, indexDate, intensity, rDate, indexDateReference, intensityReference)
+            self.assertFloatsAlmostEqual(intensityReference, rVal, atol=1e-10)
+
+        # Test integrated lookups:
+        iDate = "2024-05-30T04:21:48"
+        iDateEnd = "2024-05-30T04:22:18"
+        rDate = "2024-05-30T04:22:08"
+        rDateEnd = "2024-05-30T04:22:38"
+        indexDate, intensity, endDate = self.client.parseElectrometerStatus(
+            data,
+            iDate,
+            dateEnd=iDateEnd,
+            doIntegrateSamples=True,
+            index=201
+        )
+        self.assertFloatsAlmostEqual(intensity, -1.52297e-7, atol=1e-10)
+        indexDateReference, intensityReference, endDateReference = self.client.parseElectrometerStatus(
+            data,
+            rDate,
+            dateEnd=rDateEnd,
+            doIntegrateSamples=True,
+            index=201
+        )
+        self.assertFloatsAlmostEqual(intensityReference, -1.532977e-07, atol=1e-10)
 
 
 class MemoryTester(lsst.utils.tests.MemoryTestCase):

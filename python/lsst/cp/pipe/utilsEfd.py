@@ -190,8 +190,7 @@ class CpEfdClient():
         data = self.query(query)
 
         # data is a dictionary with one key, "results"
-        results = data["results"][0
-]
+        results = data["results"][0]
         if "series" in results:
             series = results["series"][0]
         else:
@@ -258,7 +257,7 @@ class CpEfdClient():
             if high - low == 1:
                 found = True
             self.log.info("parse search %d %d %d %d %s %s",
-                           low, high, idx, found, myTime, dateValue)
+                          low, high, idx, found, myTime, dateValue)
 
         # End binary search.
         return data[idx], idx
@@ -336,7 +335,6 @@ class CpEfdClient():
         """
         # This is currently the only monochromator available.
         dataSeries = dataSeries if dataSeries else "lsst.sal.Electrometer.logevent_intensity"
-        # "lsst.sal.Electrometer.logevent_intensity"
 
         if dateMin:
             startDate = Time(dateMin, format='isot', scale='tai')
@@ -353,8 +351,8 @@ class CpEfdClient():
 
         return results
 
-    def parseElectrometerStatus(self, data, dateStr, index=201):
-        """Determine monochromator status for a specific date.
+    def parseElectrometerStatus(self, data, dateStr, dateEnd=None, doIntegrateSamples=False, index=201):
+        """Determine electrometer status for a specific date.
 
         Parameters
         ----------
@@ -362,6 +360,11 @@ class CpEfdClient():
             The dataframe of monochromator results from the EFD.
         dateStr : `str`
             The date to look up in the status for.
+        dateEnd : `str`
+            The end date to look in the status for.
+        doIntegrateSamples: `bool`
+            If true, take the average of all samples between
+            ``dateStr`` and ``dateEnd``.
         index : `int`
             The salIndex of the device we want to read.  For LATISS,
             this should be 201.
@@ -370,16 +373,27 @@ class CpEfdClient():
         -------
         indexDate : `str`
             Date string indicating the monochromator state change.
-        wavelength : `float`
-            Monochromator commanded peak.
+        intensity: `float`
+            Average electrometer intensity.
 
         """
         if index is not None:
             mask = (data['salIndex'] == index)
             data = data[mask]
 
+        # searchResults returns the first entry prior to this date
         result, idx = self.searchResults(data, dateStr)
-        myTime = result["private_sndStamp"]
 
-        # import pdb; pdb.set_trace()
-        return myTime.strftime("%Y-%m-%dT%H:%M:%S.%f"), result['intensity']
+        myTime = result["private_sndStamp"]
+        myIntensity = result['intensity']
+        myEndTime = None
+
+        if doIntegrateSamples:
+            myEndResult, myEndIdx = self.searchResults(data, dateEnd)
+            if myEndIdx != idx:
+                myEndTime = myEndResult['private_sndStamp']
+                myIntensity = np.mean(data[idx+1:myEndIdx]['intensity'])
+
+        return (myTime.strftime("%Y-%m-%dT%H:%M:%S.%f"),
+                myIntensity,
+                myEndTime.strftime("%Y-%m-%dT%H:%M:%S.%f") if myEndTime else None)
