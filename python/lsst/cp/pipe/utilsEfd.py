@@ -190,7 +190,8 @@ class CpEfdClient():
         data = self.query(query)
 
         # data is a dictionary with one key, "results"
-        results = data["results"][0]
+        results = data["results"][0
+]
         if "series" in results:
             series = results["series"][0]
         else:
@@ -207,6 +208,7 @@ class CpEfdClient():
         table.sort("time")
         if 'private_sndStamp' in table.columns:
             table['private_sndStamp'] = Time(table['private_sndStamp'], format='unix_tai')
+            table.sort("private_sndStamp")
 
         return table
 
@@ -242,11 +244,10 @@ class CpEfdClient():
         found = False
         iteration = 0
         while not found:
-            if idx < 0 or idx > len(data) or iteration > 10:
+            if idx < 0 or idx > len(data) or iteration > 20:
                 raise RuntimeError("Search for date failed?")
 
             myTime = data["private_sndStamp"][idx]
-
             if myTime <= dateValue:
                 low = idx
             elif myTime > dateValue:
@@ -256,11 +257,11 @@ class CpEfdClient():
             iteration += 1
             if high - low == 1:
                 found = True
-            self.log.debug("parse search %d %d %d %d %s %s",
+            self.log.info("parse search %d %d %d %d %s %s",
                            low, high, idx, found, myTime, dateValue)
 
         # End binary search.
-        return data[idx]
+        return data[idx], idx
 
     def getEfdMonochromatorData(self, dataSeries=None, dateMin=None, dateMax=None):
         """Retrieve Monochromator data from the EFD.
@@ -312,7 +313,7 @@ class CpEfdClient():
         wavelength : `float`
             Monochromator commanded peak.
         """
-        result = self.searchResults(data, dateStr)
+        result, _ = self.searchResults(data, dateStr)
         myTime = result["private_sndStamp"]
         return myTime.strftime("%Y-%m-%dT%H:%M:%S.%f"), result['wavelength']
 
@@ -347,7 +348,7 @@ class CpEfdClient():
             stopDate = None
 
         results = self.selectTimeSeries(dataSeries, [],
-                                        #['intensity', 'private_sndStamp'],
+                                        # ['intensity', 'private_sndStamp'],
                                         startDate, stopDate)
 
         return results
@@ -377,7 +378,8 @@ class CpEfdClient():
             mask = (data['salIndex'] == index)
             data = data[mask]
 
-        result = self.searchResults(data, dateStr)
+        result, idx = self.searchResults(data, dateStr)
         myTime = result["private_sndStamp"]
-        return myTime.strftime("%Y-%m-%dT%H:%M:%S.%f"), result['intensity']
 
+        # import pdb; pdb.set_trace()
+        return myTime.strftime("%Y-%m-%dT%H:%M:%S.%f"), result['intensity']

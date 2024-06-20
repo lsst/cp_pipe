@@ -59,19 +59,25 @@ class UtilsEfdTestCase(lsst.utils.tests.TestCase):
             self.log.warning("No EFD client: skipping electrometer test.")
             return
         data = self.client.getEfdElectrometerData(
-            dateMin="2024-05-30T13:00:00",
-            dateMax="2024-05-30T15:00:00"
+            # dateMin="2024-05-30T13:00:00",
+            # dateMax="2024-05-30T15:00:00"
         )
 
-        indexDate, intensity = self.client.parseElectrometerStatus(
-            data,
-            "2024-05-30T05:14:10.143"
-        )
-        indexDateReference, intensityReference = self.client.parseElectrometerStatus(
-            data,
-            "2024-05-30T05:14:30.475"
-        )
-        print(indexDate, intensity, indexDateReference, intensityReference)
+        for iDate, rDate in [("2024-05-30T04:21:48", "2024-05-30T04:22:08"),
+                             ("2024-05-30T04:21:50", "2024-05-30T04:22:10"),
+                             ("2024-05-30T04:21:53", "2024-05-30T04:22:13"),
+                             ("2024-05-30T04:21:58", "2024-05-30T04:22:18"),
+                             ("2024-05-30T04:22:17", "2024-05-30T04:22:37")]:
+            indexDate, intensity = self.client.parseElectrometerStatus(
+                data,
+                iDate
+            )
+
+            indexDateReference, intensityReference = self.client.parseElectrometerStatus(
+                data,
+                rDate
+            )
+            print(iDate, indexDate, intensity, rDate, indexDateReference, intensityReference)
 
 
 class MemoryTester(lsst.utils.tests.MemoryTestCase):
