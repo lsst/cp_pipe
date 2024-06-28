@@ -47,6 +47,12 @@ try:
 except ImportError:
     has_obs_decam = False
 
+try:
+    import lsst.obs.rubinGenericCamera
+    has_obs_generic = True
+except ImportError:
+    has_obs_generic = False
+
 
 class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
     """Test case for building the pipelines."""
@@ -119,6 +125,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
             "LSSTComCam",
             "LSSTComCamSim",
             "LSST-TS8",
+            "StarTrackerFast",
             "README.md",
         }
         self.assertEqual(paths, expected)
@@ -190,6 +197,23 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 "cpMonochromatorScan.yaml"
         ]):
             self._check_pipeline(os.path.join(self.pipeline_path, "HSC", pipeline))
+
+    @unittest.skipIf(not has_obs_generic,
+                     reason="Cannot test these pipelines without obs_rubinGenericCamera")
+    def test_star_tracker_fast_pipelines(self):
+        for pipeline in self._get_pipelines(exclude=[
+                "cpBfk.yaml",
+                "cpCrosstalk.yaml",
+                "cpCti.yaml",
+                "cpFilterScan.yaml",
+                "cpFringe.yaml",
+                "cpLinearizer.yaml",
+                "cpMonochromatorScan.yaml",
+                "cpPlotPtc.yaml",
+                "cpPtc.yaml",
+                "cpSky.yaml",
+        ]):
+            self._check_pipeline(os.path.join(self.pipeline_path, "StarTrackerFast", pipeline))
 
 
 class TestMemory(lsst.utils.tests.MemoryTestCase):
