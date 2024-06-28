@@ -1,0 +1,13 @@
+# Note that if you edit this file you may also need to edit
+# cpDark.yaml.
+description: StarTrackerFast dark calibration construction for defects.
+instrument: lsst.obs.rubinGenericCamera.StarTrackerFast
+imports:
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpDarkForDefects.yaml
+tasks:
+  cpDarkForDefectsIsr:
+    class: lsst.ip.isr.IsrTask
+    config:
+      doLinearize: false
+      doCrosstalk: false
+      doOverscan: false
