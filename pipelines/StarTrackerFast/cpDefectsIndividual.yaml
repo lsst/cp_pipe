@@ -1,0 +1,4 @@
+description: cp_pipe DEFECT calibration construction.
+instrument: lsst.obs.rubinGenericCamera.StarTrackerFast
+imports:
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpDefectsIndividual.yaml

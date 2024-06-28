@@ -1,0 +1,12 @@
+description: ComCam dark calibration construction
+instrument: lsst.obs.rubinGenericCamera.StarTrackerFast
+imports:
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpDark.yaml
+tasks:
+  cpDarkIsr:
+    class: lsst.ip.isr.IsrTask
+    config:
+      doLinearize: false
+      doCrosstalk: false
+      doDefect: false
+      doOverscan: false

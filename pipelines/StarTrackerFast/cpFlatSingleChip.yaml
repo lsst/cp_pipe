@@ -1,0 +1,10 @@
+description: cp_pipe FLAT calibration construction
+instrument: lsst.obs.rubinGenericCamera.StarTrackerFast
+imports:
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpFlatSingleChip.yaml
+tasks:
+  cpFlatIsr:
+    class: lsst.ip.isr.IsrTask
+    config:
+      doDefect: false
+      doOverscan: false
