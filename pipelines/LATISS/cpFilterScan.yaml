@@ -3,9 +3,10 @@ instrument: lsst.obs.lsst.Latiss
 imports:
   - location: $CP_PIPE_DIR/pipelines/_ingredients/cpFilterScan.yaml
 tasks:
-  cpFilterIsr:
+  cpFilterScanIsr:
     class: lsst.ip.isr.IsrTask
     config:
+      connections.outputExposure: 'cpFilterScanIsrExp'
       overscan.fitType: 'MEDIAN_PER_ROW'
       doLinearize: false
       doCrosstalk: false
