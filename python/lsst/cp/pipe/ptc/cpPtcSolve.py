@@ -968,7 +968,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
     @staticmethod
     def _boundsForPolynomial(initialPars, lowers=[], uppers=[]):
         if not len(lowers):
-            lowers = [np.NINF for p in initialPars]
+            lowers = [-np.inf for p in initialPars]
         if not len(uppers):
             uppers = [np.inf for p in initialPars]
         lowers[1] = 0  # no negative gains
@@ -977,7 +977,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
     @staticmethod
     def _boundsForAstier(initialPars, lowers=[], uppers=[]):
         if not len(lowers):
-            lowers = [np.NINF for p in initialPars]
+            lowers = [-np.inf for p in initialPars]
         if not len(uppers):
             uppers = [np.inf for p in initialPars]
         return (lowers, uppers)
