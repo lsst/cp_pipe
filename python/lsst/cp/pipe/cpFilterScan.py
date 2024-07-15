@@ -415,19 +415,16 @@ class CpMonochromatorScanTask(pipeBase.PipelineTask):
         # Search for the 50% points for FWHM estimate.  Search for the
         # 10% points to define the range for Gaussian fit.
         for dx in range(maxIdx, maxIdx + peakBoxSize):
-            if not highHM:
-                if normFlux[dx] < 0.5:
-                    highHM = dx
-            if not high:
-                if normFlux[dx] < 0.1:
-                    high = dx
+            if normFlux[dx] >= 0.5:
+                highHM = dx
+            if normFlux[dx] >= 0.1:
+                high = dx
+
         for dx in range(maxIdx, maxIdx - peakBoxSize, -1):
-            if not lowHM:
-                if normFlux[dx] > 0.5:
-                    lowHM = dx - 1
-            if not low:
-                if normFlux[dx] > 0.1:
-                    low = dx - 1
+            if normFlux[dx] >= 0.5:
+                lowHM = dx - 1
+            if normFlux[dx] >= 0.1:
+                low = dx - 1
 
         # The above search should be fine, but let's ensure we have
         # reasonable limits.
