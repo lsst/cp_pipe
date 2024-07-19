@@ -66,6 +66,7 @@ class PhotonTransferCurveExtractConnections(pipeBase.PipelineTaskConnections,
         storageClass="TaskMetadata",
         dimensions=("instrument", "exposure", "detector"),
         multiple=True,
+        deprecated="This connection is deprecated and will be removed after v28.",
     )
     outputCovariances = cT.Output(
         name="ptcCovariances",
