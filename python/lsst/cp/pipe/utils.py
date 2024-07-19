@@ -20,7 +20,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 
-__all__ = ['ddict2dict', 'CovFastFourierTransform']
+__all__ = ['ddict2dict', 'CovFastFourierTransform', 'getReadNoise']
 
 
 import galsim
@@ -1311,3 +1311,47 @@ class AstierSplineLinearityFitter:
             constraint = np.hstack([constraint, log_w])
 
         return np.hstack([resid, constraint])
+
+
+def getReadNoise(exposure, ampName, taskMetadata=None, log=None):
+    """Gets readout noise for an amp from ISR metadata.
+
+    If possible, this attempts to get the now-standard headers
+    added to the exposure itself.  If not found there, the ISR
+    TaskMetadata is searched.  If neither of these has the value,
+    warn and set the read noise to NaN.
+
+    Parameters
+    ----------
+    exposure : `lsst.afw.image.Exposure`
+        Exposure to check for read noise first.
+    ampName : `str`
+        Amplifier name.
+    taskMetadata : `lsst.pipe.base.TaskMetadata`, optional
+        List of exposures metadata from ISR for this exposure.
+    log : `logging.logger`, optional
+        Log for messages.
+
+    Returns
+    -------
+    readNoise : `float`
+        The read noise for this set of exposure/amplifier.
+    """
+    exposureMetadata = exposure.getMetadata()
+
+    # Try from the exposure first.
+    expectedKey = f"LSST ISR OVERSCAN RESIDUAL SERIAL STDEV {ampName}"
+    if expectedKey in exposureMetadata:
+        return exposureMetadata[expectedKey]
+
+    # If not, try getting it from the task metadata.
+    if taskMetadata:
+        expectedKey = f"RESIDUAL STDEV {ampName}"
+        if "isr" in taskMetadata:
+            if expectedKey in taskMetadata["isr"]:
+                return taskMetadata["isr"][expectedKey]
+
+    log = log if log else logging.getLogger(__name__)
+    log.warning("Median readout noise from ISR metadata for amp %s "
+                "could not be found." % ampName)
+    return np.nan
