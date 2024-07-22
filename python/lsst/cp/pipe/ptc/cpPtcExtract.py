@@ -30,7 +30,7 @@ import lsst.pipe.base as pipeBase
 from lsst.geom import (Box2I, Point2I, Extent2I)
 from lsst.cp.pipe.utils import (arrangeFlatsByExpTime, arrangeFlatsByExpId,
                                 arrangeFlatsByExpFlux, sigmaClipCorrection,
-                                CovFastFourierTransform)
+                                CovFastFourierTransform, getReadNoise)
 
 import lsst.pipe.base.connectionTypes as cT
 
@@ -66,6 +66,7 @@ class PhotonTransferCurveExtractConnections(pipeBase.PipelineTaskConnections,
         storageClass="TaskMetadata",
         dimensions=("instrument", "exposure", "detector"),
         multiple=True,
+        deprecated="This connection is deprecated and will be removed after v28.",
     )
     outputCovariances = cT.Output(
         name="ptcCovariances",
@@ -515,16 +516,14 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                 readNoise2 = dict()
                 meanReadNoise = dict()
 
-                expMetadata1 = expRef1.get(component="metadata")
                 metadataIndex1 = inputDims.index(expId1)
                 thisTaskMetadata1 = taskMetadata[metadataIndex1]
 
-                expMetadata2 = expRef2.get(component="metadata")
                 metadataIndex2 = inputDims.index(expId2)
                 thisTaskMetadata2 = taskMetadata[metadataIndex2]
 
-                readNoise1[ampName] = self.getReadNoise(expMetadata1, thisTaskMetadata1, ampName)
-                readNoise2[ampName] = self.getReadNoise(expMetadata2, thisTaskMetadata2, ampName)
+                readNoise1[ampName] = getReadNoise(exp1, ampName, taskMetadata=thisTaskMetadata1)
+                readNoise2[ampName] = getReadNoise(exp2, ampName, taskMetadata=thisTaskMetadata2)
 
                 meanReadNoise[ampName] = np.nanmean([readNoise1[ampName], readNoise2[ampName]])
 
@@ -1041,43 +1040,6 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
             gain = positiveSolution
 
         return gain
-
-    def getReadNoise(self, exposureMetadata, taskMetadata, ampName):
-        """Gets readout noise for an amp from ISR metadata.
-
-        If possible, this attempts to get the now-standard headers
-        added to the exposure itself.  If not found there, the ISR
-        TaskMetadata is searched.  If neither of these has the value,
-        warn and set the read noise to NaN.
-
-        Parameters
-        ----------
-        exposureMetadata : `lsst.daf.base.PropertySet`
-            Metadata to check for read noise first.
-        taskMetadata : `lsst.pipe.base.TaskMetadata`
-            List of exposures metadata from ISR for this exposure.
-        ampName : `str`
-            Amplifier name.
-
-        Returns
-        -------
-        readNoise : `float`
-            The read noise for this set of exposure/amplifier.
-        """
-        # Try from the exposure first.
-        expectedKey = f"LSST ISR OVERSCAN RESIDUAL SERIAL STDEV {ampName}"
-        if expectedKey in exposureMetadata:
-            return exposureMetadata[expectedKey]
-
-        # If not, try getting it from the task metadata.
-        expectedKey = f"RESIDUAL STDEV {ampName}"
-        if "isr" in taskMetadata:
-            if expectedKey in taskMetadata["isr"]:
-                return taskMetadata["isr"][expectedKey]
-
-        self.log.warning("Median readout noise from ISR metadata for amp %s "
-                         "could not be calculated." % ampName)
-        return np.nan
 
     def computeGaussianHistogramParameters(self, im1Area, im2Area, imStatsCtrl, mu1, mu2):
         """Compute KS test for a Gaussian model fit to a histogram of the
