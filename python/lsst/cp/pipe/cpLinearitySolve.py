@@ -152,6 +152,13 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
         doc="Number of spline knots to use in fit.",
         default=10,
     )
+
+    trimmedState = pexConfig.Field(
+        dtype=bool,
+        doc="Will this linearizer be used on trimmed data?",
+        default=True,
+    )
+
     maxLookupTableAdu = pexConfig.Field(
         dtype=int,
         doc="Maximum DN value for a LookupTable linearizer.",
@@ -626,7 +633,10 @@ class LinearitySolveTask(pipeBase.PipelineTask):
 
             linearizer.linearityType[ampName] = self.config.linearityType
             linearizer.linearityCoeffs[ampName] = linearityCoeffs
-            linearizer.linearityBBox[ampName] = amp.getBBox()
+            if self.config.trimmedState:
+                linearizer.linearityBBox[ampName] = amp.getBBox()
+            else:
+                linearizer.linearityBBox[ampName] = amp.getRawBBox()
             linearizer.fitParams[ampName] = polyFit
             linearizer.fitParamsErr[ampName] = polyFitErr
             linearizer.fitChiSq[ampName] = chiSq
@@ -712,7 +722,10 @@ class LinearitySolveTask(pipeBase.PipelineTask):
 
         linearizer.linearityType[ampName] = "None"
         linearizer.linearityCoeffs[ampName] = np.zeros(nEntries)
-        linearizer.linearityBBox[ampName] = amp.getBBox()
+        if self.config.trimmedState:
+            linearizer.linearityBBox[ampName] = amp.getBBox()
+        else:
+            linearizer.linearityBBox[ampName] = amp.getRawBBox()
         linearizer.fitParams[ampName] = np.zeros(pEntries)
         linearizer.fitParamsErr[ampName] = np.zeros(pEntries)
         linearizer.fitChiSq[ampName] = np.nan
