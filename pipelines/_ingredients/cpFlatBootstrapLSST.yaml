@@ -1,0 +1,57 @@
+description: cp_pipe bootstrap flat calibration for LSST isr task
+tasks:
+  cpFlatBootstrapIsr:
+    class: lsst.ip.isr.IsrTaskLSST
+    config:
+      connections.ccdExposure: "raw"
+      connections.outputExposure: "cpFlatBootstrapIsrExp"
+      connections.bias: "biasBootstrap"
+      connections.dark: "darkBootstrap"
+      expectWcs: false
+      doDefect: false
+      doBias: true
+      doDark: true
+      doFlat: false
+      doDiffNonLinearCorrection: false
+      doBootstrap: true
+      doDeferredCharge: false
+      doLinearize: false
+      doCorrectGains: false
+      doApplyGains: false
+      doVariance: true
+      doSaturation: false
+      doSuspect: false
+      doCrosstalk: true
+      doWidenSaturationTrails: false
+      doInterpolate: false
+      maskNegativeVariance: false
+      doSetBadRegions: false
+      doBrighterFatter: false
+  cpFlatBootstrapMeasure:
+    class: lsst.cp.pipe.CpFlatMeasureTask
+    config:
+      connections.inputExp: "cpFlatBootstrapIsrExp"
+      connections.outputStats: "cpFlatBootstrapStatistics"
+  cpFlatBootstrapNormalize:
+    class: lsst.cp.pipe.CpFlatNormalizationTask
+    config:
+      connections.inputMDs: "cpFlatBootstrapStatistics"
+      connections.outputScales: "cpFlatBootstrapNormalizeScales"
+  cpFlatBootstrapCombine:
+    class: lsst.cp.pipe.CalibCombineByFilterTask
+    config:
+      connections.inputExpHandles: "cpFlatBootstrapIsrExp"
+      connections.inputScales: "cpFlatBootstrapNormalizeScales"
+      connections.outputData: "flatBootstrap"
+      calibrationType: "flat"
+      exposureScaling: InputList
+      scalingLevel: AMP
+contracts:
+  - cpFlatBootstrapIsr.doFlat == False
+  - cpFlatBootstrapIsr.doBootstrap == True
+  - cpFlatBootstrapMeasure.connections.inputExp == cpFlatBootstrapIsr.connections.outputExposure
+  - cpFlatBootstrapNormalize.connections.inputMDs == cpFlatBootstrapMeasure.connections.outputStats
+  - cpFlatBootstrapCombine.calibrationType == "flat"
+  - cpFlatBootstrapCombine.exposureScaling == "InputList"
+  - cpFlatBootstrapCombine.connections.inputExpHandles == cpFlatBootstrapIsr.connections.outputExposure
+  - cpFlatBootstrapCombine.connections.inputScales == cpFlatBootstrapNormalize.connections.outputScales

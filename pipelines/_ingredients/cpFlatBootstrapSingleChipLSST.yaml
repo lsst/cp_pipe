@@ -1,0 +1,42 @@
+description: cp_pipe bootstrap flat calibration for LSST isr task
+tasks:
+  cpFlatBootstrapIsr:
+    class: lsst.ip.isr.IsrTaskLSST
+    config:
+      connections.ccdExposure: "raw"
+      connections.outputExposure: "cpFlatBootstrapIsrExp"
+      connections.bias: "biasBootstrap"
+      connections.dark: "darkBootstrap"
+      expectWcs: false
+      doDefect: false
+      doBias: true
+      doDark: true
+      doFlat: false
+      doDiffNonLinearCorrection: false
+      doBootstrap: true
+      doDeferredCharge: false
+      doLinearize: false
+      doCorrectGains: false
+      doApplyGains: false
+      doVariance: true
+      doSaturation: false
+      doSuspect: false
+      doCrosstalk: true
+      doWidenSaturationTrails: false
+      doInterpolate: false
+      maskNegativeVariance: false
+      doSetBadRegions: false
+      doBrighterFatter: false
+  cpFlatBootstrapCombine:
+    class: lsst.cp.pipe.CalibCombineByFilterTask
+    config:
+      connections.inputExpHandles: "cpFlatBootstrapIsrExp"
+      connections.outputData: "flatBootstrap"
+      calibrationType: "flat"
+      exposureScaling: MeanStats
+contracts:
+  - cpFlatBootstrapIsr.doFlat == False
+  - cpFlatBootstrapIsr.doBootstrap == True
+  - cpFlatBootstrapCombine.calibrationType == "flat"
+  - cpFlatBootstrapCombine.connections.inputExpHandles == cpFlatBootstrapIsr.connections.outputExposure
+
