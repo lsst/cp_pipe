@@ -1,0 +1,29 @@
+description: cp_pipe defect calibration construction from combined images for LSST isr.
+tasks:
+  cpMeasureBiasDefects:
+    class: lsst.cp.pipe.MeasureDefectsCombinedTask
+    config:
+      connections.inputExp: "biasBootstrap"
+      connections.outputDefects: "cpDefectsFromBiasBootstrap"
+      thresholdType: "VALUE"
+  cpMeasureDarkDefects:
+    class: lsst.cp.pipe.MeasureDefectsCombinedTask
+    config:
+      connections.inputExp: "darkBootstrap"
+      connections.outputDefects: "cpDefectsFromDarkBootstrap"
+  cpMeasureFlatDefects:
+    class: lsst.cp.pipe.MeasureDefectsCombinedWithFilterTask
+    config:
+      connections.inputExp: "flatBootstrap"
+      connections.outputDefects: "cpDefectsFromFlatBootstrap"
+  cpMergeDefects:
+    class: lsst.cp.pipe.MergeDefectsCombinedTask
+    config:
+      combinationMode: OR
+      connections.inputBiasDefects: "cpDefectsFromBiasBootstrap"
+      connections.inputDarkDefects: "cpDefectsFromDarkBootstrap"
+      connections.inputFlatDefects: "cpDefectsFromFlatBootstrap"
+contracts:
+  - cpMergeDefects.connections.inputBiasDefects == cpMeasureBiasDefects.connections.outputDefects
+  - cpMergeDefects.connections.inputDarkDefects == cpMeasureDarkDefects.connections.outputDefects
+  - cpMergeDefects.connections.inputFlatDefects == cpMeasureFlatDefects.connections.outputDefects
