@@ -1,0 +1,42 @@
+description: cp_pipe bootstrap dark calibration for LSST isr task
+tasks:
+  cpDarkBootstrapIsr:
+    class: lsst.ip.isr.IsrTaskLSST
+    config:
+      connections.ccdExposure: "raw"
+      connections.outputExposure: "cpDarkBootstrapIsrExp"
+      connections.bias: "biasBootstrap"
+      expectWcs: false
+      doDefect: false
+      doBias: true
+      doDark: false
+      doFlat: false
+      doDiffNonLinearCorrection: false
+      doBootstrap: true
+      doDeferredCharge: false
+      doLinearize: false
+      doCorrectGains: false
+      doApplyGains: false
+      doVariance: true
+      doSaturation: false
+      doSuspect: false
+      doCrosstalk: true
+      doWidenSaturationTrails: false
+      doInterpolate: false
+      maskNegativeVariance: false
+      doSetBadRegions: false
+      doBrighterFatter: false
+  cpDarkBootstrapCombine:
+    class: lsst.cp.pipe.CalibCombineTask
+    config:
+      connections.inputExpHandles: "cpDarkBootstrapIsrExp"
+      connections.outputData: "darkBootstrap"
+      calibrationType: "dark"
+      exposureScaling: "DarkTime"
+      mask: ["DETECTED", "INTRP"]
+contracts:
+  - cpDarkBootstrapIsr.doDark == False
+  - cpDarkBootstrapIsr.doBootstrap == True
+  - cpDarkBootstrapCombine.calibrationType == "dark"
+  - cpDarkBootstrapCombine.exposureScaling == "DarkTime"
+  - cpDarkBootstrapIsr.connections.outputExposure == cpDarkBootstrapCombine.connections.inputExpHandles
