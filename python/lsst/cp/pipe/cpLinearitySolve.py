@@ -104,6 +104,14 @@ class LinearitySolveConnections(pipeBase.PipelineTaskConnections,
         lookupFunction=ptcLookup,
     )
 
+    inputLinearizerPtc = cT.Input(
+        name="linearizerPtc",
+        doc="Input linearizer PTC dataset.",
+        storageClass="PhotonTransferCurveDataset",
+        dimensions=("instrument", "detector"),
+        isCalibration=True,
+    )
+
     inputPhotodiodeCorrection = cT.Input(
         name="pdCorrection",
         doc="Input photodiode correction.",
@@ -123,6 +131,11 @@ class LinearitySolveConnections(pipeBase.PipelineTaskConnections,
     def __init__(self, *, config=None):
         if not config.applyPhotodiodeCorrection:
             del self.inputPhotodiodeCorrection
+
+        if config.useLinearizerPtc:
+            del self.inputPtc
+        else:
+            del self.inputLinearizerPtc
 
 
 class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
@@ -261,6 +274,11 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
         default=None,
         optional=True,
     )
+    useLinearizerPtc = pexConfig.Field(
+        dtype=bool,
+        doc="Use a linearizer ptc in a single pipeline?",
+        default=False,
+    )
 
     def validate(self):
         super().validate()
@@ -291,7 +309,13 @@ class LinearitySolveTask(pipeBase.PipelineTask):
         inputs = butlerQC.get(inputRefs)
 
         # Use the dimensions to set calib/provenance information.
-        inputs['inputDims'] = dict(inputRefs.inputPtc.dataId.required)
+
+        if self.config.useLinearizerPtc:
+            inputs["inputDims"] = dict(inputRefs.inputLinearizerPtc.dataId.required)
+            inputs["inputPtc"] = inputs["inputLinearizerPtc"]
+            del inputs["inputLinearizerPtc"]
+        else:
+            inputs["inputDims"] = dict(inputRefs.inputPtc.dataId.required)
 
         # Add calibration provenance info to header.
         kwargs = dict()
