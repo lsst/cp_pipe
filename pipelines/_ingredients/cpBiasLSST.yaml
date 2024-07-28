@@ -1,0 +1,71 @@
+description: cp_pipe bias calibration for LSST isr task
+tasks:
+  cpBiasIsr:
+    class: lsst.ip.isr.IsrTaskLSST
+    config:
+      connections.ccdExposure: "raw"
+      connections.outputExposure: "cpBiasIsrExp"
+      expectWcs: false
+      doDefect: false
+      doBias: false
+      doDark: false
+      doFlat: false
+      doDiffNonLinearCorrection: false
+      doBootstrap: false
+      doDeferredCharge: false
+      doLinearize: true
+      doCorrectGains: false
+      doApplyGains: true
+      doVariance: true
+      doSaturation: false
+      doSuspect: false
+      doCrosstalk: true
+      doWidenSaturationTrails: false
+      doInterpolate: false
+      maskNegativeVariance: false
+      doSetBadRegions: false
+      doBrighterFatter: false
+  cpBiasCombine:
+    class: lsst.cp.pipe.CalibCombineTask
+    config:
+      connections.inputExpHandles: "cpBiasIsrExp"
+      connections.outputData: "bias"
+      calibrationType: "bias"
+      exposureScaling: "Unity"
+      mask: ["DETECTED", "INTRP"]
+  cpBiasBin8:
+    class: lsst.pipe.tasks.visualizeVisit.VisualizeBinCalibTask
+    config:
+      connections.inputExp: "bias"
+      connections.outputExp: "biasBin8"
+      binning: 8
+  cpBiasBin64:
+    class: lsst.pipe.tasks.visualizeVisit.VisualizeBinCalibTask
+    config:
+      connections.inputExp: "bias"
+      connections.outputExp: "biasBin64"
+      binning: 64
+  cpBiasMosaic8:
+    class: lsst.pipe.tasks.visualizeVisit.VisualizeMosaicCalibTask
+    config:
+      connections.inputExps: "biasBin8"
+      connections.outputData: "biasMosaic8"
+      binning: 8
+  cpBiasMosaic64:
+    class: lsst.pipe.tasks.visualizeVisit.VisualizeMosaicCalibTask
+    config:
+      connections.inputExps: "biasBin64"
+      connections.outputData: "biasMosaic64"
+      binning: 64
+contracts:
+  - cpBiasIsr.doBias == False
+  - cpBiasIsr.doBootstrap == False
+  - cpBiasCombine.calibrationType == "bias"
+  - cpBiasCombine.exposureScaling == "Unity"
+  - cpBiasBin8.binning == cpBiasMosaic8.binning
+  - cpBiasBin64.binning == cpBiasMosaic64.binning
+  - cpBiasCombine.connections.inputExpHandles == cpBiasIsr.connections.outputExposure
+  - cpBiasBin8.connections.inputExp == cpBiasCombine.connections.outputData
+  - cpBiasBin64.connections.inputExp == cpBiasCombine.connections.outputData
+  - cpBiasMosaic8.connections.inputExps == cpBiasBin8.connections.outputExp
+  - cpBiasMosaic64.connections.inputExps == cpBiasBin64.connections.outputExp
