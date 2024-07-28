@@ -540,6 +540,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                     self.log.warning("Already found 2 exposures at %s %f. Ignoring exposures: %s",
                                      self.config.matchExposuresType, expTime,
                                      ", ".join(str(i[1]) for i in exposures[2:]))
+            self.log.info("Extracting PTC data from flat pair %d, %d", expId1, expId2)
             # Mask pixels at the edge of the detector or of each amp
             if self.config.numEdgeSuspect > 0:
                 isrTask.maskEdges(exp1, numEdgePixels=self.config.numEdgeSuspect,
