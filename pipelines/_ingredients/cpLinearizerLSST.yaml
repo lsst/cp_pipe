@@ -1,0 +1,60 @@
+description: cp_pipe linearizer calibration construction.
+tasks:
+  cpLinearizerIsr:
+    class: lsst.ip.isr.IsrTaskLSST
+    config:
+      connections.ccdExposure: "raw"
+      connections.outputExposure: "cpLinearizerIsrExp"
+      expectWcs: false
+      doDefect: true
+      doBias: false
+      doDark: false
+      doFlat: false
+      nominalGain: 1.0
+      doDiffNonLinearCorrection: false
+      doBootstrap: true
+      doDeferredCharge: false
+      doLinearize: false
+      doCorrectGains: false
+      doApplyGains: false
+      doVariance: true
+      doSaturation: false
+      doSuspect: false
+      doCrosstalk: true
+      doWidenSaturationTrails: false
+      doInterpolate: false
+      maskNegativeVariance: false
+      doSetBadRegions: false
+      doBrighterFatter: false
+  cpLinearizerPtcExtract:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
+    config:
+      connections.inputExp: "cpLinearizerIsrExp"
+      connections.outputCovariances: "cpLinearizerPtcPartial"
+      connections.taskMetadata: "cpLinearizerIsr_metadata"
+      maximumRangeCovariancesAstier: 1
+      numEdgeSuspect: 20
+      edgeMaskLevel: "AMP"
+  cpLinearizerPtcSolve:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
+    config:
+      connections.inputCovariances: "cpLinearizerPtcPartial"
+      connections.outputPtcDataset: "linearizerPtc"
+      ptcFitType: "EXPAPPROXIMATION"
+      maximumRangeCovariancesAstier: 1
+  cpLinearizerSolve:
+    class: lsst.cp.pipe.LinearitySolveTask
+    config:
+      useLinearizerPtc: true
+      connections.inputLinearizerPtc: "linearizerPtc"
+      connections.outputLinearizer: "linearizer"
+      linearityType: "Spline"
+      splineKnots: 10
+contracts:
+  - cpLinearizerIsr.doBootstrap == True
+  - cpLinearizerIsr.nominalGain == 1.0
+  - cpLinearizerPtcExtract.connections.inputExp == cpLinearizerIsr.connections.outputExposure
+  - cpLinearizerPtcSolve.binSize == cpLinearizerPtcExtract.binSize
+  - cpLinearizerPtcSolve.maximumRangeCovariancesAstier == cpLinearizerPtcExtract.maximumRangeCovariancesAstier
+  - cpLinearizerPtcSolve.connections.inputCovariances == cpLinearizerPtcExtract.connections.outputCovariances
+  - cpLinearizerSolve.connections.inputLinearizerPtc == cpLinearizerPtcSolve.connections.outputPtcDataset
