@@ -1,0 +1,54 @@
+description: cp_pipe ptc calibration construction.
+tasks:
+  cpPtcIsr:
+    class: lsst.ip.isr.IsrTaskLSST
+    config:
+      connections.ccdExposure: "raw"
+      connections.outputExposure: "cpPtcIsrExp"
+      expectWcs: false
+      doDefect: true
+      doBias: false
+      doDark: false
+      doFlat: false
+      nominalGain: 1.0
+      doDiffNonLinearCorrection: false
+      doBootstrap: true
+      doDeferredCharge: false
+      doLinearize: true
+      doCorrectGains: false
+      doApplyGains: false
+      doVariance: true
+      doSaturation: false
+      doSuspect: false
+      doCrosstalk: true
+      doWidenSaturationTrails: false
+      doInterpolate: false
+      maskNegativeVariance: false
+      doSetBadRegions: false
+      doBrighterFatter: false
+  cpPtcExtract:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
+    config:
+      connections.inputExp: "cpPtcIsrExp"
+      connections.outputCovariances: "cpPtcPartial"
+      connections.taskMetadata: "cpPtcIsr_metadata"
+      maximumRangeCovariancesAstier: 8
+      numEdgeSuspect: 20
+      edgeMaskLevel: "AMP"
+  cpPtcSolve:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
+    config:
+      connections.inputCovariances: "cpPtcPartial"
+      connections.outputPtcDataset: "ptc"
+      # ptcFitType: "FULLCOVARIANCE"
+      ptcFitType: "EXPAPPROXIMATION"
+      maximumRangeCovariancesAstier: 8
+      python: |
+        config.maxMeanSignal = {"ALL_AMPS": 50000.0}
+contracts:
+  - cpPtcIsr.doBootstrap == True
+  - cpPtcIsr.nominalGain == 1.0
+  - cpPtcExtract.connections.inputExp == cpPtcIsr.connections.outputExposure
+  - cpPtcSolve.binSize == cpPtcExtract.binSize
+  - cpPtcSolve.maximumRangeCovariancesAstier == cpPtcExtract.maximumRangeCovariancesAstier
+  - cpPtcSolve.connections.inputCovariances == cpPtcExtract.connections.outputCovariances
