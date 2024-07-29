@@ -570,13 +570,12 @@ class CalibCombineTask(pipeBase.PipelineTask):
         inputHeaders = [expHandle.get(component="metadata") for expHandle in expHandleList]
         merged = merge_headers(inputHeaders, mode="drop")
 
-        # Scan the first header for items that were dropped due to
-        # conflict, and replace them.
+        # Add the unchanging headers from all inputs to the given header.
         for k, v in merged.items():
             if k not in header:
-                md = inputHeaders[0]
-                comment = md.getComment(k) if k in md else None
-                header.set(k, v, comment=comment)
+                # The merged header should be a PropertyList so will have
+                # comment information.
+                header.set(k, v, comment=merged.getComment(k))
 
         # Construct list of visits
         visitInfoList = [expHandle.get(component="visitInfo") for expHandle in expHandleList]
