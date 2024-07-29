@@ -1,4 +1,29 @@
 description: cp_pipe DEFECT calibration construction from combined images.
 instrument: lsst.obs.lsst.LsstComCam
 imports:
-  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpDefects.yaml
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpDefectsLSST.yaml
+tasks:
+  cpMeasureBiasDefects:
+    class: lsst.cp.pipe.MeasureDefectsCombinedTask
+    config:
+      badPixelsToFillColumnThreshold: 1000
+      saturatedPixelsToFillColumnThreshold: 20
+      saturatedColumnDilationRadius: 2
+  cpMeasureDarkDefects:
+    class: lsst.cp.pipe.MeasureDefectsCombinedTask
+    config:
+      thresholdType: "VALUE"
+      darkCurrentThreshold: 3.0
+      badPixelsToFillColumnThreshold: 1000
+      saturatedPixelsToFillColumnThreshold: 20
+      saturatedColumnDilationRadius: 2
+  cpMeasureFlatDefects:
+    class: lsst.cp.pipe.MeasureDefectsCombinedWithFilterTask
+    config:
+      thresholdType: "VALUE"
+      fracThresholdFlat: 0.9
+      badPixelsToFillColumnThreshold: 1000
+  cpMergeDefects:
+    class: lsst.cp.pipe.MergeDefectsCombinedTask
+    config:
+      edgesAsDefects: true
