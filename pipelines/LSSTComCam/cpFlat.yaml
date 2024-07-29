@@ -1,15 +1,9 @@
 description: ComCam flat calibration construction
 instrument: lsst.obs.lsst.LsstComCam
 imports:
-  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpFlat.yaml
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpFlatLSST.yaml
 tasks:
   cpFlatIsr:
-    class: lsst.ip.isr.IsrTask
+    class: lsst.ip.isr.IsrTaskLSST
     config:
-      doLinearize: false
       doCrosstalk: false
-      doDefect: false
-  cpFlatMeasure:
-    class: lsst.cp.pipe.CpFlatMeasureTask
-    config:
-      doVignette: false
