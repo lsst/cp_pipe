@@ -584,7 +584,11 @@ class CalibCombineTask(pipeBase.PipelineTask):
             if visit is None:
                 continue
             header.set("CPP_INPUT_%d" % (i,), visit.id)
-            header.set("CPP_INPUT_DATE_%d" % (i,), str(visit.getDate()))
+            header.set(
+                "CPP_INPUT_DATE_%d" % (i,),
+                str(visit.getDate().toAstropy().to_value("fits")),
+                comment=f"TAI date of input {i}",
+            )
             header.set("CPP_INPUT_EXPT_%d" % (i,), visit.getExposureTime())
             if scales is not None:
                 header.set("CPP_INPUT_SCALE_%d" % (i,), scales[i])
