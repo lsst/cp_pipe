@@ -43,8 +43,6 @@ tasks:
       # ptcFitType: "FULLCOVARIANCE"
       ptcFitType: "EXPAPPROXIMATION"
       maximumRangeCovariancesAstier: 8
-      python: |
-        config.maxMeanSignal = {"ALL_AMPS": 50000.0}
 contracts:
   - cpPtcIsr.doBootstrap == True
   - cpPtcIsr.nominalGain == 1.0
