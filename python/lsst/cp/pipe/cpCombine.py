@@ -586,15 +586,15 @@ class CalibCombineTask(pipeBase.PipelineTask):
         for i, visit in enumerate(visitInfoList):
             if visit is None:
                 continue
-            header.set("CPP_INPUT_%d" % (i,), visit.id)
+            header.set(f"CPP_INPUT_{i}", visit.id, comment="Input exposure ID")
             header.set(
-                "CPP_INPUT_DATE_%d" % (i,),
+                f"CPP_INPUT_DATE_{i}",
                 str(visit.getDate().toAstropy().to_value("fits")),
                 comment=f"TAI date of input {i}",
             )
-            header.set("CPP_INPUT_EXPT_%d" % (i,), visit.getExposureTime())
+            header.set(f"CPP_INPUT_EXPT_{i}", visit.getExposureTime(), comment="Input exposure time")
             if scales is not None:
-                header.set("CPP_INPUT_SCALE_%d" % (i,), scales[i])
+                header.set(f"CPP_INPUT_SCALE_{i}", scales[i], comment="Scaling applied to input")
 
         # Populate a visitInfo.  Set the exposure time and dark time
         # to 0.0 or 1.0 as appropriate, and copy the instrument name
