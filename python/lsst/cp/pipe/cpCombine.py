@@ -20,6 +20,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import numpy as np
 from datetime import datetime, UTC
+from operator import attrgetter
 
 import lsst.geom as geom
 import lsst.pex.config as pexConfig
@@ -608,17 +609,16 @@ class CalibCombineTask(pipeBase.PipelineTask):
         if calib:
             calib.getInfo().setVisitInfo(visitInfo)
 
-        # Not yet working: DM-22302
         # Create an observation group so we can add some standard headers
         # independent of the form in the input files.
-        # Use try block in case we are dealing with unexpected data headers
+        # Use try block in case we are dealing with unexpected data headers.
         try:
-            group = ObservationGroup(visitInfoList, pedantic=False)
+            group = ObservationGroup(inputHeaders, pedantic=False)
         except Exception:
             self.log.warning("Exception making an obs group for headers. Continuing.")
-            # Fall back to setting a DATE-OBS from the calibDate
-            dateCards = {"DATE-OBS": "{}T00:00:00.00".format(calibDate)}
-            comments["DATE-OBS"] = "Date of start of day of calibration creation"
+            # Sort the visitInfo and get first and last dates.
+            visitInfoList = sorted(visitInfoList, key=attrgetter("date"))
+            dateCards = dates_to_fits(visitInfoList[0].date.toAstropy(), visitInfoList[-1].date.toAstropy())
         else:
             oldest, newest = group.extremes()
             dateCards = dates_to_fits(oldest.datetime_begin, newest.datetime_end)
