@@ -108,6 +108,37 @@ class UtilsEfdTestCase(lsst.utils.tests.TestCase):
         )
         self.assertFloatsAlmostEqual(intensityReference, -1.532977e-07, atol=1e-10)
 
+    def test_electrometer_alternate(self):
+        if self.client is None:
+            self.log.warning("No EFD client: skipping electrometer test.")
+            return
+
+        # This should raise if no dates are passed:
+        with self.assertRaises(RuntimeError):
+            data = self.client.getEfdElectrometerData(
+                dataSeries='lsst.sal.Electrometer.logevent_logMessage')
+
+        data = self.client.getEfdElectrometerData(
+            dataSeries='lsst.sal.Electrometer.logevent_logMessage',
+            dateMin='2024-07-26T16:00:00',
+            dateMax='2024-07-26T20:00:00')
+
+        # Test single lookups.  These should not be integrated.
+        for iDate, iVal in zip(["2024-07-26T16:37:55.228",
+                                "2024-07-26T16:38:17.581",
+                                "2024-07-26T16:40:19.579",
+                                "2024-07-26T16:42:21.553"],
+                               [-2.24234e-07,
+                                -2.24388e-07,
+                                -2.24105e-07,
+                                -2.23784e-07]):
+            # import pdb; pdb.set_trace()
+            indexDate, intensity, _ = self.client.parseElectrometerStatus(
+                data,
+                iDate
+            )
+            self.assertFloatsAlmostEqual(intensity, iVal, atol=1e-10)
+
 
 class MemoryTester(lsst.utils.tests.MemoryTestCase):
     pass

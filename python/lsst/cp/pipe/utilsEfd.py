@@ -24,6 +24,7 @@ __all__ = ['CpEfdClient']
 
 import logging
 import numpy as np
+import re
 import requests
 
 from astropy.table import Table
@@ -211,7 +212,7 @@ class CpEfdClient():
 
         return table
 
-    def searchResults(self, data, dateStr):
+    def searchResults(self, data, dateStr, scale='tai'):
         """Determine the entry for a specific date.
 
         Parameters
@@ -220,13 +221,15 @@ class CpEfdClient():
             The table of results from the EFD.
         dateStr : `str`
             The date to look up in the status for.
+        scale : `str`, optional
+            Time scale to use.  Default is 'tai'.
 
         Returns
         -------
         result = `astropy.table.Row`
             The row of the data table corresponding to ``dateStr``.
         """
-        dateValue = Time(dateStr, format='isot', scale='tai')
+        dateValue = Time(dateStr, format='isot', scale=scale)
         # Table is now sorted on "time", which is in UTC.
 
         # Check that the date we want to consider is contained in the
@@ -333,8 +336,10 @@ class CpEfdClient():
         results : `astropy.table.Table`
             The table of results returned from the EFD.
         """
-        # This is currently the only monochromator available.
-        dataSeries = dataSeries if dataSeries else "lsst.sal.Electrometer.logevent_intensity"
+        # All electrometer data gets written to the same series.
+        defaultSeries = "lsst.sal.Electrometer.logevent_intensity"
+        alternateSeries = "lsst.sal.Electrometer.logevent_logMessage"
+        dataSeries = dataSeries if dataSeries else defaultSeries
 
         if dateMin:
             startDate = Time(dateMin, format='isot', scale='tai')
@@ -345,13 +350,80 @@ class CpEfdClient():
         else:
             stopDate = None
 
-        results = self.selectTimeSeries(dataSeries, [],
-                                        # ['intensity', 'private_sndStamp'],
-                                        startDate, stopDate)
+        if (dataSeries == alternateSeries and (startDate is None or stopDate is None)):
+            raise RuntimeError("Cannot query logevent_logMessage without dates to limit memory issues.")
 
+        results = self.selectTimeSeries(dataSeries, [],
+                                        startDate, stopDate)
+        if dataSeries == 'lsst.sal.Electrometer.logevent_logMessage':
+            results = self.rewriteElectrometerStatus(results)
         return results
 
-    def parseElectrometerStatus(self, data, dateStr, dateEnd=None, doIntegrateSamples=False, index=201):
+    def rewriteElectrometerStatus(self, inResults):
+        """Rewrite intermediate electrometer data from the EFD.
+
+        Parameters
+        ----------
+        inResults : `astropy.table.Table`
+            The table of results returned from the EFD.
+
+        Returns
+        -------
+        outResults : `astropy.table.Table`
+            The rewritten table containing only electrometer summary
+            status events.
+        """
+        # This is fragile against upstream changes.
+        # Ignore all entries that are not the ones we care about.
+        outResults = inResults[np.where(inResults['functionName'] == 'write_fits_file')]
+        outResults = outResults[np.where(outResults['level'] == 20)]
+
+        # These will be new columns
+        intensityMean = []
+        intensityStdev = []
+        intensityTime = []
+        intensityFile = []
+
+        for row in outResults:
+            # Fallback values in case the regexp fails
+            mean = np.nan
+            stdev = np.nan
+            time_mean = np.nan
+            filename = "REGEXP_FAIL"
+
+            # Find the last "filename\.extension" before the first newline;
+            #      the last [] grouped values before the second newline;
+            #      the last [] grouped values before the end of the string.
+            magic = re.findall(r'\b\w+.+?(\w+?\.\w+)\n\b\w+.+\[(.*?)\]\n\b\w+.+\[(.*?)\]$',
+                               row['message'])
+            if len(magic) != 0:
+                # If we matched, split the grouped values, cast them to floats.
+                filename, intensity_str, time_str = magic[0]
+                mean, median, stdev = intensity_str.split(',')
+                time_mean, time_median = time_str.split(',')
+                mean = float(mean)
+                median = float(median)
+                stdev = float(stdev)
+                time_mean = float(time_mean)
+                time_median = float(time_median)
+                # Censor the saturated points so plots look nice.
+                if mean > 1e37:
+                    mean = np.nan
+
+            intensityMean.append(mean)
+            intensityStdev.append(stdev)
+            intensityFile.append(filename)
+            intensityTime.append(time_mean)
+
+        # Add our new columns at the start of the column list
+        outResults.add_column(intensityMean, name='intensity', index=1)
+        outResults.add_column(intensityStdev, name='intensityStd', index=2)
+        outResults.add_column(intensityTime, name='intensityTimeMean', index=3)
+        outResults.add_column(intensityFile, name='expectedLfaFile', index=4)
+        return outResults
+
+    def parseElectrometerStatus(self, data, dateStr, dateEnd=None,
+                                doIntegrateSamples=False, index=201):
         """Determine electrometer status for a specific date.
 
         Parameters
@@ -381,8 +453,14 @@ class CpEfdClient():
             mask = (data['salIndex'] == index)
             data = data[mask]
 
+        if "intensityStd" in data.columns:
+            # The alternate access method appears to be in UTC, not TAI.
+            scale = 'utc'
+        else:
+            scale = 'tai'
+
         # searchResults returns the first entry prior to this date
-        result, idx = self.searchResults(data, dateStr)
+        result, idx = self.searchResults(data, dateStr, scale=scale)
 
         myTime = result["private_sndStamp"]
         myIntensity = result['intensity']
