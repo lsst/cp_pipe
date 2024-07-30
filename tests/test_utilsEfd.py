@@ -34,14 +34,10 @@ class UtilsEfdTestCase(lsst.utils.tests.TestCase):
         try:
             self.client = CpEfdClient()
         except Exception as e:
-            self.log.warning(f"Could not initialize EFD client: {e}")
             self.client = None
+            raise unittest.SkipTest(f"Could not initialize EFD client: {e}")
 
     def test_monochromator(self):
-        if self.client is None:
-            self.log.warning("No EFD client: skipping monochromator test.")
-            return
-
         data = self.client.getEfdMonochromatorData(
             dateMin="2023-12-19T00:00:00",
             dateMax="2023-12-19T23:59:59"
@@ -55,13 +51,7 @@ class UtilsEfdTestCase(lsst.utils.tests.TestCase):
         self.assertEqual(indexDate, "2023-12-19T14:37:17.799")
 
     def test_electrometer(self):
-        if self.client is None:
-            self.log.warning("No EFD client: skipping electrometer test.")
-            return
-        data = self.client.getEfdElectrometerData(
-            # dateMin="2024-05-30T13:00:00",
-            # dateMax="2024-05-30T15:00:00"
-        )
+        data = self.client.getEfdElectrometerData()
 
         # Test single lookups:
         for (iDate, rDate), (iVal, rVal) in zip([("2024-05-30T04:21:48", "2024-05-30T04:22:08"),
@@ -109,10 +99,6 @@ class UtilsEfdTestCase(lsst.utils.tests.TestCase):
         self.assertFloatsAlmostEqual(intensityReference, -1.532977e-07, atol=1e-10)
 
     def test_electrometer_alternate(self):
-        if self.client is None:
-            self.log.warning("No EFD client: skipping electrometer test.")
-            return
-
         # This should raise if no dates are passed:
         with self.assertRaises(RuntimeError):
             data = self.client.getEfdElectrometerData(
