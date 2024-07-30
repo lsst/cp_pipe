@@ -7,3 +7,8 @@ tasks:
     class: lsst.ip.isr.IsrTaskLSST
     config:
       doCrosstalk: false
+  cpPtcSolve:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
+    config:
+      maxDeltaInitialPtcOutlierFit: 20000.0
+      ksTestMinPvalue: 0.00001
