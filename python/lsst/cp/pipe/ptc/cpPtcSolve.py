@@ -60,6 +60,13 @@ class PhotonTransferCurveSolveConnections(pipeBase.PipelineTaskConnections,
         dimensions=("instrument",),
         isCalibration=True,
     )
+    linearizer = cT.PrerequisiteInput(
+        name='linearizer',
+        storageClass="Linearizer",
+        doc="Linearity correction calibration; used for gain ratios if configured.",
+        dimensions=["instrument", "detector"],
+        isCalibration=True,
+    )
     outputPtcDataset = cT.Output(
         name="ptcDatsetProposal",
         doc="Output proposed ptc dataset.",
@@ -68,6 +75,12 @@ class PhotonTransferCurveSolveConnections(pipeBase.PipelineTaskConnections,
         multiple=False,
         isCalibration=True,
     )
+
+    def __init__(self, *, config=None):
+        super().__init__(config=config)
+
+        if not config.doLinearityGainRatioFixup:
+            del self.linearizer
 
 
 class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
@@ -224,6 +237,11 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
         doc="Bin the image by this factor in both dimensions.",
         default=1,
     )
+    doLinearityGainRatioFixup = pexConfig.Field(
+        dtype=bool,
+        doc="Do gain ratio fixup based on linearity fits?",
+        default=False,
+    )
 
     def validate(self):
         super().validate()
@@ -291,10 +309,20 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         """
         inputs = butlerQC.get(inputRefs)
         detId = inputRefs.inputCovariances[0].dataId['detector']
-        outputs = self.run(inputCovariances=inputs['inputCovariances'], camera=inputs['camera'], detId=detId)
+        if self.config.doLinearityGainRatioFixup:
+            linearizer = inputs["linearizer"]
+        else:
+            linearizer = None
+
+        outputs = self.run(
+            inputCovariances=inputs['inputCovariances'],
+            camera=inputs['camera'],
+            detId=detId,
+            linearizer=linearizer,
+        )
         butlerQC.put(outputs, outputRefs)
 
-    def run(self, inputCovariances, camera=None, detId=0):
+    def run(self, inputCovariances, camera=None, detId=0, linearizer=None):
         """Fit measured covariances to different models.
 
         Parameters
@@ -307,6 +335,10 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             Detector ID to locate the detector in the camera and
             populate the `lsst.ip.isr.PhotonTransferCurveDataset`
             metadata.
+        linearizer : `lsst.ip.isr.Linearizer`
+            Linearizer for gain ratio fixups. Required if
+            doLinearityGainRatioFixup=True.
+
         Returns
         -------
         results : `lsst.pipe.base.Struct`
@@ -494,6 +526,43 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 self.log.warning(f"Read noise from PTC fit ({noiseFitted}) is not consistent "
                                  f"with read noise measured from overscan ({noise}) for "
                                  f"amplifier {ampName}. Try adjusting the fit range.")
+
+        if self.config.doLinearityGainRatioFixup:
+            # We need to find the reference amplifier.
+            # Find an amp near the middle to use as a pivot.
+            gainArray = np.zeros(len(datasetPtc.ampNames))
+            for i, ampName in enumerate(datasetPtc.ampNames):
+                gainArray[i] = datasetPtc.gain[ampName]
+            good, = np.where(np.isfinite(gainArray))
+
+            if len(good) > 1:
+                # This only works with more than 1 good amp.
+
+                st = np.argsort(gainArray[good])
+                midAmp = good[st[int(0.5*len(good))]]
+                midAmpName = datasetPtc.ampNames[midAmp]
+
+                self.log.info("Using amplifier %s as the pivot for doLinearityGainRatioFixup.", midAmpName)
+
+                for ampName in datasetPtc.ampNames:
+                    if not np.isfinite(datasetPtc.gain[ampName]) or ampName == midAmpName:
+                        continue
+
+                    ratioPtc = datasetPtc.gain[ampName] / datasetPtc.gain[midAmpName]
+                    ratioLinearity = linearizer.linearFit[midAmpName][1] / linearizer.linearFit[ampName][1]
+
+                    correction = ratioLinearity / ratioPtc
+                    newGain = datasetPtc.gain[ampName] * correction
+                    self.log.info(
+                        "Adjusting gain from amplifier %s by factor of %.3f (from %.4f to %.4f)",
+                        ampName,
+                        correction,
+                        datasetPtc.gain[ampName],
+                        newGain,
+                    )
+                    datasetPtc.gain[ampName] = newGain
+            else:
+                self.log.warning("Cannot apply doLinearityGainRatioFixup with fewer than 2 good amplifiers.")
 
         if camera:
             detector = camera[detId]
