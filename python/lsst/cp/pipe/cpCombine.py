@@ -22,6 +22,7 @@ import numpy as np
 from datetime import datetime, UTC
 from operator import attrgetter
 
+import astropy.time
 import lsst.geom as geom
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
@@ -29,9 +30,11 @@ import lsst.pipe.base.connectionTypes as cT
 import lsst.afw.math as afwMath
 import lsst.afw.image as afwImage
 
+import lsst.daf.base
+
 from lsst.ip.isr.vignette import maskVignettedRegion
 
-from astro_metadata_translator import merge_headers, ObservationGroup
+from astro_metadata_translator import merge_headers
 from astro_metadata_translator.serialize import dates_to_fits
 
 
@@ -555,6 +558,8 @@ class CalibCombineTask(pipeBase.PipelineTask):
         comments = {"TIMESYS": "Time scale for all dates",
                     "DATE-OBS": "Start date of earliest input observation",
                     "MJD-OBS": "[d] Start MJD of earliest input observation",
+                    "DATE-BEG": "Start date of earliest input observation",
+                    "MJD-BEG": "[d] Start MJD of earliest input observation",
                     "DATE-END": "End date of oldest input observation",
                     "MJD-END": "[d] End MJD of oldest input observation",
                     "MJD-AVG": "[d] MJD midpoint of all input observations",
@@ -582,8 +587,16 @@ class CalibCombineTask(pipeBase.PipelineTask):
                 # comment information.
                 header.set(k, v, comment=merged.getComment(k))
 
+        # Ideally we would avoid going to butler again to read VisitInfo
+        # information when there is already the header available. Unfortunately
+        # the FITS reader strips VisitInfo keys from the header so it is no
+        # longer possible to create an ObservationInfo with valid exposure
+        # time (and DATE-BEG survives only because afw calls it DATE-OBS).
+
         # Construct list of visits
         visitInfoList = [expHandle.get(component="visitInfo") for expHandle in expHandleList]
+
+        # Create provenance headers.
         for i, visit in enumerate(visitInfoList):
             if visit is None:
                 continue
@@ -597,34 +610,41 @@ class CalibCombineTask(pipeBase.PipelineTask):
             if scales is not None:
                 header.set(f"CPP_INPUT_SCALE_{i}", scales[i], comment="Scaling applied to input")
 
-        # Populate a visitInfo.  Set the exposure time and dark time
-        # to 0.0 or 1.0 as appropriate, and copy the instrument name
-        # from one of the inputs.
-        expTime = 1.0
-        if self.config.connections.outputData.lower() == 'bias':
-            expTime = 0.0
-        inputVisitInfo = visitInfoList[0]
-        visitInfo = afwImage.VisitInfo(exposureTime=expTime, darkTime=expTime,
-                                       instrumentLabel=inputVisitInfo.instrumentLabel)
-        if calib:
-            calib.getInfo().setVisitInfo(visitInfo)
+        # Sort the inputs into date order.
+        visitInfoList = sorted(visitInfoList, key=attrgetter("date"))
 
-        # Create an observation group so we can add some standard headers
-        # independent of the form in the input files.
-        # Use try block in case we are dealing with unexpected data headers.
-        try:
-            group = ObservationGroup(inputHeaders, pedantic=False)
-        except Exception:
-            self.log.warning("Exception making an obs group for headers. Continuing.")
-            # Sort the visitInfo and get first and last dates.
-            visitInfoList = sorted(visitInfoList, key=attrgetter("date"))
-            dateCards = dates_to_fits(visitInfoList[0].date.toAstropy(), visitInfoList[-1].date.toAstropy())
-        else:
-            oldest, newest = group.extremes()
-            dateCards = dates_to_fits(oldest.datetime_begin, newest.datetime_end)
+        def add_time_offset(dt: lsst.daf.base.DateTime, offset: float) -> astropy.time.Time:
+            # Calculate a astropy time with an offset applied.
+            at = dt.toAstropy()
+            if offset == 0.0:
+                return at
+            return at + astropy.time.TimeDelta(offset, format="sec")
+
+        earliest = add_time_offset(visitInfoList[0].date, visitInfoList[0].exposureTime / -2.0)
+        newest = add_time_offset(visitInfoList[-1].date, visitInfoList[-1].exposureTime / 2.0)
+
+        # Add standard DATE headers covering the range of inputs.
+        dateCards = dates_to_fits(earliest, newest)
 
         for k, v in dateCards.items():
             header.set(k, v, comment=comments.get(k, None))
+
+        # Populate a visitInfo.  Set the exposure time and dark time
+        # to 0.0 or 1.0 as appropriate, and copy the instrument name
+        # from one of the inputs.
+        if calib:
+            expTime = 1.0
+            if self.config.connections.outputData.lower() == 'bias':
+                expTime = 0.0
+            inputVisitInfo = visitInfoList[0]
+            date_avg = earliest + (newest - earliest) / 2.0
+            visitInfo = afwImage.VisitInfo(
+                exposureTime=expTime,
+                darkTime=expTime,
+                date=lsst.daf.base.DateTime(date_avg.isot, lsst.daf.base.DateTime.TAI),
+                instrumentLabel=inputVisitInfo.instrumentLabel
+            )
+            calib.getInfo().setVisitInfo(visitInfo)
 
         return header
 
