@@ -19,7 +19,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import numpy as np
-import time
+from datetime import datetime, UTC
 
 import lsst.geom as geom
 import lsst.pex.config as pexConfig
@@ -559,10 +559,14 @@ class CalibCombineTask(pipeBase.PipelineTask):
                     "MJD-AVG": "[d] MJD midpoint of all input observations",
                     "DATE-AVG": "Midpoint date of all input observations"}
 
-        # Creation date
-        now = time.localtime()
-        calibDate = time.strftime("%Y-%m-%d", now)
-        calibTime = time.strftime("%X %Z", now)
+        # Creation date. Calibration team standard is for local time to be
+        # available. Also form UTC (not TAI) version for easier comparisons
+        # across multiple processing sites.
+        now = datetime.now(tz=UTC)
+        header.set("CALIB_CREATION_DATETIME", now.strftime("%Y-%m-%dT%T"), comment="UTC of processing")
+        local_time = now.astimezone()
+        calibDate = local_time.strftime("%Y-%m-%d")
+        calibTime = local_time.strftime("%X %Z")
         header.set("CALIB_CREATION_DATE", calibDate, comment="Local time day of creation")
         header.set("CALIB_CREATION_TIME", calibTime, comment="Local time in day of creation")
 
