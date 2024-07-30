@@ -1273,6 +1273,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                             "Found a jump of %.2f for amp %s, greater than %.2f. Masking points higher "
                             "than %.2f ADU.",
                             deltaADU,
+                            ampName,
                             maxDeltaADUInitialPtcOutlierFit,
                             meanVecSorted[useMask[useIndex - 1]],
                         )
