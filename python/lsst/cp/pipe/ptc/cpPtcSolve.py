@@ -1269,6 +1269,14 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                             # This jump is fine; continue.
                             continue
 
+                        self.log.info(
+                            "Found a jump of %.2f for amp %s, greater than %.2f. Masking points higher "
+                            "than %.2f ADU.",
+                            deltaADU,
+                            maxDeltaADUInitialPtcOutlierFit,
+                            meanVecSorted[useMask[useIndex - 1]],
+                        )
+
                         # Mark all further points bad.
                         newMask[usePoint:] = False
                         break
