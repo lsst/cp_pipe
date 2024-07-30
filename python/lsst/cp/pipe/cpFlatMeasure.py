@@ -252,7 +252,7 @@ class CpFlatNormalizationTask(pipeBase.PipelineTask):
                 exposureId = inDimensions['exposure']
                 detectorId = inDimensions['detector']
             except Exception as e:
-                raise KeyError("Cannot find expected dimensions in %s" % (inDimensions, )) from e
+                raise KeyError(f"Cannot find expected dimensions in {inDimensions}") from e
 
             if self.config.level == 'DETECTOR':
                 detIdx = detMap[detectorId]

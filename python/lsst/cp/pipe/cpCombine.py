@@ -422,7 +422,7 @@ class CalibCombineTask(pipeBase.PipelineTask):
         """
         dim = set((w, h) for w, h in dimList)
         if len(dim) != 1:
-            raise RuntimeError("Inconsistent dimensions: %s" % dim)
+            raise RuntimeError(f"Inconsistent dimensions: {dim}")
         return dim.pop()
 
     def applyScale(self, exposure, bbox=None, scale=None):
@@ -474,18 +474,17 @@ class CalibCombineTask(pipeBase.PipelineTask):
             ``bbox``, but it will never be empty.
         """
         if bbox.isEmpty():
-            raise RuntimeError("bbox %s is empty" % (bbox,))
+            raise RuntimeError(f"bbox {bbox} is empty")
         if subregionSize[0] < 1 or subregionSize[1] < 1:
-            raise RuntimeError("subregionSize %s must be nonzero" % (subregionSize,))
+            raise RuntimeError(f"subregionSize {subregionSize} must be nonzero")
 
         for rowShift in range(0, bbox.getHeight(), subregionSize[1]):
             for colShift in range(0, bbox.getWidth(), subregionSize[0]):
                 subBBox = geom.Box2I(bbox.getMin() + geom.Extent2I(colShift, rowShift), subregionSize)
                 subBBox.clip(bbox)
                 if subBBox.isEmpty():
-                    raise RuntimeError("Bug: empty bbox! bbox=%s, subregionSize=%s, "
-                                       "colShift=%s, rowShift=%s" %
-                                       (bbox, subregionSize, colShift, rowShift))
+                    raise RuntimeError(f"Bug: empty bbox! bbox={bbox}, subregionSize={subregionSize}, "
+                                       f"colShift={colShift}, rowShift={rowShift}")
                 yield subBBox
 
     def combine(self, target, expHandleList, expScaleList, stats):
