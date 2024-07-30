@@ -11,4 +11,4 @@ tasks:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
     config:
       maxDeltaInitialPtcOutlierFit: 20000.0
-      ksTestMinPvalue: 0.0001
+
