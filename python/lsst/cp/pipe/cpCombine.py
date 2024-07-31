@@ -19,8 +19,10 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import numpy as np
-import time
+from datetime import datetime, UTC
+from operator import attrgetter
 
+import astropy.time
 import lsst.geom as geom
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
@@ -28,9 +30,11 @@ import lsst.pipe.base.connectionTypes as cT
 import lsst.afw.math as afwMath
 import lsst.afw.image as afwImage
 
+import lsst.daf.base
+
 from lsst.ip.isr.vignette import maskVignettedRegion
 
-from astro_metadata_translator import merge_headers, ObservationGroup
+from astro_metadata_translator import merge_headers
 from astro_metadata_translator.serialize import dates_to_fits
 
 
@@ -418,7 +422,7 @@ class CalibCombineTask(pipeBase.PipelineTask):
         """
         dim = set((w, h) for w, h in dimList)
         if len(dim) != 1:
-            raise RuntimeError("Inconsistent dimensions: %s" % dim)
+            raise RuntimeError(f"Inconsistent dimensions: {dim}")
         return dim.pop()
 
     def applyScale(self, exposure, bbox=None, scale=None):
@@ -470,18 +474,17 @@ class CalibCombineTask(pipeBase.PipelineTask):
             ``bbox``, but it will never be empty.
         """
         if bbox.isEmpty():
-            raise RuntimeError("bbox %s is empty" % (bbox,))
+            raise RuntimeError(f"bbox {bbox} is empty")
         if subregionSize[0] < 1 or subregionSize[1] < 1:
-            raise RuntimeError("subregionSize %s must be nonzero" % (subregionSize,))
+            raise RuntimeError(f"subregionSize {subregionSize} must be nonzero")
 
         for rowShift in range(0, bbox.getHeight(), subregionSize[1]):
             for colShift in range(0, bbox.getWidth(), subregionSize[0]):
                 subBBox = geom.Box2I(bbox.getMin() + geom.Extent2I(colShift, rowShift), subregionSize)
                 subBBox.clip(bbox)
                 if subBBox.isEmpty():
-                    raise RuntimeError("Bug: empty bbox! bbox=%s, subregionSize=%s, "
-                                       "colShift=%s, rowShift=%s" %
-                                       (bbox, subregionSize, colShift, rowShift))
+                    raise RuntimeError(f"Bug: empty bbox! bbox={bbox}, subregionSize={subregionSize}, "
+                                       f"colShift={colShift}, rowShift={rowShift}")
                 yield subBBox
 
     def combine(self, target, expHandleList, expScaleList, stats):
@@ -554,70 +557,93 @@ class CalibCombineTask(pipeBase.PipelineTask):
         comments = {"TIMESYS": "Time scale for all dates",
                     "DATE-OBS": "Start date of earliest input observation",
                     "MJD-OBS": "[d] Start MJD of earliest input observation",
+                    "DATE-BEG": "Start date of earliest input observation",
+                    "MJD-BEG": "[d] Start MJD of earliest input observation",
                     "DATE-END": "End date of oldest input observation",
                     "MJD-END": "[d] End MJD of oldest input observation",
                     "MJD-AVG": "[d] MJD midpoint of all input observations",
                     "DATE-AVG": "Midpoint date of all input observations"}
 
-        # Creation date
-        now = time.localtime()
-        calibDate = time.strftime("%Y-%m-%d", now)
-        calibTime = time.strftime("%X %Z", now)
-        header.set("CALIB_CREATION_DATE", calibDate)
-        header.set("CALIB_CREATION_TIME", calibTime)
+        # Creation date. Calibration team standard is for local time to be
+        # available. Also form UTC (not TAI) version for easier comparisons
+        # across multiple processing sites.
+        now = datetime.now(tz=UTC)
+        header.set("CALIB_CREATION_DATETIME", now.strftime("%Y-%m-%dT%T"), comment="UTC of processing")
+        local_time = now.astimezone()
+        calibDate = local_time.strftime("%Y-%m-%d")
+        calibTime = local_time.strftime("%X %Z")
+        header.set("CALIB_CREATION_DATE", calibDate, comment="Local time day of creation")
+        header.set("CALIB_CREATION_TIME", calibTime, comment="Local time in day of creation")
 
         # Merge input headers
         inputHeaders = [expHandle.get(component="metadata") for expHandle in expHandleList]
         merged = merge_headers(inputHeaders, mode="drop")
 
-        # Scan the first header for items that were dropped due to
-        # conflict, and replace them.
+        # Add the unchanging headers from all inputs to the given header.
         for k, v in merged.items():
             if k not in header:
-                md = inputHeaders[0]
-                comment = md.getComment(k) if k in md else None
-                header.set(k, v, comment=comment)
+                # The merged header should be a PropertyList so will have
+                # comment information.
+                header.set(k, v, comment=merged.getComment(k))
+
+        # Ideally we would avoid going to butler again to read VisitInfo
+        # information when there is already the header available. Unfortunately
+        # the FITS reader strips VisitInfo keys from the header so it is no
+        # longer possible to create an ObservationInfo with valid exposure
+        # time (and DATE-BEG survives only because afw calls it DATE-OBS).
 
         # Construct list of visits
         visitInfoList = [expHandle.get(component="visitInfo") for expHandle in expHandleList]
+
+        # Create provenance headers.
         for i, visit in enumerate(visitInfoList):
             if visit is None:
                 continue
-            header.set("CPP_INPUT_%d" % (i,), visit.id)
-            header.set("CPP_INPUT_DATE_%d" % (i,), str(visit.getDate()))
-            header.set("CPP_INPUT_EXPT_%d" % (i,), visit.getExposureTime())
+            header.set(f"CPP_INPUT_{i}", visit.id, comment="Input exposure ID")
+            header.set(
+                f"CPP_INPUT_DATE_{i}",
+                str(visit.getDate().toAstropy().to_value("fits")),
+                comment=f"TAI date of input {i}",
+            )
+            header.set(f"CPP_INPUT_EXPT_{i}", visit.getExposureTime(), comment="Input exposure time")
             if scales is not None:
-                header.set("CPP_INPUT_SCALE_%d" % (i,), scales[i])
+                header.set(f"CPP_INPUT_SCALE_{i}", scales[i], comment="Scaling applied to input")
+
+        # Sort the inputs into date order.
+        visitInfoList = sorted(visitInfoList, key=attrgetter("date"))
+
+        def add_time_offset(dt: lsst.daf.base.DateTime, offset: float) -> astropy.time.Time:
+            # Calculate a astropy time with an offset applied.
+            at = dt.toAstropy()
+            if offset == 0.0:
+                return at
+            return at + astropy.time.TimeDelta(offset, format="sec")
+
+        earliest = add_time_offset(visitInfoList[0].date, visitInfoList[0].exposureTime / -2.0)
+        newest = add_time_offset(visitInfoList[-1].date, visitInfoList[-1].exposureTime / 2.0)
+
+        # Add standard DATE headers covering the range of inputs.
+        dateCards = dates_to_fits(earliest, newest)
+
+        for k, v in dateCards.items():
+            header.set(k, v, comment=comments.get(k, None))
 
         # Populate a visitInfo.  Set the exposure time and dark time
         # to 0.0 or 1.0 as appropriate, and copy the instrument name
         # from one of the inputs.
-        expTime = 1.0
-        if self.config.connections.outputData.lower() == 'bias':
-            expTime = 0.0
-        inputVisitInfo = visitInfoList[0]
-        visitInfo = afwImage.VisitInfo(exposureTime=expTime, darkTime=expTime,
-                                       instrumentLabel=inputVisitInfo.instrumentLabel)
         if calib:
+            expTime = 1.0
+            if self.config.connections.outputData.lower() == 'bias':
+                expTime = 0.0
+            inputVisitInfo = visitInfoList[0]
+            date_avg = earliest + (newest - earliest) / 2.0
+            visitInfo = afwImage.VisitInfo(
+                exposureTime=expTime,
+                darkTime=expTime,
+                date=lsst.daf.base.DateTime(date_avg.isot, lsst.daf.base.DateTime.TAI),
+                instrumentLabel=inputVisitInfo.instrumentLabel
+            )
             calib.getInfo().setVisitInfo(visitInfo)
-
-        # Not yet working: DM-22302
-        # Create an observation group so we can add some standard headers
-        # independent of the form in the input files.
-        # Use try block in case we are dealing with unexpected data headers
-        try:
-            group = ObservationGroup(visitInfoList, pedantic=False)
-        except Exception:
-            self.log.warning("Exception making an obs group for headers. Continuing.")
-            # Fall back to setting a DATE-OBS from the calibDate
-            dateCards = {"DATE-OBS": "{}T00:00:00.00".format(calibDate)}
-            comments["DATE-OBS"] = "Date of start of day of calibration creation"
-        else:
-            oldest, newest = group.extremes()
-            dateCards = dates_to_fits(oldest.datetime_begin, newest.datetime_end)
-
-        for k, v in dateCards.items():
-            header.set(k, v, comment=comments.get(k, None))
 
         return header
 

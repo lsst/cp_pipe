@@ -995,7 +995,7 @@ class MergeDefectsTask(pipeBase.PipelineTask):
                         sumImage.image[defect.getBBox()] += 1.0
             sumImage /= count
             nDetected = len(np.where(sumImage.getImage().getArray() > 0)[0])
-            self.log.info("Pre-merge %s pixels with non-zero detections for %s" % (nDetected, imageType))
+            self.log.info("Pre-merge %s pixels with non-zero detections for %s", nDetected, imageType)
 
             if self.config.combinationMode == 'AND':
                 threshold = 1.0
@@ -1008,7 +1008,7 @@ class MergeDefectsTask(pipeBase.PipelineTask):
             indices = np.where(sumImage.getImage().getArray() > threshold)
             BADBIT = sumImage.getMask().getPlaneBitMask('BAD')
             sumImage.getMask().getArray()[indices] |= BADBIT
-            self.log.info("Post-merge %s pixels marked as defects for %s" % (len(indices[0]), imageType))
+            self.log.info("Post-merge %s pixels marked as defects for %s", len(indices[0]), imageType)
             partialDefect = Defects.fromMask(sumImage, 'BAD')
             splitDefects.append(partialDefect)
 
@@ -1019,14 +1019,14 @@ class MergeDefectsTask(pipeBase.PipelineTask):
                 finalImage.image[defect.getBBox()] += 1
         finalImage /= len(splitDefects)
         nDetected = len(np.where(finalImage.getImage().getArray() > 0)[0])
-        self.log.info("Pre-final merge %s pixels with non-zero detections" % (nDetected, ))
+        self.log.info("Pre-final merge %s pixels with non-zero detections", nDetected)
 
         # This combination is the OR of all image types
         threshold = 0.0
         indices = np.where(finalImage.getImage().getArray() > threshold)
         BADBIT = finalImage.getMask().getPlaneBitMask('BAD')
         finalImage.getMask().getArray()[indices] |= BADBIT
-        self.log.info("Post-final merge %s pixels marked as defects" % (len(indices[0]), ))
+        self.log.info("Post-final merge %s pixels marked as defects", len(indices[0]))
 
         if self.config.edgesAsDefects:
             self.log.info("Masking edge pixels as defects.")

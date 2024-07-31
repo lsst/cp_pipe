@@ -1353,5 +1353,5 @@ def getReadNoise(exposure, ampName, taskMetadata=None, log=None):
 
     log = log if log else logging.getLogger(__name__)
     log.warning("Median readout noise from ISR metadata for amp %s "
-                "could not be found." % ampName)
+                "could not be found.", ampName)
     return np.nan
