@@ -51,15 +51,18 @@ class UtilsEfdTestCase(lsst.utils.tests.TestCase):
         self.assertEqual(indexDate, "2023-12-19T14:37:17.799")
 
     def test_electrometer(self):
-        data = self.client.getEfdElectrometerData()
+        data = self.client.getEfdElectrometerData(
+            dateMin="2024-05-30T00:00:00",
+            dateMax="2024-05-30T05:00:00",
+        )
 
         # Test single lookups:
-        for (iDate, rDate), (iVal, rVal) in zip([("2024-05-30T04:21:48", "2024-05-30T04:22:08"),
+        for (iDate, rDate), (iVal, rVal) in zip([("2024-05-30T04:21:48.6", "2024-05-30T04:22:08"),
                                                  ("2024-05-30T04:21:50", "2024-05-30T04:22:10"),
                                                  ("2024-05-30T04:21:53", "2024-05-30T04:22:13"),
                                                  ("2024-05-30T04:21:58", "2024-05-30T04:22:18"),
                                                  ("2024-05-30T04:22:17", "2024-05-30T04:22:37")],
-                                                [(-1.8932e-7, -1.5244e-07),
+                                                [(-1.5269e-07, -1.5244e-07),
                                                  (-1.5168e-07, -1.5137e-07),
                                                  (-1.5165e-07, -1.5205e-07),
                                                  (-1.5223e-07, -1.5147e-07),
@@ -77,7 +80,7 @@ class UtilsEfdTestCase(lsst.utils.tests.TestCase):
             self.assertFloatsAlmostEqual(intensityReference, rVal, atol=1e-10)
 
         # Test integrated lookups:
-        iDate = "2024-05-30T04:21:48"
+        iDate = "2024-05-30T04:21:48.6"
         iDateEnd = "2024-05-30T04:22:18"
         rDate = "2024-05-30T04:22:08"
         rDateEnd = "2024-05-30T04:22:38"
@@ -110,15 +113,14 @@ class UtilsEfdTestCase(lsst.utils.tests.TestCase):
             dateMax='2024-07-26T20:00:00')
 
         # Test single lookups.  These should not be integrated.
-        for iDate, iVal in zip(["2024-07-26T16:37:55.228",
-                                "2024-07-26T16:38:17.581",
-                                "2024-07-26T16:40:19.579",
-                                "2024-07-26T16:42:21.553"],
+        for iDate, iVal in zip(["2024-07-26T16:38:32.228",
+                                "2024-07-26T16:38:54.581",
+                                "2024-07-26T16:40:56.579",
+                                "2024-07-26T16:42:58.553"],
                                [-2.24234e-07,
                                 -2.24388e-07,
                                 -2.24105e-07,
                                 -2.23784e-07]):
-            # import pdb; pdb.set_trace()
             indexDate, intensity, _ = self.client.parseElectrometerStatus(
                 data,
                 iDate

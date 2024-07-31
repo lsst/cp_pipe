@@ -158,9 +158,9 @@ class CpEfdClient():
             List of fields to return.  If empty, all fields are
             returned.
         startDate : `astropy.time.Time`, optional
-            Start date (in UTC) to limit the results returned.
+            Start date (in TAI) to limit the results returned.
         endDate : `astropy.time.Time`, optional
-            End date (in UTC) to limit the results returned.
+            End date (in TAI) to limit the results returned.
 
         Returns
         -------
@@ -207,7 +207,7 @@ class CpEfdClient():
         # monotonic (and is in UTC).  "private_sndStamp" comes from
         # the device itself, and is therefore preferred.
         table = Table(rows=series["values"], names=series["columns"], dtype=tableDtype)
-        table["time"] = Time(table["time"], scale="utc")
+        table["time"] = Time(table["time"], scale="utc").tai
         table.sort("time")
         if "private_sndStamp" in table.columns:
             table["private_sndStamp"] = Time(table["private_sndStamp"], format="unix_tai")
@@ -215,7 +215,7 @@ class CpEfdClient():
 
         return table
 
-    def searchResults(self, data, dateStr, scale="tai"):
+    def searchResults(self, data, dateStr):
         """Find the row entry in ``data`` immediately preceding the specified
         date.
 
@@ -224,17 +224,15 @@ class CpEfdClient():
         data : `astropy.table.Table`
             The table of results from the EFD.
         dateStr : `str`
-            The date to look up in the status for.
-        scale : `str`, optional
-            Time scale to use.  Default is "tai".
+            The date (in TAI) to look up in the status for.
 
         Returns
         -------
         result = `astropy.table.Row`
             The row of the data table corresponding to ``dateStr``.
         """
-        dateValue = Time(dateStr, format="isot", scale=scale)
-        # Table is now sorted on "time", which is in UTC.
+        dateValue = Time(dateStr, scale='tai', format="isot")
+        # Table is now sorted on "time", which is in TAI.
 
         # Check that the date we want to consider is contained in the
         # EFD data.
@@ -277,9 +275,9 @@ class CpEfdClient():
         dataSeries : `str`, optional
             Data series to request from the EFD.
         dateMin : `str`, optional
-            Minimum date to retrieve from EFD.
+            Minimum date (in TAI) to retrieve from EFD.
         dateMax : `str`, optional
-            Maximum date to retrieve from EFD.
+            Maximum date (in TAI) to retrieve from EFD.
 
         Returns
         -------
@@ -310,12 +308,12 @@ class CpEfdClient():
         data : `astropy.table.Table`
             The dataframe of monochromator results from the EFD.
         dateStr : `str`
-            The date to look up in the status for.
+            The date (in TAI) to look up in the status for.
 
         Returns
         -------
         indexDate : `str`
-            Date string indicating the monochromator state change.
+            Date string (in TAI) indicating the monochromator state change.
         wavelength : `float`
             Monochromator commanded peak.
         """
@@ -331,9 +329,9 @@ class CpEfdClient():
         dataSeries : `str`, optional
             Data series to request from the EFD.
         dateMin : `str`, optional
-            Minimum date to retrieve from EFD.
+            Minimum date (in TAI) to retrieve from EFD.
         dateMax : `str`, optional
-            Maximum date to retrieve from EFD.
+            Maximum date (in TAI) to retrieve from EFD.
 
         Returns
         -------
@@ -434,7 +432,7 @@ class CpEfdClient():
         Parameters
         ----------
         data : `astropy.table.Table`
-            The dataframe of monochromator results from the EFD.
+            The dataframe of electrometer results from the EFD.
         dateStr : `str`
             The date to look up in the status for.
         dateEnd : `str`
@@ -449,23 +447,17 @@ class CpEfdClient():
         Returns
         -------
         indexDate : `str`
-            Date string indicating the monochromator state change.
+            Date string (in TAI) indicating the electrometer state
+            change.
         intensity: `float`
             Average electrometer intensity.
-
         """
         if index is not None:
             mask = (data["salIndex"] == index)
             data = data[mask]
 
-        if "intensityStd" in data.columns:
-            # The alternate access method appears to be in UTC, not TAI.
-            scale = "utc"
-        else:
-            scale = "tai"
-
         # searchResults returns the first entry prior to this date
-        result, idx = self.searchResults(data, dateStr, scale=scale)
+        result, idx = self.searchResults(data, dateStr)
 
         myTime = result["private_sndStamp"]
         myIntensity = result["intensity"]
