@@ -20,10 +20,11 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 
-__all__ = ['CpEfdClient']
+__all__ = ["CpEfdClient"]
 
 import logging
 import numpy as np
+import re
 import requests
 
 from astropy.table import Table
@@ -157,9 +158,9 @@ class CpEfdClient():
             List of fields to return.  If empty, all fields are
             returned.
         startDate : `astropy.time.Time`, optional
-            Start date (in UTC) to limit the results returned.
+            Start date to limit the results returned.
         endDate : `astropy.time.Time`, optional
-            End date (in UTC) to limit the results returned.
+            End date to limit the results returned.
 
         Returns
         -------
@@ -191,7 +192,10 @@ class CpEfdClient():
 
         # data is a dictionary with one key, "results"
         results = data["results"][0]
-        series = results["series"][0]
+        if "series" in results:
+            series = results["series"][0]
+        else:
+            raise RuntimeError(f"No results found for query: {query}")
 
         schemaDtype = self.getSchemaDtype(topicName)
         tableDtype = []
@@ -199,66 +203,36 @@ class CpEfdClient():
             if dtype[0] in series["columns"]:
                 tableDtype.append(dtype[1])
 
+        # The value stored in "time" may not be consistent and
+        # monotonic (and is in UTC).  "private_sndStamp" comes from
+        # the device itself, and is therefore preferred.
         table = Table(rows=series["values"], names=series["columns"], dtype=tableDtype)
-        table["time"] = Time(table["time"], scale="utc")
+        table["time"] = Time(table["time"], scale="utc").tai
         table.sort("time")
+        if "private_sndStamp" in table.columns:
+            table["private_sndStamp"] = Time(table["private_sndStamp"], format="unix_tai")
+            table.sort("private_sndStamp")
 
         return table
 
-    def getEfdMonochromatorData(self, dataSeries=None, dateMin=None, dateMax=None):
-        """Retrieve Electrometer data from the EFD.
-
-        Parameters
-        ----------
-        dataSeries : `str`, optional
-            Data series to request from the EFD.
-        dateMin : `str`, optional
-            Minimum date to retrieve from EFD.
-        dateMax : `str`, optional
-            Maximum date to retrieve from EFD.
-
-        Returns
-        -------
-        results : `pandas.DataFrame`
-            The table of results returned from the EFD.
-        """
-        # This is currently the only monochromator available.
-        dataSeries = dataSeries if dataSeries else "lsst.sal.ATMonochromator.logevent_wavelength"
-
-        if dateMin:
-            startDate = Time(dateMin, format='isot', scale='tai')
-        else:
-            startDate = None
-        if dateMax:
-            stopDate = Time(dateMax, format='isot', scale='tai')
-        else:
-            stopDate = None
-
-        results = self.selectTimeSeries(dataSeries, ['wavelength', 'private_sndStamp'],
-                                        startDate, stopDate)
-        results['private_sndStamp'] = Time(results['private_sndStamp'], format='unix_tai')
-
-        return results
-
-    def parseMonochromatorStatus(self, data, dateStr):
-        """Determine monochromator status for a specific date.
+    def searchResults(self, data, dateStr):
+        """Find the row entry in ``data`` immediately preceding the specified
+        date.
 
         Parameters
         ----------
         data : `astropy.table.Table`
-            The dataframe of monochromator results from the EFD.
+            The table of results from the EFD.
         dateStr : `str`
-            The date to look up in the status for.
+            The date (in TAI) to look up in the status for.
 
         Returns
         -------
-        indexDate : `str`
-            Date string indicating the monochromator state change.
-        wavelength : `float`
-            Monochromator commanded peak.
+        result = `astropy.table.Row`
+            The row of the data table corresponding to ``dateStr``.
         """
-        dateValue = Time(dateStr, format='isot', scale='tai')
-        # Table is now sorted on "time", which is in UTC.
+        dateValue = Time(dateStr, scale='tai', format="isot")
+        # Table is now sorted on "time", which is in TAI.
 
         # Check that the date we want to consider is contained in the
         # EFD data.
@@ -274,11 +248,10 @@ class CpEfdClient():
         found = False
         iteration = 0
         while not found:
-            if idx < 0 or idx > len(data) or iteration > 10:
-                raise RuntimeError("Search for date failed?")
+            if idx < 0 or idx > len(data) or iteration > 20:
+                raise RuntimeError(f"Search for date failed: {dateValue} {idx} {iteration}.")
 
             myTime = data["private_sndStamp"][idx]
-
             if myTime <= dateValue:
                 low = idx
             elif myTime > dateValue:
@@ -292,6 +265,210 @@ class CpEfdClient():
                            low, high, idx, found, myTime, dateValue)
 
         # End binary search.
+        return data[idx], idx
 
-        myTime = data["private_sndStamp"][idx]
-        return myTime.strftime("%Y-%m-%dT%H:%M:%S.%f"), data['wavelength'][idx]
+    def getEfdMonochromatorData(self, dataSeries=None, dateMin=None, dateMax=None):
+        """Retrieve Monochromator data from the EFD.
+
+        Parameters
+        ----------
+        dataSeries : `str`, optional
+            Data series to request from the EFD.
+        dateMin : `str`, optional
+            Minimum date (in TAI) to retrieve from EFD.
+        dateMax : `str`, optional
+            Maximum date (in TAI) to retrieve from EFD.
+
+        Returns
+        -------
+        results : `astropy.table.Table`
+            The table of results returned from the EFD.
+        """
+        # This is currently the only monochromator available.
+        dataSeries = dataSeries if dataSeries else "lsst.sal.ATMonochromator.logevent_wavelength"
+
+        if dateMin:
+            startDate = Time(dateMin, format="isot", scale="tai")
+        else:
+            startDate = None
+        if dateMax:
+            stopDate = Time(dateMax, format="isot", scale="tai")
+        else:
+            stopDate = None
+
+        results = self.selectTimeSeries(dataSeries, ["wavelength", "private_sndStamp"],
+                                        startDate, stopDate)
+        return results
+
+    def parseMonochromatorStatus(self, data, dateStr):
+        """Determine monochromator status for a specific date.
+
+        Parameters
+        ----------
+        data : `astropy.table.Table`
+            The dataframe of monochromator results from the EFD.
+        dateStr : `str`
+            The date (in TAI) to look up in the status for.
+
+        Returns
+        -------
+        indexDate : `str`
+            Date string (in TAI) indicating the monochromator state change.
+        wavelength : `float`
+            Monochromator commanded peak.
+        """
+        result, _ = self.searchResults(data, dateStr)
+        myTime = result["private_sndStamp"]
+        return myTime.strftime("%Y-%m-%dT%H:%M:%S.%f"), result["wavelength"]
+
+    def getEfdElectrometerData(self, dataSeries=None, dateMin=None, dateMax=None):
+        """Retrieve Electrometer data from the EFD.
+
+        Parameters
+        ----------
+        dataSeries : `str`, optional
+            Data series to request from the EFD.
+        dateMin : `str`, optional
+            Minimum date (in TAI) to retrieve from EFD.
+        dateMax : `str`, optional
+            Maximum date (in TAI) to retrieve from EFD.
+
+        Returns
+        -------
+        results : `astropy.table.Table`
+            The table of results returned from the EFD.
+        """
+        # All electrometer data gets written to the same series.
+        defaultSeries = "lsst.sal.Electrometer.logevent_intensity"
+        alternateSeries = "lsst.sal.Electrometer.logevent_logMessage"
+        dataSeries = dataSeries if dataSeries else defaultSeries
+
+        if dateMin:
+            startDate = Time(dateMin, format="isot", scale="tai")
+        else:
+            startDate = None
+        if dateMax:
+            stopDate = Time(dateMax, format="isot", scale="tai")
+        else:
+            stopDate = None
+
+        if (dataSeries == alternateSeries and (startDate is None or stopDate is None)):
+            raise RuntimeError("Cannot query logevent_logMessage without dates to limit memory issues.")
+
+        results = self.selectTimeSeries(dataSeries, [],
+                                        startDate, stopDate)
+        if dataSeries == "lsst.sal.Electrometer.logevent_logMessage":
+            results = self.rewriteElectrometerStatus(results)
+        return results
+
+    def rewriteElectrometerStatus(self, inResults):
+        """Rewrite intermediate electrometer data extracted from the EFD
+        logEvents.
+
+        Parameters
+        ----------
+        inResults : `astropy.table.Table`
+            The table of results returned from the EFD.
+
+        Returns
+        -------
+        outResults : `astropy.table.Table`
+            The rewritten table containing only electrometer summary
+            status events.
+        """
+        # This is fragile against upstream changes.
+        # Ignore all entries that are not the ones we care about.
+        outResults = inResults[inResults["functionName"] == "write_fits_file"]
+        outResults = outResults[outResults["level"] == 20]
+
+        # These will be new columns
+        intensityMean = []
+        intensityStdev = []
+        intensityTime = []
+        intensityFile = []
+
+        for row in outResults:
+            # Fallback values in case the regexp fails
+            mean = np.nan
+            stdev = np.nan
+            time_mean = np.nan
+            filename = "REGEXP_FAIL"
+
+            # Find the last "filename\.extension" before the first newline;
+            #      the last [] grouped values before the second newline;
+            #      the last [] grouped values before the end of the string.
+            magic = re.findall(r"\b\w+.+?(\w+?\.\w+)\n\b\w+.+\[(.*?)\]\n\b\w+.+\[(.*?)\]$",
+                               row["message"])
+            if len(magic) != 0:
+                # If we matched, split the grouped values, cast them to floats.
+                filename, intensity_str, time_str = magic[0]
+                mean, median, stdev = intensity_str.split(",")
+                time_mean, time_median = time_str.split(",")
+                mean = float(mean)
+                median = float(median)
+                stdev = float(stdev)
+                time_mean = float(time_mean)
+                time_median = float(time_median)
+                # Censor the saturated points so plots look nice.
+                if np.abs(mean) > 1e37:
+                    mean = np.nan
+
+            intensityMean.append(mean)
+            intensityStdev.append(stdev)
+            intensityFile.append(filename)
+            intensityTime.append(time_mean)
+
+        # Add our new columns at the start of the column list
+        outResults.add_column(intensityMean, name="intensity", index=1)
+        outResults.add_column(intensityStdev, name="intensityStd", index=2)
+        outResults.add_column(intensityTime, name="intensityTimeMean", index=3)
+        outResults.add_column(intensityFile, name="expectedLfaFile", index=4)
+        return outResults
+
+    def parseElectrometerStatus(self, data, dateStr, dateEnd=None,
+                                doIntegrateSamples=False, index=201):
+        """Determine electrometer status for a specific date.
+
+        Parameters
+        ----------
+        data : `astropy.table.Table`
+            The dataframe of electrometer results from the EFD.
+        dateStr : `str`
+            The date (in TAI) to look up in the status for.
+        dateEnd : `str`
+            The end date (in TAI) to look in the status for.
+        doIntegrateSamples: `bool`
+            If true, take the average of all samples between
+            ``dateStr`` and ``dateEnd``.
+        index : `int`
+            The salIndex of the device we want to read.  For LATISS,
+            this should be 201.  For the main telescope, 101.
+
+        Returns
+        -------
+        indexDate : `str`
+            Date string (in TAI) indicating the electrometer state
+            change.
+        intensity: `float`
+            Average electrometer intensity.
+        """
+        if index is not None:
+            mask = (data["salIndex"] == index)
+            data = data[mask]
+
+        # searchResults returns the first entry prior to this date
+        result, idx = self.searchResults(data, dateStr)
+
+        myTime = result["private_sndStamp"]
+        myIntensity = result["intensity"]
+        myEndTime = None
+
+        if doIntegrateSamples:
+            myEndResult, myEndIdx = self.searchResults(data, dateEnd)
+            if myEndIdx != idx:
+                myEndTime = myEndResult["private_sndStamp"]
+                myIntensity = np.mean(data[idx+1:myEndIdx]["intensity"])
+
+        return (myTime.strftime("%Y-%m-%dT%H:%M:%S.%f"),
+                myIntensity,
+                myEndTime.strftime("%Y-%m-%dT%H:%M:%S.%f") if myEndTime else None)

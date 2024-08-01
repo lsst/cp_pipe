@@ -90,7 +90,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
             pipeline = Pipeline.fromFile(pipeline_file)
             graph = pipeline.to_graph()
         except Exception as e:
-            raise RuntimeError(f"Could not process {pipeline_file}") from e
+            raise RuntimeError(f"Could not process {pipeline_file} {e}") from e
 
         self.assertIsInstance(graph, PipelineGraph)
 
