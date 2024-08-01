@@ -158,9 +158,9 @@ class CpEfdClient():
             List of fields to return.  If empty, all fields are
             returned.
         startDate : `astropy.time.Time`, optional
-            Start date (in TAI) to limit the results returned.
+            Start date to limit the results returned.
         endDate : `astropy.time.Time`, optional
-            End date (in TAI) to limit the results returned.
+            End date to limit the results returned.
 
         Returns
         -------
@@ -434,9 +434,9 @@ class CpEfdClient():
         data : `astropy.table.Table`
             The dataframe of electrometer results from the EFD.
         dateStr : `str`
-            The date to look up in the status for.
+            The date (in TAI) to look up in the status for.
         dateEnd : `str`
-            The end date to look in the status for.
+            The end date (in TAI) to look in the status for.
         doIntegrateSamples: `bool`
             If true, take the average of all samples between
             ``dateStr`` and ``dateEnd``.
