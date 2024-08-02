@@ -35,7 +35,6 @@ tasks:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
     config:
       connections.inputExp: parameters.exposureName
-      connections.taskMetadata: "cpPtcIsr_metadata"
       connections.outputCovariances: parameters.measuredCovariances
   cpPtcSolve:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
