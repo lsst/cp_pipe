@@ -62,7 +62,7 @@ class PhotonTransferCurveExtractConnections(pipeBase.PipelineTaskConnections,
         deferLoad=True,
     )
     taskMetadata = cT.Input(
-        name="isr_metadata",
+        name="cpPtcIsr_metadata",
         doc="Input task metadata to extract statistics from.",
         storageClass="TaskMetadata",
         dimensions=("instrument", "exposure", "detector"),
@@ -387,7 +387,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                 newCovariances.append(newPtc)
         return pipeBase.Struct(outputCovariances=newCovariances)
 
-    def run(self, inputExp, inputDims, taskMetadata, inputPhotodiodeData=None):
+    def run(self, inputExp, inputDims, taskMetadata=None, inputPhotodiodeData=None):
 
         """Measure covariances from difference of flat pairs
 
@@ -400,7 +400,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
             sequentially by their exposure id.
         inputDims : `list`
             List of exposure IDs.
-        taskMetadata : `list` [`lsst.pipe.base.TaskMetadata`]
+        taskMetadata : `list` [`lsst.pipe.base.TaskMetadata`], optional
             List of exposures metadata from ISR.
         inputPhotodiodeData : `dict` [`str`, `lsst.ip.isr.PhotodiodeCalib`]
             Photodiode readings data (optional).
@@ -575,14 +575,8 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                 readNoise2 = dict()
                 meanReadNoise = dict()
 
-                metadataIndex1 = inputDims.index(expId1)
-                thisTaskMetadata1 = taskMetadata[metadataIndex1]
-
-                metadataIndex2 = inputDims.index(expId2)
-                thisTaskMetadata2 = taskMetadata[metadataIndex2]
-
-                readNoise1[ampName] = getReadNoise(exp1, ampName, taskMetadata=thisTaskMetadata1)
-                readNoise2[ampName] = getReadNoise(exp2, ampName, taskMetadata=thisTaskMetadata2)
+                readNoise1[ampName] = getReadNoise(exp1, ampName)
+                readNoise2[ampName] = getReadNoise(exp2, ampName)
 
                 meanReadNoise[ampName] = np.nanmean([readNoise1[ampName], readNoise2[ampName]])
 
