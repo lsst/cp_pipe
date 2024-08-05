@@ -50,6 +50,7 @@ tasks:
       connections.outputLinearizer: "linearizer"
       linearityType: "Spline"
       splineKnots: 10
+      trimmedState: false
 contracts:
   - cpLinearizerIsr.doBootstrap == True
   - cpLinearizerIsr.nominalGain == 1.0
