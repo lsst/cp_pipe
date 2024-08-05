@@ -43,8 +43,9 @@ class CpEfdClient():
         Log to write messages to.
     """
 
-    def __init__(self, efdInstance="usdf_efd", log=None):
+    def __init__(self, efdInstance="usdf_efd", dieOnSearch=False, log=None):
         self.log = log if log else logging.getLogger(__name__)
+        self.dieOnSearch = dieOnSearch
 
         authDict = self._getAuth(efdInstance)
         self._auth = (authDict["username"], authDict["password"])
@@ -237,7 +238,13 @@ class CpEfdClient():
         # Check that the date we want to consider is contained in the
         # EFD data.
         if data["time"][0] > dateValue or data["time"][-1] < dateValue:
-            raise RuntimeError("Requested date is outside of data range.")
+            msg = f"Requested date {dateStr} outside of data range {data['time'][0]}-{data['time'][-1]}"
+            if self.dieOnSearch:
+                raise RuntimeError(msg)
+            else:
+                # Return the start, as we're more likely to have errors in that direction.
+                self.log.warning(msg)
+                return data[0], np.nan
 
         # Binary search through the EFD entries in date, until the
         # most recent monochromator state update prior to the spectrum

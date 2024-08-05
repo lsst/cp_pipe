@@ -31,6 +31,7 @@ from lsst.geom import (Box2I, Point2I, Extent2I)
 from lsst.cp.pipe.utils import (arrangeFlatsByExpTime, arrangeFlatsByExpId,
                                 arrangeFlatsByExpFlux, sigmaClipCorrection,
                                 CovFastFourierTransform, getReadNoise)
+from lsst.cp.pipe.utilsEfd import CpEfdClient
 
 import lsst.pipe.base.connectionTypes as cT
 
@@ -221,6 +222,22 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
         doc="Extract photodiode data?",
         default=False,
     )
+    useEfdPhotodiodeData = pexConfig.Field(
+        dtype=bool,
+        doc="Extract photodiode values from EFD?",
+        default=False,
+    )
+    efdPhotodiodeSeries = pexConfig.Field(
+        dtype=str,
+        doc="EFD series to use to get photodiode values.",
+        default="lsst.sal.Electrometer.logevent_logMessage",
+    )
+    efdSalIndex = pexConfig.Field(
+        dtype=int,
+        doc="EFD SAL Index to select electrometer. This is 101 for mainTel, 201 for auxTel.",
+        default=201,
+    )
+
     photodiodeIntegrationMethod = pexConfig.ChoiceField(
         dtype=str,
         doc="Integration method for photodiode monitoring data.",
@@ -242,6 +259,13 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
             "``CHARGE_SUM`` integration method.",
         default=-1.0,
     )
+
+    def validate(self):
+        super().validate()
+        if self.doExtractPhotodiodeData and self.useEfdPhotodiodeData:
+            # These get information from different places, so let's
+            # disallow both being true.
+            raise ValueError("doExtractPhotodiodeData and useEfdPhotodiodeData are mutually exclusive.")
 
 
 class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
@@ -434,6 +458,40 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                 pdCalib.integrationMethod = self.config.photodiodeIntegrationMethod
                 pdCalib.currentScale = self.config.photodiodeCurrentScale
                 monitorDiodeCharge[expId] = pdCalib.integrate()
+        if self.config.useEfdPhotodiodeData:
+            client = CpEfdClient()
+            monitorDiodeCharge = {}  # This is technically an average current
+            obsDates = {}
+            obsMin = None
+            obsMax = None
+            for _, expList in inputExp.items():
+                for ref, refId in expList:
+                    ts = ref.dataId.exposure.timespan
+                    dt = ts.end - ts.begin
+                    obsDates[refId] = {
+                        'mid': ts.begin + dt / 2.0,
+                        'dt': dt,
+                        'begin': ts.begin,
+                        'end': ts.end,
+                    }
+                    if not obsMin or ts.begin < obsMin:
+                        obsMin = ts.begin - dt
+                    if not obsMax or ts.end > obsMax:
+                        obsMax = ts.end + dt
+
+            pdData = client.getEfdElectrometerData(dataSeries=self.config.efdPhotodiodeSeries,
+                                                   dateMin=obsMin.isot,
+                                                   dateMax=obsMax.isot)
+            for expId, expDate in obsDates.items():
+                # This returns matchDate, intensity, and optional endDate
+                # Check: is this off-by-one in either direction?
+                results = client.parseElectrometerStatus(pdData,
+                                                         expDate['end'],
+                                                         index=self.config.efdSalIndex)
+                monitorDiodeCharge[expId] = results[1]
+            # The data can be large, so:
+            del pdData
+            del client
 
         # Output list with PTC datasets.
         partialPtcDatasetList = []
@@ -634,7 +692,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                     histChi2Dof = np.nan
                     kspValue = 0.0
 
-                if self.config.doExtractPhotodiodeData:
+                if self.config.doExtractPhotodiodeData or self.config.useEfdPhotodiodeData:
                     nExps = 0
                     photoCharge = 0.0
                     for expId in [expId1, expId2]:
