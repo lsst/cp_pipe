@@ -65,6 +65,11 @@ subsets:
           - cpPtcIsr
           - cpPtcExtract
       description: gain estimation from pairs of flats at the same exposure time.
+  cpPtcMath:
+    subset:
+      - cpPtcExtract
+      - cpPtcSolve
+    description: Extract and solve from pre-processed exposures.
 contracts:
   - cpPtcSolve.maximumRangeCovariancesAstier == cpPtcExtract.maximumRangeCovariancesAstier
   - cpPtcSolve.binSize == cpPtcExtract.binSize

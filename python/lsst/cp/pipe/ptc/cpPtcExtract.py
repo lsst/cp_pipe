@@ -458,7 +458,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                 pdCalib.integrationMethod = self.config.photodiodeIntegrationMethod
                 pdCalib.currentScale = self.config.photodiodeCurrentScale
                 monitorDiodeCharge[expId] = pdCalib.integrate()
-        if self.config.useEfdPhotodiodeData:
+        elif self.config.useEfdPhotodiodeData:
             client = CpEfdClient()
             monitorDiodeCharge = {}  # This is technically an average current
             obsDates = {}
