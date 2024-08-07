@@ -460,7 +460,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                 monitorDiodeCharge[expId] = pdCalib.integrate()
         elif self.config.useEfdPhotodiodeData:
             client = CpEfdClient()
-            monitorDiodeCharge = {}  # This is technically an average current
+            monitorDiodeCharge = {}  # This is technically an average current.
             obsDates = {}
             obsMin = None
             obsMax = None
@@ -483,8 +483,9 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                                                    dateMin=obsMin.isot,
                                                    dateMax=obsMax.isot)
             for expId, expDate in obsDates.items():
-                # This returns matchDate, intensity, and optional endDate
-                # Check: is this off-by-one in either direction?
+                # This returns matchDate, intensity, and optional
+                # endDate.  The matchDate is the most recent date
+                # prior to that being searched.
                 results = client.parseElectrometerStatus(pdData,
                                                          expDate['end'],
                                                          index=self.config.efdSalIndex)

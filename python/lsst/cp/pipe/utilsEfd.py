@@ -242,7 +242,8 @@ class CpEfdClient():
             if self.dieOnSearch:
                 raise RuntimeError(msg)
             else:
-                # Return the start, as we're more likely to have errors in that direction.
+                # Return the start, as we're more likely to have
+                # errors in that direction.
                 self.log.warning(msg)
                 return data[0], np.nan
 
