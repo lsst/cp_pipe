@@ -12,7 +12,6 @@ tasks:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
     config:
       matchExposuresType: TIME
-      useEfdPhotodiodeData: true
   cpPtcSolve:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
     config:
