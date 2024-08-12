@@ -43,7 +43,7 @@ tasks:
       connections.outputData: "flat"
       calibrationType: "flat"
       exposureScaling: "InputList"
-      scalingLevel: "AMP"
+      scalingLevel: "DETECTOR"
   cpFlatBin8:
     class: lsst.pipe.tasks.visualizeVisit.VisualizeBinCalibTask
     config:
