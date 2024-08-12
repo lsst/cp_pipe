@@ -35,6 +35,7 @@ tasks:
       maximumRangeCovariancesAstier: 1
       numEdgeSuspect: 20
       edgeMaskLevel: "AMP"
+      useEfdPhotodiodeData: true
   cpLinearizerPtcSolve:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
     config:

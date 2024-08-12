@@ -7,6 +7,10 @@ tasks:
     class: lsst.ip.isr.IsrTaskLSST
     config:
       doCrosstalk: false
+  cpLinearizerPtcExtract:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
+    config:
+      efdSalIndex: 101
   cpLinearizerPtcSolve:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
     config:
