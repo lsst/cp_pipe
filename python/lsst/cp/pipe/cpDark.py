@@ -163,9 +163,12 @@ class CpDarkTask(pipeBase.PipelineTask):
         gains = {}
         for amp in det:
             ampName = amp.getName()
-            key = f"LSST GAIN {ampName}"
-            if key in metadata:
-                gains[ampName] = metadata[key]
+            # The GAIN key may be the new LSST ISR GAIN or the old
+            # LSST GAIN.
+            if (key1 := f"LSST ISR GAIN {ampName}") in metadata:
+                gains[ampName] = metadata[key1]
+            elif (key2 := f"LSST GAIN {ampName}") in metadata:
+                gains[ampName] = metadata[key2]
             else:
                 gains[ampName] = amp.getGain()
         return gains
