@@ -60,13 +60,6 @@ class PhotonTransferCurveSolveConnections(pipeBase.PipelineTaskConnections,
         dimensions=("instrument",),
         isCalibration=True,
     )
-    linearizer = cT.PrerequisiteInput(
-        name='linearizer',
-        storageClass="Linearizer",
-        doc="Linearity correction calibration; used for gain ratios if configured.",
-        dimensions=["instrument", "detector"],
-        isCalibration=True,
-    )
     outputPtcDataset = cT.Output(
         name="ptcDatsetProposal",
         doc="Output proposed ptc dataset.",
@@ -75,12 +68,6 @@ class PhotonTransferCurveSolveConnections(pipeBase.PipelineTaskConnections,
         multiple=False,
         isCalibration=True,
     )
-
-    def __init__(self, *, config=None):
-        super().__init__(config=config)
-
-        if not config.doLinearityGainRatioFixup:
-            del self.linearizer
 
 
 class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
@@ -237,10 +224,20 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
         doc="Bin the image by this factor in both dimensions.",
         default=1,
     )
-    doLinearityGainRatioFixup = pexConfig.Field(
+    doAmpOffsetGainRatioFixup = pexConfig.Field(
         dtype=bool,
-        doc="Do gain ratio fixup based on linearity fits?",
+        doc="Do gain ratio fixup based on amp offsets?",
         default=False,
+    )
+    ampOffsetGainRatioMinAdu = pexConfig.Field(
+        dtype=float,
+        doc="Minimum number of adu to use for amp offset gain ratio fixup.",
+        default=1000.0,
+    )
+    ampOffsetGainRatioMaxAdu = pexConfig.Field(
+        dtype=float,
+        doc="Maximum number of adu to use for amp offset gain ratio fixup.",
+        default=20000.0,
     )
 
     def validate(self):
@@ -309,20 +306,15 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         """
         inputs = butlerQC.get(inputRefs)
         detId = inputRefs.inputCovariances[0].dataId['detector']
-        if self.config.doLinearityGainRatioFixup:
-            linearizer = inputs["linearizer"]
-        else:
-            linearizer = None
 
         outputs = self.run(
             inputCovariances=inputs['inputCovariances'],
             camera=inputs['camera'],
             detId=detId,
-            linearizer=linearizer,
         )
         butlerQC.put(outputs, outputRefs)
 
-    def run(self, inputCovariances, camera=None, detId=0, linearizer=None):
+    def run(self, inputCovariances, camera=None, detId=0):
         """Fit measured covariances to different models.
 
         Parameters
@@ -335,9 +327,6 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             Detector ID to locate the detector in the camera and
             populate the `lsst.ip.isr.PhotonTransferCurveDataset`
             metadata.
-        linearizer : `lsst.ip.isr.Linearizer`
-            Linearizer for gain ratio fixups. Required if
-            doLinearityGainRatioFixup=True.
 
         Returns
         -------
@@ -398,6 +387,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                                                                 partialPtcDataset.rowMeanVariance[ampName][0])
                 datasetPtc.photoCharges[ampName] = np.append(datasetPtc.photoCharges[ampName],
                                                              partialPtcDataset.photoCharges[ampName][0])
+                datasetPtc.ampOffsets[ampName] = np.append(datasetPtc.ampOffsets[ampName],
+                                                           partialPtcDataset.ampOffsets[ampName][0])
                 datasetPtc.histVars[ampName] = np.append(datasetPtc.histVars[ampName],
                                                          partialPtcDataset.histVars[ampName][0])
                 datasetPtc.histChi2Dofs[ampName] = np.append(datasetPtc.histChi2Dofs[ampName],
@@ -473,6 +464,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             datasetPtc.rawVars[ampName] = datasetPtc.rawVars[ampName][index]
             datasetPtc.rowMeanVariance[ampName] = datasetPtc.rowMeanVariance[ampName][index]
             datasetPtc.photoCharges[ampName] = datasetPtc.photoCharges[ampName][index]
+            datasetPtc.ampOffsets[ampName] = datasetPtc.ampOffsets[ampName][index]
             datasetPtc.histVars[ampName] = datasetPtc.histVars[ampName][index]
             datasetPtc.histChi2Dofs[ampName] = datasetPtc.histChi2Dofs[ampName][index]
             datasetPtc.kspValues[ampName] = datasetPtc.kspValues[ampName][index]
@@ -527,7 +519,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                                  f"with read noise measured from overscan ({noise}) for "
                                  f"amplifier {ampName}. Try adjusting the fit range.")
 
-        if self.config.doLinearityGainRatioFixup:
+        if self.config.doAmpOffsetGainRatioFixup:
             # We need to find the reference amplifier.
             # Find an amp near the middle to use as a pivot.
             gainArray = np.zeros(len(datasetPtc.ampNames))
@@ -549,9 +541,22 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                         continue
 
                     ratioPtc = datasetPtc.gain[ampName] / datasetPtc.gain[midAmpName]
-                    ratioLinearity = linearizer.linearFit[midAmpName][1] / linearizer.linearFit[ampName][1]
 
-                    correction = ratioLinearity / ratioPtc
+                    deltas = datasetPtc.ampOffsets[ampName] - datasetPtc.ampOffsets[midAmpName]
+                    use = (
+                        (datasetPtc.expIdMask[ampName])
+                        & (np.isfinite(deltas))
+                        & (datasetPtc.finalMeans[ampName] >= self.config.ampOffsetGainRatioMinAdu)
+                        & (datasetPtc.finalMeans[ampName] <= self.config.ampOffsetGainRatioMaxAdu)
+                    )
+                    if use.sum() < 3:
+                        self.log.warning("Not enough good amp offset measurements to fix up amp %s "
+                                         "gains from amp ratios.", ampName)
+                        continue
+
+                    ratios = 1. / (deltas / datasetPtc.finalMeans[midAmpName] + 1.0)
+                    ratio = np.median(ratios[use])
+                    correction = ratio / ratioPtc
                     newGain = datasetPtc.gain[ampName] * correction
                     self.log.info(
                         "Adjusting gain from amplifier %s by factor of %.3f (from %.4f to %.4f)",
