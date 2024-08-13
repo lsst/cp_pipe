@@ -10,7 +10,6 @@ tasks:
   cpPtcIsr:
     class: lsst.ip.isr.IsrTaskLSST
     config:
-      doLinearize: false
       doAmpOffset: true
       ampOffset.ampEdgeMaxOffset: 100000.0
       ampOffset.doBackground: false

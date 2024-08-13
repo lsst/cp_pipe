@@ -2,8 +2,3 @@ description: Latiss flat calibration construction
 instrument: lsst.obs.lsst.Latiss
 imports:
   - location: $CP_PIPE_DIR/pipelines/_ingredients/cpFlatSingleChipLSST.yaml
-tasks:
-  cpFlatIsr:
-    class: lsst.ip.isr.IsrTaskLSST
-    config:
-      doLinearize: false
