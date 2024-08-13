@@ -708,6 +708,12 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                 else:
                     photoCharge = np.nan
 
+                # Get amp offsets if available.
+                ampOffsetKey = f"LSST ISR AMPOFFSET PEDESTAL {ampName}"
+                ampOffset1 = exp1.metadata.get(ampOffsetKey, np.nan)
+                ampOffset2 = exp2.metadata.get(ampOffsetKey, np.nan)
+                ampOffset = (ampOffset1 + ampOffset2) / 2.0
+
                 partialPtcDataset.setAmpValuesPartialDataset(
                     ampName,
                     inputExpIdPair=(expId1, expId2),
@@ -715,6 +721,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                     rawMean=muDiff,
                     rawVar=varDiff,
                     photoCharge=photoCharge,
+                    ampOffset=ampOffset,
                     expIdMask=expIdMask,
                     covariance=covArray[0, :, :],
                     covSqrtWeights=covSqrtWeights[0, :, :],
