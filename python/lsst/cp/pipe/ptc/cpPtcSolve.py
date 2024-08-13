@@ -559,7 +559,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                     correction = ratio / ratioPtc
                     newGain = datasetPtc.gain[ampName] * correction
                     self.log.info(
-                        "Adjusting gain from amplifier %s by factor of %.3f (from %.4f to %.4f)",
+                        "Adjusting gain from amplifier %s by factor of %.5f (from %.5f to %.5f)",
                         ampName,
                         correction,
                         datasetPtc.gain[ampName],
