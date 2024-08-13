@@ -49,8 +49,6 @@ contracts:
   - cpFlatIsr.doBootstrap == False
   - cpFlatCombine.calibrationType == "flat"
   - cpFlatCombine.exposureScaling == "InputList"
-  - cpFlatBin8.binning == cpFlatMosaic8.binning
-  - cpFlatBin64.binning == cpFlatMosaic64.binning
   - cpFlatMeasure.connections.inputExp == cpFlatIsr.connections.outputExposure
   - cpFlatNormalize.connections.inputMDs == cpFlatMeasure.connections.outputStats
   - cpFlatCombine.connections.inputExpHandles == cpFlatIsr.connections.outputExposure
