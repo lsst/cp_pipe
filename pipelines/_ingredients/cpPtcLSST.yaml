@@ -26,6 +26,11 @@ tasks:
       maskNegativeVariance: false
       doSetBadRegions: false
       doBrighterFatter: false
+      doAmpOffset: true
+      ampOffset.ampEdgeMaxOffset: 100000.0
+      ampOffset.doBackground: false
+      ampOffset.doDetection: false
+      ampOffset.doApplyAmpOffset: false
   cpPtcExtract:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
     config:
@@ -44,6 +49,7 @@ tasks:
       # ptcFitType: "FULLCOVARIANCE"
       ptcFitType: "EXPAPPROXIMATION"
       maximumRangeCovariancesAstier: 8
+      doAmpOffsetGainRatioFixup: true
 contracts:
   - cpPtcIsr.doBootstrap == True
   - cpPtcIsr.nominalGain == 1.0
