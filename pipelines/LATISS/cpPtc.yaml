@@ -7,11 +7,3 @@ tasks:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
     config:
       efdSalIndex: 201
-  cpPtcIsr:
-    class: lsst.ip.isr.IsrTaskLSST
-    config:
-      doAmpOffset: true
-      ampOffset.ampEdgeMaxOffset: 100000.0
-      ampOffset.doBackground: false
-      ampOffset.doDetection: false
-      ampOffset.doApplyAmpOffset: false
