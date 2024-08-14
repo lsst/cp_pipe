@@ -334,12 +334,7 @@ class CalibCombineTask(pipeBase.PipelineTask):
                     raise RuntimeError(f"Could not identify a scaling for input {index}"
                                        f" detector {detectorId}")
 
-                if self.config.scalingLevel == "DETECTOR":
-                    if visitId not in inputScales["expScale"][detectorId]:
-                        raise RuntimeError(f"Could not identify a scaling for input {index}"
-                                           f"detector {detectorId} visit {visitId}")
-                    scale = inputScales["expScale"][detectorId][visitId]
-                elif self.config.scalingLevel == "AMP":
+                if self.config.scalingLevel in ("DETECTOR", "AMP"):
                     scale = [inputScales["expScale"][detectorId][amp.getName()][visitId]
                              for amp in inputDetector]
                 else:
