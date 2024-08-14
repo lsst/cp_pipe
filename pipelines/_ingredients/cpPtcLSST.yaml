@@ -28,6 +28,7 @@ tasks:
       doBrighterFatter: false
       doAmpOffset: true
       ampOffset.ampEdgeMaxOffset: 100000.0
+      ampOffset.ampEdgeInset: 10
       ampOffset.doBackground: false
       ampOffset.doDetection: false
       ampOffset.doApplyAmpOffset: false
