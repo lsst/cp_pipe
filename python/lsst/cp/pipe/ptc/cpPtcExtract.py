@@ -61,8 +61,9 @@ class PhotonTransferCurveExtractConnections(pipeBase.PipelineTaskConnections,
         multiple=True,
         deferLoad=True,
     )
+    # TODO DM-45802: Remove deprecated taskMetadata connection in cpPtcExtract
     taskMetadata = cT.Input(
-        name="cpPtcIsr_metadata",
+        name="isr_metadata",
         doc="Input task metadata to extract statistics from.",
         storageClass="TaskMetadata",
         dimensions=("instrument", "exposure", "detector"),
@@ -81,6 +82,9 @@ class PhotonTransferCurveExtractConnections(pipeBase.PipelineTaskConnections,
     def __init__(self, *, config=None):
         if not config.doExtractPhotodiodeData:
             del self.inputPhotodiodeData
+        # TODO DM-45802: Remove deprecated taskMetadata connection in
+        # cpPtcExtract
+        del self.taskMetadata
 
 
 class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
@@ -401,7 +405,8 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
         inputDims : `list`
             List of exposure IDs.
         taskMetadata : `list` [`lsst.pipe.base.TaskMetadata`], optional
-            List of exposures metadata from ISR.
+            List of exposures metadata from ISR.  This is not used,
+            and will be completely removed on DM-45802.
         inputPhotodiodeData : `dict` [`str`, `lsst.ip.isr.PhotodiodeCalib`]
             Photodiode readings data (optional).
 
