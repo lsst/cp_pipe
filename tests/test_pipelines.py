@@ -73,6 +73,9 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
             "cpPlotPtc.yaml",
             "cpPtc.yaml",
             "cpSky.yaml",
+            "cpBiasBootstrap.yaml",
+            "cpDarkBootstrap.yaml",
+            "cpFlatBootstrap.yaml",
         }
 
         for ex in exclude:
@@ -102,7 +105,9 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
         ingredients = set(
             [os.path.basename(pipeline) for pipeline in glob.glob(glob_str) if "LSST.yaml" not in pipeline]
         )
-        expected = self._get_pipelines()
+        # The *Bootstrap* pipelines are used by LATISS/LSSTComCam/LSSTCam
+        # but are renamed on import.
+        expected = set([pipeline for pipeline in self._get_pipelines() if "Bootstrap" not in pipeline])
         self.assertEqual(ingredients, expected)
 
     def test_cameras(self):
@@ -135,7 +140,10 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
         for pipeline in self._get_pipelines(exclude=[
                 "cpDarkForDefects.yaml",
                 "cpFilterScan.yaml",
-                "cpMonochromatorScan.yaml"
+                "cpMonochromatorScan.yaml",
+                "cpBiasBootstrap.yaml",
+                "cpDarkBootstrap.yaml",
+                "cpFlatBootstrap.yaml",
         ]):
             self._check_pipeline(os.path.join(self.pipeline_path, "LSSTCam", pipeline))
 
@@ -144,7 +152,10 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
         for pipeline in self._get_pipelines(exclude=[
                 "cpDarkForDefects.yaml",
                 "cpFilterScan.yaml",
-                "cpMonochromatorScan.yaml"
+                "cpMonochromatorScan.yaml",
+                "cpBiasBootstrap.yaml",
+                "cpDarkBootstrap.yaml",
+                "cpFlatBootstrap.yaml",
         ]):
             self._check_pipeline(os.path.join(self.pipeline_path, "LSSTCam-imSim", pipeline))
 
@@ -153,7 +164,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
         for pipeline in self._get_pipelines(exclude=[
                 "cpDarkForDefects.yaml",
                 "cpFilterScan.yaml",
-                "cpMonochromatorScan.yaml"
+                "cpMonochromatorScan.yaml",
         ]):
             self._check_pipeline(os.path.join(self.pipeline_path, "LSSTComCam", pipeline))
 
@@ -162,7 +173,10 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
         for pipeline in self._get_pipelines(exclude=[
                 "cpDarkForDefects.yaml",
                 "cpFilterScan.yaml",
-                "cpMonochromatorScan.yaml"
+                "cpMonochromatorScan.yaml",
+                "cpBiasBootstrap.yaml",
+                "cpDarkBootstrap.yaml",
+                "cpFlatBootstrap.yaml",
         ]):
             self._check_pipeline(os.path.join(self.pipeline_path, "LSSTComCamSim", pipeline))
 
@@ -171,7 +185,10 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
         for pipeline in self._get_pipelines(exclude=[
                 "cpDarkForDefects.yaml",
                 "cpFilterScan.yaml",
-                "cpMonochromatorScan.yaml"
+                "cpMonochromatorScan.yaml",
+                "cpBiasBootstrap.yaml",
+                "cpDarkBootstrap.yaml",
+                "cpFlatBootstrap.yaml",
         ]):
             self._check_pipeline(os.path.join(self.pipeline_path, "LSST-TS8", pipeline))
 
@@ -180,7 +197,10 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
         for pipeline in self._get_pipelines(exclude=[
                 "cpDarkForDefects.yaml",
                 "cpFilterScan.yaml",
-                "cpMonochromatorScan.yaml"
+                "cpMonochromatorScan.yaml",
+                "cpBiasBootstrap.yaml",
+                "cpDarkBootstrap.yaml",
+                "cpFlatBootstrap.yaml",
         ]):
             self._check_pipeline(os.path.join(self.pipeline_path, "DECam", pipeline))
 
@@ -189,7 +209,10 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
         for pipeline in self._get_pipelines(exclude=[
                 "cpDarkForDefects.yaml",
                 "cpFilterScan.yaml",
-                "cpMonochromatorScan.yaml"
+                "cpMonochromatorScan.yaml",
+                "cpBiasBootstrap.yaml",
+                "cpDarkBootstrap.yaml",
+                "cpFlatBootstrap.yaml",
         ]):
             self._check_pipeline(os.path.join(self.pipeline_path, "HSC", pipeline))
 
