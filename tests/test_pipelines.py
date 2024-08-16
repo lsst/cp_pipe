@@ -97,8 +97,10 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
     def test_ingredients(self):
         """Check that all pipelines in pipelines/_ingredients are tested."""
         glob_str = os.path.join(self.pipeline_path, "_ingredients", "*.yaml")
+        # The *LSST.yaml pipelines are imported by LATISS/LSSTComCam/LSSTCam
+        # and are not to be tested on their own.
         ingredients = set(
-            [os.path.basename(pipeline) for pipeline in glob.glob(glob_str)]
+            [os.path.basename(pipeline) for pipeline in glob.glob(glob_str) if "LSST.yaml" not in pipeline]
         )
         expected = self._get_pipelines()
         self.assertEqual(ingredients, expected)
