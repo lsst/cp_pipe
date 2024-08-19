@@ -61,6 +61,7 @@ class PhotonTransferCurveExtractConnections(pipeBase.PipelineTaskConnections,
         multiple=True,
         deferLoad=True,
     )
+    # TODO DM-45802: Remove deprecated taskMetadata connection in cpPtcExtract
     taskMetadata = cT.Input(
         name="isr_metadata",
         doc="Input task metadata to extract statistics from.",
@@ -81,6 +82,9 @@ class PhotonTransferCurveExtractConnections(pipeBase.PipelineTaskConnections,
     def __init__(self, *, config=None):
         if not config.doExtractPhotodiodeData:
             del self.inputPhotodiodeData
+        # TODO DM-45802: Remove deprecated taskMetadata connection in
+        # cpPtcExtract
+        del self.taskMetadata
 
 
 class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
@@ -387,7 +391,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                 newCovariances.append(newPtc)
         return pipeBase.Struct(outputCovariances=newCovariances)
 
-    def run(self, inputExp, inputDims, taskMetadata, inputPhotodiodeData=None):
+    def run(self, inputExp, inputDims, taskMetadata=None, inputPhotodiodeData=None):
 
         """Measure covariances from difference of flat pairs
 
@@ -400,8 +404,9 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
             sequentially by their exposure id.
         inputDims : `list`
             List of exposure IDs.
-        taskMetadata : `list` [`lsst.pipe.base.TaskMetadata`]
-            List of exposures metadata from ISR.
+        taskMetadata : `list` [`lsst.pipe.base.TaskMetadata`], optional
+            List of exposures metadata from ISR.  This is not used,
+            and will be completely removed on DM-45802.
         inputPhotodiodeData : `dict` [`str`, `lsst.ip.isr.PhotodiodeCalib`]
             Photodiode readings data (optional).
 
@@ -575,14 +580,8 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                 readNoise2 = dict()
                 meanReadNoise = dict()
 
-                metadataIndex1 = inputDims.index(expId1)
-                thisTaskMetadata1 = taskMetadata[metadataIndex1]
-
-                metadataIndex2 = inputDims.index(expId2)
-                thisTaskMetadata2 = taskMetadata[metadataIndex2]
-
-                readNoise1[ampName] = getReadNoise(exp1, ampName, taskMetadata=thisTaskMetadata1)
-                readNoise2[ampName] = getReadNoise(exp2, ampName, taskMetadata=thisTaskMetadata2)
+                readNoise1[ampName] = getReadNoise(exp1, ampName)
+                readNoise2[ampName] = getReadNoise(exp2, ampName)
 
                 meanReadNoise[ampName] = np.nanmean([readNoise1[ampName], readNoise2[ampName]])
 
