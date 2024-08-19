@@ -583,7 +583,11 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                 readNoise1[ampName] = getReadNoise(exp1, ampName)
                 readNoise2[ampName] = getReadNoise(exp2, ampName)
 
-                meanReadNoise[ampName] = np.nanmean([readNoise1[ampName], readNoise2[ampName]])
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    # We allow the mean read noise to be nan if both read noise
+                    # values are nan, so suppress this warning.
+                    meanReadNoise[ampName] = np.nanmean([readNoise1[ampName], readNoise2[ampName]])
 
                 # We demand that both mu1 and mu2 be finite and greater than 0.
                 if not np.isfinite(mu1) or not np.isfinite(mu2) \
