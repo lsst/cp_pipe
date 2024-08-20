@@ -90,7 +90,7 @@ def calculateWeightedReducedChi2(measured, model, weightsMeasured, nData, nParsM
 
 def makeMockFlats(expTime, gain=1.0, readNoiseElectrons=5, fluxElectrons=1000,
                   randomSeedFlat1=1984, randomSeedFlat2=666, powerLawBfParams=[],
-                  expId1=0, expId2=1):
+                  expId1=0, expId2=1, ampNames=[]):
     """Create a pair or mock flats with isrMock.
 
     Parameters
@@ -116,6 +116,8 @@ def makeMockFlats(expTime, gain=1.0, readNoiseElectrons=5, fluxElectrons=1000,
         Exposure ID for first flat.
     expId2 : `int`, optional
         Exposure ID for second flat.
+    ampNames : `list` [`str`], optional
+        Names of amplifiers for filling in header information.
 
     Returns
     -------
@@ -180,6 +182,16 @@ def makeMockFlats(expTime, gain=1.0, readNoiseElectrons=5, fluxElectrons=1000,
     flatExp1.getInfo().setVisitInfo(visitInfoExp1)
     flatExp2.info.id = expId2
     flatExp2.getInfo().setVisitInfo(visitInfoExp2)
+
+    # Set ISR metadata.
+    flatExp1.metadata["LSST ISR UNITS"] = "adu"
+    flatExp2.metadata["LSST ISR UNITS"] = "adu"
+    for ampName in ampNames:
+        key = f"LSST ISR OVERSCAN RESIDUAL SERIAL STDEV {ampName}"
+        value = readNoiseElectrons / gain
+
+        flatExp1.metadata[key] = value
+        flatExp2.metadata[key] = value
 
     return flatExp1, flatExp2
 
