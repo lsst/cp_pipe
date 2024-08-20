@@ -1,4 +1,4 @@
-description: cp_pipe FLAT calibration construction
+description: cp_pipe FLAT calibration construction, optimized for a single chip.
 instrument: lsst.obs.lsst.LsstCam
 imports:
-  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpFlatSingleChip.yaml
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpFlatSingleChipLSST.yaml

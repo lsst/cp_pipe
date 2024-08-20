@@ -1,18 +1,12 @@
 description: LSSTCam Photon-Transfer Curve calibration construction.
 instrument: lsst.obs.lsst.LsstCam
 imports:
-  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpPtc.yaml
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpPtcLSST.yaml
 tasks:
-  cpPtcIsr:
-    class: lsst.ip.isr.IsrTask
-    config:
-      deferredChargeCorrection.useGains: true
-      doCrosstalk: false
   cpPtcExtract:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
     config:
-      edgeMaskLevel: AMP
-      numEdgeSuspect: 20
+      useEfdPhotodiodeData: false
       doExtractPhotodiodeData: true
       auxiliaryHeaderKeys: ["CCOBCURR", "CCOBFLUX", "TEMP6"]
       matchExposuresType: FLUX

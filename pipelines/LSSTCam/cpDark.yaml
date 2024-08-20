@@ -1,9 +1,4 @@
 description: cp_pipe DARK calibration construction
 instrument: lsst.obs.lsst.LsstCam
 imports:
-  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpDark.yaml
-tasks:
-  cpDarkIsr:
-    class: lsst.ip.isr.IsrTask
-    config:
-      doCrosstalk: false
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpDarkLSST.yaml
