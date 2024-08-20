@@ -949,6 +949,26 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                     exposurePair.gain[ampName], inputGain, delta=0.04
                 )
 
+        # Run through the solver and check that the gains from flat pairs
+        # are recorded in the gainList.
+        solveConfig = self.defaultConfigSolve
+        solveConfig.ptcFitType = "EXPAPPROXIMATION"
+        solveTask = cpPipe.ptc.PhotonTransferCurveSolveTask(config=solveConfig)
+
+        resultsSolve = solveTask.run(
+            resultsExtract.outputCovariances,
+            camera=FakeCamera([self.flatExp1.getDetector()]),
+        )
+        ptc = resultsSolve.outputPtcDataset
+
+        for i in range(len(ptc.inputExpIdPairs)):
+            for ampName in self.ampNames:
+                if np.isnan(ptc.gainList[ampName][i]):
+                    continue
+                self.assertAlmostEqual(
+                    ptc.gainList[ampName][i], inputGain, delta=0.04,
+                )
+
     def test_getGainFromFlatPair(self):
         for gainCorrectionType in [
             "NONE",
