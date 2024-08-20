@@ -478,6 +478,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                         'dt': dt,
                         'begin': ts.begin,
                         'end': ts.end,
+                        'exptime': ref.dataId.exposure.exposure_time,
                     }
                     if not obsMin or ts.begin < obsMin:
                         obsMin = ts.begin - dt
@@ -494,7 +495,11 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                 results = client.parseElectrometerStatus(pdData,
                                                          expDate['end'],
                                                          index=self.config.efdSalIndex)
-                monitorDiodeCharge[expId] = results[1]
+                # The monitor diode charge is negative and a time average,
+                # so we need to flip the sign and multiply by the exposure
+                # time.
+                monitorDiodeCharge[expId] = -1.0 * results[1] * expDate['exptime']
+
             # The data can be large, so:
             del pdData
             del client
@@ -583,7 +588,11 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                 readNoise1[ampName] = getReadNoise(exp1, ampName)
                 readNoise2[ampName] = getReadNoise(exp2, ampName)
 
-                meanReadNoise[ampName] = np.nanmean([readNoise1[ampName], readNoise2[ampName]])
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    # We allow the mean read noise to be nan if both read noise
+                    # values are nan, so suppress this warning.
+                    meanReadNoise[ampName] = np.nanmean([readNoise1[ampName], readNoise2[ampName]])
 
                 # We demand that both mu1 and mu2 be finite and greater than 0.
                 if not np.isfinite(mu1) or not np.isfinite(mu2) \
