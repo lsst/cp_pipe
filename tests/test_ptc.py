@@ -38,7 +38,7 @@ import lsst.ip.isr.isrMock as isrMock
 from lsst.ip.isr import PhotonTransferCurveDataset, PhotodiodeCalib
 from lsst.cp.pipe.utils import makeMockFlats
 
-from lsst.pipe.base import InMemoryDatasetHandle, TaskMetadata
+from lsst.pipe.base import InMemoryDatasetHandle
 
 
 class FakeCamera(list):
@@ -130,15 +130,6 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                 (1, self.dataset.covMatrixSide, self.dataset.covMatrixSide)
             )
 
-        # ISR metadata
-        self.metadataContents = TaskMetadata()
-        self.metadataContents["isr"] = {}
-        # Overscan readout noise [in ADU]
-        for amp in self.ampNames:
-            self.metadataContents["isr"][f"RESIDUAL STDEV {amp}"] = (
-                np.sqrt(self.noiseSq) / self.gain
-            )
-
     def test_covAstier(self):
         """Test to check getCovariancesAstier
 
@@ -182,6 +173,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                 readNoiseElectrons=3,
                 expId1=idCounter,
                 expId2=idCounter + 1,
+                ampNames=self.ampNames,
             )
             for mockExp in [mockExp1, mockExp2]:
                 md = mockExp.getMetadata()
@@ -237,7 +229,6 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         resultsExtract = extractTask.run(
             inputExp=expDict,
             inputDims=expIds,
-            taskMetadata=[self.metadataContents for x in expIds],
             inputPhotodiodeData=pdHandles,
         )
 
@@ -937,6 +928,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                 fluxElectrons=100,
                 expId1=idCounter,
                 expId2=idCounter + 1,
+                ampNames=self.ampNames,
             )
             mockExpRef1 = PretendRef(mockExp1)
             mockExpRef2 = PretendRef(mockExp2)
@@ -948,7 +940,6 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         resultsExtract = extractTask.run(
             inputExp=expDict,
             inputDims=expIds,
-            taskMetadata=[self.metadataContents for x in expIds],
         )
         for exposurePair in resultsExtract.outputCovariances:
             for ampName in self.ampNames:
