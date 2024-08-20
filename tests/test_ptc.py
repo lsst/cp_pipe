@@ -503,6 +503,10 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                     atol=1e-8,
                     rtol=None,
                 )
+                self.assertFloatsAlmostEqual(
+                    ptc.ampOffsets[ampName],
+                    0.0,
+                )
 
             mask = ptc.getGoodPoints(amp)
 

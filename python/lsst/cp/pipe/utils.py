@@ -193,6 +193,12 @@ def makeMockFlats(expTime, gain=1.0, readNoiseElectrons=5, fluxElectrons=1000,
         flatExp1.metadata[key] = value
         flatExp2.metadata[key] = value
 
+        key = f"LSST ISR AMPOFFSET PEDESTAL {ampName}"
+        value = 0.0
+
+        flatExp1.metadata[key] = value
+        flatExp2.metadata[key] = value
+
     return flatExp1, flatExp2
 
 
