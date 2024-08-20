@@ -395,6 +395,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                                                              partialPtcDataset.histChi2Dofs[ampName][0])
                 datasetPtc.kspValues[ampName] = np.append(datasetPtc.kspValues[ampName],
                                                           partialPtcDataset.kspValues[ampName][0])
+                datasetPtc.gainList[ampName] = np.append(datasetPtc.gainList[ampName],
+                                                         partialPtcDataset.gain[ampName])
                 datasetPtc.noiseList[ampName] = np.append(datasetPtc.noiseList[ampName],
                                                           partialPtcDataset.noise[ampName])
                 datasetPtc.covariances[ampName] = np.append(
@@ -471,6 +473,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             datasetPtc.expIdMask[ampName] = datasetPtc.expIdMask[ampName][index]
             datasetPtc.covariances[ampName] = datasetPtc.covariances[ampName][index]
             datasetPtc.covariancesSqrtWeights[ampName] = datasetPtc.covariancesSqrtWeights[ampName][index]
+            datasetPtc.gainList[ampName] = datasetPtc.gainList[ampName][index]
+            datasetPtc.noiseList[ampName] = datasetPtc.noiseList[ampName][index]
         for key, value in datasetPtc.auxValues.items():
             datasetPtc.auxValues[key] = value[index]
 
