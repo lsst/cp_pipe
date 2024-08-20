@@ -41,6 +41,7 @@ tasks:
       numEdgeSuspect: 20
       edgeMaskLevel: "AMP"
       useEfdPhotodiodeData: true
+      auxiliaryHeaderKeys: ["TEMP6"]
   cpPtcSolve:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
     config:
