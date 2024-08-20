@@ -569,6 +569,9 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                         datasetPtc.gain[ampName],
                         newGain,
                     )
+                    # Copying the value should not be necessary, but we record
+                    # it just in case.
+                    datasetPtc.gainUnadjusted[ampName] = datasetPtc.gain[ampName]
                     datasetPtc.gain[ampName] = newGain
             else:
                 self.log.warning("Cannot apply doLinearityGainRatioFixup with fewer than 2 good amplifiers.")
@@ -687,6 +690,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 dataset.expIdMask[ampName] = np.repeat(False, lenInputTimes)
                 dataset.gain[ampName] = np.nan
                 dataset.gainErr[ampName] = np.nan
+                dataset.gainUnadjusted[ampName] = np.nan
                 dataset.noise[ampName] = np.nan
                 dataset.noiseErr[ampName] = np.nan
                 dataset.finalVars[ampName] = np.repeat(np.nan, lenInputTimes)
@@ -780,6 +784,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             dataset.aMatrixNoB[ampName] = fitResults['fullModelNoB']['a']
             dataset.gain[ampName] = fitResults['fullModel']['gain']
             dataset.gainErr[ampName] = fitResults['fullModel']['paramsErr'][-1]
+            dataset.gainUnadjusted[ampName] = dataset.gain[ampName]
             readoutNoise = fitResults['fullModel']['noise'][0][0]
             readoutNoiseSqrt = np.sqrt(np.fabs(readoutNoise))
             dataset.noise[ampName] = readoutNoise
@@ -1458,6 +1463,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 ptcNoiseErr = (0.5*(parsFitErr[0]/np.fabs(parsFit[0]))*(np.sqrt(np.fabs(parsFit[0]))))*ptcGain
             dataset.gain[ampName] = ptcGain
             dataset.gainErr[ampName] = ptcGainErr
+            dataset.gainUnadjusted[ampName] = ptcGain
             dataset.noise[ampName] = ptcNoise
             dataset.noiseErr[ampName] = ptcNoiseErr
 
@@ -1487,6 +1493,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         dataset.expIdMask[ampName] = np.repeat(False, len(dataset.rawExpTimes[ampName]))
         dataset.gain[ampName] = np.nan
         dataset.gainErr[ampName] = np.nan
+        dataset.gainUnadjusted[ampName] = np.nan
         dataset.noise[ampName] = np.nan
         dataset.noiseErr[ampName] = np.nan
         dataset.ptcFitPars[ampName] = (np.repeat(np.nan, self.config.polynomialFitDegree + 1) if
@@ -1498,5 +1505,3 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         dataset.finalVars[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
         dataset.finalModelVars[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
         dataset.finalMeans[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
-
-        return
