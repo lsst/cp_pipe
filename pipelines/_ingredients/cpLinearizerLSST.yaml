@@ -43,6 +43,7 @@ tasks:
       connections.outputPtcDataset: "linearizerPtc"
       ptcFitType: "EXPAPPROXIMATION"
       maximumRangeCovariancesAstier: 1
+      maximumRangeCovariancesAstierFullCovFit: 1
   cpLinearizerSolve:
     class: lsst.cp.pipe.LinearitySolveTask
     config:
