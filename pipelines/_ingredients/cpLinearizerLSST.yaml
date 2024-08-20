@@ -31,7 +31,6 @@ tasks:
     config:
       connections.inputExp: "cpLinearizerIsrExp"
       connections.outputCovariances: "cpLinearizerPtcPartial"
-      connections.taskMetadata: "cpLinearizerIsr_metadata"
       maximumRangeCovariancesAstier: 1
       numEdgeSuspect: 20
       edgeMaskLevel: "AMP"

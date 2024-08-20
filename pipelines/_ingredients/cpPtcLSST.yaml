@@ -37,7 +37,6 @@ tasks:
     config:
       connections.inputExp: "cpPtcIsrExp"
       connections.outputCovariances: "cpPtcPartial"
-      connections.taskMetadata: "cpPtcIsr_metadata"
       maximumRangeCovariancesAstier: 8
       numEdgeSuspect: 20
       edgeMaskLevel: "AMP"
