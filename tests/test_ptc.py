@@ -451,6 +451,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
         for amp in self.ampNames:
             self.assertAlmostEqual(ptc.gain[amp], inputGain, places=2)
+            self.assertAlmostEqual(ptc.gainUnadjusted[amp], ptc.gain[amp])
             for v1, v2 in zip(varStandard[amp], ptc.finalVars[amp]):
                 self.assertAlmostEqual(v1 / v2, 1.0, places=1)
 
