@@ -3,10 +3,6 @@ instrument: lsst.obs.lsst.LsstComCam
 imports:
   - location: $CP_PIPE_DIR/pipelines/_ingredients/cpPtcLSST.yaml
 tasks:
-  cpPtcIsr:
-    class: lsst.ip.isr.IsrTaskLSST
-    config:
-      doCrosstalk: false
   cpPtcExtract:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
     config:
