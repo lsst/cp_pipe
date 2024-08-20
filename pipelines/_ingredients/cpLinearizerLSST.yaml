@@ -51,7 +51,7 @@ tasks:
       linearityType: "Spline"
       splineKnots: 10
       trimmedState: false
-      usePhotodiode: false
+      usePhotodiode: true
 contracts:
   - cpLinearizerIsr.doBootstrap == True
   - cpLinearizerIsr.nominalGain == 1.0
