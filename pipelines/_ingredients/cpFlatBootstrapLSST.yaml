@@ -22,6 +22,7 @@ tasks:
       doSaturation: false
       doSuspect: false
       doCrosstalk: true
+      crosstalk.doQuadraticCrosstalkCorrection: false
       doWidenSaturationTrails: false
       doInterpolate: false
       maskNegativeVariance: false
