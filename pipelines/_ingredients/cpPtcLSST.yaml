@@ -10,7 +10,6 @@ tasks:
       doBias: false
       doDark: false
       doFlat: false
-      nominalGain: 1.0
       doDiffNonLinearCorrection: false
       doBootstrap: true
       doDeferredCharge: false
@@ -53,7 +52,6 @@ tasks:
 
 contracts:
   - cpPtcIsr.doBootstrap == True
-  - cpPtcIsr.nominalGain == 1.0
   - cpPtcExtract.connections.inputExp == cpPtcIsr.connections.outputExposure
   - cpPtcSolve.binSize == cpPtcExtract.binSize
   - cpPtcSolve.maximumRangeCovariancesAstier == cpPtcExtract.maximumRangeCovariancesAstier

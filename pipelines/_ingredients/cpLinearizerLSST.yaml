@@ -10,7 +10,6 @@ tasks:
       doBias: false
       doDark: false
       doFlat: false
-      nominalGain: 1.0
       doDiffNonLinearCorrection: false
       doBootstrap: true
       doDeferredCharge: false
@@ -56,7 +55,6 @@ tasks:
       usePhotodiode: true
 contracts:
   - cpLinearizerIsr.doBootstrap == True
-  - cpLinearizerIsr.nominalGain == 1.0
   - cpLinearizerPtcExtract.connections.inputExp == cpLinearizerIsr.connections.outputExposure
   - cpLinearizerPtcSolve.binSize == cpLinearizerPtcExtract.binSize
   - cpLinearizerPtcSolve.maximumRangeCovariancesAstier == cpLinearizerPtcExtract.maximumRangeCovariancesAstier
