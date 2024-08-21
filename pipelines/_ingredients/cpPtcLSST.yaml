@@ -47,10 +47,10 @@ tasks:
     config:
       connections.inputCovariances: "cpPtcPartial"
       connections.outputPtcDataset: "ptc"
-      # ptcFitType: "FULLCOVARIANCE"
-      ptcFitType: "EXPAPPROXIMATION"
+      ptcFitType: "FULLCOVARIANCE"
       maximumRangeCovariancesAstier: 8
       doAmpOffsetGainRatioFixup: true
+
 contracts:
   - cpPtcIsr.doBootstrap == True
   - cpPtcIsr.nominalGain == 1.0
