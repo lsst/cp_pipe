@@ -6,6 +6,8 @@ tasks:
       connections.outputExposure: "cpSkyIsrExp"
       doBrighterFatter: false
       doDeferredCharge: false
+      doCrosstalk: true
+      crosstalk.doQuadraticCrosstalkCorrection: true
   cpSkyImage:
     class: lsst.cp.pipe.CpSkyImageTask
     config:

@@ -4,3 +4,8 @@ description: Latiss dark calibration construction
 instrument: lsst.obs.lsst.Latiss
 imports:
   - location: $CP_PIPE_DIR/pipelines/_ingredients/cpDarkLSST.yaml
+tasks:
+  cpDarkIsr:
+    class: lsst.ip.isr.IsrTaskLSST
+    config:
+      crosstalk.doQuadraticCrosstalkCorrection: false

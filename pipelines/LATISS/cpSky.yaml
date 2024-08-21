@@ -3,6 +3,10 @@ instrument: lsst.obs.lsst.Latiss
 imports:
   - location: $CP_PIPE_DIR/pipelines/_ingredients/cpSkyLSST.yaml
 tasks:
+  cpSkyIsr:
+    class: lsst.ip.isr.IsrTaskLSST
+    config:
+      crosstalk.doQuadraticCrosstalkCorrection: false
   cpSkyImage:
     class: lsst.cp.pipe.CpSkyImageTask
     config:
