@@ -443,8 +443,11 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         for amp in self.ampNames:
             self.assertAlmostEqual(ptc.gain[amp], inputGain, places=2)
             self.assertAlmostEqual(ptc.gainUnadjusted[amp], ptc.gain[amp])
-            for v1, v2 in zip(varStandard[amp], ptc.finalVars[amp]):
-                self.assertAlmostEqual(v1 / v2, 1.0, places=1)
+            self.assertFloatsAlmostEqual(
+                np.asarray(varStandard[amp])[ptc.expIdMask[amp]] / ptc.finalVars[amp][ptc.expIdMask[amp]],
+                1.0,
+                rtol=1e-4,
+            )
 
             # Check that the PTC turnoff is correctly computed.
             # This will be different for the C:0,0 amp.
