@@ -551,7 +551,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 dataset.finalMeans[ampName] = np.repeat(np.nan, lenInputTimes)
                 continue
 
-            muAtAmp = dataset.rawMeans[ampName]
+            muAtAmp = dataset.rawMeans[ampName].copy()
             maskAtAmp = dataset.expIdMask[ampName]
             if len(maskAtAmp) == 0:
                 maskAtAmp = np.repeat(True, len(muAtAmp))
@@ -650,9 +650,12 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             dataset.noiseMatrix[ampName] = fitResults['fullModel']['noiseMatrix']
             dataset.noiseMatrixNoB[ampName] = fitResults['fullModelNoB']['noiseMatrix']
 
-            dataset.finalVars[ampName] = covAtAmp[:, 0, 0]
-            dataset.finalModelVars[ampName] = dataset.covariancesModel[ampName][:, 0, 0]
-            dataset.finalMeans[ampName] = muAtAmp
+            dataset.finalVars[ampName] = covAtAmp[:, 0, 0].copy()
+            dataset.finalVars[ampName][~maskAtAmp] = np.nan
+            dataset.finalModelVars[ampName] = dataset.covariancesModel[ampName][:, 0, 0].copy()
+            dataset.finalModelVars[ampName][~maskAtAmp] = np.nan
+            dataset.finalMeans[ampName] = muAtAmp.copy()
+            dataset.finalMeans[ampName][~maskAtAmp] = np.nan
 
         return dataset
 
