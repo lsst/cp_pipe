@@ -554,6 +554,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                         & (np.isfinite(deltas))
                         & (datasetPtc.finalMeans[ampName] >= self.config.ampOffsetGainRatioMinAdu)
                         & (datasetPtc.finalMeans[ampName] <= self.config.ampOffsetGainRatioMaxAdu)
+                        & (np.isfinite(datasetPtc.finalMeans[midAmpName]))
+                        & (datasetPtc.expIdMask[midAmpName])
                     )
                     if use.sum() < 3:
                         self.log.warning("Not enough good amp offset measurements to fix up amp %s "
