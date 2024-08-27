@@ -26,7 +26,7 @@ import warnings
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 from lsst.cp.pipe.utils import (fitLeastSq, fitBootstrap, funcPolynomial,
-                                funcAstier, symmetrize, Pol2D)
+                                funcAstier, symmetrize, Pol2D, ampOffsetGainRatioFixup)
 
 from scipy.signal import fftconvolve
 from scipy.optimize import least_squares
@@ -524,79 +524,12 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                                  f"amplifier {ampName}. Try adjusting the fit range.")
 
         if self.config.doAmpOffsetGainRatioFixup:
-            # We need to find the reference amplifier.
-            # Find an amp near the middle to use as a pivot.
-            gainArray = np.zeros(len(datasetPtc.ampNames))
-            for i, ampName in enumerate(datasetPtc.ampNames):
-                gainArray[i] = datasetPtc.gain[ampName]
-            good, = np.where(np.isfinite(gainArray))
-
-            if len(good) > 1:
-                # This only works with more than 1 good amp.
-
-                st = np.argsort(gainArray[good])
-                midAmp = good[st[int(0.5*len(good))]]
-                midAmpName = datasetPtc.ampNames[midAmp]
-
-                self.log.info("Using amplifier %s as the pivot for doLinearityGainRatioFixup.", midAmpName)
-
-                # First pass, we need to compute the corrections.
-                corrections = {}
-                for ampName in datasetPtc.ampNames:
-                    if not np.isfinite(datasetPtc.gain[ampName]) or ampName == midAmpName:
-                        continue
-
-                    ratioPtc = datasetPtc.gain[ampName] / datasetPtc.gain[midAmpName]
-
-                    deltas = datasetPtc.ampOffsets[ampName] - datasetPtc.ampOffsets[midAmpName]
-                    use = (
-                        (datasetPtc.expIdMask[ampName])
-                        & (np.isfinite(deltas))
-                        & (datasetPtc.finalMeans[ampName] >= self.config.ampOffsetGainRatioMinAdu)
-                        & (datasetPtc.finalMeans[ampName] <= self.config.ampOffsetGainRatioMaxAdu)
-                        & (np.isfinite(datasetPtc.finalMeans[midAmpName]))
-                        & (datasetPtc.expIdMask[midAmpName])
-                    )
-                    if use.sum() < 3:
-                        self.log.warning("Not enough good amp offset measurements to fix up amp %s "
-                                         "gains from amp ratios.", ampName)
-                        continue
-
-                    ratios = 1. / (deltas / datasetPtc.finalMeans[midAmpName] + 1.0)
-                    ratio = np.median(ratios[use])
-                    corrections[ampName] = ratio / ratioPtc
-
-                # For the final correction, we need to make sure that the
-                # reference amplifier is included. By definition, it has a
-                # correction factor of 1.0 before any final fix.
-                corrections[midAmpName] = 1.0
-
-                # Adjust the median correction to be 1.0 so we do not
-                # change the gain of the detector on average.
-                # This is needed in case the reference amplifier is
-                # skewed in terms of offsets even though it has the median
-                # gain.
-                medCorrection = np.median([corrections[key] for key in corrections])
-
-                for ampName in datasetPtc.ampNames:
-                    if ampName not in corrections:
-                        continue
-
-                    correction = corrections[ampName] / medCorrection
-                    newGain = datasetPtc.gain[ampName] * correction
-                    self.log.info(
-                        "Adjusting gain from amplifier %s by factor of %.5f (from %.5f to %.5f)",
-                        ampName,
-                        correction,
-                        datasetPtc.gain[ampName],
-                        newGain,
-                    )
-                    # Copying the value should not be necessary, but we record
-                    # it just in case.
-                    datasetPtc.gainUnadjusted[ampName] = datasetPtc.gain[ampName]
-                    datasetPtc.gain[ampName] = newGain
-            else:
-                self.log.warning("Cannot apply doLinearityGainRatioFixup with fewer than 2 good amplifiers.")
+            ampOffsetGainRatioFixup(
+                datasetPtc,
+                self.config.ampOffsetGainRatioMinAdu,
+                self.config.ampOffsetGainRatioMaxAdu,
+                log=self.log,
+            )
 
         if camera:
             detector = camera[detId]
