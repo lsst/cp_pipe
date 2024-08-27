@@ -540,6 +540,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
 
                 self.log.info("Using amplifier %s as the pivot for doLinearityGainRatioFixup.", midAmpName)
 
+                # First pass, we need to compute the corrections.
+                corrections = {}
                 for ampName in datasetPtc.ampNames:
                     if not np.isfinite(datasetPtc.gain[ampName]) or ampName == midAmpName:
                         continue
@@ -560,7 +562,17 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
 
                     ratios = 1. / (deltas / datasetPtc.finalMeans[midAmpName] + 1.0)
                     ratio = np.median(ratios[use])
-                    correction = ratio / ratioPtc
+                    corrections[ampName] = ratio / ratioPtc
+
+                # Adjust the median correction to be 1.0 so we do not
+                # change the gain of the detector on average.
+                medCorrection = np.median([corrections[key] for key in corrections])
+
+                for ampName in datasetPtc.ampNames:
+                    if ampName not in corrections:
+                        continue
+
+                    correction = corrections[ampName] / medCorrection
                     newGain = datasetPtc.gain[ampName] * correction
                     self.log.info(
                         "Adjusting gain from amplifier %s by factor of %.5f (from %.5f to %.5f)",
