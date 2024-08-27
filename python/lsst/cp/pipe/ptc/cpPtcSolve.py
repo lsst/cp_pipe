@@ -566,8 +566,16 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                     ratio = np.median(ratios[use])
                     corrections[ampName] = ratio / ratioPtc
 
+                # For the final correction, we need to make sure that the
+                # reference amplifier is included. By definition, it has a
+                # correction factor of 1.0 before any final fix.
+                corrections[midAmpName] = 1.0
+
                 # Adjust the median correction to be 1.0 so we do not
                 # change the gain of the detector on average.
+                # This is needed in case the reference amplifier is
+                # skewed in terms of offsets even though it has the median
+                # gain.
                 medCorrection = np.median([corrections[key] for key in corrections])
 
                 for ampName in datasetPtc.ampNames:
