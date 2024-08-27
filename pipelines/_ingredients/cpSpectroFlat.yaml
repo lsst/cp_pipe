@@ -1,0 +1,6 @@
+description: Pipeline definition to generate a flat for spectroscopic use.
+tasks:
+  cpSpectroFlat:
+    class: lsst.cp.pipe.CpSpectroFlatTask
+    config:
+      background.binSize: 20
