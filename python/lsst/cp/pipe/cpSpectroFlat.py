@@ -19,7 +19,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-__all__ = ['CpSpectroFlatTask', 'CpSpectroFlatTaskConfig']
+__all__ = ["CpSpectroFlatTask", "CpSpectroFlatTaskConfig"]
 
 
 import numpy as np
@@ -33,11 +33,11 @@ import lsst.pipe.base.connectionTypes as cT
 from lsst.meas.algorithms import SubtractBackgroundTask
 
 
-class CpSpectroFlatTaskConnections(pipeBase.PipelineTaskConnection,
-                                   dimensions=('instrument', 'detector', 'physical_filter')):
+class CpSpectroFlatTaskConnections(pipeBase.PipelineTaskConnections,
+                                   dimensions=("instrument", "detector", "physical_filter")):
     dummyExpRef = cT.Input(
         name="raw",
-        storageClass='Exposure',
+        storageClass="Exposure",
         dimensions=("instrument", "detector", "exposure"),
         doc="Dummy exposure reference to constrain butler calibration lookups.",
         deferLoad=True
@@ -84,13 +84,20 @@ class CpSpectroFlatTaskConfig(pipeBase.PipelineTaskConfig,
         doc="Should flat be multiplied by the gains?",
         default=True,
     )
+    scaleGainsByMean = pexConfig.Field(
+        dtype=bool,
+        doc="Scale gains by the mean?",
+        default=True,
+    )
 
     # makeOpticFlat
     smoothingAlgorithm = pexConfig.ChoiceField(
         dtype=str,
         doc="Method to use to smooth amplifiers.",
-        default='mean',
-        allowed=['mean', 'gauss', 'median'],
+        default="mean",
+        allowed={"mean": "Use scipy uniform_filter",
+                 "gauss": "Use scipy gaussian_filter",
+                 "median": "Use scipy median_filter"},
     )
     smoothingWindowSize = pexConfig.Field(
         dtype=int,
@@ -99,7 +106,7 @@ class CpSpectroFlatTaskConfig(pipeBase.PipelineTaskConfig,
     )
     smoothingMode = pexConfig.Field(
         dtype=str,
-        default='mirror',
+        default="mirror",
         doc="Filter mode/downstream.",
     )
     smoothingOutlierPercentile = pexConfig.Field(
@@ -141,7 +148,7 @@ class CpSpectroFlatTask(pipeBase.PipelineTask):
     """Docs"""
 
     ConfigClass = CpSpectroFlatTaskConfig
-    _DefaultName = 'cpSpectroFlat'
+    _DefaultName = "cpSpectroFlat"
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -150,12 +157,14 @@ class CpSpectroFlatTask(pipeBase.PipelineTask):
     def run(self, dummyExpRef, inputFlat, inputPtc):
         # Verify input
         exposureFilter = dummyExpRef.get(component="filter")
-        if exposureFilter.physical != self.config.inputFlatPhysicalFilter:
-            raise RuntimeError(f"Did not receive expected physical_filter: {exposureFilter.physical} != "
+
+        if exposureFilter.physicalLabel != self.config.inputFlatPhysicalFilter:
+            raise RuntimeError("Did not receive expected physical_filter: "
+                               f"{exposureFilter.physicalLabel} != "
                                f"{self.config.inputFlatPhysicalFilter}")
 
         detector = inputFlat.getDetector()
-        statsControl = afwMath.StatisticsControl(self.backgroundSigmaClipThreshold, 5, 0x0)
+        statsControl = afwMath.StatisticsControl(self.config.backgroundSigmaClipThreshold, 5, 0x0)
 
         # Make gain flat
         # https://github.com/lsst/atmospec/blob/u/jneveu/doFlat/python/lsst/atmospec/spectroFlat.py#L85
@@ -186,15 +195,15 @@ class CpSpectroFlatTask(pipeBase.PipelineTask):
             ampExp = opticFlat.Factory(opticFlat, amp.getBBox())
             stats = afwMath.makeStatistics(ampExp.getMaskedImage(),
                                            afwMath.MEDIAN, statsControl)
-            ampExp /= stats.getValue(afwMath.MEDIAN)
+            ampExp.image.array[:, :] /= stats.getValue(afwMath.MEDIAN)
 
             inputData = ampExp.image.array.copy()
             match self.config.smoothingAlgorithm:
-                case 'gauss':
+                case "gauss":
                     ampExp.image.array[:, :] = gaussian_filter(inputData,
                                                                sigma=self.config.smoothingWindowSize,
                                                                mode=self.config.smoothingMode)
-                case 'mean':
+                case "mean":
                     # This method is easily skewed by outliers.
                     # Filter those.
                     mask1 = (inputData >= np.percentile(inputData.ravel(),
@@ -208,7 +217,7 @@ class CpSpectroFlatTask(pipeBase.PipelineTask):
                     ampExp.image.array[:, :] = uniform_filter(inputData,
                                                               size=self.config.smoothingWindowSize,
                                                               mode=self.config.smoothingMode)
-                case 'median':
+                case "median":
                     ampExp.image.array[:, :] = median_filter(inputData,
                                                              size=(self.config.smoothingWindowSize,
                                                                    self.config.smoothingWindowSize),
@@ -219,18 +228,19 @@ class CpSpectroFlatTask(pipeBase.PipelineTask):
             ampExp.mask.array[:, :] = 0x0
 
         # Make pixel flat
-        # https://github.com/lsst/atmospec/blob/u/jneveu/doFlat/python/lsst/atmospec/spectroFlat.py#L183
+        # https://github.com/lsst/atmospec/blob/u/jneveu/doFlat/python/lsst/atmospec/spectroFlat.py#L18
         pixelFlat = inputFlat.clone()
         for amp in detector:
             # Divide amp by median.  Can we reuse the image above?
             ampExp = pixelFlat.Factory(pixelFlat, amp.getBBox())
             stats = afwMath.makeStatistics(ampExp.getMaskedImage(),
                                            afwMath.MEDIAN, statsControl)
-            ampExp /= stats.getValue(afwMath.MEDIAN)
+            ampExp.image.array[:, :] /= stats.getValue(afwMath.MEDIAN)
 
             if self.config.doBackgroundRemoval:
                 ampBg = self.background.run(ampExp).background
-                ampExp /= ampBg.getImage()
+                ampBgImg = ampBg.getImage()
+                ampExp.image.array[:, :] /= ampBgImg.array[:, :]
 
         # Make sensor flat
         # https://github.com/lsst/atmospec/blob/u/jneveu/doFlat/python/lsst/atmospec/spectroFlat.py#L230
@@ -238,7 +248,7 @@ class CpSpectroFlatTask(pipeBase.PipelineTask):
         for amp in detector:
             sensorFlatAmp = sensorFlat.Factory(sensorFlat, amp.getBBox())
             gainFlatAmp = gainFlat.Factory(gainFlat, amp.getBBox())
-            sensorFlatAmp *= gainFlatAmp
+            sensorFlatAmp.maskedImage.scaledMultiplies(1.0, gainFlatAmp.maskedImage)
 
         # Add PTC/gain information to outputFlat header. This allows
         # SpectractorShim.spectractorImageFromLsstExposure to populate
