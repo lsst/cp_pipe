@@ -445,8 +445,8 @@ def funcAstier(pars, x):
     y : `numpy.array`, (N,)
         C_00 (variance) in ADU^2.
     """
-    a00, gain, noise = pars
-    return 0.5/(a00*gain*gain)*(np.exp(2*a00*x*gain)-1) + noise/(gain*gain)  # C_00
+    a00, gain, noiseSquared = pars
+    return 0.5/(a00*gain*gain)*(np.exp(2*a00*x*gain)-1) + noiseSquared/(gain*gain)  # C_00
 
 
 def arrangeFlatsByExpTime(exposureList, exposureIdList, log=None):

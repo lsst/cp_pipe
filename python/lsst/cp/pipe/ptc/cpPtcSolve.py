@@ -88,7 +88,7 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
     minMeanSignal = pexConfig.DictField(
         keytype=str,
         itemtype=float,
-        doc="Minimum values (inclusive) of mean signal (in ADU) per amp to use."
+        doc="Minimum values (inclusive) of mean signal (in adu) per amp to use."
             " The same cut is applied to all amps if this parameter [`dict`] is passed as "
             " {'ALL_AMPS': value}",
         default={'ALL_AMPS': 0.0},
@@ -96,7 +96,7 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
     maxMeanSignal = pexConfig.DictField(
         keytype=str,
         itemtype=float,
-        doc="Maximum values (inclusive) of mean signal (in ADU) below which to consider, per amp."
+        doc="Maximum values (inclusive) of mean signal (in adu) below which to consider, per amp."
             " The same cut is applied to all amps if this dictionary is of the form"
             " {'ALL_AMPS': value}",
         default={'ALL_AMPS': 1e6},
@@ -172,7 +172,7 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
         doc="Maximum signal considered for intial outlier fit. This should be below "
             "the PTC turnoff to ensure accurate outlier rejection. If "
             "scaleMaxSignalInitialPtcOutlierFit=True then the units are electrons; "
-            "otherwise ADU.",
+            "otherwise adu.",
         default=50_000.,
     )
     maxDeltaInitialPtcOutlierFit = pexConfig.Field(
@@ -181,7 +181,7 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
             "maxSignalInitialPtcOutlierFit, then no points that have this delta "
             "mean from the previous ``good`` point are allowed. If "
             "scaleMaxSignalInitialPtcOutlierFit=True then the units are electrons; "
-            "otherwise ADU.",
+            "otherwise adu.",
         default=9_000.,
     )
     scaleMaxSignalInitialPtcOutlierFit = pexConfig.Field(
@@ -189,14 +189,14 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
         doc="Scale maxSignalInitialPtcOutlierFit and maxDeltaInitialPtcOutlierFit by "
             "approximate gain?  If yes then "
             "maxSignalInitialPtcOutlierFit and maxDeltaInitialPtcOutlierFit are assumed "
-            "to have units of electrons, otherwise ADU.",
+            "to have units of electrons, otherwise adu.",
         default=True,
     )
     minVarPivotSearch = pexConfig.Field(
         dtype=float,
         doc="The code looks for a pivot signal point after which the variance starts decreasing at high-flux"
             " to exclude then from the PTC model fit. However, sometimes at low fluxes, the variance"
-            " decreases slightly. Set this variable for the variance value, in ADU^2, after which the pivot "
+            " decreases slightly. Set this variable for the variance value, in adu^2, after which the pivot "
             " should be sought. Only used if doLegacyTurnoffSelection is True.",
         default=10000,
     )
@@ -324,7 +324,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 ampNames = partialPtcDataset.ampNames
                 break
 
-        # Each amp may have a different min and max ADU signal
+        # Each amp may have a different min and max adu signal
         # specified in the config.
         maxMeanSignalDict = {ampName: 1e6 for ampName in ampNames}
         minMeanSignalDict = {ampName: 0.0 for ampName in ampNames}
@@ -486,8 +486,9 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             # as appropriate later.
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                noise = np.nanmedian(datasetPtc.noiseList[ampName])
-                noiseFitted = np.sqrt(datasetPtc.noise[ampName])
+                noise = np.nanmedian(datasetPtc.noiseList[ampName])  # adu
+                noise *= datasetPtc.gain[ampName]  # now in electron
+                noiseFitted = datasetPtc.noise[ampName]  # electron
 
             # Check if noise is close to noiseFitted
             if not np.isclose(noiseFitted, noise, rtol=0.05, atol=0.0, equal_nan=True):
@@ -563,12 +564,12 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         Notes
         -----
         The parameters of the full model for C_ij(mu) ("C_ij" and "mu"
-        in ADU^2 and ADU, respectively) in Astier+19 (Eq. 20) are:
+        in adu^2 and adu, respectively) in Astier+19 (Eq. 20) are:
 
-        - "a" coefficients (r by r matrix), units: 1/e
-        - "b" coefficients (r by r matrix), units: 1/e
-        - noise matrix (r by r matrix), units: e^2
-        - gain, units: e/ADU
+        - "a" coefficients (r by r matrix), units: 1/electron
+        - "b" coefficients (r by r matrix), units: 1/electron
+        - noise matrix (r by r matrix), units: electron^2
+        - gain, units: electron/adu
 
         "b" appears in Eq. 20 only through the "ab" combination, which
         is defined in this code as "c=ab".
@@ -643,31 +644,31 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             covSqrtWeightsAtAmpForFitMasked = covSqrtWeightsAtAmpMasked[:, :r, :r]
 
             # Initial fit, to approximate parameters, with c=0
-            a0, c0, noise0, gain0 = self.initialFitFullCovariance(
+            a0, c0, noiseMatrix0, gain0 = self.initialFitFullCovariance(
                 muAtAmpMasked,
                 covAtAmpForFitMasked,
                 covSqrtWeightsAtAmpForFitMasked
             )
 
             # Fit full model (Eq. 20 of Astier+19) and same model with
-            # b=0 (c=0 in this code)
-            pInit = np.concatenate((a0.ravel(), c0.ravel(), noise0.ravel(), np.array(gain0)), axis=None)
+            # b=0 (c=0 in this code).
+            pInit = np.concatenate((a0.ravel(), c0.ravel(), noiseMatrix0.ravel(), np.array(gain0)), axis=None)
             functionsDict = {'fullModel': self.funcFullCovarianceModel,
                              'fullModelNoB': self.funcFullCovarianceModelNoB}
-            fitResults = {'fullModel': {'a': [], 'c': [], 'noise': [], 'gain': [], 'paramsErr': []},
-                          'fullModelNoB': {'a': [], 'c': [], 'noise': [], 'gain': [], 'paramsErr': []}}
+            fitResults = {'fullModel': {'a': [], 'c': [], 'noiseMatrix': [], 'gain': [], 'paramsErr': []},
+                          'fullModelNoB': {'a': [], 'c': [], 'noiseMatrix': [], 'gain': [], 'paramsErr': []}}
             for key in functionsDict:
                 params, paramsErr, _ = fitLeastSq(pInit, muAtAmpMasked,
                                                   covAtAmpForFitMasked.ravel(), functionsDict[key],
                                                   weightsY=covSqrtWeightsAtAmpForFitMasked.ravel())
                 a = params[:lenParams].reshape((matrixSideFit, matrixSideFit))
                 c = params[lenParams:2*lenParams].reshape((matrixSideFit, matrixSideFit))
-                noise = params[2*lenParams:3*lenParams].reshape((matrixSideFit, matrixSideFit))
+                noiseMatrix = params[2*lenParams:3*lenParams].reshape((matrixSideFit, matrixSideFit))
                 gain = params[-1]
 
                 fitResults[key]['a'] = a
                 fitResults[key]['c'] = c
-                fitResults[key]['noise'] = noise
+                fitResults[key]['noiseMatrix'] = noiseMatrix
                 fitResults[key]['gain'] = gain
                 fitResults[key]['paramsErr'] = paramsErr
 
@@ -685,30 +686,35 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             dataset.covariances[ampName] = covAtAmp
             # We evaluate the covariance model everywhere, even the
             # masked amps.
-            dataset.covariancesModel[ampName] = self.evalCovModel(muAtAmp,
-                                                                  fitResults['fullModel']['a'],
-                                                                  fitResults['fullModel']['c'],
-                                                                  fitResults['fullModel']['noise'],
-                                                                  fitResults['fullModel']['gain'])
+            dataset.covariancesModel[ampName] = self.evalCovModel(
+                muAtAmp,
+                fitResults['fullModel']['a'],
+                fitResults['fullModel']['c'],
+                fitResults['fullModel']['noiseMatrix'],
+                fitResults['fullModel']['gain']
+            )
             dataset.covariancesSqrtWeights[ampName] = covSqrtWeightsAtAmp
             dataset.aMatrix[ampName] = fitResults['fullModel']['a']
             dataset.bMatrix[ampName] = fitResults['fullModel']['c']/fitResults['fullModel']['a']
-            dataset.covariancesModelNoB[ampName] = self.evalCovModel(muAtAmp,
-                                                                     fitResults['fullModelNoB']['a'],
-                                                                     fitResults['fullModelNoB']['c'],
-                                                                     fitResults['fullModelNoB']['noise'],
-                                                                     fitResults['fullModelNoB']['gain'],
-                                                                     setBtoZero=True)
+            dataset.covariancesModelNoB[ampName] = self.evalCovModel(
+                muAtAmp,
+                fitResults['fullModelNoB']['a'],
+                fitResults['fullModelNoB']['c'],
+                fitResults['fullModelNoB']['noiseMatrix'],
+                fitResults['fullModelNoB']['gain'],
+                setBtoZero=True
+            )
             dataset.aMatrixNoB[ampName] = fitResults['fullModelNoB']['a']
             dataset.gain[ampName] = fitResults['fullModel']['gain']
             dataset.gainErr[ampName] = fitResults['fullModel']['paramsErr'][-1]
-            readoutNoise = fitResults['fullModel']['noise'][0][0]
-            readoutNoiseSqrt = np.sqrt(np.fabs(readoutNoise))
+            readoutNoiseSquared = fitResults['fullModel']['noiseMatrix'][0][0]
+            readoutNoise = np.sqrt(np.fabs(readoutNoiseSquared))
             dataset.noise[ampName] = readoutNoise
-            readoutNoiseSigma = fitResults['fullModel']['paramsErr'][2*lenParams]
-            dataset.noiseErr[ampName] = 0.5*(readoutNoiseSigma/np.fabs(readoutNoise))*readoutNoiseSqrt
-            dataset.noiseMatrix[ampName] = fitResults['fullModel']['noise']
-            dataset.noiseMatrixNoB[ampName] = fitResults['fullModelNoB']['noise']
+            readoutNoiseSquaredSigma = fitResults['fullModel']['paramsErr'][2*lenParams]
+            noiseErr = 0.5*(readoutNoiseSquaredSigma/np.fabs(readoutNoiseSquared))*readoutNoise
+            dataset.noiseErr[ampName] = noiseErr
+            dataset.noiseMatrix[ampName] = fitResults['fullModel']['noiseMatrix']
+            dataset.noiseMatrixNoB[ampName] = fitResults['fullModelNoB']['noiseMatrix']
 
             dataset.finalVars[ampName] = covAtAmp[:, 0, 0]
             dataset.finalModelVars[ampName] = dataset.covariancesModel[ampName][:, 0, 0]
@@ -724,7 +730,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         Parameters
         ----------
         mu : `numpy.array`, (N,)
-            Signal `mu` (ADU)
+            Signal `mu` (adu)
         cov : `numpy.array`, (N, M, M)
             Covariance arrays of size `(M, M)` (with
             `M = config.maximumRangeCovariancesAstier`),
@@ -735,20 +741,23 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         Returns
         -------
         a : `numpy.array`, (M, M)
-            "a" parameter per flux in Eq. 20 of Astier+19.
+            "a" parameter per flux in Eq. 20 of Astier+19
+            (units: 1/electron).
         c : `numpy.array`, (M, M)
             "c"="ab" parameter per flux in Eq. 20 of Astier+19.
-        noise : `numpy.array`, (M, M)
+            (units: 1/electron^2).
+        noiseMatrix : `numpy.array`, (M, M)
             "noise" parameter per flux in Eq. 20 of Astier+19.
+            (units: electron^2)
         gain : `float`
-            Amplifier gain (e/ADU)
+            Amplifier gain (electron/adu)
         """
         matrixSideFit = self.config.maximumRangeCovariancesAstierFullCovFit
 
         # Initialize fit parameters
         a = np.zeros((matrixSideFit, matrixSideFit))
         c = np.zeros((matrixSideFit, matrixSideFit))
-        noise = np.zeros((matrixSideFit, matrixSideFit))
+        noiseMatrix = np.zeros((matrixSideFit, matrixSideFit))
         gain = 1.
 
         # iterate the fit to account for higher orders
@@ -756,7 +765,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         # stop when it increases
         oldChi2 = 1e30
         for _ in range(5):
-            model = np.nan_to_num(self.evalCovModel(mu, a, c, noise, gain, setBtoZero=True))
+            model = np.nan_to_num(self.evalCovModel(mu, a, c, noiseMatrix, gain, setBtoZero=True))
             # loop on lags
             for i in range(matrixSideFit):
                 for j in range(matrixSideFit):
@@ -765,7 +774,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                                          2, w=sqrtW[:, i, j])
                     # model equation (Eq. 20) in Astier+19, with c=a*b=0:
                     a[i, j] += parsFit[0]
-                    noise[i, j] += parsFit[2]
+                    noiseMatrix[i, j] += parsFit[2]
                     if i + j == 0:
                         gain = 1./(1/gain+parsFit[1])
             weightedRes = (model - cov)*sqrtW
@@ -774,7 +783,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 break
             oldChi2 = chi2
 
-        return a, c, noise, gain
+        return a, c, noiseMatrix, gain
 
     def funcFullCovarianceModel(self, params, x):
         """Model to fit covariances from flat fields; Equation 20 of
@@ -784,9 +793,9 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         ----------
         params : `list`
             Parameters of the model: aMatrix, CMatrix, noiseMatrix,
-            gain (e/ADU).
+            gain (e/adu).
         x : `numpy.array`, (N,)
-            Signal `mu` (ADU)
+            Signal `mu` (adu)
 
         Returns
         -------
@@ -810,9 +819,9 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         ----------
         params : `list`
             Parameters of the model: aMatrix, CMatrix, noiseMatrix,
-            gain (e/ADU).
+            gain (e/adu).
         x : `numpy.array`, (N,)
-            Signal mu (ADU)
+            Signal mu (adu)
 
         Returns
         -------
@@ -834,15 +843,18 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         Parameters
         ----------
         mu : `numpy.array`, (N,)
-            List of mean signals.
+            List of mean signals (units: adu)
         aMatrix : `numpy.array`, (M, M)
-            "a" parameter per flux in Eq. 20 of Astier+19.
+            "a" parameter per flux in Eq. 20 of Astier+19
+            (units: 1/electron)
         cMatrix : `numpy.array`, (M, M)
-            "c"="ab" parameter per flux in Eq. 20 of Astier+19.
+            "c"="ab" parameter per flux in Eq. 20 of Astier+19
+            (units: 1/electron^2)
         noiseMatrix : `numpy.array`, (M, M)
-            "noise" parameter per flux in Eq. 20 of Astier+19.
+            "noise" parameter per flux in Eq. 20 of Astier+19
+            (units: electron^2)
         gain : `float`
-            Amplifier gain (e/ADU)
+            Amplifier gain (e/adu)
         setBtoZero=False : `bool`, optional
             Set "b" parameter in full model (see Astier+19) to zero.
 
@@ -855,16 +867,16 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         -----
         By default, computes the covModel for the mu's stored(self.mu).
         Returns cov[Nmu, M, M]. The variance for the PTC is
-        cov[:, 0, 0].  mu and cov are in ADUs and ADUs squared. To use
+        cov[:, 0, 0].  mu and cov are in adus and adus squared. To use
         electrons for both, the gain should be set to 1. This routine
         implements the model in Astier+19 (1905.08677).
         The parameters of the full model for C_ij(mu) ("C_ij" and "mu"
-        in ADU^2 and ADU, respectively) in Astier+19 (Eq. 20) are:
+        in adu^2 and adu, respectively) in Astier+19 (Eq. 20) are:
 
-        - "a" coefficients (M by M matrix), units: 1/e
-        - "b" coefficients (M by M matrix), units: 1/e
-        - noise matrix (M by M matrix), units: e^2
-        - gain, units: e/ADU
+        - "a" coefficients (M by M matrix), units: 1/electron
+        - "b" coefficients (M by M matrix), units: 1/electron
+        - noise matrix (M by M matrix), units: electron^2
+        - gain, units: electron/adu
 
         "b" appears in Eq. 20 only through the "ab" combination, which
         is defined in this code as "c=ab".
@@ -993,7 +1005,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         variances : `numpy.array`
             Input array with variances at each mean value.
         minVarPivotSearch : `float`
-            The variance (in ADU^2), above which, the point
+            The variance (in adu^2), above which, the point
             of decreasing variance should be sought.
         consecutivePointsVarDecreases : `int`
             Required number of consecutive points/fluxes
@@ -1187,7 +1199,6 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             # rejected in this phase without biasing the initial fit.
             # This algorithm was initially developed by Seth Digel for
             # the EO Testing pipeline.
-
             if self.config.scaleMaxSignalInitialPtcOutlierFit:
                 approxGain = np.nanmedian(meanVecSorted/varVecSorted)
                 maxADUInitialPtcOutlierFit = self.config.maxSignalInitialPtcOutlierFit/approxGain
