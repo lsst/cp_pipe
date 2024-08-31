@@ -76,6 +76,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
             "cpBiasBootstrap.yaml",
             "cpDarkBootstrap.yaml",
             "cpFlatBootstrap.yaml",
+            "cpSpectroFlat.yaml",
         }
 
         for ex in exclude:
@@ -146,6 +147,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
         for pipeline in self._get_pipelines(exclude=[
                 "cpFilterScan.yaml",
                 "cpMonochromatorScan.yaml",
+                "cpSpectroFlat.yaml",
                 # TODO DM-46358: Remove following from exclusion list.
                 "cpBiasBootstrap.yaml",
                 "cpDarkBootstrap.yaml",
@@ -159,6 +161,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 "cpDarkForDefects.yaml",
                 "cpFilterScan.yaml",
                 "cpMonochromatorScan.yaml",
+                "cpSpectroFlat.yaml",
                 "cpBiasBootstrap.yaml",
                 "cpDarkBootstrap.yaml",
                 "cpFlatBootstrap.yaml",
@@ -170,6 +173,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
         for pipeline in self._get_pipelines(exclude=[
                 "cpFilterScan.yaml",
                 "cpMonochromatorScan.yaml",
+                "cpSpectroFlat.yaml",
                 # TODO DM-46357: Remove following from exclusion list.
                 "cpBiasBootstrap.yaml",
                 "cpDarkBootstrap.yaml",
@@ -183,6 +187,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 "cpDarkForDefects.yaml",
                 "cpFilterScan.yaml",
                 "cpMonochromatorScan.yaml",
+                "cpSpectroFlat.yaml",
                 # TODO DM-46357: Remove following from exclusion list.
                 "cpBiasBootstrap.yaml",
                 "cpDarkBootstrap.yaml",
@@ -195,6 +200,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
         for pipeline in self._get_pipelines(exclude=[
                 "cpFilterScan.yaml",
                 "cpMonochromatorScan.yaml",
+                "cpSpectroFlat.yaml",
                 "cpBiasBootstrap.yaml",
                 "cpDarkBootstrap.yaml",
                 "cpFlatBootstrap.yaml",
@@ -207,6 +213,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 "cpDarkForDefects.yaml",
                 "cpFilterScan.yaml",
                 "cpMonochromatorScan.yaml",
+                "cpSpectroFlat.yaml",
                 "cpBiasBootstrap.yaml",
                 "cpDarkBootstrap.yaml",
                 "cpFlatBootstrap.yaml",
@@ -219,6 +226,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 "cpDarkForDefects.yaml",
                 "cpFilterScan.yaml",
                 "cpMonochromatorScan.yaml",
+                "cpSpectroFlat.yaml",
                 "cpBiasBootstrap.yaml",
                 "cpDarkBootstrap.yaml",
                 "cpFlatBootstrap.yaml",

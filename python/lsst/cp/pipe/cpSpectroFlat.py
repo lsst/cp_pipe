@@ -21,16 +21,15 @@
 
 __all__ = ["CpSpectroFlatTask", "CpSpectroFlatTaskConfig"]
 
-
 import numpy as np
 from scipy.ndimage import gaussian_filter, uniform_filter, median_filter
+from astropy.stats import SigmaClip
+from photutils.background import Background2D, MedianBackground
 
 import lsst.afw.math as afwMath
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 import lsst.pipe.base.connectionTypes as cT
-
-from lsst.meas.algorithms import SubtractBackgroundTask
 
 
 class CpSpectroFlatTaskConnections(pipeBase.PipelineTaskConnections,
@@ -70,7 +69,9 @@ class CpSpectroFlatTaskConnections(pipeBase.PipelineTaskConnections,
 
 class CpSpectroFlatTaskConfig(pipeBase.PipelineTaskConfig,
                               pipelineConnections=CpSpectroFlatTaskConnections):
-    """Docs"""
+    """Configuration parameters for constructing spectroFlat from
+    a white-band flat.
+    """
 
     inputFlatPhysicalFilter = pexConfig.Field(
         dtype=str,
@@ -123,10 +124,6 @@ class CpSpectroFlatTaskConfig(pipeBase.PipelineTaskConfig,
         default=True,
         doc="Should amplifier backgrounds be measured and divided out?",
     )
-    background = pexConfig.ConfigurableField(
-        target=SubtractBackgroundTask,
-        doc="Configuration for background estimate.",
-    )
     backgroundSigmaClipThreshold = pexConfig.Field(
         dtype=float,
         default=3.0,
@@ -145,29 +142,70 @@ class CpSpectroFlatTaskConfig(pipeBase.PipelineTaskConfig,
 
 
 class CpSpectroFlatTask(pipeBase.PipelineTask):
-    """Docs"""
+    """Construct a spectro-flat from a white-band flat."""
 
     ConfigClass = CpSpectroFlatTaskConfig
     _DefaultName = "cpSpectroFlat"
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.makeSubtask("background")
+    def runQuantum(self, butlerQC, inputRefs, outputRefs):
+        inputs = butlerQC.get(inputRefs)
 
-    def run(self, dummyExpRef, inputFlat, inputPtc):
+        # Get provenance.  This is essential for debugging.
+        inputMD = inputs['inputFlat'].getMetadata()
+        for inputName in sorted(list(inputs.keys())):
+            reference = getattr(inputRefs, inputName, None)
+            if reference is not None and hasattr(reference, "run"):
+                runKey = f"LSST CALIB RUN {inputName.upper()}"
+                runValue = reference.run
+                idKey = f"LSST CALIB UUID {inputName.upper()}"
+                idValue = str(reference.id)
+
+                inputMD[runKey] = runValue
+                inputMD[idKey] = idValue
+        inputs['inputMD'] = inputMD
+
+        outputs = self.run(**inputs)
+        butlerQC.put(outputs, outputRefs)
+
+    def run(self, dummyExpRef, inputFlat, inputPtc, inputMD):
+        """Create spectro flat from an input flat and PTC.
+
+        Parameters
+        ----------
+        dummyExpRef : `lsst.daf.butler.DeferredDatasetHandle`
+            Exposure used to ensure the correct flat is chosen.
+        inputFlat : `lsst.afw.image.Exposure`
+            Input flat to convert to spectro-flat.
+        inputPtc : `lsst.ip.isr.PhotoTransferCurveDataset`
+            Input PTC containing the gains to apply to spectro-flat.
+        inputMD : `lsst.daf.base.PropertyList`
+            Provenance metadata derived from the butler references.
+
+        Returns
+        -------
+        results : `lsst.pipe.base.Struct`
+            The results struct containing:
+
+            ``outputData``
+                Final modified flat generated from the inputs
+                (`lsst.afw.image.Exposure`).
+        """
         # Verify input
         exposureFilter = dummyExpRef.get(component="filter")
-
         if exposureFilter.physicalLabel != self.config.inputFlatPhysicalFilter:
             raise RuntimeError("Did not receive expected physical_filter: "
                                f"{exposureFilter.physicalLabel} != "
                                f"{self.config.inputFlatPhysicalFilter}")
 
         detector = inputFlat.getDetector()
-        statsControl = afwMath.StatisticsControl(self.config.backgroundSigmaClipThreshold, 5, 0x0)
+        statsControl = afwMath.StatisticsControl(self.config.backgroundSigmaClipThreshold,
+                                                 5,
+                                                 0x0)
 
         # Make gain flat
         # https://github.com/lsst/atmospec/blob/u/jneveu/doFlat/python/lsst/atmospec/spectroFlat.py#L85
+        # TODO: DM-46080 Ensure cpSpectroFlat can distinguish between
+        # new and old flats.
         gains = inputPtc.gain
         scaledGains = {}
         gainFlat = inputFlat.clone()
@@ -180,12 +218,11 @@ class CpSpectroFlatTask(pipeBase.PipelineTask):
 
         for amp in detector:
             bbox = amp.getBBox()
-            gainFlat[bbox].maskedImage.set(gains[amp.getName()] / gainMean,
-                                           0x0,
-                                           0.0)
+            gainFlat[bbox].image.array[:, :] = 1 / (gains[amp.getName()] / gainMean)
             scaledGains[amp.getName()] = gains[amp.getName()] / gainMean
-        # gainFlat is now a realization of the gains into a full image.
-        # scaledGains are the gains optionally scaled by mean value.
+        # gainFlat is now a realization of the scaled gains into a
+        # full image.  scaledGains are the gains optionally (default
+        # True) scaled by mean value.
 
         # Make optic flat
         # https://github.com/lsst/atmospec/blob/u/jneveu/doFlat/python/lsst/atmospec/spectroFlat.py#L130
@@ -229,18 +266,32 @@ class CpSpectroFlatTask(pipeBase.PipelineTask):
 
         # Make pixel flat
         # https://github.com/lsst/atmospec/blob/u/jneveu/doFlat/python/lsst/atmospec/spectroFlat.py#L18
+        # TODO: DM-46079: Determine appropriate DM Background
+        # replacement for cpSpectroFlat
         pixelFlat = inputFlat.clone()
+        clip_function = SigmaClip(sigma=self.config.backgroundSigmaClipThreshold)
+        bkg_function = MedianBackground()
+
         for amp in detector:
-            # Divide amp by median.  Can we reuse the image above?
+            # Divide amp by median, as above.
             ampExp = pixelFlat.Factory(pixelFlat, amp.getBBox())
+            opticAmpExp = opticFlat.Factory(opticFlat, amp.getBBox())
             stats = afwMath.makeStatistics(ampExp.getMaskedImage(),
                                            afwMath.MEDIAN, statsControl)
             ampExp.image.array[:, :] /= stats.getValue(afwMath.MEDIAN)
 
+            # Remove the smoothed version
+            ampExp.image.array[:, :] /= opticAmpExp.image.array[:, :]
+
             if self.config.doBackgroundRemoval:
-                ampBg = self.background.run(ampExp).background
-                ampBgImg = ampBg.getImage()
-                ampExp.image.array[:, :] /= ampBgImg.array[:, :]
+                ampBg = Background2D(ampExp.image.array[:, :],
+                                     box_size=(self.config.backgroundBoxSize,
+                                               self.config.backgroundBoxSize),
+                                     filter_size=(self.config.backgroundFilterSize,
+                                                  self.config.backgroundFilterSize),
+                                     sigma_clip=clip_function,
+                                     bkg_estimator=bkg_function)
+                ampExp.image.array[:, :] /= ampBg.background
 
         # Make sensor flat
         # https://github.com/lsst/atmospec/blob/u/jneveu/doFlat/python/lsst/atmospec/spectroFlat.py#L230
@@ -257,6 +308,17 @@ class CpSpectroFlatTask(pipeBase.PipelineTask):
         md["LSST CP SPECTROFLAT GAIN MEAN"] = gainMean
         for amp in detector:
             md[f"LSST CP SPECTROFLAT GAIN {amp.getName()}"] = scaledGains[amp.getName()]
+
+        # Provenance info:
+        for key, value in inputMD.items():
+            if "LSST CALIB" in key:
+                md[key] = value
+
+        # Debug "prints":
+        # gainFlat.writeFits("./gainFlat.fits")
+        # opticFlat.writeFits("./opticFlat.fits")
+        # pixelFlat.writeFits("./pixelFlat.fits")
+        # sensorFlat.writeFits("./sensorFlat.fits")
         return pipeBase.Struct(
             outputFlat=sensorFlat,
         )
