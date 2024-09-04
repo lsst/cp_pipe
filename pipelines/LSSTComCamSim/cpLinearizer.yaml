@@ -1,4 +1,24 @@
 description: cp_pipe linearity calibration construction.
 instrument: lsst.obs.lsst.LsstComCamSim
 imports:
-  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpLinearizer.yaml
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpLinearizerLSST.yaml
+tasks:
+  cpLinearizerIsr:
+    class: lsst.ip.isr.IsrTaskLSST
+    config:
+      doDefect: false
+      doCrosstalk: false
+  cpLinearizerPtcExtract:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
+    config:
+      useEfdPhotodiodeData: false
+      auxiliaryHeaderKeys: []
+  cpLinearizerPtcSolve:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
+    config:
+      maxDeltaInitialPtcOutlierFit: 20000.0
+  cpLinearizerSolve:
+    class: lsst.cp.pipe.LinearitySolveTask
+    config:
+      maxLinearAdu: 120000
+      usePhotodiode: false
