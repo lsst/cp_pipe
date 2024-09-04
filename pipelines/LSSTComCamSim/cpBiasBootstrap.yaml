@@ -1,0 +1,9 @@
+description: ComCamSim bootstrap bias calibration construction
+instrument: lsst.obs.lsst.LsstComCamSim
+imports:
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpBiasBootstrapLSST.yaml
+tasks:
+  cpBiasBootstrapIsr:
+    class: lsst.ip.isr.IsrTaskLSST
+    config:
+      doCrosstalk: false

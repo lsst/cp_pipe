@@ -1,0 +1,9 @@
+description: ComCamSim bootstrap flat construction
+instrument: lsst.obs.lsst.LsstComCamSim
+imports:
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpFlatBootstrapLSST.yaml
+tasks:
+  cpFlatBootstrapIsr:
+    class: lsst.ip.isr.IsrTaskLSST
+    config:
+      doCrosstalk: false
