@@ -486,14 +486,14 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             # as appropriate later.
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                noise = np.nanmedian(datasetPtc.noiseList[ampName])  # adu
-                noise *= datasetPtc.gain[ampName]  # now in electron
+                overscanNoise = np.nanmedian(datasetPtc.noiseList[ampName])  # adu
+                overscanNoise *= datasetPtc.gain[ampName]  # now in electron
                 noiseFitted = datasetPtc.noise[ampName]  # electron
 
             # Check if noise is close to noiseFitted
-            if not np.isclose(noiseFitted, noise, rtol=0.05, atol=0.0, equal_nan=True):
+            if not np.isclose(noiseFitted, overscanNoise, rtol=0.05, atol=0.0, equal_nan=True):
                 self.log.warning(f"Read noise from PTC fit ({noiseFitted}) is not consistent "
-                                 f"with read noise measured from overscan ({noise}) for "
+                                 f"with read noise measured from overscan ({overscanNoise}) for "
                                  f"amplifier {ampName}. Try adjusting the fit range.")
 
         if camera:
