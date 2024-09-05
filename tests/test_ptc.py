@@ -255,9 +255,11 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         # out sorted afterwards.
         outputCovariancesRev = resultsExtract.outputCovariances[::-1]
 
-        resultsSolve = solveTask.run(
-            outputCovariancesRev, camera=FakeCamera([self.flatExp1.getDetector()])
-        )
+        # Ensure no warnings re: read noise mismatches are logged.
+        with self.assertNoLogs(level=logging.WARNING):
+            resultsSolve = solveTask.run(
+                outputCovariancesRev, camera=FakeCamera([self.flatExp1.getDetector()])
+            )
 
         ptc = resultsSolve.outputPtcDataset
 
