@@ -338,6 +338,18 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                     atol=1e-8,
                     rtol=None,
                 )
+                self.assertFloatsAlmostEqual(
+                    ptc.noise[ampName],
+                    np.nanmedian(ptc.noiseList[ampName]) * ptc.gain[ampName],
+                    rtol=0.05,
+                )
+                # If the noise error is greater than the noise, something
+                # is seriously wrong. Possibly some kind of gain application
+                # mismatch.
+                self.assertLess(
+                    ptc.noiseErr[ampName],
+                    ptc.noise[ampName],
+                )
 
             mask = ptc.getGoodPoints(amp)
 
@@ -502,6 +514,13 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                 self.assertAlmostEqual(
                     np.sqrt(self.noiseSq), localDataset.noise[ampName]
                 )
+                # If the noise error is greater than the noise, something
+                # is seriously wrong. Possibly some kind of gain application
+                # mismatch.
+                self.assertLess(
+                    localDataset.noiseErr[ampName],
+                    np.sqrt(self.noiseSq)
+                )
             if fitType == "EXPAPPROXIMATION":
                 self.assertAlmostEqual(
                     self.a00, localDataset.ptcFitPars[ampName][0]
@@ -509,6 +528,13 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                 # Noise already in electrons
                 self.assertAlmostEqual(
                     np.sqrt(self.noiseSq), localDataset.noise[ampName]
+                )
+                # If the noise error is greater than the noise, something
+                # is seriously wrong. Possibly some kind of gain application
+                # mismatch.
+                self.assertLess(
+                    localDataset.noiseErr[ampName],
+                    np.sqrt(self.noiseSq)
                 )
 
     def test_lsstcam_samples(self):
