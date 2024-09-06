@@ -416,20 +416,24 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
         configSolve.doLegacyTurnoffSelection = doLegacy
 
+        order = 2
+
         if fitType == "POLYNOMIAL":
             if order not in [2, 3]:
                 RuntimeError("Enter a valid polynomial order for this test: 2 or 3")
             if order == 2:
                 for ampName in self.ampNames:
+                    # Need to include the noise in adu^2
                     localDataset.rawVars[ampName] = [
-                        self.noiseSq + self.c1 * mu + self.c2 * mu**2
+                        self.noiseSq / self.gain**2 + self.c1 * mu + self.c2 * mu**2
                         for mu in localDataset.rawMeans[ampName]
                     ]
                 configSolve.polynomialFitDegree = 2
             if order == 3:
                 for ampName in self.ampNames:
+                    # Need to include the noise in adu^2
                     localDataset.rawVars[ampName] = [
-                        self.noiseSq
+                        self.noiseSq / self.gain**2
                         + self.c1 * mu
                         + self.c2 * mu**2
                         + self.c3 * mu**3
@@ -488,20 +492,21 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
         localDataset = solveTask.fitMeasurementsToModel(localDataset)
 
-        # check entries in localDataset, which was modified by the function
+        # Check entries in localDataset, which was modified by the function
         for ampName in self.ampNames:
             self.assertEqual(fitType, localDataset.ptcFitType)
             self.assertAlmostEqual(self.gain, localDataset.gain[ampName])
             if fitType == "POLYNOMIAL":
                 self.assertAlmostEqual(self.c1, localDataset.ptcFitPars[ampName][1])
+                # Noise already in electrons
                 self.assertAlmostEqual(
-                    np.sqrt(self.noiseSq) * self.gain, localDataset.noise[ampName]
+                    np.sqrt(self.noiseSq), localDataset.noise[ampName]
                 )
             if fitType == "EXPAPPROXIMATION":
                 self.assertAlmostEqual(
                     self.a00, localDataset.ptcFitPars[ampName][0]
                 )
-                # noise already in electrons for 'EXPAPPROXIMATION' fit
+                # Noise already in electrons
                 self.assertAlmostEqual(
                     np.sqrt(self.noiseSq), localDataset.noise[ampName]
                 )
