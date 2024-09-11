@@ -698,6 +698,8 @@ class CrosstalkSolveTask(pipeBase.PipelineTask):
         outCalib.ampGainRatios = inCalib.ampGainRatios
         outCalib.crosstalkRatiosUnits = inCalib.crosstalkRatiosUnits
 
+        outCalib.fitGains = inCalib.fitGains
+
         return outCalib
 
     def debugRatios(self, stepname, ratios, i, j, coeff=0.0, valid=False):
