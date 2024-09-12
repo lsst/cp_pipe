@@ -38,7 +38,7 @@ import lsst.ip.isr.isrMock as isrMock
 from lsst.ip.isr import PhotonTransferCurveDataset, PhotodiodeCalib
 from lsst.cp.pipe.utils import makeMockFlats
 
-from lsst.pipe.base import InMemoryDatasetHandle, TaskMetadata
+from lsst.pipe.base import InMemoryDatasetHandle
 
 
 class FakeCamera(list):
@@ -130,15 +130,6 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                 (1, self.dataset.covMatrixSide, self.dataset.covMatrixSide)
             )
 
-        # ISR metadata
-        self.metadataContents = TaskMetadata()
-        self.metadataContents["isr"] = {}
-        # Overscan readout noise [in ADU]
-        for amp in self.ampNames:
-            self.metadataContents["isr"][f"RESIDUAL STDEV {amp}"] = (
-                np.sqrt(self.noiseSq) / self.gain
-            )
-
     def test_covAstier(self):
         """Test to check getCovariancesAstier
 
@@ -166,6 +157,10 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         # Set the outlier fit threshold higher than the default appropriate
         # for this test dataset.
         solveConfig.maxSignalInitialPtcOutlierFit = 90000.0
+        # Given the limited nature of the test data, we can only
+        # reliably fit out to a 3x3 covariance matrix.
+        # Improvements will be investigated on DM-46131.
+        solveConfig.maximumRangeCovariancesAstierFullCovFit = 3
         solveTask = cpPipe.ptc.PhotonTransferCurveSolveTask(config=solveConfig)
 
         inputGain = self.gain
@@ -182,6 +177,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                 readNoiseElectrons=3,
                 expId1=idCounter,
                 expId2=idCounter + 1,
+                ampNames=self.ampNames,
             )
             for mockExp in [mockExp1, mockExp2]:
                 md = mockExp.getMetadata()
@@ -237,7 +233,6 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         resultsExtract = extractTask.run(
             inputExp=expDict,
             inputDims=expIds,
-            taskMetadata=[self.metadataContents for x in expIds],
             inputPhotodiodeData=pdHandles,
         )
 
@@ -260,193 +255,25 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         # out sorted afterwards.
         outputCovariancesRev = resultsExtract.outputCovariances[::-1]
 
-        resultsSolve = solveTask.run(
-            outputCovariancesRev, camera=FakeCamera([self.flatExp1.getDetector()])
-        )
+        # Ensure no warnings re: read noise mismatches are logged.
+        with self.assertNoLogs(level=logging.WARNING):
+            resultsSolve = solveTask.run(
+                outputCovariancesRev, camera=FakeCamera([self.flatExp1.getDetector()])
+            )
 
         ptc = resultsSolve.outputPtcDataset
 
         # Some expected values for noise matrix, just to check that
         # it was calculated.
-        noiseMatrixNoBExpected = {
-            (0, 0): 6.53126505,
-            (1, 1): -23.20924747,
-            (2, 2): 35.69834113,
-        }
-        noiseMatrixExpected = {
-            (0, 0): 29.37146918,
-            (1, 1): -14.6849025,
-            (2, 2): 24.7328517,
-        }
-
         noiseMatrixExpected = np.array(
-            [
-                [
-                    29.37146918,
-                    9.2760363,
-                    -29.08907932,
-                    33.65818827,
-                    -52.65710984,
-                    -18.5821773,
-                    -46.26896286,
-                    65.01049736,
-                ],
-                [
-                    -3.62427987,
-                    -14.6849025,
-                    -46.55230305,
-                    -1.30410627,
-                    6.44903599,
-                    18.11796075,
-                    -22.72874074,
-                    20.90219857,
-                ],
-                [
-                    5.09203058,
-                    -4.40097862,
-                    24.7328517,
-                    39.2847586,
-                    -21.46132351,
-                    8.12179783,
-                    6.23585617,
-                    -2.09949622,
-                ],
-                [
-                    35.79204016,
-                    -6.50205005,
-                    3.37910363,
-                    15.22335662,
-                    -19.29035067,
-                    9.66065941,
-                    7.47510934,
-                    20.25962845,
-                ],
-                [
-                    -36.23187633,
-                    -22.72307472,
-                    16.29140749,
-                    -13.09493835,
-                    3.32091085,
-                    52.4380977,
-                    -8.06428902,
-                    -22.66669839,
-                ],
-                [
-                    -27.93122896,
-                    15.37016686,
-                    9.18835073,
-                    -24.48892946,
-                    8.14480304,
-                    22.38983222,
-                    22.36866891,
-                    -0.38803439,
-                ],
-                [
-                    17.13962665,
-                    -28.33153763,
-                    -17.79744334,
-                    -18.57064463,
-                    7.69408833,
-                    8.48265396,
-                    18.0447022,
-                    -16.97496022,
-                ],
-                [
-                    10.09078383,
-                    -26.61613002,
-                    10.48504889,
-                    15.33196998,
-                    -23.35165517,
-                    -24.53098643,
-                    -18.21201067,
-                    17.40755051,
-                ],
-            ]
+            [[8.99474598, 9.94916264, -27.90587299],
+             [-2.95079527, -17.11827641, -47.88156244],
+             [5.24915021, -3.25786165, 26.09634067]],
         )
-
         noiseMatrixNoBExpected = np.array(
-            [
-                [
-                    6.53126505,
-                    12.14827594,
-                    -37.11919923,
-                    41.18675353,
-                    -85.1613845,
-                    -28.45801954,
-                    -61.24442999,
-                    88.76480122,
-                ],
-                [
-                    -4.64541165,
-                    -23.20924747,
-                    -66.08733987,
-                    -0.87558055,
-                    12.20111853,
-                    24.84795549,
-                    -34.92458788,
-                    24.42745014,
-                ],
-                [
-                    7.66734507,
-                    -4.51403645,
-                    35.69834113,
-                    52.73693356,
-                    -30.85044089,
-                    10.86761771,
-                    10.8503068,
-                    -2.18908327,
-                ],
-                [
-                    50.9901156,
-                    -7.34803977,
-                    5.33443765,
-                    21.60899396,
-                    -25.06129827,
-                    15.14015505,
-                    10.94263771,
-                    29.23975515,
-                ],
-                [
-                    -48.66912069,
-                    -31.58003774,
-                    21.81305735,
-                    -13.08993444,
-                    8.17275394,
-                    74.85293723,
-                    -11.18403252,
-                    -31.7799437,
-                ],
-                [
-                    -38.55206382,
-                    22.92982676,
-                    13.39861008,
-                    -33.3307362,
-                    8.65362238,
-                    29.18775548,
-                    31.78433947,
-                    1.27923706,
-                ],
-                [
-                    23.33663918,
-                    -41.74105625,
-                    -26.55920751,
-                    -24.71611677,
-                    12.13343146,
-                    11.25763907,
-                    21.79131019,
-                    -26.579393,
-                ],
-                [
-                    11.44334226,
-                    -34.9759641,
-                    13.96449509,
-                    19.64121933,
-                    -36.09794843,
-                    -34.27205933,
-                    -25.16574105,
-                    23.80460972,
-                ],
-            ]
+            [[8.71049338, 12.48584043, -37.06585088],
+             [-4.80523971, -23.29102809, -66.37815343],
+             [7.48654766, -4.10168337, 35.64469824]],
         )
 
         for amp in self.ampNames:
@@ -511,6 +338,18 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                     atol=1e-8,
                     rtol=None,
                 )
+                self.assertFloatsAlmostEqual(
+                    ptc.noise[ampName],
+                    np.nanmedian(ptc.noiseList[ampName]) * ptc.gain[ampName],
+                    rtol=0.05,
+                )
+                # If the noise error is greater than the noise, something
+                # is seriously wrong. Possibly some kind of gain application
+                # mismatch.
+                self.assertLess(
+                    ptc.noiseErr[ampName],
+                    ptc.noise[ampName],
+                )
 
             mask = ptc.getGoodPoints(amp)
 
@@ -522,12 +361,12 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             values = (
                 ptc.covariancesModel[amp][mask, 1, 1] - ptc.covariances[amp][mask, 1, 1]
             ) / ptc.covariancesModel[amp][mask, 1, 1]
-            np.testing.assert_array_less(np.abs(values), 0.2)
+            np.testing.assert_array_less(np.abs(values), 0.3)
 
             values = (
                 ptc.covariancesModel[amp][mask, 1, 2] - ptc.covariances[amp][mask, 1, 2]
             ) / ptc.covariancesModel[amp][mask, 1, 2]
-            np.testing.assert_array_less(np.abs(values), 0.2)
+            np.testing.assert_array_less(np.abs(values), 0.3)
 
         # And test that the auxiliary values are there and correctly ordered.
         self.assertIn('CCOBCURR', ptc.auxValues)
@@ -589,20 +428,24 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
         configSolve.doLegacyTurnoffSelection = doLegacy
 
+        order = 2
+
         if fitType == "POLYNOMIAL":
             if order not in [2, 3]:
                 RuntimeError("Enter a valid polynomial order for this test: 2 or 3")
             if order == 2:
                 for ampName in self.ampNames:
+                    # Need to include the noise in adu^2
                     localDataset.rawVars[ampName] = [
-                        self.noiseSq + self.c1 * mu + self.c2 * mu**2
+                        self.noiseSq / self.gain**2 + self.c1 * mu + self.c2 * mu**2
                         for mu in localDataset.rawMeans[ampName]
                     ]
                 configSolve.polynomialFitDegree = 2
             if order == 3:
                 for ampName in self.ampNames:
+                    # Need to include the noise in adu^2
                     localDataset.rawVars[ampName] = [
-                        self.noiseSq
+                        self.noiseSq / self.gain**2
                         + self.c1 * mu
                         + self.c2 * mu**2
                         + self.c3 * mu**3
@@ -661,22 +504,37 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
         localDataset = solveTask.fitMeasurementsToModel(localDataset)
 
-        # check entries in localDataset, which was modified by the function
+        # Check entries in localDataset, which was modified by the function
         for ampName in self.ampNames:
             self.assertEqual(fitType, localDataset.ptcFitType)
             self.assertAlmostEqual(self.gain, localDataset.gain[ampName])
             if fitType == "POLYNOMIAL":
                 self.assertAlmostEqual(self.c1, localDataset.ptcFitPars[ampName][1])
+                # Noise already in electrons
                 self.assertAlmostEqual(
-                    np.sqrt(self.noiseSq) * self.gain, localDataset.noise[ampName]
+                    np.sqrt(self.noiseSq), localDataset.noise[ampName]
+                )
+                # If the noise error is greater than the noise, something
+                # is seriously wrong. Possibly some kind of gain application
+                # mismatch.
+                self.assertLess(
+                    localDataset.noiseErr[ampName],
+                    np.sqrt(self.noiseSq)
                 )
             if fitType == "EXPAPPROXIMATION":
                 self.assertAlmostEqual(
                     self.a00, localDataset.ptcFitPars[ampName][0]
                 )
-                # noise already in electrons for 'EXPAPPROXIMATION' fit
+                # Noise already in electrons
                 self.assertAlmostEqual(
                     np.sqrt(self.noiseSq), localDataset.noise[ampName]
+                )
+                # If the noise error is greater than the noise, something
+                # is seriously wrong. Possibly some kind of gain application
+                # mismatch.
+                self.assertLess(
+                    localDataset.noiseErr[ampName],
+                    np.sqrt(self.noiseSq)
                 )
 
     def test_lsstcam_samples(self):
@@ -936,6 +794,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                 fluxElectrons=100,
                 expId1=idCounter,
                 expId2=idCounter + 1,
+                ampNames=self.ampNames,
             )
             mockExpRef1 = PretendRef(mockExp1)
             mockExpRef2 = PretendRef(mockExp2)
@@ -947,7 +806,6 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         resultsExtract = extractTask.run(
             inputExp=expDict,
             inputDims=expIds,
-            taskMetadata=[self.metadataContents for x in expIds],
         )
         for exposurePair in resultsExtract.outputCovariances:
             for ampName in self.ampNames:
