@@ -350,71 +350,22 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             # Ignore dummy datasets
             if partialPtcDataset.ptcFitType == 'DUMMY':
                 continue
-            for ampName in ampNames:
-                # The partial dataset consists of lists of values for each
-                # quantity. In the case of the input exposure pairs, this is a
-                # list of tuples. In all cases we only want the first
-                # (and only) element of the list.
-                datasetPtc.inputExpIdPairs[ampName].append(partialPtcDataset.inputExpIdPairs[ampName][0])
-                datasetPtc.rawExpTimes[ampName] = np.append(datasetPtc.rawExpTimes[ampName],
-                                                            partialPtcDataset.rawExpTimes[ampName][0])
-                datasetPtc.rawMeans[ampName] = np.append(datasetPtc.rawMeans[ampName],
-                                                         partialPtcDataset.rawMeans[ampName][0])
-                datasetPtc.rawVars[ampName] = np.append(datasetPtc.rawVars[ampName],
-                                                        partialPtcDataset.rawVars[ampName][0])
-                datasetPtc.rowMeanVariance[ampName] = np.append(datasetPtc.rowMeanVariance[ampName],
-                                                                partialPtcDataset.rowMeanVariance[ampName][0])
-                datasetPtc.photoCharges[ampName] = np.append(datasetPtc.photoCharges[ampName],
-                                                             partialPtcDataset.photoCharges[ampName][0])
-                datasetPtc.histVars[ampName] = np.append(datasetPtc.histVars[ampName],
-                                                         partialPtcDataset.histVars[ampName][0])
-                datasetPtc.histChi2Dofs[ampName] = np.append(datasetPtc.histChi2Dofs[ampName],
-                                                             partialPtcDataset.histChi2Dofs[ampName][0])
-                datasetPtc.kspValues[ampName] = np.append(datasetPtc.kspValues[ampName],
-                                                          partialPtcDataset.kspValues[ampName][0])
-                datasetPtc.noiseList[ampName] = np.append(datasetPtc.noiseList[ampName],
-                                                          partialPtcDataset.noise[ampName])
-                datasetPtc.covariances[ampName] = np.append(
-                    datasetPtc.covariances[ampName].ravel(),
-                    partialPtcDataset.covariances[ampName].ravel()
-                ).reshape(
-                    (
-                        len(datasetPtc.rawExpTimes[ampName]),
-                        datasetPtc.covMatrixSide,
-                        datasetPtc.covMatrixSide,
-                    )
-                )
-                datasetPtc.covariancesSqrtWeights[ampName] = np.append(
-                    datasetPtc.covariancesSqrtWeights[ampName].ravel(),
-                    partialPtcDataset.covariancesSqrtWeights[ampName].ravel()
-                ).reshape(
-                    (
-                        len(datasetPtc.rawExpTimes[ampName]),
-                        datasetPtc.covMatrixSide,
-                        datasetPtc.covMatrixSide,
-                    )
-                )
 
-                # Apply min/max masking.
+            # Apply min/max masking to the partial PTC.
+            for ampName in ampNames:
                 rawMean = partialPtcDataset.rawMeans[ampName][0]
                 rawVar = partialPtcDataset.rawVars[ampName][0]
-                expIdMask = partialPtcDataset.expIdMask[ampName][0]
                 if (rawMean <= minMeanSignalDict[ampName]) or (rawMean >= maxMeanSignalDict[ampName]) \
                    or not np.isfinite(rawMean) or not np.isfinite(rawVar):
-                    expIdMask = False
+                    partialPtcDataset.expIdMask[ampName][0] = False
 
                 kspValue = partialPtcDataset.kspValues[ampName][0]
                 if not self.config.doLegacyTurnoffSelection and \
                    kspValue < self.config.ksTestMinPvalue:
-                    expIdMask = False
+                    partialPtcDataset.expIdMask[ampName][0] = False
 
-                datasetPtc.expIdMask[ampName] = np.append(datasetPtc.expIdMask[ampName], expIdMask)
-
-            for key, value in partialPtcDataset.auxValues.items():
-                if key in datasetPtc.auxValues:
-                    datasetPtc.auxValues[key] = np.append(datasetPtc.auxValues[key], value)
-                else:
-                    datasetPtc.auxValues[key] = value
+            # Append to the full PTC.
+            datasetPtc.appendPartialPtc(partialPtcDataset)
 
         # Sort arrays that are filled so far in the final dataset by
         # rawMeans index.
