@@ -26,7 +26,7 @@ import warnings
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 from lsst.cp.pipe.utils import (fitLeastSq, fitBootstrap, funcPolynomial,
-                                funcAstier, symmetrize, Pol2D)
+                                funcAstier, symmetrize, Pol2D, ampOffsetGainRatioFixup)
 
 from scipy.signal import fftconvolve
 from scipy.optimize import least_squares
@@ -223,6 +223,21 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
         dtype=int,
         doc="Bin the image by this factor in both dimensions.",
         default=1,
+    )
+    doAmpOffsetGainRatioFixup = pexConfig.Field(
+        dtype=bool,
+        doc="Do gain ratio fixup based on amp offsets?",
+        default=False,
+    )
+    ampOffsetGainRatioMinAdu = pexConfig.Field(
+        dtype=float,
+        doc="Minimum number of adu to use for amp offset gain ratio fixup.",
+        default=1000.0,
+    )
+    ampOffsetGainRatioMaxAdu = pexConfig.Field(
+        dtype=float,
+        doc="Maximum number of adu to use for amp offset gain ratio fixup.",
+        default=20000.0,
     )
 
     def validate(self):
@@ -429,6 +444,15 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 self.log.warning(f"Read noise from PTC fit ({noiseFitted}) is not consistent "
                                  f"with read noise measured from overscan ({overscanNoise}) for "
                                  f"amplifier {ampName}. Try adjusting the fit range.")
+
+        # Do amp-offset gain ratio fixup if configured.
+        if self.config.doAmpOffsetGainRatioFixup:
+            ampOffsetGainRatioFixup(
+                datasetPtc,
+                self.config.ampOffsetGainRatioMinAdu,
+                self.config.ampOffsetGainRatioMaxAdu,
+                log=self.log,
+            )
 
         if camera:
             detector = camera[detId]

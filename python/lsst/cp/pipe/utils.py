@@ -1387,6 +1387,9 @@ def ampOffsetGainRatioFixup(ptc, minAdu, maxAdu, log=None):
     """
     # We need to find the reference amplifier.
     # Find an amp near the middle to use as a pivot.
+    if log is None:
+        log = logging.getLogger(__name__)
+
     gainArray = np.zeros(len(ptc.ampNames))
     for i, ampName in enumerate(ptc.ampNames):
         gainArray[i] = ptc.gain[ampName]
@@ -1399,8 +1402,7 @@ def ampOffsetGainRatioFixup(ptc, minAdu, maxAdu, log=None):
         midAmp = good[st[int(0.5*len(good))]]
         midAmpName = ptc.ampNames[midAmp]
 
-        if log:
-            log.info("Using amplifier %s as the pivot for doLinearityGainRatioFixup.", midAmpName)
+        log.info("Using amplifier %s as the pivot for doLinearityGainRatioFixup.", midAmpName)
 
         # First pass, we need to compute the corrections.
         corrections = {}
@@ -1420,9 +1422,8 @@ def ampOffsetGainRatioFixup(ptc, minAdu, maxAdu, log=None):
                 & (ptc.expIdMask[midAmpName])
             )
             if use.sum() < 3:
-                if log:
-                    log.warning("Not enough good amp offset measurements to fix up amp %s "
-                                "gains from amp ratios.", ampName)
+                log.warning("Not enough good amp offset measurements to fix up amp %s "
+                            "gains from amp ratios.", ampName)
                 continue
 
             ratios = 1. / (deltas / ptc.finalMeans[midAmpName] + 1.0)
@@ -1447,18 +1448,16 @@ def ampOffsetGainRatioFixup(ptc, minAdu, maxAdu, log=None):
 
             correction = corrections[ampName] / medCorrection
             newGain = ptc.gain[ampName] * correction
-            if log:
-                log.info(
-                    "Adjusting gain from amplifier %s by factor of %.5f (from %.5f to %.5f)",
-                    ampName,
-                    correction,
-                    ptc.gain[ampName],
-                    newGain,
-                )
+            log.info(
+                "Adjusting gain from amplifier %s by factor of %.5f (from %.5f to %.5f)",
+                ampName,
+                correction,
+                ptc.gain[ampName],
+                newGain,
+            )
             # Copying the value should not be necessary, but we record
             # it just in case.
             ptc.gainUnadjusted[ampName] = ptc.gain[ampName]
             ptc.gain[ampName] = newGain
     else:
-        if log:
-            log.warning("Cannot apply ampOffsetGainRatioFixup with fewer than 2 good amplifiers.")
+        log.warning("Cannot apply ampOffsetGainRatioFixup with fewer than 2 good amplifiers.")
