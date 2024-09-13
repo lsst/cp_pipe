@@ -342,6 +342,10 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                     rtol=None,
                 )
                 self.assertFloatsAlmostEqual(
+                    ptc.ampOffsets[ampName],
+                    0.0,
+                )
+                self.assertFloatsAlmostEqual(
                     ptc.noise[ampName],
                     np.nanmedian(ptc.noiseList[ampName]) * ptc.gain[ampName],
                     rtol=0.05,
