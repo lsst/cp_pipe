@@ -563,6 +563,12 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
 
                 auxDict[key] = value
 
+            # Pull key visitInfo data into the auxDict.
+            visitInfo = exp1.info.getVisitInfo()
+            auxDict["observationType"] = visitInfo.getObservationType()
+            auxDict["observationReason"] = visitInfo.getObservationReason()
+            auxDict["scienceProgram"] = visitInfo.getScienceProgram()
+
             nAmpsNan = 0
             partialPtcDataset = PhotonTransferCurveDataset(
                 ampNames, 'PARTIAL',
