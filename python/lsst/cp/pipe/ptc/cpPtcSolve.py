@@ -382,24 +382,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 detectorMeans[i] = np.mean(arr[good])
 
         index = np.argsort(detectorMeans)
-
-        for ampName in ampNames:
-            datasetPtc.inputExpIdPairs[ampName] = np.array(
-                datasetPtc.inputExpIdPairs[ampName]
-            )[index].tolist()
-            datasetPtc.rawExpTimes[ampName] = datasetPtc.rawExpTimes[ampName][index]
-            datasetPtc.rawMeans[ampName] = datasetPtc.rawMeans[ampName][index]
-            datasetPtc.rawVars[ampName] = datasetPtc.rawVars[ampName][index]
-            datasetPtc.rowMeanVariance[ampName] = datasetPtc.rowMeanVariance[ampName][index]
-            datasetPtc.photoCharges[ampName] = datasetPtc.photoCharges[ampName][index]
-            datasetPtc.histVars[ampName] = datasetPtc.histVars[ampName][index]
-            datasetPtc.histChi2Dofs[ampName] = datasetPtc.histChi2Dofs[ampName][index]
-            datasetPtc.kspValues[ampName] = datasetPtc.kspValues[ampName][index]
-            datasetPtc.expIdMask[ampName] = datasetPtc.expIdMask[ampName][index]
-            datasetPtc.covariances[ampName] = datasetPtc.covariances[ampName][index]
-            datasetPtc.covariancesSqrtWeights[ampName] = datasetPtc.covariancesSqrtWeights[ampName][index]
-        for key, value in datasetPtc.auxValues.items():
-            datasetPtc.auxValues[key] = value[index]
+        datasetPtc.sort(index)
 
         if self.config.ptcFitType == "FULLCOVARIANCE":
             # Fit the measured covariances vs mean signal to
