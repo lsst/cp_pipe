@@ -131,7 +131,6 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
     @unittest.skipIf(not has_obs_lsst, reason="Cannot test LSSTCam pipelines without obs_lsst")
     def test_lsstcam_pipelines(self):
         for pipeline in self._get_pipelines(exclude=[
-                "cpDarkForDefects.yaml",
                 "cpFilterScan.yaml",
                 "cpMonochromatorScan.yaml"
         ]):
@@ -149,7 +148,6 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
     @unittest.skipIf(not has_obs_lsst, reason="Cannot test LSSTComCam pipelines without obs_lsst")
     def test_lsstcomcam_pipelines(self):
         for pipeline in self._get_pipelines(exclude=[
-                "cpDarkForDefects.yaml",
                 "cpFilterScan.yaml",
                 "cpMonochromatorScan.yaml"
         ]):
@@ -167,7 +165,6 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
     @unittest.skipIf(not has_obs_lsst, reason="Cannot test LSST-TS8 pipelines without obs_lsst")
     def test_lsst_ts8_pipelines(self):
         for pipeline in self._get_pipelines(exclude=[
-                "cpDarkForDefects.yaml",
                 "cpFilterScan.yaml",
                 "cpMonochromatorScan.yaml"
         ]):
