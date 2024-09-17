@@ -1396,6 +1396,8 @@ def ampOffsetGainRatioFixup(ptc, minAdu, maxAdu, log=None):
     if log is None:
         log = logging.getLogger(__name__)
 
+    # We first check for which amps have gain measurements
+    # (fully bad amps are filled with NaN for gain.)
     gainArray = np.zeros(len(ptc.ampNames))
     for i, ampName in enumerate(ptc.ampNames):
         gainArray[i] = ptc.gain[ampName]
@@ -1404,11 +1406,14 @@ def ampOffsetGainRatioFixup(ptc, minAdu, maxAdu, log=None):
     if len(good) > 1:
         # This only works with more than 1 good amp.
 
+        # We sort the gains and take the one that is closest
+        # to the median to use as the reference amplifier for
+        # gain ratios.
         st = np.argsort(gainArray[good])
         midAmp = good[st[int(0.5*len(good))]]
         midAmpName = ptc.ampNames[midAmp]
 
-        log.info("Using amplifier %s as the pivot for doLinearityGainRatioFixup.", midAmpName)
+        log.info("Using amplifier %s as the reference for doLinearityGainRatioFixup.", midAmpName)
 
         # First pass, we need to compute the corrections.
         corrections = {}
