@@ -1,0 +1,52 @@
+description: cp_pipe linearizer calibration construction.
+tasks:
+  cpLinearizerIsr:
+    class: lsst.ip.isr.IsrTaskLSST
+    config:
+      connections.ccdExposure: "raw"
+      connections.outputExposure: "cpLinearizerIsrExp"
+      python: |
+        from lsst.cp.pipe import configureIsrTaskLSSTForCalibrations
+
+        configureIsrTaskLSSTForCalibrations(config)
+
+        config.doBootstrap = True
+        config.doCrosstalk = True
+        config.crosstalk.doQuadraticCrosstalkCorrection = False
+        config.doDefect = True
+  cpLinearizerPtcExtract:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
+    config:
+      connections.inputExp: "cpLinearizerIsrExp"
+      connections.outputCovariances: "cpLinearizerPtcPartial"
+      maximumRangeCovariancesAstier: 1
+      numEdgeSuspect: 20
+      edgeMaskLevel: "AMP"
+      useEfdPhotodiodeData: true
+      auxiliaryHeaderKeys: ["TEMP6"]
+  cpLinearizerPtcSolve:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
+    config:
+      connections.inputCovariances: "cpLinearizerPtcPartial"
+      connections.outputPtcDataset: "linearizerPtc"
+      # This is just used as a placeholder.
+      ptcFitType: "EXPAPPROXIMATION"
+      maximumRangeCovariancesAstier: 1
+      maximumRangeCovariancesAstierFullCovFit: 1
+  cpLinearizerSolve:
+    class: lsst.cp.pipe.LinearitySolveTask
+    config:
+      useLinearizerPtc: true
+      connections.inputLinearizerPtc: "linearizerPtc"
+      connections.outputLinearizer: "linearizer"
+      linearityType: "Spline"
+      splineKnots: 10
+      trimmedState: false
+      usePhotodiode: true
+contracts:
+  - cpLinearizerIsr.doBootstrap == True
+  - cpLinearizerPtcExtract.connections.inputExp == cpLinearizerIsr.connections.outputExposure
+  - cpLinearizerPtcSolve.binSize == cpLinearizerPtcExtract.binSize
+  - cpLinearizerPtcSolve.maximumRangeCovariancesAstier == cpLinearizerPtcExtract.maximumRangeCovariancesAstier
+  - cpLinearizerPtcSolve.connections.inputCovariances == cpLinearizerPtcExtract.connections.outputCovariances
+  - cpLinearizerSolve.connections.inputLinearizerPtc == cpLinearizerPtcSolve.connections.outputPtcDataset
