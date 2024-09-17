@@ -1,0 +1,9 @@
+description: LATISS filter scan construction
+instrument: lsst.obs.lsst.Latiss
+imports:
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpFilterScanLSST.yaml
+tasks:
+  cpFilterScanMerge:
+    class: lsst.cp.pipe.CpFilterScanTask
+    config:
+      referenceFilter: 'empty~empty'
