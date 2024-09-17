@@ -1,0 +1,69 @@
+description: cp_pipe dark calibration for LSST isr task
+tasks:
+  cpDarkIsr:
+    class: lsst.ip.isr.IsrTaskLSST
+    config:
+      connections.ccdExposure: "raw"
+      connections.outputExposure: "cpDarkIsrExp"
+      python: |
+        from lsst.cp.pipe import configureIsrTaskLSSTForCalibrations
+
+        configureIsrTaskLSSTForCalibrations(config)
+
+        config.doCrosstalk = True
+        config.crosstalk.doQuadraticCrosstalkCorrection = True
+        config.doApplyGains = True
+        config.doLinearize = True
+        config.doBias = True
+        # Defects are flagged but not interpolated for CR detection.
+        config.doDefect = True
+  cpDark:
+    class: lsst.cp.pipe.CpDarkTask
+    config:
+      connections.inputExp: 'cpDarkIsrExp'
+      connections.outputExp: 'cpDarkRemoveCRIsrExp'
+  cpDarkCombine:
+    class: lsst.cp.pipe.CalibCombineTask
+    config:
+      connections.inputExpHandles: "cpDarkRemoveCRIsrExp"
+      connections.outputData: "dark"
+      calibrationType: "dark"
+      exposureScaling: "DarkTime"
+      python: config.mask.append("CR")
+  cpDarkBin8:
+    class: lsst.pipe.tasks.visualizeVisit.VisualizeBinCalibTask
+    config:
+      connections.inputExp: "dark"
+      connections.outputExp: "darkBin8"
+      binning: 8
+  cpDarkBin64:
+    class: lsst.pipe.tasks.visualizeVisit.VisualizeBinCalibTask
+    config:
+      connections.inputExp: "dark"
+      connections.outputExp: "darkBin64"
+      binning: 64
+  cpDarkMosaic8:
+    class: lsst.pipe.tasks.visualizeVisit.VisualizeMosaicCalibTask
+    config:
+      connections.inputExps: "darkBin8"
+      connections.outputData: "darkMosaic8"
+      binning: 8
+  cpDarkMosaic64:
+    class: lsst.pipe.tasks.visualizeVisit.VisualizeMosaicCalibTask
+    config:
+      connections.inputExps: "darkBin64"
+      connections.outputData: "darkMosaic64"
+      binning: 64
+contracts:
+  - cpDarkIsr.doDark == False
+  - cpDarkIsr.doBootstrap == False
+  - cpDarkCombine.calibrationType == "dark"
+  - cpDarkCombine.exposureScaling == "DarkTime"
+  - cpDarkBin8.binning == cpDarkMosaic8.binning
+  - cpDarkBin64.binning == cpDarkMosaic64.binning
+  - cpDark.connections.inputExp == cpDarkIsr.connections.outputExposure
+  - cpDarkCombine.connections.inputExpHandles == cpDark.connections.outputExp
+  - cpDarkBin8.connections.inputExp == cpDarkCombine.connections.outputData
+  - cpDarkBin64.connections.inputExp == cpDarkCombine.connections.outputData
+  - cpDarkMosaic8.connections.inputExps == cpDarkBin8.connections.outputExp
+  - cpDarkMosaic64.connections.inputExps == cpDarkBin64.connections.outputExp
