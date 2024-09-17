@@ -1,0 +1,55 @@
+description: cp_pipe ptc calibration construction.
+tasks:
+  cpPtcIsr:
+    class: lsst.ip.isr.IsrTaskLSST
+    config:
+      connections.ccdExposure: "raw"
+      connections.outputExposure: "cpPtcIsrExp"
+      python: |
+        from lsst.cp.pipe import configureIsrTaskLSSTForCalibrations
+
+        configureIsrTaskLSSTForCalibrations(config)
+
+        config.doBootstrap = True
+        config.doCrosstalk = True
+        config.crosstalk.doQuadraticCrosstalkCorrection = False
+        config.doLinearize = True
+        config.doDefect = True
+        config.doAmpOffset = True
+        config.ampOffset.ampEdgeMaxOffset = 100000.0
+        config.ampOffset.ampEdgeInset = 10
+        config.ampOffset.doBackground = False
+        config.ampOffset.doDetection = False
+        config.ampOffset.doApplyAmpOffset = False
+  cpPtcExtract:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
+    config:
+      connections.inputExp: "cpPtcIsrExp"
+      connections.outputCovariances: "cpPtcPartial"
+      maximumRangeCovariancesAstier: 8
+      numEdgeSuspect: 20
+      edgeMaskLevel: "AMP"
+      useEfdPhotodiodeData: true
+      auxiliaryHeaderKeys: ["TEMP6"]
+  cpPtcSolve:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
+    config:
+      connections.inputCovariances: "cpPtcPartial"
+      connections.outputPtcDataset: "ptc"
+      ptcFitType: "FULLCOVARIANCE"
+      maximumRangeCovariancesAstier: 8
+      doAmpOffsetGainRatioFixup: true
+subsets:
+  # TODO DM-46448: This subset will no longer be necessary to run when the
+  # verification task can use the assembled PTC and the gainList therein.
+  cpPtcGainFromFlatPairs:
+      subset:
+          - cpPtcIsr
+          - cpPtcExtract
+      description: Gain estimation from pairs of flats at the same exposure time.
+contracts:
+  - cpPtcIsr.doBootstrap == True
+  - cpPtcExtract.connections.inputExp == cpPtcIsr.connections.outputExposure
+  - cpPtcSolve.binSize == cpPtcExtract.binSize
+  - cpPtcSolve.maximumRangeCovariancesAstier == cpPtcExtract.maximumRangeCovariancesAstier
+  - cpPtcSolve.connections.inputCovariances == cpPtcExtract.connections.outputCovariances
