@@ -1,0 +1,9 @@
+description: LATISS Photon-Transfer Curve calibration construction.
+instrument: lsst.obs.lsst.Latiss
+imports:
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpPtcLSST.yaml
+tasks:
+  cpPtcExtract:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
+    config:
+      efdSalIndex: 201
