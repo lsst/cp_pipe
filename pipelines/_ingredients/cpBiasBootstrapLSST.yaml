@@ -1,0 +1,29 @@
+description: cp_pipe bootstrap bias calibration for LSST isr task
+tasks:
+  cpBiasBootstrapIsr:
+    class: lsst.ip.isr.IsrTaskLSST
+    config:
+      connections.ccdExposure: "raw"
+      connections.outputExposure: "cpBiasBootstrapIsrExp"
+      python: |
+        from lsst.cp.pipe import configureIsrTaskLSSTForCalibrations
+
+        configureIsrTaskLSSTForCalibrations(config)
+
+        config.doBootstrap = True
+        config.doCrosstalk = True
+        config.crosstalk.doQuadraticCrosstalkCorrection = False
+  cpBiasBootstrapCombine:
+    class: lsst.cp.pipe.CalibCombineTask
+    config:
+      connections.inputExpHandles: "cpBiasBootstrapIsrExp"
+      connections.outputData: "biasBootstrap"
+      calibrationType: "bias"
+      exposureScaling: "Unity"
+      mask: ["DETECTED", "INTRP"]
+contracts:
+  - cpBiasBootstrapIsr.doBias == False
+  - cpBiasBootstrapIsr.doBootstrap == True
+  - cpBiasBootstrapCombine.calibrationType == "bias"
+  - cpBiasBootstrapCombine.exposureScaling == "Unity"
+  - cpBiasBootstrapIsr.connections.outputExposure == cpBiasBootstrapCombine.connections.inputExpHandles
