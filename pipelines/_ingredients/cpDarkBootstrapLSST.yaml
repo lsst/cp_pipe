@@ -10,7 +10,6 @@ tasks:
         from lsst.cp.pipe import configureIsrTaskLSSTForCalibrations
 
         configureIsrTaskLSSTForCalibrations(config)
-
         config.doBootstrap = True
         config.doCrosstalk = True
         config.crosstalk.doQuadraticCrosstalkCorrection = False
