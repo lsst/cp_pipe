@@ -540,6 +540,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                     self.log.warning("Already found 2 exposures at %s %f. Ignoring exposures: %s",
                                      self.config.matchExposuresType, expTime,
                                      ", ".join(str(i[1]) for i in exposures[2:]))
+            self.log.info("Extracting PTC data from flat pair %d, %d", expId1, expId2)
             # Mask pixels at the edge of the detector or of each amp
             if self.config.numEdgeSuspect > 0:
                 isrTask.maskEdges(exp1, numEdgePixels=self.config.numEdgeSuspect,
@@ -562,6 +563,12 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                     value = metadata[key]
 
                 auxDict[key] = value
+
+            # Pull key visitInfo data into the auxDict.
+            visitInfo = exp1.info.getVisitInfo()
+            auxDict["observationType"] = visitInfo.getObservationType()
+            auxDict["observationReason"] = visitInfo.getObservationReason()
+            auxDict["scienceProgram"] = visitInfo.getScienceProgram()
 
             nAmpsNan = 0
             partialPtcDataset = PhotonTransferCurveDataset(
@@ -715,6 +722,12 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                 else:
                     photoCharge = np.nan
 
+                # Get amp offsets if available.
+                ampOffsetKey = f"LSST ISR AMPOFFSET PEDESTAL {ampName}"
+                ampOffset1 = exp1.metadata.get(ampOffsetKey, np.nan)
+                ampOffset2 = exp2.metadata.get(ampOffsetKey, np.nan)
+                ampOffset = (ampOffset1 + ampOffset2) / 2.0
+
                 partialPtcDataset.setAmpValuesPartialDataset(
                     ampName,
                     inputExpIdPair=(expId1, expId2),
@@ -722,6 +735,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                     rawMean=muDiff,
                     rawVar=varDiff,
                     photoCharge=photoCharge,
+                    ampOffset=ampOffset,
                     expIdMask=expIdMask,
                     covariance=covArray[0, :, :],
                     covSqrtWeights=covSqrtWeights[0, :, :],

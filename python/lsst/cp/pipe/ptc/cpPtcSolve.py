@@ -26,7 +26,7 @@ import warnings
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 from lsst.cp.pipe.utils import (fitLeastSq, fitBootstrap, funcPolynomial,
-                                funcAstier, symmetrize, Pol2D)
+                                funcAstier, symmetrize, Pol2D, ampOffsetGainRatioFixup)
 
 from scipy.signal import fftconvolve
 from scipy.optimize import least_squares
@@ -224,6 +224,21 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
         doc="Bin the image by this factor in both dimensions.",
         default=1,
     )
+    doAmpOffsetGainRatioFixup = pexConfig.Field(
+        dtype=bool,
+        doc="Do gain ratio fixup based on amp offsets?",
+        default=False,
+    )
+    ampOffsetGainRatioMinAdu = pexConfig.Field(
+        dtype=float,
+        doc="Minimum number of adu to use for amp offset gain ratio fixup.",
+        default=1000.0,
+    )
+    ampOffsetGainRatioMaxAdu = pexConfig.Field(
+        dtype=float,
+        doc="Maximum number of adu to use for amp offset gain ratio fixup.",
+        default=20000.0,
+    )
 
     def validate(self):
         super().validate()
@@ -350,71 +365,22 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             # Ignore dummy datasets
             if partialPtcDataset.ptcFitType == 'DUMMY':
                 continue
-            for ampName in ampNames:
-                # The partial dataset consists of lists of values for each
-                # quantity. In the case of the input exposure pairs, this is a
-                # list of tuples. In all cases we only want the first
-                # (and only) element of the list.
-                datasetPtc.inputExpIdPairs[ampName].append(partialPtcDataset.inputExpIdPairs[ampName][0])
-                datasetPtc.rawExpTimes[ampName] = np.append(datasetPtc.rawExpTimes[ampName],
-                                                            partialPtcDataset.rawExpTimes[ampName][0])
-                datasetPtc.rawMeans[ampName] = np.append(datasetPtc.rawMeans[ampName],
-                                                         partialPtcDataset.rawMeans[ampName][0])
-                datasetPtc.rawVars[ampName] = np.append(datasetPtc.rawVars[ampName],
-                                                        partialPtcDataset.rawVars[ampName][0])
-                datasetPtc.rowMeanVariance[ampName] = np.append(datasetPtc.rowMeanVariance[ampName],
-                                                                partialPtcDataset.rowMeanVariance[ampName][0])
-                datasetPtc.photoCharges[ampName] = np.append(datasetPtc.photoCharges[ampName],
-                                                             partialPtcDataset.photoCharges[ampName][0])
-                datasetPtc.histVars[ampName] = np.append(datasetPtc.histVars[ampName],
-                                                         partialPtcDataset.histVars[ampName][0])
-                datasetPtc.histChi2Dofs[ampName] = np.append(datasetPtc.histChi2Dofs[ampName],
-                                                             partialPtcDataset.histChi2Dofs[ampName][0])
-                datasetPtc.kspValues[ampName] = np.append(datasetPtc.kspValues[ampName],
-                                                          partialPtcDataset.kspValues[ampName][0])
-                datasetPtc.noiseList[ampName] = np.append(datasetPtc.noiseList[ampName],
-                                                          partialPtcDataset.noise[ampName])
-                datasetPtc.covariances[ampName] = np.append(
-                    datasetPtc.covariances[ampName].ravel(),
-                    partialPtcDataset.covariances[ampName].ravel()
-                ).reshape(
-                    (
-                        len(datasetPtc.rawExpTimes[ampName]),
-                        datasetPtc.covMatrixSide,
-                        datasetPtc.covMatrixSide,
-                    )
-                )
-                datasetPtc.covariancesSqrtWeights[ampName] = np.append(
-                    datasetPtc.covariancesSqrtWeights[ampName].ravel(),
-                    partialPtcDataset.covariancesSqrtWeights[ampName].ravel()
-                ).reshape(
-                    (
-                        len(datasetPtc.rawExpTimes[ampName]),
-                        datasetPtc.covMatrixSide,
-                        datasetPtc.covMatrixSide,
-                    )
-                )
 
-                # Apply min/max masking.
+            # Apply min/max masking to the partial PTC.
+            for ampName in ampNames:
                 rawMean = partialPtcDataset.rawMeans[ampName][0]
                 rawVar = partialPtcDataset.rawVars[ampName][0]
-                expIdMask = partialPtcDataset.expIdMask[ampName][0]
                 if (rawMean <= minMeanSignalDict[ampName]) or (rawMean >= maxMeanSignalDict[ampName]) \
                    or not np.isfinite(rawMean) or not np.isfinite(rawVar):
-                    expIdMask = False
+                    partialPtcDataset.expIdMask[ampName][0] = False
 
                 kspValue = partialPtcDataset.kspValues[ampName][0]
                 if not self.config.doLegacyTurnoffSelection and \
                    kspValue < self.config.ksTestMinPvalue:
-                    expIdMask = False
+                    partialPtcDataset.expIdMask[ampName][0] = False
 
-                datasetPtc.expIdMask[ampName] = np.append(datasetPtc.expIdMask[ampName], expIdMask)
-
-            for key, value in partialPtcDataset.auxValues.items():
-                if key in datasetPtc.auxValues:
-                    datasetPtc.auxValues[key] = np.append(datasetPtc.auxValues[key], value)
-                else:
-                    datasetPtc.auxValues[key] = value
+            # Append to the full PTC.
+            datasetPtc.appendPartialPtc(partialPtcDataset)
 
         # Sort arrays that are filled so far in the final dataset by
         # rawMeans index.
@@ -431,24 +397,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 detectorMeans[i] = np.mean(arr[good])
 
         index = np.argsort(detectorMeans)
-
-        for ampName in ampNames:
-            datasetPtc.inputExpIdPairs[ampName] = np.array(
-                datasetPtc.inputExpIdPairs[ampName]
-            )[index].tolist()
-            datasetPtc.rawExpTimes[ampName] = datasetPtc.rawExpTimes[ampName][index]
-            datasetPtc.rawMeans[ampName] = datasetPtc.rawMeans[ampName][index]
-            datasetPtc.rawVars[ampName] = datasetPtc.rawVars[ampName][index]
-            datasetPtc.rowMeanVariance[ampName] = datasetPtc.rowMeanVariance[ampName][index]
-            datasetPtc.photoCharges[ampName] = datasetPtc.photoCharges[ampName][index]
-            datasetPtc.histVars[ampName] = datasetPtc.histVars[ampName][index]
-            datasetPtc.histChi2Dofs[ampName] = datasetPtc.histChi2Dofs[ampName][index]
-            datasetPtc.kspValues[ampName] = datasetPtc.kspValues[ampName][index]
-            datasetPtc.expIdMask[ampName] = datasetPtc.expIdMask[ampName][index]
-            datasetPtc.covariances[ampName] = datasetPtc.covariances[ampName][index]
-            datasetPtc.covariancesSqrtWeights[ampName] = datasetPtc.covariancesSqrtWeights[ampName][index]
-        for key, value in datasetPtc.auxValues.items():
-            datasetPtc.auxValues[key] = value[index]
+        datasetPtc.sort(index)
 
         if self.config.ptcFitType == "FULLCOVARIANCE":
             # Fit the measured covariances vs mean signal to
@@ -495,6 +444,15 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 self.log.warning(f"Read noise from PTC fit ({noiseFitted}) is not consistent "
                                  f"with read noise measured from overscan ({overscanNoise}) for "
                                  f"amplifier {ampName}. Try adjusting the fit range.")
+
+        # Do amp-offset gain ratio fixup if configured.
+        if self.config.doAmpOffsetGainRatioFixup:
+            ampOffsetGainRatioFixup(
+                datasetPtc,
+                self.config.ampOffsetGainRatioMinAdu,
+                self.config.ampOffsetGainRatioMaxAdu,
+                log=self.log,
+            )
 
         if camera:
             detector = camera[detId]
@@ -617,7 +575,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 dataset.finalMeans[ampName] = np.repeat(np.nan, lenInputTimes)
                 continue
 
-            muAtAmp = dataset.rawMeans[ampName]
+            muAtAmp = dataset.rawMeans[ampName].copy()
             maskAtAmp = dataset.expIdMask[ampName]
             if len(maskAtAmp) == 0:
                 maskAtAmp = np.repeat(True, len(muAtAmp))
@@ -716,9 +674,12 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             dataset.noiseMatrix[ampName] = fitResults['fullModel']['noiseMatrix']
             dataset.noiseMatrixNoB[ampName] = fitResults['fullModelNoB']['noiseMatrix']
 
-            dataset.finalVars[ampName] = covAtAmp[:, 0, 0]
-            dataset.finalModelVars[ampName] = dataset.covariancesModel[ampName][:, 0, 0]
-            dataset.finalMeans[ampName] = muAtAmp
+            dataset.finalVars[ampName] = covAtAmp[:, 0, 0].copy()
+            dataset.finalVars[ampName][~maskAtAmp] = np.nan
+            dataset.finalModelVars[ampName] = dataset.covariancesModel[ampName][:, 0, 0].copy()
+            dataset.finalModelVars[ampName][~maskAtAmp] = np.nan
+            dataset.finalMeans[ampName] = muAtAmp.copy()
+            dataset.finalMeans[ampName][~maskAtAmp] = np.nan
 
         return dataset
 
@@ -1279,6 +1240,15 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                         if deltaADU < maxDeltaADUInitialPtcOutlierFit:
                             # This jump is fine; continue.
                             continue
+
+                        self.log.info(
+                            "Found a jump of %.2f for amp %s, greater than %.2f. Masking points higher "
+                            "than %.2f ADU.",
+                            deltaADU,
+                            ampName,
+                            maxDeltaADUInitialPtcOutlierFit,
+                            meanVecSorted[useMask[useIndex - 1]],
+                        )
 
                         # Mark all further points bad.
                         newMask[usePoint:] = False

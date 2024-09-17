@@ -20,7 +20,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 
-__all__ = ['ddict2dict', 'CovFastFourierTransform', 'getReadNoise']
+__all__ = ['ddict2dict', 'CovFastFourierTransform', 'getReadNoise', 'ampOffsetGainRatioFixup']
 
 
 import galsim
@@ -189,6 +189,12 @@ def makeMockFlats(expTime, gain=1.0, readNoiseElectrons=5, fluxElectrons=1000,
     for ampName in ampNames:
         key = f"LSST ISR OVERSCAN RESIDUAL SERIAL STDEV {ampName}"
         value = readNoiseElectrons / gain
+
+        flatExp1.metadata[key] = value
+        flatExp2.metadata[key] = value
+
+        key = f"LSST ISR AMPOFFSET PEDESTAL {ampName}"
+        value = 0.0
 
         flatExp1.metadata[key] = value
         flatExp2.metadata[key] = value
@@ -1367,3 +1373,102 @@ def getReadNoise(exposure, ampName, taskMetadata=None, log=None):
     log.warning("Median readout noise from ISR metadata for amp %s "
                 "could not be found.", ampName)
     return np.nan
+
+
+def ampOffsetGainRatioFixup(ptc, minAdu, maxAdu, log=None):
+    """Apply gain ratio fixup using amp offsets.
+
+    Parameters
+    ----------
+    ptc : `lsst.ip.isr.PhotonTransferCurveDataset`
+        Input PTC. Will be modified in place.
+    minAdu : `float`
+        Minimum number of ADU in mean of amplifier to use for
+        computing gain ratio fixup.
+    maxAdu : `float`
+        Maximum number of ADU in mean of amplifier to use for
+        computing gain ratio fixup.
+    log : `lsst.utils.logging.LsstLogAdapter`, optional
+        Log object.
+    """
+    # We need to find the reference amplifier.
+    # Find an amp near the middle to use as a pivot.
+    if log is None:
+        log = logging.getLogger(__name__)
+
+    # We first check for which amps have gain measurements
+    # (fully bad amps are filled with NaN for gain.)
+    gainArray = np.zeros(len(ptc.ampNames))
+    for i, ampName in enumerate(ptc.ampNames):
+        gainArray[i] = ptc.gain[ampName]
+    good, = np.where(np.isfinite(gainArray))
+
+    if len(good) > 1:
+        # This only works with more than 1 good amp.
+
+        # We sort the gains and take the one that is closest
+        # to the median to use as the reference amplifier for
+        # gain ratios.
+        st = np.argsort(gainArray[good])
+        midAmp = good[st[int(0.5*len(good))]]
+        midAmpName = ptc.ampNames[midAmp]
+
+        log.info("Using amplifier %s as the reference for doLinearityGainRatioFixup.", midAmpName)
+
+        # First pass, we need to compute the corrections.
+        corrections = {}
+        for ampName in ptc.ampNames:
+            if not np.isfinite(ptc.gain[ampName]) or ampName == midAmpName:
+                continue
+
+            ratioPtc = ptc.gain[ampName] / ptc.gain[midAmpName]
+
+            deltas = ptc.ampOffsets[ampName] - ptc.ampOffsets[midAmpName]
+            use = (
+                (ptc.expIdMask[ampName])
+                & (np.isfinite(deltas))
+                & (ptc.finalMeans[ampName] >= minAdu)
+                & (ptc.finalMeans[ampName] <= maxAdu)
+                & (np.isfinite(ptc.finalMeans[midAmpName]))
+                & (ptc.expIdMask[midAmpName])
+            )
+            if use.sum() < 3:
+                log.warning("Not enough good amp offset measurements to fix up amp %s "
+                            "gains from amp ratios.", ampName)
+                continue
+
+            ratios = 1. / (deltas / ptc.finalMeans[midAmpName] + 1.0)
+            ratio = np.median(ratios[use])
+            corrections[ampName] = ratio / ratioPtc
+
+        # For the final correction, we need to make sure that the
+        # reference amplifier is included. By definition, it has a
+        # correction factor of 1.0 before any final fix.
+        corrections[midAmpName] = 1.0
+
+        # Adjust the median correction to be 1.0 so we do not
+        # change the gain of the detector on average.
+        # This is needed in case the reference amplifier is
+        # skewed in terms of offsets even though it has the median
+        # gain.
+        medCorrection = np.median([corrections[key] for key in corrections])
+
+        for ampName in ptc.ampNames:
+            if ampName not in corrections:
+                continue
+
+            correction = corrections[ampName] / medCorrection
+            newGain = ptc.gain[ampName] * correction
+            log.info(
+                "Adjusting gain from amplifier %s by factor of %.5f (from %.5f to %.5f)",
+                ampName,
+                correction,
+                ptc.gain[ampName],
+                newGain,
+            )
+            # Copying the value should not be necessary, but we record
+            # it just in case.
+            ptc.gainUnadjusted[ampName] = ptc.gain[ampName]
+            ptc.gain[ampName] = newGain
+    else:
+        log.warning("Cannot apply ampOffsetGainRatioFixup with fewer than 2 good amplifiers.")
