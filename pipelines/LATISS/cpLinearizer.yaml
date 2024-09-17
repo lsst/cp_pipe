@@ -1,0 +1,14 @@
+description: cp_pipe LATISS linearizer calibration construction.
+instrument: lsst.obs.lsst.Latiss
+imports:
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpLinearizerLSST.yaml
+tasks:
+  cpLinearizerPtcExtract:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
+    config:
+      efdSalIndex: 201
+  cpLinearizerSolve:
+    class: lsst.cp.pipe.LinearitySolveTask
+    config:
+      maxLinearAdu: 120000
+      usePhotodiode: false
