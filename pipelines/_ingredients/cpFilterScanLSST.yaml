@@ -1,0 +1,32 @@
+description: cp_pipe pipeline to measure filter scans.
+tasks:
+  cpFilterScanIsr:
+    class: lsst.ip.isr.IsrTaskLSST
+    config:
+      connections.ccdExposure: "raw"
+      connections.outputExposure: "cpFilterScanIsrExp"
+      python: |
+        from lsst.cp.pipe import configureIsrTaskLSSTForCalibrations
+
+        configureIsrTaskLSSTForCalibrations(config)
+
+        config.doCrosstalk = True
+        config.crosstalk.doQuadraticCrosstalkCorrection = True
+        config.doApplyGains = True
+        config.doLinearize = True
+        # TODO DM-46426: Add cpCtiLSST pipeline so that this can be True.
+        config.doDeferredCharge = False
+        config.doBias = True
+        config.doDark = True
+        config.doBrighterFatter = True
+        # TODO DM-46356: Check if this should be True or False.
+        config.doFlat = False
+        config.doInterpolate = True
+  cpFilterScanMerge:
+    class: lsst.cp.pipe.CpFilterScanTask
+    config:
+      connections.inputExpHandles: "cpFilterScanIsrExp"
+      # This is still an intermediate product, although it"s the end of this pipeline.
+      connections.outputData: "cpFilterScan"
+contracts:
+  - cpFilterScanMerge.connections.inputExpHandles == cpFilterScanIsr.connections.outputExposure
