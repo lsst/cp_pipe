@@ -20,6 +20,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 
+from ._configure import *
 from .cpBfk import *
 from .cpCombine import *
 from .cpCrosstalk import *
