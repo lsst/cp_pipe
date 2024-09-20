@@ -1,0 +1,52 @@
+description: cp_pipe brighter-fatter kernel calibration construction.
+tasks:
+  cpBfkIsr:
+    class: lsst.ip.isr.IsrTaskLSST
+    config:
+      connections.ccdExposure: "raw"
+      connections.outputExposure: "cpBfkIsrExp"
+      python: |
+        from lsst.cp.pipe import configureIsrTaskLSSTForCalibrations
+
+        configureIsrTaskLSSTForCalibrations(config)
+
+        config.doBootstrap = True
+        config.doCrosstalk = True
+        config.crosstalk.doQuadraticCrosstalkCorrection = False
+        config.doLinearize = True
+        # TODO DM-46426: Add cpCtiLSST pipeline so that this can be True.
+        config.doDeferredCharge = False
+        config.doDefect = True
+  cpBfkPtcExtract:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
+    config:
+      connections.inputExp: "cpBfkIsrExp"
+      connections.outputCovariances: "cpBfkPtcPartial"
+      maximumRangeCovariancesAstier: 15
+      numEdgeSuspect: 20
+      edgeMaskLevel: "AMP"
+      useEfdPhotodiodeData: true
+      auxiliaryHeaderKeys: ["TEMP6"]
+  cpBfkPtcSolve:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
+    config:
+      connections.inputCovariances: "cpBfkPtcPartial"
+      connections.outputPtcDataset: "bfkPtc"
+      ptcFitType: "FULLCOVARIANCE"
+      maximumRangeCovariancesAstier: 15
+      maximumRangeCovariancesAstierFullCovFit: 15
+  # TODO DM-46439: This can be renamed back to cpBfkSolve when repos
+  # are cleaned up for the previous dimensionality error.
+  cpBfkSolveX:
+    class: lsst.cp.pipe.BrighterFatterKernelSolveTask
+    config:
+      useBfkPtc: true
+      connections.inputPtc: bfkPtc
+      connections.outputBFK: bfk
+contracts:
+  - cpBfkIsr.doBootstrap == True
+  - cpBfkPtcExtract.connections.inputExp == cpBfkIsr.connections.outputExposure
+  - cpBfkPtcSolve.binSize == cpBfkPtcExtract.binSize
+  - cpBfkPtcSolve.maximumRangeCovariancesAstier == cpBfkPtcExtract.maximumRangeCovariancesAstier
+  - cpBfkPtcSolve.connections.inputCovariances == cpBfkPtcExtract.connections.outputCovariances
+  - cpBfkSolveX.connections.inputPtc == cpBfkPtcSolve.connections.outputPtcDataset
