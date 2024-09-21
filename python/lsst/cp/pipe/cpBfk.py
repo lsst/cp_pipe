@@ -59,6 +59,13 @@ class BrighterFatterKernelSolveConnections(pipeBase.PipelineTaskConnections,
         dimensions=("instrument", "detector"),
         isCalibration=True,
     )
+    inputBfkPtc = cT.Input(
+        name="bfkPtc",
+        doc="Input BFK PTC dataset.",
+        storageClass="PhotonTransferCurveDataset",
+        dimensions=("instrument", "detector"),
+        isCalibration=True,
+    )
 
     outputBFK = cT.Output(
         name="brighterFatterKernel",
@@ -67,6 +74,13 @@ class BrighterFatterKernelSolveConnections(pipeBase.PipelineTaskConnections,
         dimensions=("instrument", "detector"),
         isCalibration=True,
     )
+
+    def __init__(self, *, config=None):
+        if config.useBfkPtc:
+            del self.inputPtc
+            del self.dummy
+        else:
+            del self.inputBfkPtc
 
 
 class BrighterFatterKernelSolveConfig(pipeBase.PipelineTaskConfig,
@@ -150,6 +164,11 @@ class BrighterFatterKernelSolveConfig(pipeBase.PipelineTaskConfig,
         doc="Slope of the correlation model for radii larger than correlationModelRadius",
         default=-1.35,
     )
+    useBfkPtc = pexConfig.Field(
+        dtype=bool,
+        doc="Use a BFK ptc in a single pipeline?",
+        default=False,
+    )
 
 
 class BrighterFatterKernelSolveTask(pipeBase.PipelineTask):
@@ -174,7 +193,14 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask):
         inputs = butlerQC.get(inputRefs)
 
         # Use the dimensions to set calib/provenance information.
-        inputs['inputDims'] = dict(inputRefs.inputPtc.dataId.required)
+
+        if self.config.useBfkPtc:
+            inputs["inputDims"] = dict(inputRefs.inputBfkPtc.dataId.required)
+            inputs["inputPtc"] = inputs["inputBfkPtc"]
+            inputs["dummy"] = []
+            del inputs["inputBfkPtc"]
+        else:
+            inputs["inputDims"] = dict(inputRefs.inputPtc.dataId.required)
 
         # Add calibration provenance info to header.
         kwargs = dict()
@@ -226,9 +252,6 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask):
                 Resulting Brighter-Fatter Kernel
                 (`lsst.ip.isr.BrighterFatterKernel`).
         """
-        if len(dummy) == 0:
-            self.log.warning("No dummy exposure found.")
-
         detector = camera[inputDims['detector']]
         detName = detector.getName()
 
