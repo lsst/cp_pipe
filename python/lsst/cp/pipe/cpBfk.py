@@ -33,10 +33,11 @@ import lsst.pipe.base.connectionTypes as cT
 
 from lsst.ip.isr import (BrighterFatterKernel)
 from .utils import (funcPolynomial, irlsFit, extractCalibDate)
+from .cpLinearitySolve import ptcLookup
 
 
 class BrighterFatterKernelSolveConnections(pipeBase.PipelineTaskConnections,
-                                           dimensions=("instrument", "exposure", "detector")):
+                                           dimensions=("instrument", "detector")):
     dummy = cT.Input(
         name="raw",
         doc="Dummy exposure.",
@@ -58,6 +59,7 @@ class BrighterFatterKernelSolveConnections(pipeBase.PipelineTaskConnections,
         storageClass="PhotonTransferCurveDataset",
         dimensions=("instrument", "detector"),
         isCalibration=True,
+        lookupFunction=ptcLookup,
     )
     inputBfkPtc = cT.Input(
         name="bfkPtc",
