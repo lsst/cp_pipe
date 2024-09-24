@@ -38,7 +38,14 @@ import lsst.pipe.base.connectionTypes as cT
 from lsst.ip.isr import PhotonTransferCurveDataset
 from lsst.ip.isr import IsrTask
 
-__all__ = ['PhotonTransferCurveExtractConfig', 'PhotonTransferCurveExtractTask']
+__all__ = [
+    "PhotonTransferCurveExtractConfig",
+    "PhotonTransferCurveExtractTask",
+    # "PhotonTransferCurveMakeSidecarConfig",
+    # "PhotonTransferCurveMakeSidecarTask",
+    # "PhotonTransferCurveExtractWithSidecarConfig",
+    # "PhotonTransferCurveExtractWithSidecarTask",
+]
 
 
 class PhotonTransferCurveExtractConnections(pipeBase.PipelineTaskConnections,
@@ -87,26 +94,8 @@ class PhotonTransferCurveExtractConnections(pipeBase.PipelineTaskConnections,
         del self.taskMetadata
 
 
-class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
-                                       pipelineConnections=PhotonTransferCurveExtractConnections):
-    """Configuration for the measurement of covariances from flats.
-    """
-    matchExposuresType = pexConfig.ChoiceField(
-        dtype=str,
-        doc="Match input exposures by time, flux, or expId",
-        default='TIME',
-        allowed={
-            "TIME": "Match exposures by exposure time.",
-            "FLUX": "Match exposures by target flux. Use header keyword"
-                " in matchExposuresByFluxKeyword to find the flux.",
-            "EXPID": "Match exposures by exposure ID."
-        }
-    )
-    matchExposuresByFluxKeyword = pexConfig.Field(
-        dtype=str,
-        doc="Header keyword for flux if matchExposuresType is FLUX.",
-        default='CCOBFLUX',
-    )
+class PhotonTransferCurveExtractConfigBase(pexConfig.Config):
+    """Base config class for PTCextract configs."""
     maximumRangeCovariancesAstier = pexConfig.Field(
         dtype=int,
         doc="Maximum range of covariances as in Astier+19",
@@ -270,6 +259,29 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
             # These get information from different places, so let's
             # disallow both being true.
             raise ValueError("doExtractPhotodiodeData and useEfdPhotodiodeData are mutually exclusive.")
+
+
+class PhotonTransferCurveExtractConfig(PhotonTransferCurveExtractConfigBase,
+                                       pipeBase.PipelineTaskConfig,
+                                       pipelineConnections=PhotonTransferCurveExtractConnections):
+    """Configuration for the measurement of covariances from flats.
+    """
+    matchExposuresType = pexConfig.ChoiceField(
+        dtype=str,
+        doc="Match input exposures by time, flux, or expId",
+        default='TIME',
+        allowed={
+            "TIME": "Match exposures by exposure time.",
+            "FLUX": "Match exposures by target flux. Use header keyword"
+                " in matchExposuresByFluxKeyword to find the flux.",
+            "EXPID": "Match exposures by exposure ID."
+        }
+    )
+    matchExposuresByFluxKeyword = pexConfig.Field(
+        dtype=str,
+        doc="Header keyword for flux if matchExposuresType is FLUX.",
+        default='CCOBFLUX',
+    )
 
 
 class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
