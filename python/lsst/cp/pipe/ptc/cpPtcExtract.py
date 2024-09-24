@@ -19,6 +19,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
+from astropy.table import Table
 import numpy as np
 from lmfit.models import GaussianModel
 import scipy.stats
@@ -41,11 +42,116 @@ from lsst.ip.isr import IsrTask
 __all__ = [
     "PhotonTransferCurveExtractConfig",
     "PhotonTransferCurveExtractTask",
-    # "PhotonTransferCurveMakeSidecarConfig",
-    # "PhotonTransferCurveMakeSidecarTask",
+    "PhotonTransferCurveMakeSidecarConfig",
+    "PhotonTransferCurveMakeSidecarTask",
     # "PhotonTransferCurveExtractWithSidecarConfig",
     # "PhotonTransferCurveExtractWithSidecarTask",
 ]
+
+
+class PhotonTransferCurveMakeSidecarConnections(pipeBase.PipelineTaskConnections,
+                                                dimensions=("instrument", "detector")):
+    inputExpRefs = cT.Input(
+        name="ptcInputExposurePairs",
+        doc="Input post-ISR processed exposure pairs (flats) to"
+            "measure covariances from.",
+        storageClass="Exposure",
+        dimensions=("instrument", "exposure", "detector"),
+        multiple=True,
+        deferLoad=True,
+    )
+    sidecar = cT.Output(
+        name="ptcSidecar",
+        doc="Sidecar table with PTC exposure pair data.",
+        storageClass="ArrowAstropy",
+        dimensions=("instrument", "detector"),
+    )
+
+
+class PhotonTransferCurveMakeSidecarConfig(pipeBase.PipelineTaskConfig,
+                                           pipelineConnections=PhotonTransferCurveMakeSidecarConnections):
+    """Configuration for making a PTC sidecar file."""
+    matchExposuresType = pexConfig.ChoiceField(
+        dtype=str,
+        doc="Match input exposures by time, flux, or expId",
+        default='TIME',
+        allowed={
+            "TIME": "Match exposures by exposure time.",
+            "FLUX": "Match exposures by target flux. Use header keyword"
+                " in matchExposuresByFluxKeyword to find the flux.",
+            "EXPID": "Match exposures by exposure ID."
+        }
+    )
+    matchExposuresByFluxKeyword = pexConfig.Field(
+        dtype=str,
+        doc="Header keyword for flux if matchExposuresType is FLUX.",
+        default='CCOBFLUX',
+    )
+
+
+class PhotonTransferCurveMakeSidecarTask(pipeBase.PipelineTask):
+    """Task to make a PTC sidecar file with paired exposures.
+
+    This task can be used as the first part of the PTC extraction,
+    to create a sidecar file that can be used for more efficient running.
+    If this task is used, the next task should be
+    PhotonTransferCurveExtractWithSidecarTask rather than
+    PhotonTransferCurveExtractTask which does not use the sidecar file.
+    """
+    ConfigClass = PhotonTransferCurveMakeSidecarConfig
+    _DefaultName = "cpPtcMakeSidecar"
+
+    def run(self, *, inputExpRefs):
+        """
+        Make a PTC extraction sidecar table, with matched exposures.
+
+        Parameters
+        ----------
+        inputExpRefs : `list` [`lsst.pipe.base.connections.DeferredDatasetRef`]
+            Input list of exposure refs to pair.
+
+        Returns
+        -------
+        results : `lsst.pipe.base.Struct`
+            The resulting Struct contains:
+
+            ``sidecar``
+                An astropy table sidecar file with exposure pairs.
+        """
+        exposureIds = [expRef.dataId["exposure"] for expRef in inputExpRefs]
+
+        # Dictionary, keyed by expTime (or expFlux or expId), with tuples
+        # containing flat exposures and their IDs.
+        matchType = self.config.matchExposuresType
+        if matchType == "TIME":
+            matchedExps = arrangeFlatsByExpTime(inputExpRefs, exposureIds, log=self.log)
+        elif matchType == "FLUX":
+            matchedExps = arrangeFlatsByExpFlux(
+                inputExpRefs,
+                exposureIds,
+                self.config.matchExposuresByFluxKeyword,
+                log=self.log,
+            )
+        else:
+            matchedExps = arrangeFlatsByExpId(inputExpRefs, exposureIds)
+
+        sidecar = Table()
+
+        matchValues = np.array(list(matchedExps.keys()))
+        sidecar["matchValues"] = matchValues
+
+        # Count the maximum number of exposures in a group.
+        maxExps = 0
+        for matchValue, expMatches in matchedExps.items():
+            maxExps = len(expMatches) if len(expMatches) > maxExps else maxExps
+
+        sidecar["exposureIds"] = np.full((len(matchValues), maxExps), -1, dtype=np.int64)
+
+        for row, (matchValue, expMatches) in enumerate(matchedExps.items()):
+            for i in range(len(expMatches)):
+                sidecar["exposureIds"][row][i] = expMatches[i][1]
+
+        return pipeBase.Struct(sidecar=sidecar)
 
 
 class PhotonTransferCurveExtractConnections(pipeBase.PipelineTaskConnections,
