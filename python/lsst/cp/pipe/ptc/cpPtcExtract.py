@@ -44,8 +44,8 @@ __all__ = [
     "PhotonTransferCurveExtractTask",
     "PhotonTransferCurveMakeSidecarConfig",
     "PhotonTransferCurveMakeSidecarTask",
-    # "PhotonTransferCurveExtractWithSidecarConfig",
-    # "PhotonTransferCurveExtractWithSidecarTask",
+    "PhotonTransferCurveExtractWithSidecarConfig",
+    "PhotonTransferCurveExtractWithSidecarTask",
 ]
 
 
@@ -159,7 +159,7 @@ class PhotonTransferCurveExtractConnections(pipeBase.PipelineTaskConnections,
 
     inputExp = cT.Input(
         name="ptcInputExposurePairs",
-        doc="Input post-ISR processed exposure pairs (flats) to"
+        doc="Input post-ISR processed exposure pairs (flats) to "
             "measure covariances from.",
         storageClass="Exposure",
         dimensions=("instrument", "exposure", "detector"),
@@ -1336,3 +1336,67 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
             kspValue = 0.0
 
         return varFit, chi2Dof, kspValue
+
+
+class PhotonTransferCurveExtractWithSidecarConnections(
+    pipeBase.PipelineTaskConnections,
+    dimensions=("instrument", "detector", "exposure"),
+):
+    inputExpRefs = cT.Input(
+        name="ptcInputExposurePairs",
+        doc="Input post-ISR processed exposure pairs (flats) to "
+            "measure covariances from.",
+        storageClass="Exposure",
+        dimensions=("instrument", "exposure", "detector"),
+        multiple=True,
+        deferLoad=True,
+    )
+    sidecar = cT.Input(
+        name="ptcSidecar",
+        doc="Sidecar table with PTC exposure pair data.",
+        storageClass="ArrowAstropy",
+        dimensions=("instrument", "detector"),
+    )
+    inputPhotodiodeData = cT.Input(
+        name="photodiode",
+        doc="Photodiode readings data.",
+        storageClass="IsrCalib",
+        dimensions=("instrument", "exposure"),
+        multiple=True,
+        deferLoad=True,
+    )
+    outputCovariances = cT.Output(
+        name="ptcCovariances",
+        doc="Extracted flat (co)variances.",
+        storageClass="PhotonTransferCurveDataset",
+        dimensions=("instrument", "exposure", "detector"),
+        isCalibration=True,
+        multiple=True,
+    )
+
+
+class PhotonTransferCurveExtractWithSidecarConfig(
+    PhotonTransferCurveExtractConfigBase,
+    pipeBase.PipelineTaskConfig,
+    pipelineConnections=PhotonTransferCurveExtractWithSidecarConnections,
+):
+    """Configuration for PTC extraction with sidecar."""
+    pass
+
+
+class PhotonTransferCurveExtractWithSidecarTask(PhotonTransferCurveExtractTask):
+    """Task to measure covariances from flat fields, with sidecar.
+
+    See PhotonTransferCurveExtractTask for details.
+    """
+    ConfigClass = PhotonTransferCurveExtractWithSidecarConfig
+    _DefaultName = "cpPtcExtractWithSidecar"
+
+    def runQuantum(self, butlerQC, inputRefs, outputRefs):
+        # docstring inherited.
+        inputs = butlerQC.get(inputRefs)
+
+        import IPython
+        IPython.embed()
+
+        del inputs
