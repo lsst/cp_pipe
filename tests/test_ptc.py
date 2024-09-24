@@ -414,6 +414,15 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                 self.assertEqual(
                     ptc.covariancesModelNoB[ampName].shape, covModelNoBShape
                 )
+            # Check if evalPtcModel produces expected values
+            nanMask = ~np.isnan(ptc.finalMeans[ampName])
+            means = ptc.finalMeans[ampName][nanMask]
+            covModel = ptc.covariancesModel[ampName][nanMask]
+            covariancesModel = ptc.evalPtcModel(means, setBtoZero=False)[ampName]
+            self.assertFloatsAlmostEqual(covariancesModel, covModel, atol=1e-13)
+            # Note that the PhotoTransferCurveDataset does not store the gain
+            # fit parameter for FULLCOVARIANCE with b=0, so we can't compare
+            # exactly.
 
         # And check that this is serializable
         with tempfile.NamedTemporaryFile(suffix=".fits") as f:
@@ -544,6 +553,14 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                     localDataset.noiseErr[ampName],
                     np.sqrt(self.noiseSq)
                 )
+
+            # Check if evalColModel produces expected values
+            if not doFitBootstrap:
+                nanMask = ~np.isnan(localDataset.finalMeans[ampName])
+                means = localDataset.finalMeans[ampName][nanMask]
+                model = localDataset.finalModelVars[ampName][nanMask]
+                evalVarModel = localDataset.evalPtcModel(means)[ampName]
+                self.assertFloatsEqual(evalVarModel, model)
 
     def test_lsstcam_samples(self):
         for dense in [False, True]:
