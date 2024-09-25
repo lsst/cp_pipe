@@ -1,0 +1,13 @@
+description: cp_pipe LSSTComCam linearizer calibration construction.
+instrument: lsst.obs.lsst.LsstComCam
+imports:
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpLinearizerLSST.yaml
+tasks:
+  cpLinearizerPtcExtract:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
+    config:
+      efdSalIndex: 101
+  cpLinearizerSolve:
+    class: lsst.cp.pipe.LinearitySolveTask
+    config:
+      maxLinearAdu: 120000
