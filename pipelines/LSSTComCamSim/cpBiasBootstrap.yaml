@@ -1,0 +1,11 @@
+description: LSSTComCamSim bootstrap bias calibration construction
+instrument: lsst.obs.lsst.LsstComCamSim
+imports:
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpBiasBootstrapLSST.yaml
+tasks:
+  cpBiasBootstrapIsr:
+    class: lsst.ip.isr.IsrTaskLSST
+    config:
+      overscanCamera.defaultDetectorConfig.defaultAmpConfig.serialOverscanConfig.fitType: "MEAN"
+      overscanCamera.defaultDetectorConfig.defaultAmpConfig.doParallelOverscan: false
+      doCrosstalk: false
