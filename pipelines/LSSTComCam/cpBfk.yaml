@@ -1,0 +1,17 @@
+description: LSSTComCam Brighter-Fatter kernel calibration construction.
+instrument: lsst.obs.lsst.LsstComCam
+imports:
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpBfkLSST.yaml
+tasks:
+  cpBfkPtcExtract:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
+    config:
+      # Restrict the covariance range because we do not have
+      # dense PTCs for LSSTComCam.
+      maximumRangeCovariancesAstier: 8
+      efdSalIndex: 101
+  cpBfkPtcSolve:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
+    config:
+      maximumRangeCovariancesAstier: 8
+      maximumRangeCovariancesAstierFullCovFit: 8
