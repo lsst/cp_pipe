@@ -171,13 +171,17 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
     @unittest.skipIf(not has_obs_lsst, reason="Cannot test LSSTComCam pipelines without obs_lsst")
     def test_lsstcomcam_pipelines(self):
         for pipeline in self._get_pipelines(exclude=[
+                # The following tasks are not part of the new pipelines.
+                "cpDarkForDefects.yaml",
+                "cpDefectsIndividual.yaml",
+                # The following tasks are not for ComCam.
                 "cpFilterScan.yaml",
                 "cpMonochromatorScan.yaml",
                 "cpSpectroFlat.yaml",
-                # TODO DM-46357: Remove following from exclusion list.
-                "cpBiasBootstrap.yaml",
-                "cpDarkBootstrap.yaml",
-                "cpFlatBootstrap.yaml",
+                "cpCrosstalk.yaml",
+                "cpFringe.yaml",
+                # TODO: DM-46426
+                "cpCti.yaml",
         ]):
             self._check_pipeline(os.path.join(self.pipeline_path, "LSSTComCam", pipeline))
 
