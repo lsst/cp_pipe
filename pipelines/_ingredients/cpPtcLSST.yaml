@@ -38,6 +38,7 @@ tasks:
       connections.outputPtcDataset: "ptc"
       ptcFitType: "FULLCOVARIANCE"
       maximumRangeCovariancesAstier: 8
+      maximumRangeCovariancesAstierFullCovFit: 8
       doAmpOffsetGainRatioFixup: true
 subsets:
   # TODO DM-46448: This subset will no longer be necessary to run when the
