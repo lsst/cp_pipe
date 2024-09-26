@@ -17,6 +17,12 @@ tasks:
         # TODO DM-46426: Add cpCtiLSST pipeline so that this can be True.
         config.doDeferredCharge = False
         config.doDefect = True
+        config.doAmpOffset = True
+        config.ampOffset.ampEdgeMaxOffset = 100000.0
+        config.ampOffset.ampEdgeInset = 10
+        config.ampOffset.doBackground = False
+        config.ampOffset.doDetection = False
+        config.ampOffset.doApplyAmpOffset = False
   cpBfkPtcExtract:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
     config:
@@ -35,6 +41,7 @@ tasks:
       ptcFitType: "FULLCOVARIANCE"
       maximumRangeCovariancesAstier: 15
       maximumRangeCovariancesAstierFullCovFit: 15
+      doAmpOffsetGainRatioFixup: true
   # TODO DM-46439: This can be renamed back to cpBfkSolve when repos
   # are cleaned up for the previous dimensionality error.
   cpBfkSolveX:
