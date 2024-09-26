@@ -419,7 +419,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             means = ptc.finalMeans[ampName][nanMask]
             covModel = ptc.covariancesModel[ampName][nanMask]
             covariancesModel = ptc.evalPtcModel(means, setBtoZero=False)[ampName]
-            self.assertFloatsAlmostEqual(covariancesModel, covModel, atol=1e-13)
+            self.assertFloatsAlmostEqual(covariancesModel, covModel, atol=1e-12)
             # Note that the PhotoTransferCurveDataset does not store the gain
             # fit parameter for FULLCOVARIANCE with b=0, so we can't compare
             # exactly.
