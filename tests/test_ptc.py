@@ -131,7 +131,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                 (1, self.dataset.covMatrixSide, self.dataset.covMatrixSide)
             )
 
-    def notest_covAstier(self):
+    def test_covAstier(self):
         """Test to check getCovariancesAstier
 
         We check that the gain is the same as the imput gain from the
@@ -414,6 +414,15 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                 self.assertEqual(
                     ptc.covariancesModelNoB[ampName].shape, covModelNoBShape
                 )
+            # Check if evalPtcModel produces expected values
+            nanMask = ~np.isnan(ptc.finalMeans[ampName])
+            means = ptc.finalMeans[ampName][nanMask]
+            covModel = ptc.covariancesModel[ampName][nanMask]
+            covariancesModel = ptc.evalPtcModel(means, setBtoZero=False)[ampName]
+            self.assertFloatsAlmostEqual(covariancesModel, covModel, atol=1e-13)
+            # Note that the PhotoTransferCurveDataset does not store the gain
+            # fit parameter for FULLCOVARIANCE with b=0, so we can't compare
+            # exactly.
 
         # And check that this is serializable
         with tempfile.NamedTemporaryFile(suffix=".fits") as f:
@@ -545,7 +554,15 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                     np.sqrt(self.noiseSq)
                 )
 
-    def notest_lsstcam_samples(self):
+            # Check if evalColModel produces expected values
+            if not doFitBootstrap:
+                nanMask = ~np.isnan(localDataset.finalMeans[ampName])
+                means = localDataset.finalMeans[ampName][nanMask]
+                model = localDataset.finalModelVars[ampName][nanMask]
+                evalVarModel = localDataset.evalPtcModel(means)[ampName]
+                self.assertFloatsEqual(evalVarModel, model)
+
+    def test_lsstcam_samples(self):
         for dense in [False, True]:
             for mode in ["normal", "upturn", "dip"]:
                 rawMeans, rawVars, ptcTurnoff = self._getSampleMeanAndVar(dense=dense, mode=mode)
@@ -592,7 +609,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                     msg=f"Dense: {dense}; Mode: {mode}",
                 )
 
-    def notest_ptcFit(self):
+    def test_ptcFit(self):
         for doLegacy in [False, True]:
             for fitType, order in [
                 ("POLYNOMIAL", 2),
@@ -605,7 +622,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                     doLegacy=doLegacy,
                 )
 
-    def notest_meanVarMeasurement(self):
+    def test_meanVarMeasurement(self):
         task = self.defaultTaskExtract
         im1Area, im2Area, imStatsCtrl, mu1, mu2 = task.getImageAreasMasksStats(
             self.flatExp1, self.flatExp2
@@ -615,7 +632,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         self.assertLess(self.flatWidth - np.sqrt(varDiff), 1)
         self.assertLess(self.flatMean - mu, 1)
 
-    def notest_meanVarMeasurementWithNans(self):
+    def test_meanVarMeasurementWithNans(self):
         task = self.defaultTaskExtract
 
         flatExp1 = self.flatExp1.clone()
@@ -653,7 +670,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         self.assertLess(np.sqrt(expectedVar) - np.sqrt(varDiff), 1)
         self.assertLess(expectedMu - mu, 1)
 
-    def notest_meanVarMeasurementAllNan(self):
+    def test_meanVarMeasurementAllNan(self):
         task = self.defaultTaskExtract
         flatExp1 = self.flatExp1.clone()
         flatExp2 = self.flatExp2.clone()
@@ -673,7 +690,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         self.assertTrue(covDiff is None)
         self.assertTrue(np.isnan(rowMeanVariance))
 
-    def notest_meanVarMeasurementTooFewPixels(self):
+    def test_meanVarMeasurementTooFewPixels(self):
         task = self.defaultTaskExtract
         flatExp1 = self.flatExp1.clone()
         flatExp2 = self.flatExp2.clone()
@@ -699,7 +716,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         self.assertTrue(covDiff is None)
         self.assertTrue(np.isnan(rowMeanVariance))
 
-    def notest_meanVarMeasurementTooNarrowStrip(self):
+    def test_meanVarMeasurementTooNarrowStrip(self):
         # We need a new config to make sure the second covariance cut is
         # triggered.
         config = cpPipe.ptc.PhotonTransferCurveExtractTask.ConfigClass()
@@ -733,7 +750,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         self.assertTrue(covDiff is None)
         self.assertTrue(np.isnan(rowMeanVariance))
 
-    def notest_makeZeroSafe(self):
+    def test_makeZeroSafe(self):
         noZerosArray = [1.0, 20, -35, 45578.98, 90.0, 897, 659.8]
         someZerosArray = [1.0, 20, 0, 0, 90, 879, 0]
         allZerosArray = [0.0, 0.0, 0, 0, 0.0, 0, 0]
@@ -768,7 +785,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         for exp, meas in zip(noZerosArray, measuredNoZerosArray):
             self.assertEqual(exp, meas)
 
-    def notest_getInitialGoodPoints(self):
+    def test_getInitialGoodPoints(self):
         xs = [1, 2, 3, 4, 5, 6]
         ys = [2 * x for x in xs]
         points = self.defaultTaskSolve._getInitialGoodPoints(
@@ -846,7 +863,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                     ptc.noiseList[ampName][i], np.sqrt(self.noiseSq) / self.gain,
                 )
 
-    def notest_getGainFromFlatPair(self):
+    def test_getGainFromFlatPair(self):
         for gainCorrectionType in [
             "NONE",
             "SIMPLE",
@@ -854,7 +871,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         ]:
             self.runGetGainFromFlatPair(gainCorrectionType)
 
-    def notest_ptcFitBootstrap(self):
+    def test_ptcFitBootstrap(self):
         """Test the bootstrap fit option for the PTC"""
         for (fitType, order) in [('POLYNOMIAL', 2), ('POLYNOMIAL', 3), ('EXPAPPROXIMATION', None)]:
             self.ptcFitAndCheckPtc(fitType=fitType, order=order, doFitBootstrap=True)
@@ -1666,7 +1683,7 @@ class MeasurePhotonTransferCurveDatasetTestCase(lsst.utils.tests.TestCase):
             "C01": [(123, 234), (345, 456), (567, 678)],
         }
 
-    def notest_generalBehaviour(self):
+    def test_generalBehaviour(self):
         test = PhotonTransferCurveDataset(["C00", "C01"], " ")
         test.inputExpIdPairs = {
             "C00": [(123, 234), (345, 456), (567, 678)],
