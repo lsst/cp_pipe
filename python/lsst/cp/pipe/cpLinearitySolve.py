@@ -685,7 +685,7 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 residuals = np.full_like(linearizeModel, np.nan)
             else:
                 postLinearFit, _, _, _ = irlsFit(
-                    [0.0, 100.0],
+                    linearFit,
                     inputAbscissa[mask],
                     linearizeModel[mask],
                     funcPolynomial,
