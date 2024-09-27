@@ -68,6 +68,13 @@ class BrighterFatterKernelSolveConnections(pipeBase.PipelineTaskConnections,
         dimensions=("instrument", "detector"),
         isCalibration=True,
     )
+    inputBfkPtc = cT.Input(
+        name="bfkPtc",
+        doc="Input BFK PTC dataset.",
+        storageClass="PhotonTransferCurveDataset",
+        dimensions=("instrument", "detector"),
+        isCalibration=True,
+    )
 
     outputBFK = cT.Output(
         name="brighterFatterKernel",
