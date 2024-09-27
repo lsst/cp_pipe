@@ -82,7 +82,7 @@ class CpSpectroFlatTaskConfig(pipeBase.PipelineTaskConfig,
     # makeGainFlat
     applyGainDirection = pexConfig.Field(
         dtype=bool,
-        doc="Should flat be multiplied by the gains?",
+        doc="Should flat be divided by the gains?",
         default=True,
     )
     scaleGainsByMean = pexConfig.Field(
@@ -117,8 +117,6 @@ class CpSpectroFlatTaskConfig(pipeBase.PipelineTaskConfig,
     )
 
     # makePixelFlat
-    # photutils.background Background2D, MedianBackground
-    # astropy.stats.SigmaClip
     doBackgroundRemoval = pexConfig.Field(
         dtype=bool,
         default=True,
@@ -218,8 +216,12 @@ class CpSpectroFlatTask(pipeBase.PipelineTask):
 
         for amp in detector:
             bbox = amp.getBBox()
-            gainFlat[bbox].image.array[:, :] = 1 / (gains[amp.getName()] / gainMean)
             scaledGains[amp.getName()] = gains[amp.getName()] / gainMean
+            if self.config.applyGainDirection:
+                gainFlat[bbox].image.array[:, :] = 1 / scaledGains[amp.getName()]
+            else:
+                gainFlat[bbox].image.array[:, :] = scaledGains[amp.getName()]
+
         # gainFlat is now a realization of the scaled gains into a
         # full image.  scaledGains are the gains optionally (default
         # True) scaled by mean value.
