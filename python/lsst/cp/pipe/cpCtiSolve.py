@@ -70,37 +70,28 @@ class CpCtiSolveConfig(pipeBase.PipelineTaskConfig,
     maxImageMean = pexConfig.Field(
         dtype=float,
         default=150000.0,
-        doc="Upper limit on acceptable image flux mean.",
+        doc="Upper limit on acceptable image flux mean (electron).",
     )
     localOffsetColumnRange = pexConfig.ListField(
         dtype=int,
         default=[3, 13],
         doc="First and last overscan column to use for local offset effect.",
     )
-
-    useGains = pexConfig.Field(
-        dtype=bool,
-        default=True,
-        doc="Use gains in calculation.",
-    )
-
     maxSignalForCti = pexConfig.Field(
         dtype=float,
         default=10000.0,
-        doc="Upper flux limit to use for CTI fit.",
+        doc="Upper flux limit to use for CTI fit (electron).",
     )
     globalCtiColumnRange = pexConfig.ListField(
         dtype=int,
         default=[1, 2],
         doc="First and last overscan column to use for global CTI fit.",
     )
-
     trapColumnRange = pexConfig.ListField(
         dtype=int,
         default=[1, 20],
         doc="First and last overscan column to use for serial trap fit.",
     )
-
     fitError = pexConfig.Field(
         # This gives the error on the mean in a given column, and so
         # is expected to be $RN / sqrt(N_rows)$.
@@ -182,7 +173,7 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
         detector = camera[detectorId]
 
         # Initialize with detector.
-        calib = DeferredChargeCalib(camera=camera, detector=detector, useGains=self.config.useGains)
+        calib = DeferredChargeCalib(camera=camera, detector=detector)
 
         localCalib = self.solveLocalOffsets(inputMeasurements, calib, detector)
 
