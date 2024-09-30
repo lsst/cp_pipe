@@ -77,6 +77,13 @@ class CpCtiSolveConfig(pipeBase.PipelineTaskConfig,
         default=[3, 13],
         doc="First and last overscan column to use for local offset effect.",
     )
+
+    useGains = pexConfig.Field(
+        dtype=bool,
+        default=True,
+        doc="Use gains in calculation.",
+        deprecated="This field is no longer used. Will be removed after v28.",
+    )
     maxSignalForCti = pexConfig.Field(
         dtype=float,
         default=10000.0,
@@ -87,11 +94,13 @@ class CpCtiSolveConfig(pipeBase.PipelineTaskConfig,
         default=[1, 2],
         doc="First and last overscan column to use for global CTI fit.",
     )
+
     trapColumnRange = pexConfig.ListField(
         dtype=int,
         default=[1, 20],
         doc="First and last overscan column to use for serial trap fit.",
     )
+
     fitError = pexConfig.Field(
         # This gives the error on the mean in a given column, and so
         # is expected to be $RN / sqrt(N_rows)$.

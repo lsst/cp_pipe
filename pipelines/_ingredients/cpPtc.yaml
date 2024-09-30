@@ -8,10 +8,6 @@ tasks:
     config:
       connections.ccdExposure: raw
       connections.outputExposure: parameters.exposureName
-      # CTI correction: if doDeferredCharge=True and if
-      # isr:doApplyGains=True in cpDeferredCharge.yaml
-      # (default as of w_2023_18), deferredChargeCorrection.useGains
-      # should be True.
       doWrite: true
       doOverscan: true
       doAssembleCcd: true
