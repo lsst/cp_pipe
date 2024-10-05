@@ -15,12 +15,12 @@ tasks:
     config:
       linearityType: Spline
       usePhotodiode: true
-      splineGroupingColumn: CCOBCURR
+      # splineGroupingColumn: CCOBCURR
       maxLinearAdu: 120000
       splineFitTemperatureColumn: TEMP6
       splineFitWeightParsStart: [7.2e-5, 1e-4]
       doSplineFitWeights: false
-      doSplineFitTemperature: true
+      doSplineFitTemperature: false
       minPhotodiodeCurrent: 3e-10
       doSplineFitOffset: true
       splineFitMaxIter: 40
