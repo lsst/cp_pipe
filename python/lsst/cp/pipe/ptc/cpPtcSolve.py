@@ -82,7 +82,8 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
         allowed={
             "POLYNOMIAL": "n-degree polynomial (use 'polynomialFitDegree' to set 'n').",
             "EXPAPPROXIMATION": "Approximation in Astier+19 (Eq. 16).",
-            "FULLCOVARIANCE": "Full covariances model in Astier+19 (Eq. 20)"
+            "FULLCOVARIANCENOB": "Full covariances model in Astier+19 (Eq. 15)",
+            "FULLCOVARIANCE": "Full covariances model in Astier+19 (Eq. 20)",
         }
     )
     minMeanSignal = pexConfig.DictField(
@@ -399,7 +400,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         index = np.argsort(detectorMeans)
         datasetPtc.sort(index)
 
-        if self.config.ptcFitType == "FULLCOVARIANCE":
+        if self.config.ptcFitType in ["FULLCOVARIANCE", "FULLCOVARIANCENOB"]::
             # Fit the measured covariances vs mean signal to
             # the Astier+19 full model (Eq. 20). Before that
             # do a preliminary fit to the variance (C_00) vs mean
@@ -419,7 +420,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             # previous fit.
             for ampName in datasetPtc.ampNames:
                 datasetPtc.expIdMask[ampName] = tempDatasetPtc.expIdMask[ampName]
-            datasetPtc.fitType = "FULLCOVARIANCE"
+            datasetPtc.fitType = self.config.ptcFitType
             datasetPtc = self.fitMeasurementsToModel(datasetPtc)
         # The other options are: self.config.ptcFitType in
         # ("EXPAPPROXIMATION", "POLYNOMIAL")
@@ -485,7 +486,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             `PhotonTransferCurveDatase`.
         """
         fitType = dataset.ptcFitType
-        if fitType in ["FULLCOVARIANCE", ]:
+        if fitType in ["FULLCOVARIANCE", "FULLCOVARIANCENOB"]:
             # This model uses the full covariance matrix in the fit.
             # The PTC is technically defined as variance vs signal,
             # with variance = Cov_00
@@ -560,10 +561,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 dataset.covariancesSqrtWeights[ampName] = listNanMatrix
                 dataset.aMatrix[ampName] = nanMatrixFit
                 dataset.bMatrix[ampName] = nanMatrixFit
-                dataset.covariancesModelNoB[ampName] = listNanMatrixFit
-                dataset.aMatrixNoB[ampName] = nanMatrixFit
                 dataset.noiseMatrix[ampName] = nanMatrixFit
-                dataset.noiseMatrixNoB[ampName] = nanMatrixFit
 
                 dataset.expIdMask[ampName] = np.repeat(False, lenInputTimes)
                 dataset.gain[ampName] = np.nan
@@ -611,24 +609,30 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             # Fit full model (Eq. 20 of Astier+19) and same model with
             # b=0 (c=0 in this code).
             pInit = np.concatenate((a0.ravel(), c0.ravel(), noiseMatrix0.ravel(), np.array(gain0)), axis=None)
-            functionsDict = {'fullModel': self.funcFullCovarianceModel,
-                             'fullModelNoB': self.funcFullCovarianceModelNoB}
-            fitResults = {'fullModel': {'a': [], 'c': [], 'noiseMatrix': [], 'gain': [], 'paramsErr': []},
-                          'fullModelNoB': {'a': [], 'c': [], 'noiseMatrix': [], 'gain': [], 'paramsErr': []}}
-            for key in functionsDict:
-                params, paramsErr, _ = fitLeastSq(pInit, muAtAmpMasked,
-                                                  covAtAmpForFitMasked.ravel(), functionsDict[key],
-                                                  weightsY=covSqrtWeightsAtAmpForFitMasked.ravel())
-                a = params[:lenParams].reshape((matrixSideFit, matrixSideFit))
-                c = params[lenParams:2*lenParams].reshape((matrixSideFit, matrixSideFit))
-                noiseMatrix = params[2*lenParams:3*lenParams].reshape((matrixSideFit, matrixSideFit))
-                gain = params[-1]
+            
+            # Pick the correct full covariance model function
+            model = self.funcFullCovarianceModel
+            if dataset.ptcFitType == "FULLCOVARIANCENOB":
+                model = self.funcFullCovarianceModelNoB
 
-                fitResults[key]['a'] = a
-                fitResults[key]['c'] = c
-                fitResults[key]['noiseMatrix'] = noiseMatrix
-                fitResults[key]['gain'] = gain
-                fitResults[key]['paramsErr'] = paramsErr
+            fitResults = {'a': [], 'c': [], 'noiseMatrix': [], 'gain': [], 'paramsErr': []}
+            params, paramsErr, _ = fitLeastSq(
+                    pInit,
+                    muAtAmpMasked,
+                    covAtAmpForFitMasked.ravel(),
+                    model,
+                    weightsY=covSqrtWeightsAtAmpForFitMasked.ravel()
+            )
+            a = params[:lenParams].reshape((matrixSideFit, matrixSideFit))
+            c = params[lenParams:2*lenParams].reshape((matrixSideFit, matrixSideFit))
+            noiseMatrix = params[2*lenParams:3*lenParams].reshape((matrixSideFit, matrixSideFit))
+            gain = params[-1]
+
+            fitResults['a'] = a
+            fitResults['c'] = c
+            fitResults['noiseMatrix'] = noiseMatrix
+            fitResults['gain'] = gain
+            fitResults['paramsErr'] = paramsErr
 
             # Put the information in the PTC dataset
 
@@ -646,33 +650,23 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             # masked amps.
             dataset.covariancesModel[ampName] = self.evalCovModel(
                 muAtAmp,
-                fitResults['fullModel']['a'],
-                fitResults['fullModel']['c'],
-                fitResults['fullModel']['noiseMatrix'],
-                fitResults['fullModel']['gain']
+                fitResults['a'],
+                fitResults['c'],
+                fitResults['noiseMatrix'],
+                fitResults['gain']
             )
             dataset.covariancesSqrtWeights[ampName] = covSqrtWeightsAtAmp
-            dataset.aMatrix[ampName] = fitResults['fullModel']['a']
-            dataset.bMatrix[ampName] = fitResults['fullModel']['c']/fitResults['fullModel']['a']
-            dataset.covariancesModelNoB[ampName] = self.evalCovModel(
-                muAtAmp,
-                fitResults['fullModelNoB']['a'],
-                fitResults['fullModelNoB']['c'],
-                fitResults['fullModelNoB']['noiseMatrix'],
-                fitResults['fullModelNoB']['gain'],
-                setBtoZero=True
-            )
-            dataset.aMatrixNoB[ampName] = fitResults['fullModelNoB']['a']
-            dataset.gain[ampName] = fitResults['fullModel']['gain']
-            dataset.gainErr[ampName] = fitResults['fullModel']['paramsErr'][-1]
-            readoutNoiseSquared = fitResults['fullModel']['noiseMatrix'][0][0]
+            dataset.aMatrix[ampName] = fitResults['a']
+            dataset.bMatrix[ampName] = fitResults['c']/fitResults['a']
+            dataset.gain[ampName] = fitResults['gain']
+            dataset.gainErr[ampName] = fitResults['paramsErr'][-1]
+            readoutNoiseSquared = fitResults['noiseMatrix'][0][0]
             readoutNoise = np.sqrt(np.fabs(readoutNoiseSquared))
             dataset.noise[ampName] = readoutNoise
-            readoutNoiseSquaredSigma = fitResults['fullModel']['paramsErr'][2*lenParams]
+            readoutNoiseSquaredSigma = fitResults['paramsErr'][2*lenParams]
             noiseErr = 0.5*(readoutNoiseSquaredSigma/np.fabs(readoutNoiseSquared))*readoutNoise
             dataset.noiseErr[ampName] = noiseErr
-            dataset.noiseMatrix[ampName] = fitResults['fullModel']['noiseMatrix']
-            dataset.noiseMatrixNoB[ampName] = fitResults['fullModelNoB']['noiseMatrix']
+            dataset.noiseMatrix[ampName] = fitResults['noiseMatrix']
 
             dataset.finalVars[ampName] = covAtAmp[:, 0, 0].copy()
             dataset.finalVars[ampName][~maskAtAmp] = np.nan
@@ -1090,10 +1084,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             dataset.covariancesModel[amp] = listNanMatrixFit
             dataset.aMatrix[amp] = nanMatrixFit
             dataset.bMatrix[amp] = nanMatrixFit
-            dataset.covariancesModelNoB[amp] = listNanMatrixFit
-            dataset.aMatrixNoB[amp] = nanMatrixFit
             dataset.noiseMatrix[amp] = nanMatrixFit
-            dataset.noiseMatrixNoB[amp] = nanMatrixFit
 
         def errFunc(p, x, y):
             return ptcFunc(p, x) - y
