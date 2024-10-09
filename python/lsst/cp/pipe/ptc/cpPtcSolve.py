@@ -82,7 +82,7 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
         allowed={
             "POLYNOMIAL": "n-degree polynomial (use 'polynomialFitDegree' to set 'n').",
             "EXPAPPROXIMATION": "Approximation in Astier+19 (Eq. 16).",
-            "FULLCOVARIANCENOB": "Full covariances model in Astier+19 (Eq. 15)",
+            "FULLCOVARIANCE_NO_B": "Full covariances model in Astier+19 (Eq. 15)",
             "FULLCOVARIANCE": "Full covariances model in Astier+19 (Eq. 20)",
         }
     )
@@ -400,7 +400,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         index = np.argsort(detectorMeans)
         datasetPtc.sort(index)
 
-        if self.config.ptcFitType in ["FULLCOVARIANCE", "FULLCOVARIANCENOB"]::
+        if self.config.ptcFitType in ["FULLCOVARIANCE", "FULLCOVARIANCE_NO_B"]:
             # Fit the measured covariances vs mean signal to
             # the Astier+19 full model (Eq. 20). Before that
             # do a preliminary fit to the variance (C_00) vs mean
@@ -486,7 +486,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             `PhotonTransferCurveDatase`.
         """
         fitType = dataset.ptcFitType
-        if fitType in ["FULLCOVARIANCE", "FULLCOVARIANCENOB"]:
+        if fitType in ["FULLCOVARIANCE", "FULLCOVARIANCE_NO_B"]:
             # This model uses the full covariance matrix in the fit.
             # The PTC is technically defined as variance vs signal,
             # with variance = Cov_00
@@ -609,10 +609,10 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             # Fit full model (Eq. 20 of Astier+19) and same model with
             # b=0 (c=0 in this code).
             pInit = np.concatenate((a0.ravel(), c0.ravel(), noiseMatrix0.ravel(), np.array(gain0)), axis=None)
-            
+
             # Pick the correct full covariance model function
             model = self.funcFullCovarianceModel
-            if dataset.ptcFitType == "FULLCOVARIANCENOB":
+            if dataset.ptcFitType == "FULLCOVARIANCE_NO_B":
                 model = self.funcFullCovarianceModelNoB
 
             fitResults = {'a': [], 'c': [], 'noiseMatrix': [], 'gain': [], 'paramsErr': []}
@@ -623,6 +623,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                     model,
                     weightsY=covSqrtWeightsAtAmpForFitMasked.ravel()
             )
+            if dataset.ptcFitType == "FULLCOVARIANCE_NO_B":
+                import IPython; IPython.embed()
             a = params[:lenParams].reshape((matrixSideFit, matrixSideFit))
             c = params[lenParams:2*lenParams].reshape((matrixSideFit, matrixSideFit))
             noiseMatrix = params[2*lenParams:3*lenParams].reshape((matrixSideFit, matrixSideFit))
@@ -653,7 +655,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 fitResults['a'],
                 fitResults['c'],
                 fitResults['noiseMatrix'],
-                fitResults['gain']
+                fitResults['gain'],
+                setBtoZero=dataset.ptcFitType == "FULLCOVARIANCE_NO_B",
             )
             dataset.covariancesSqrtWeights[ampName] = covSqrtWeightsAtAmp
             dataset.aMatrix[ampName] = fitResults['a']
