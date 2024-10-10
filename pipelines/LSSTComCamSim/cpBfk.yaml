@@ -1,4 +1,33 @@
-description: cp_pipe brighter-fatter kernel calibration construction.
+description: LSSTComCamSim Brighter-Fatter kernel calibration construction.
 instrument: lsst.obs.lsst.LsstComCamSim
 imports:
-  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpBfk.yaml
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpBfkLSST.yaml
+tasks:
+  cpBfkIsr:
+    class: lsst.ip.isr.IsrTaskLSST
+    config:
+      overscanCamera.defaultDetectorConfig.defaultAmpConfig.serialOverscanConfig.fitType: "MEAN"
+      overscanCamera.defaultDetectorConfig.defaultAmpConfig.doParallelOverscan: false
+      doCrosstalk: false
+      doLinearize: false
+      doDeferredCharge: false
+      doDefect: false
+  cpBfkPtcExtract:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
+    config:
+      maximumRangeCovariancesAstier: 8
+      useEfdPhotodiodeData: false
+      auxiliaryHeaderKeys: []
+  cpBfkPtcSolve:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
+    config:
+      maximumRangeCovariancesAstier: 8
+      maximumRangeCovariancesAstierFullCovFit: 8
+  # TODO DM-46439: This can be renamed back to cpBfkSolve when repos
+  # are cleaned up for the previous dimensionality error.
+  cpBfkSolveX:
+    class: lsst.cp.pipe.BrighterFatterKernelSolveTask
+    config:
+      useCovModelSample: true
+      python: |
+        config.covModelFluxSample = {"ALL_AMPS": 100000.0}
