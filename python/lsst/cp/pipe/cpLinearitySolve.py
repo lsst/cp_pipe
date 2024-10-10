@@ -611,7 +611,11 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 # fits deviations from linearity, rather than the linear
                 # function itself which is degenerate with the gain.
 
-                nodes = np.linspace(0.0, np.max(inputOrdinate[mask]), self.config.splineKnots)
+                if self.config.minLinearAdu == 0.0:
+                    nodes = np.linspace(self.config.minLinearAdu, np.max(inputOrdinate[mask]), self.config.splineKnots)
+                else:
+                    nodes = np.linspace(self.config.minLinearAdu, np.max(inputOrdinate[mask]), self.config.splineKnots - 1)
+                    nodes = np.concatenate((np.array([0.0]), nodes))
 
                 if temperatureValues is not None:
                     temperatureValuesScaled = temperatureValues - np.median(temperatureValues[mask])
