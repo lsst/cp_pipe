@@ -938,7 +938,9 @@ class AstierSplineLinearityFitter:
     addition, if config.doSplineFitTemperature is True then
     the fit will adjust mu such that
     mu = mu_input*(1 + alpha*(temperature_scaled))
-    and temperature_scaled = T - T_ref.
+    and temperature_scaled = T - T_ref. If config.doSplineFitMjd
+    is True then the fit will adjust mu such that
+    mu = mu_input*(1 + beta*(temperature_scaled))
 
     The fit has additional constraints to ensure that the spline
     goes through the (0, 0) point, as well as a normalization
@@ -973,6 +975,10 @@ class AstierSplineLinearityFitter:
         Fit for temperature scaling?
     temperature_scaled : `np.ndarray` (M,), optional
         Input scaled temperature values (T - T_ref).
+    fit_mjd : `bool`, optional
+        Fit for mjd scaling?
+    mjd_scaled : `np.ndarray` (M,), optional
+        Input scaled mjd values (mjd - mjd_ref).
     """
     def __init__(
         self,
@@ -987,6 +993,8 @@ class AstierSplineLinearityFitter:
         weight_pars_start=[1.0, 0.0],
         fit_temperature=False,
         temperature_scaled=None,
+        fit_mjd=False,
+        mjd_scaled=None,
     ):
         self._pd = pd
         self._mu = mu
@@ -996,6 +1004,7 @@ class AstierSplineLinearityFitter:
         self._fit_weights = fit_weights
         self._weight_pars_start = weight_pars_start
         self._fit_temperature = fit_temperature
+        self._fit_mjd = fit_mjd
 
         self._nodes = nodes
         if nodes[0] != 0.0:
@@ -1025,6 +1034,13 @@ class AstierSplineLinearityFitter:
                 raise ValueError("temperature_scaled must be the same length as input mu.")
         self._temperature_scaled = temperature_scaled
 
+        if mjd_scaled is None:
+            mjd_scaled = np.zeros(len(self._mu))
+        else:
+            if len(np.atleast_1d(mjd_scaled)) != len(self._mu):
+                raise ValueError("mjd_scaled must be the same length as input mu.")
+        self._mjd_scaled = mjd_scaled
+
         # Values to regularize spline fit.
         self._x_regularize = np.linspace(0.0, self._mu[self.mask].max(), 100)
 
@@ -1035,6 +1051,7 @@ class AstierSplineLinearityFitter:
             "offset": np.zeros(0, dtype=np.int64),
             "weight_pars": np.zeros(0, dtype=np.int64),
             "temperature_coeff": np.zeros(0, dtype=np.int64),
+            "mjd_coeff": np.zeros(0, dtype=np.int64),
         }
         if self._fit_offset:
             self.par_indices["offset"] = np.arange(1) + (
@@ -1054,6 +1071,14 @@ class AstierSplineLinearityFitter:
                 + len(self.par_indices["offset"])
                 + len(self.par_indices["weight_pars"])
             )
+        if self._fit_mjd:
+            self.par_indices["mjd_coeff"] = np.arange(1) + (
+                len(self.par_indices["values"])
+                + len(self.par_indices["groups"])
+                + len(self.par_indices["offset"])
+                + len(self.par_indices["weight_pars"])
+                + len(self.par_indices["temperature_coeff"])
+            )
 
     @staticmethod
     def compute_weights(weight_pars, mu, mask):
@@ -1071,15 +1096,17 @@ class AstierSplineLinearityFitter:
             Parameter array, with spline values (one for each node) followed
             by proportionality constants (one for each group); one extra
             for the offset O (if fit_offset was set to True); two extra
-            for the weights (if fit_weights was set to True); and one
+            for the weights (if fit_weights was set to True); one
             extra for the temperature coefficient (if fit_temperature was
-            set to True).
+            set to True); one extra for the mjd coefficient (if
+            fit_mjd was set to True).
         """
         npt = (len(self.par_indices["values"])
                + len(self.par_indices["groups"])
                + len(self.par_indices["offset"])
                + len(self.par_indices["weight_pars"])
-               + len(self.par_indices["temperature_coeff"]))
+               + len(self.par_indices["temperature_coeff"])
+               + len(self.par_indices["mjd_coeff"]))
         p0 = np.zeros(npt)
 
         # Do a simple linear fit and set all the constants to this.
@@ -1095,6 +1122,7 @@ class AstierSplineLinearityFitter:
             self._pd,
             self._mu,
             self._temperature_scaled,
+            self._mjd_scaled,
         )
         # ...and adjust the linear parameters accordingly.
         p0[self.par_indices["groups"]] *= np.median(ratio_model[self.mask])
@@ -1108,6 +1136,7 @@ class AstierSplineLinearityFitter:
             self._pd,
             self._mu,
             self._temperature_scaled,
+            self._mjd_scaled,
         )
 
         # And compute a first guess of the spline nodes.
@@ -1139,6 +1168,7 @@ class AstierSplineLinearityFitter:
         pd,
         mu,
         temperature_scaled,
+        mjd_scaled,
         return_spline=False,
     ):
         """Compute the ratio model values.
@@ -1165,6 +1195,8 @@ class AstierSplineLinearityFitter:
             Array of flat means.
         temperature_scaled : `np.ndarray` (N,)
             Array of scaled temperature values.
+        mjd_scaled : `np.ndarray` (N,)
+            Array of scaled mjd values.
         return_spline : `bool`, optional
             Return the spline interpolation as well as the model ratios?
 
@@ -1186,6 +1218,9 @@ class AstierSplineLinearityFitter:
             mu_corr = mu*(1. + pars[par_indices["temperature_coeff"]]*temperature_scaled)
         else:
             mu_corr = mu
+
+        if len(par_indices["mjd_coeff"]) == 1:
+            mu_corr = mu_corr*(1. + pars[par_indices["mjd_coeff"]]*mjd_scaled)
 
         numerator = mu_corr - spl.interpolate(mu_corr)
         if len(par_indices["offset"]) == 1:
@@ -1211,9 +1246,10 @@ class AstierSplineLinearityFitter:
             Initial parameter array, with spline values (one for each node)
             followed by proportionality constants (one for each group); one
             extra for the offset O (if fit_offset was set to True); two extra
-            for the weights (if fit_weights was set to True); and one
+            for the weights (if fit_weights was set to True); one
             extra for the temperature coefficient (if fit_temperature was
-            set to True).
+            set to True); and one extra for the mjd coefficient (if
+            fit_mjd was set to True).
         min_iter : `int`, optional
             Minimum number of fit iterations.
         max_iter : `int`, optional
@@ -1288,6 +1324,8 @@ class AstierSplineLinearityFitter:
         dof = self.mask.sum() - self.ngroup
         if self._fit_temperature:
             dof -= 1
+        if self._fit_mjd:
+            dof -= 1
         if self._fit_offset:
             dof -= 1
         if self._fit_weights:
@@ -1305,6 +1343,7 @@ class AstierSplineLinearityFitter:
             self._pd,
             self._mu,
             self._temperature_scaled,
+            self._mjd_scaled,
             return_spline=True,
         )
 

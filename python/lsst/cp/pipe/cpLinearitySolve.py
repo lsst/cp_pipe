@@ -286,6 +286,11 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
         default=None,
         optional=True,
     )
+    doSplineFitMjd = pexConfig.Field(
+        dtype=bool,
+        doc="Fit mjd (time) coefficient in spline fit?",
+        default=False,
+    )
     useLinearizerPtc = pexConfig.Field(
         dtype=bool,
         doc="Use a linearizer ptc in a single pipeline?",
@@ -462,6 +467,12 @@ class LinearitySolveTask(pipeBase.PipelineTask):
             if self.config.linearityType == "Spline" and temperatureValues is not None:
                 mask &= np.isfinite(temperatureValues)
 
+            if self.config.linearityType == "Spline" and self.config.doSplineFitMjd:
+                mjds = inputPtc.rawMjds[ampName]
+                mask &= np.isfinite(mjds)
+            else:
+                mjds = None
+
             if self.config.usePhotodiode:
                 modExpTimes = inputPtc.photoCharges[ampName].copy()
                 # Make sure any exposure pairs that do not have photodiode data
@@ -606,6 +617,10 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                     temperatureValuesScaled = temperatureValues - np.median(temperatureValues[~mask])
                 else:
                     temperatureValuesScaled = None
+                if mjds is not None:
+                    mjdsScaled = mjds - np.median(mjds[~mask])
+                else:
+                    mjdsScaled = None
 
                 fitter = AstierSplineLinearityFitter(
                     nodes,
@@ -619,6 +634,8 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                     weight_pars_start=self.config.splineFitWeightParsStart,
                     fit_temperature=self.config.doSplineFitTemperature,
                     temperature_scaled=temperatureValuesScaled,
+                    fit_mjd=self.config.doSplineFitMjd,
+                    mjd_scaled=mjdsScaled,
                 )
                 p0 = fitter.estimate_p0()
                 pars = fitter.fit(
@@ -649,6 +666,9 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 if self.config.doSplineFitTemperature:
                     inputOrdinate *= (1.0
                                       + pars[fitter.par_indices["temperature_coeff"]]*temperatureValuesScaled)
+                if self.config.doSplineFitMjd:
+                    inputOrdinate *= (1.0
+                                      + pars[fitter.par_indices["mjd_coeff"]]*mjdsScaled)
                 # Divide by the relative scaling of the different groups.
                 for j, group_index in enumerate(fitter.group_indices):
                     inputOrdinate[group_index] /= (pars[fitter.par_indices["groups"][j]] / linearFit[1])
@@ -667,6 +687,7 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                     pars[fitter.par_indices["offset"]],
                     pars[fitter.par_indices["weight_pars"]],
                     pars[fitter.par_indices["temperature_coeff"]],
+                    pars[fitter.par_indices["mjd_coeff"]],
                 ))
                 polyFitErr = np.zeros_like(polyFit)
                 chiSq = linearityChisq
