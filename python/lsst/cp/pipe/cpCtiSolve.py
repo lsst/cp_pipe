@@ -70,7 +70,7 @@ class CpCtiSolveConfig(pipeBase.PipelineTaskConfig,
     maxImageMean = pexConfig.Field(
         dtype=float,
         default=150000.0,
-        doc="Upper limit on acceptable image flux mean.",
+        doc="Upper limit on acceptable image flux mean (electron).",
     )
     localOffsetColumnRange = pexConfig.ListField(
         dtype=int,
@@ -82,12 +82,12 @@ class CpCtiSolveConfig(pipeBase.PipelineTaskConfig,
         dtype=bool,
         default=True,
         doc="Use gains in calculation.",
+        deprecated="This field is no longer used. Will be removed after v28.",
     )
-
     maxSignalForCti = pexConfig.Field(
         dtype=float,
         default=10000.0,
-        doc="Upper flux limit to use for CTI fit.",
+        doc="Upper flux limit to use for CTI fit (electron).",
     )
     globalCtiColumnRange = pexConfig.ListField(
         dtype=int,
@@ -182,7 +182,7 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
         detector = camera[detectorId]
 
         # Initialize with detector.
-        calib = DeferredChargeCalib(camera=camera, detector=detector, useGains=self.config.useGains)
+        calib = DeferredChargeCalib(camera=camera, detector=detector)
 
         localCalib = self.solveLocalOffsets(inputMeasurements, calib, detector)
 

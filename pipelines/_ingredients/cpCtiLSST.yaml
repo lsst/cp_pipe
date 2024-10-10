@@ -1,0 +1,29 @@
+description: cp_pipe CTI calibration construction
+tasks:
+  cpCtiIsr:
+    class: lsst.ip.isr.IsrTaskLSST
+    config:
+      connections.ccdExposure: "raw"
+      connections.outputExposure: "cpCtiIsrExp"
+      connections.outputStatistics: "cpCtiStatistics"
+      python: |
+        from lsst.cp.pipe import configureIsrTaskLSSTForCalibrations
+
+        configureIsrTaskLSSTForCalibrations(config)
+
+        config.doCalculateStatistics = True
+        config.isrStats.doCtiStatistics = True
+
+        config.doDefect = True
+        config.doApplyGains = True
+
+        # TODO: toggle to True when DNL correction is supported
+        # config.dodiffNonLinearCorrection = True
+        config.doLinearize = True
+  cpCtiSolve:
+    class: lsst.cp.pipe.CpCtiSolveTask
+    config:
+      connections.inputMeasurements: "cpCtiStatistics"
+      connections.outputCalib: "cti"
+contracts:
+  - cpCtiSolve.connections.inputMeasurements == cpCtiIsr.connections.outputStatistics
