@@ -570,6 +570,14 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
             auxDict["observationReason"] = visitInfo.getObservationReason()
             auxDict["scienceProgram"] = visitInfo.getScienceProgram()
 
+            try:
+                mjd1 = visitInfo.getDate().toAstropy().mjd
+                mjd2 = exp2.info.getVisitInfo().getDate().mjd
+                mjd = (mjd1 + mjd2) / 2.
+            except RuntimeError:
+                # No valid mjd; usually test data.
+                mjd = np.nan
+
             nAmpsNan = 0
             partialPtcDataset = PhotonTransferCurveDataset(
                 ampNames, 'PARTIAL',
@@ -615,6 +623,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                         inputExpIdPair=(expId1, expId2),
                         rawExpTime=expTime,
                         expIdMask=False,
+                        rawMjd=mjd,
                     )
                     continue
 
@@ -745,6 +754,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                     histChi2Dof=histChi2Dof,
                     kspValue=kspValue,
                     rowMeanVariance=rowMeanVariance,
+                    rawMjd=mjd,
                 )
 
             partialPtcDataset.setAuxValuesPartialDataset(auxDict)
