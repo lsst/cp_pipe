@@ -572,7 +572,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
 
             try:
                 mjd1 = visitInfo.getDate().toAstropy().mjd
-                mjd2 = exp2.info.getVisitInfo().getDate().mjd
+                mjd2 = exp2.info.getVisitInfo().getDate().toAstropy().mjd
                 mjd = (mjd1 + mjd2) / 2.
             except RuntimeError:
                 # No valid mjd; usually test data.
