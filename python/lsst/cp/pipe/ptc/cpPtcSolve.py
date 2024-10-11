@@ -619,11 +619,11 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 pInit = np.concatenate((a0.ravel(), noiseMatrix0.ravel(), np.array(gain0)), axis=None)
 
             params, paramsErr, _ = fitLeastSq(
-                    pInit,
-                    muAtAmpMasked,
-                    covAtAmpForFitMasked.ravel(),
-                    model,
-                    weightsY=covSqrtWeightsAtAmpForFitMasked.ravel(),
+                pInit,
+                muAtAmpMasked,
+                covAtAmpForFitMasked.ravel(),
+                model,
+                weightsY=covSqrtWeightsAtAmpForFitMasked.ravel(),
             )
 
             if dataset.ptcFitType == "FULLCOVARIANCE_NO_B":
