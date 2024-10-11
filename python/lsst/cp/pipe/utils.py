@@ -973,6 +973,12 @@ class AstierSplineLinearityFitter:
         Fit for temperature scaling?
     temperature_scaled : `np.ndarray` (M,), optional
         Input scaled temperature values (T - T_ref).
+    max_signal_nearly_linear : `float`, optional
+        Maximum signal that we are confident the input is nearly
+        linear. This is used both for regularization, and for
+        fitting the raw slope. Usually set to the ptc turnoff,
+        above which we allow the spline to significantly deviate
+        and do not demand the deviation to average to zero.
     """
     def __init__(
         self,
@@ -987,6 +993,7 @@ class AstierSplineLinearityFitter:
         weight_pars_start=[1.0, 0.0],
         fit_temperature=False,
         temperature_scaled=None,
+        max_signal_nearly_linear=None,
     ):
         self._pd = pd
         self._mu = mu
@@ -1026,7 +1033,10 @@ class AstierSplineLinearityFitter:
         self._temperature_scaled = temperature_scaled
 
         # Values to regularize spline fit.
-        self._x_regularize = np.linspace(0.0, self._mu[self.mask].max(), 100)
+        if max_signal_nearly_linear is None:
+            max_signal_nearly_linear = self._mu[self.mask].max()
+        self._max_signal_nearly_linear = max_signal_nearly_linear
+        self._x_regularize = np.linspace(0.0, self._max_signal_nearly_linear, 100)
 
         # Set up the indices for the fit parameters.
         self.par_indices = {
@@ -1083,7 +1093,8 @@ class AstierSplineLinearityFitter:
         p0 = np.zeros(npt)
 
         # Do a simple linear fit and set all the constants to this.
-        linfit = np.polyfit(self._pd[self.mask], self._mu[self.mask], 1)
+        to_fit = (self._mu[self.mask] < self._max_signal_nearly_linear)
+        linfit = np.polyfit(self._pd[self.mask][to_fit], self._mu[self.mask][to_fit], 1)
         p0[self.par_indices["groups"]] = linfit[0]
 
         # Look at the residuals...

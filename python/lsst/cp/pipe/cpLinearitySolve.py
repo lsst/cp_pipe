@@ -619,6 +619,7 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                     weight_pars_start=self.config.splineFitWeightParsStart,
                     fit_temperature=self.config.doSplineFitTemperature,
                     temperature_scaled=temperatureValuesScaled,
+                    max_signal_nearly_linear=inputPtc.ptcTurnoff[ampName],
                 )
                 p0 = fitter.estimate_p0()
                 pars = fitter.fit(
