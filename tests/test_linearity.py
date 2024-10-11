@@ -64,7 +64,16 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
         for amp in self.detector:
             self.amp_names.append(amp.getName())
 
-    def _create_ptc(self, amp_names, exp_times, means, ccobcurr=None, photo_charges=None, temperatures=None):
+    def _create_ptc(
+        self,
+        amp_names,
+        exp_times,
+        means,
+        ccobcurr=None,
+        photo_charges=None,
+        temperatures=None,
+        ptc_turnoff=None,
+    ):
         """
         Create a PTC with values for linearity tests.
 
@@ -82,6 +91,8 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
             Array of photoCharges to put into ptc.
         temperatures : `np.ndarray`, optional
             Array of temperatures (TEMP6) to put into ptc.
+        ptc_turnoff : `float`, optional
+            Turnoff value to set (by hand) for testing.
 
         Returns
         -------
@@ -133,10 +144,23 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
         config.maximumRangeCovariancesAstier = 1
         config.maxDeltaInitialPtcOutlierFit = 100_000.0
         solve_task = PhotonTransferCurveSolveTask(config=config)
-        ptc = solve_task.run(datasets).outputPtcDataset
+        # Suppress logging here.
+        with self.assertNoLogs(level=logging.CRITICAL):
+            ptc = solve_task.run(datasets).outputPtcDataset
 
         # Make the last amp a bad amp.
         ptc.badAmps = [amp_names[-1]]
+
+        if ptc_turnoff is not None:
+            for amp_name in amp_names:
+                if amp_name in ptc.badAmps:
+                    ptc.ptcTurnoff[amp_name] = np.nan
+                    ptc.finalMeans[amp_name][:] = np.nan
+                else:
+                    ptc.ptcTurnoff[amp_name] = ptc_turnoff
+                    high = (ptc.rawMeans[amp_name] > ptc_turnoff)
+                    ptc.expIdMask[amp_name][high] = False
+                    ptc.finalMeans[amp_name][high] = np.nan
 
         return ptc
 
@@ -402,6 +426,7 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
         config.doSplineFitWeights = do_weight_fit
         config.splineFitWeightParsStart = [7.2e-5, 1e-4]
         config.doSplineFitTemperature = do_temperature_fit
+        config.maxFracLinearityDeviation = 0.05
 
         if do_pd_offsets:
             config.splineGroupingColumn = "CCOBCURR"
@@ -568,8 +593,57 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
             turnoff, max_signal = task._computeTurnoffAndMax(abscissa, ordinate, ptc_mask)
 
         # This was visually inspected such that these are reasonable.
-        np.testing.assert_almost_equal(turnoff, 106938.47971957)
-        np.testing.assert_almost_equal(max_signal, 108702.48845118)
+        np.testing.assert_almost_equal(turnoff, 99756.30512572)
+        np.testing.assert_almost_equal(max_signal, 108730.32842316)
+
+        # Do the linearity fit with these data.
+        ptc = self._create_ptc(
+            self.amp_names,
+            abscissa * 1000000000,
+            ordinate,
+            photo_charges=abscissa,
+            ptc_turnoff=np.max(ordinate[ptc_mask]),
+        )
+        config = LinearitySolveTask.ConfigClass()
+        config.linearityType = "Spline"
+        config.usePhotodiode = True
+        config.minLinearAdu = 30.0
+        config.splineKnots = 10
+        config.doSplineFitOffset = False
+        config.doSplineFitWeights = False
+        config.splineFitWeightParsStart = [7.2e-5, 1e-4]
+        config.doSplineFitTemperature = False
+
+        task = LinearitySolveTask(config=config)
+        linearizer = task.run(
+            ptc,
+            [self.dummy_exposure],
+            self.camera,
+            self.input_dims,
+        ).outputLinearizer
+
+        # Confirm that the turnoff for the good amps is the same.
+        for amp_name in self.amp_names:
+            if amp_name in ptc.badAmps:
+                self.assertTrue(np.isnan(linearizer.linearityTurnoff[amp_name]))
+                self.assertTrue(np.isnan(linearizer.linearityMaxSignal[amp_name]))
+            else:
+                self.assertEqual(linearizer.linearityTurnoff[amp_name], turnoff)
+                self.assertEqual(linearizer.linearityMaxSignal[amp_name], max_signal)
+
+                # Check that the linearizer gives reasonable values over the
+                # range up to the ptc turnoff.
+                nodes, values = np.split(linearizer.linearityCoeffs[amp_name], 2)
+                self.assertEqual(values[0], 0.0)
+                to_test = (nodes > 0.0) & (nodes < ptc.ptcTurnoff[amp_name])
+                np.testing.assert_array_less(np.abs(values[to_test]/nodes[to_test]), 0.002)
+
+                # Check the residuals are reasonable up to the linearity
+                # turnoff.
+                to_test = ((ptc.rawMeans[amp_name] <= linearizer.linearityTurnoff[amp_name])
+                           & np.isfinite(ptc.rawMeans[amp_name]))
+                residuals_scaled = linearizer.fitResiduals[amp_name][to_test]/ptc.rawMeans[amp_name][to_test]
+                np.testing.assert_array_less(np.abs(residuals_scaled), 0.0015)
 
         # Try again after cutting it off, make sure it warns.
         cutoff = (ordinate < turnoff)
@@ -583,6 +657,8 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
         self.assertIn("No linearity turnoff", cm.output[0])
 
     def _comcam_raw_linearity_data(self):
+        # These are LSSTComCam measurements taken from a calibration
+        # run as part of DM-46357.
         photo_charges = np.array(
             [
                 3.22636000e-10, 3.38780400e-10, 3.54841300e-10, 3.87126000e-10,
