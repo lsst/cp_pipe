@@ -260,17 +260,17 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         expectedNoiseMatrix = {
             "FULLCOVARIANCE": np.array(
                 [[8.99474598, 9.94916264, -27.90587299],
-                [-2.95079527, -17.11827641, -47.88156244],
-                [5.24915021, -3.25786165, 26.09634067]],
+                 [-2.95079527, -17.11827641, -47.88156244],
+                 [5.24915021, -3.25786165, 26.09634067]],
             ),
             "FULLCOVARIANCE_NO_B": np.array(
                 [[8.71049338, 12.48584043, -37.06585088],
-                [-4.80523971, -23.29102809, -66.37815343],
-                [7.48654766, -4.10168337, 35.64469824]],
+                 [-4.80523971, -23.29102809, -66.37815343],
+                 [7.48654766, -4.10168337, 35.64469824]],
             ),
         }
 
-        for fitType in ["FULLCOVARIANCE_NO_B"]:
+        for fitType in ["FULLCOVARIANCE", "FULLCOVARIANCE_NO_B"]:
             solveConfig.ptcFitType = fitType
             solveTask = cpPipe.ptc.PhotonTransferCurveSolveTask(config=solveConfig)
 
@@ -293,14 +293,14 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                 # Check that the PTC turnoff is correctly computed.
                 # This will be different for the C:0,0 amp.
                 if amp == "C:0,0":
-                    self.assertAlmostEqual(ptc.ptcTurnoff[amp], ptc.rawMeans[ampName][-3])
+                    self.assertAlmostEqual(ptc.ptcTurnoff[amp], ptc.rawMeans[amp][-3])
                 else:
-                    self.assertAlmostEqual(ptc.ptcTurnoff[amp], ptc.rawMeans[ampName][-1])
+                    self.assertAlmostEqual(ptc.ptcTurnoff[amp], ptc.rawMeans[amp][-1])
 
-                # Test that all the quantities are correctly ordered and have
-                # not accidentally been masked. We check every other output ([::2])
-                # because these datasets are in pairs of [real, dummy] to
-                # match the inputs to the extract task.
+                # Test that all the quantities are correctly ordered and
+                # have not accidentally been masked. We check every other
+                # output ([::2]) because these datasets are in pairs of
+                # [real, dummy] to match the inputs to the extract task.
                 for i, extractPtc in enumerate(resultsExtract.outputCovariances[::2]):
                     self.assertFloatsAlmostEqual(
                         extractPtc.rawExpTimes[ampName][0],
@@ -353,9 +353,9 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                         np.nanmedian(ptc.noiseList[ampName]) * ptc.gain[ampName],
                         rtol=0.05,
                     )
-                    # If the noise error is greater than the noise, something
-                    # is seriously wrong. Possibly some kind of gain application
-                    # mismatch.
+                    # If the noise error is greater than the noise,
+                    # something is seriously wrong. Possibly some
+                    # kind of gain application mismatch.
                     self.assertLess(
                         ptc.noiseErr[ampName],
                         ptc.noise[ampName],
@@ -368,17 +368,19 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                 ) / ptc.covariancesModel[amp][mask, 0, 0]
                 np.testing.assert_array_less(np.abs(values), 2e-3)
 
-                values = (
-                    ptc.covariancesModel[amp][mask, 1, 1] - ptc.covariances[amp][mask, 1, 1]
-                ) / ptc.covariancesModel[amp][mask, 1, 1]
-                np.testing.assert_array_less(np.abs(values), 0.3)
+                if ptc.ptcFitType == "FULLCOVARIANCE":
+                    values = (
+                        ptc.covariancesModel[amp][mask, 0, 1] - ptc.covariances[amp][mask, 0, 1]
+                    ) / ptc.covariancesModel[amp][mask, 0, 1]
+                    np.testing.assert_array_less(np.abs(values), 0.3)
 
-                values = (
-                    ptc.covariancesModel[amp][mask, 1, 2] - ptc.covariances[amp][mask, 1, 2]
-                ) / ptc.covariancesModel[amp][mask, 1, 2]
-                np.testing.assert_array_less(np.abs(values), 0.3)
+                    values = (
+                        ptc.covariancesModel[amp][mask, 1, 0] - ptc.covariances[amp][mask, 1, 0]
+                    ) / ptc.covariancesModel[amp][mask, 1, 0]
+                    np.testing.assert_array_less(np.abs(values), 0.3)
 
-            # And test that the auxiliary values are there and correctly ordered.
+            # And test that the auxiliary values are there and
+            # correctly ordered.
             self.assertIn('CCOBCURR', ptc.auxValues)
             self.assertIn('CCDTEMP', ptc.auxValues)
             firstExpIds = np.array([i for i, _ in ptc.inputExpIdPairs['C:0,0']], dtype=np.float64)

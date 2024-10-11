@@ -613,17 +613,17 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             fitResults = {'a': [], 'c': [], 'noiseMatrix': [], 'gain': [], 'paramsErr': []}
 
             # Pick the correct full covariance model function
-            model = self.funcFullCovarianceModel
+            ptcModel = self.funcFullCovarianceModel
             if dataset.ptcFitType == "FULLCOVARIANCE_NO_B":
-                model = self.funcFullCovarianceModelNoB
+                ptcModel = self.funcFullCovarianceModelNoB
                 pInit = np.concatenate((a0.ravel(), noiseMatrix0.ravel(), np.array(gain0)), axis=None)
 
             params, paramsErr, _ = fitLeastSq(
-                    pInit,
-                    muAtAmpMasked,
-                    covAtAmpForFitMasked.ravel(),
-                    model,
-                    weightsY=covSqrtWeightsAtAmpForFitMasked.ravel(),
+                pInit,
+                muAtAmpMasked,
+                covAtAmpForFitMasked.ravel(),
+                ptcModel,
+                weightsY=covSqrtWeightsAtAmpForFitMasked.ravel(),
             )
 
             if dataset.ptcFitType == "FULLCOVARIANCE_NO_B":
@@ -662,7 +662,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 fitResults['c'],
                 fitResults['noiseMatrix'],
                 fitResults['gain'],
-                setBtoZero=dataset.ptcFitType == "FULLCOVARIANCE_NO_B",
+                setBtoZero=(dataset.ptcFitType == "FULLCOVARIANCE_NO_B"),
             )
             dataset.covariancesSqrtWeights[ampName] = covSqrtWeightsAtAmp
             dataset.aMatrix[ampName] = fitResults['a']
@@ -782,7 +782,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         Parameters
         ----------
         params : `list`
-            Parameters of the model: aMatrix, CMatrix, noiseMatrix,
+            Parameters of the model: aMatrix, noiseMatrix,
             gain (e/adu).
         x : `numpy.array`, (N,)
             Signal mu (adu)
@@ -796,7 +796,6 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         lenParams = matrixSideFit*matrixSideFit
         aMatrix = params[:lenParams].reshape((matrixSideFit, matrixSideFit))
         cMatrix = np.zeros_like(aMatrix)
-        # params[lenParams:2*lenParams].reshape((matrixSideFit, matrixSideFit))
         noiseMatrix = params[lenParams:2*lenParams].reshape((matrixSideFit, matrixSideFit))
         gain = params[-1]
 
