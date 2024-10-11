@@ -202,7 +202,8 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
         dtype=float,
         doc="Maximum fraction deviation from raw linearity to compute "
             "linearityTurnoff and linearityMaxSignal.",
-        default=0.05,
+        # TODO: DM-46811 investigate if this can be raised to 0.05.
+        default=0.01,
     )
     minSignalFitLinearityTurnoff = pexConfig.Field(
         dtype=float,
