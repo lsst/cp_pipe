@@ -603,7 +603,7 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 nodes = np.linspace(0.0, np.max(inputOrdinate[mask]), self.config.splineKnots)
 
                 if temperatureValues is not None:
-                    temperatureValuesScaled = temperatureValues - np.median(temperatureValues[~mask])
+                    temperatureValuesScaled = temperatureValues - np.median(temperatureValues[mask])
                 else:
                     temperatureValuesScaled = None
 
