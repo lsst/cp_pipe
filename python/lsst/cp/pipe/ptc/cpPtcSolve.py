@@ -606,25 +606,31 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 covSqrtWeightsAtAmpForFitMasked
             )
 
-            # Fit full model (Eq. 20 of Astier+19) and same model with
-            # b=0 (c=0 in this code).
+            # Fit full model (Eq. 20 of Astier+19)
             pInit = np.concatenate((a0.ravel(), c0.ravel(), noiseMatrix0.ravel(), np.array(gain0)), axis=None)
+
+            # Initialize empty results dictionary
+            fitResults = {'a': [], 'c': [], 'noiseMatrix': [], 'gain': [], 'paramsErr': []}
 
             # Pick the correct full covariance model function
             model = self.funcFullCovarianceModel
             if dataset.ptcFitType == "FULLCOVARIANCE_NO_B":
                 model = self.funcFullCovarianceModelNoB
+                pInit = np.concatenate((a0.ravel(), noiseMatrix0.ravel(), np.array(gain0)), axis=None)
 
-            fitResults = {'a': [], 'c': [], 'noiseMatrix': [], 'gain': [], 'paramsErr': []}
             params, paramsErr, _ = fitLeastSq(
                     pInit,
                     muAtAmpMasked,
                     covAtAmpForFitMasked.ravel(),
                     model,
-                    weightsY=covSqrtWeightsAtAmpForFitMasked.ravel()
+                    weightsY=covSqrtWeightsAtAmpForFitMasked.ravel(),
             )
+
             if dataset.ptcFitType == "FULLCOVARIANCE_NO_B":
-                import IPython; IPython.embed()
+                zeros = np.zeros_like(params[:lenParams])
+                params = np.insert(params, lenParams, zeros)
+                paramsErr = np.insert(paramsErr, lenParams, zeros)
+
             a = params[:lenParams].reshape((matrixSideFit, matrixSideFit))
             c = params[lenParams:2*lenParams].reshape((matrixSideFit, matrixSideFit))
             noiseMatrix = params[2*lenParams:3*lenParams].reshape((matrixSideFit, matrixSideFit))
@@ -638,7 +644,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
 
             # Put the information in the PTC dataset
 
-            # Not used when ptcFitType is 'FULLCOVARIANCE'
+            # Not used when ptcFitType is 'FULLCOVARIANCE*'
             dataset.ptcFitPars[ampName] = np.array([np.nan])
             dataset.ptcFitParsError[ampName] = np.array([np.nan])
             dataset.ptcFitChiSq[ampName] = np.nan
@@ -789,8 +795,9 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         matrixSideFit = self.config.maximumRangeCovariancesAstierFullCovFit
         lenParams = matrixSideFit*matrixSideFit
         aMatrix = params[:lenParams].reshape((matrixSideFit, matrixSideFit))
-        cMatrix = params[lenParams:2*lenParams].reshape((matrixSideFit, matrixSideFit))
-        noiseMatrix = params[2*lenParams:3*lenParams].reshape((matrixSideFit, matrixSideFit))
+        cMatrix = np.zeros_like(aMatrix)
+        # params[lenParams:2*lenParams].reshape((matrixSideFit, matrixSideFit))
+        noiseMatrix = params[lenParams:2*lenParams].reshape((matrixSideFit, matrixSideFit))
         gain = params[-1]
 
         return self.evalCovModel(x, aMatrix, cMatrix, noiseMatrix, gain, setBtoZero=True).flatten()

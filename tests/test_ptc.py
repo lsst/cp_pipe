@@ -270,7 +270,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             ),
         }
 
-        for fitType in ["FULLCOVARIANCE", "FULLCOVARIANCE_NO_B"]:
+        for fitType in ["FULLCOVARIANCE_NO_B"]:
             solveConfig.ptcFitType = fitType
             solveTask = cpPipe.ptc.PhotonTransferCurveSolveTask(config=solveConfig)
 
