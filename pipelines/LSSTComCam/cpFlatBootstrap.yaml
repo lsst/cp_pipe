@@ -1,0 +1,4 @@
+description: LSSTComCam bootstrap flat construction
+instrument: lsst.obs.lsst.LsstComCam
+imports:
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpFlatBootstrapSingleChipLSST.yaml

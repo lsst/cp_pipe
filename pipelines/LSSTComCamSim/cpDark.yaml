@@ -1,11 +1,13 @@
-description: ComCam dark calibration construction
+description: LSSTComCamSim dark calibration construction
 instrument: lsst.obs.lsst.LsstComCamSim
 imports:
-  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpDark.yaml
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpDarkLSST.yaml
 tasks:
   cpDarkIsr:
-    class: lsst.ip.isr.IsrTask
+    class: lsst.ip.isr.IsrTaskLSST
     config:
-      doLinearize: false
+      overscanCamera.defaultDetectorConfig.defaultAmpConfig.serialOverscanConfig.fitType: "MEAN"
+      overscanCamera.defaultDetectorConfig.defaultAmpConfig.doParallelOverscan: false
       doCrosstalk: false
+      doLinearize: false
       doDefect: false

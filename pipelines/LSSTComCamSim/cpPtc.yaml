@@ -1,18 +1,18 @@
-description: ComCam Photon-Transfer Curve calibration construction.
+description: LSSTComCamSim Photon-Transfer Curve calibration construction.
 instrument: lsst.obs.lsst.LsstComCamSim
 imports:
-  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpPtc.yaml
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpPtcLSST.yaml
 tasks:
   cpPtcIsr:
-    class: lsst.ip.isr.IsrTask
+    class: lsst.ip.isr.IsrTaskLSST
     config:
+      overscanCamera.defaultDetectorConfig.defaultAmpConfig.serialOverscanConfig.fitType: "MEAN"
+      overscanCamera.defaultDetectorConfig.defaultAmpConfig.doParallelOverscan: false
       doCrosstalk: false
+      doLinearize: false
       doDefect: false
   cpPtcExtract:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
     config:
-      matchExposuresType: TIME
-  cpPtcSolve:
-    class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
-    config:
-      ptcFitType: EXPAPPROXIMATION
+      useEfdPhotodiodeData: false
+      auxiliaryHeaderKeys: []

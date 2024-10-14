@@ -1,8 +1,17 @@
-description: Sky frame generation pipeline definition.
+description: Sky frame generation for LSSTComCamSim pipeline.
 instrument: lsst.obs.lsst.LsstComCamSim
 imports:
-  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpSky.yaml
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpSkyLSST.yaml
 tasks:
+  cpSkyIsr:
+    class: lsst.ip.isr.IsrTaskLSST
+    config:
+      overscanCamera.defaultDetectorConfig.defaultAmpConfig.serialOverscanConfig.fitType: "MEAN"
+      overscanCamera.defaultDetectorConfig.defaultAmpConfig.doParallelOverscan: false
+      doCrosstalk: false
+      doLinearize: false
+      doDeferredCharge: false
+      doDefect: false
   cpSkyImage:
     class: lsst.cp.pipe.CpSkyImageTask
     config:

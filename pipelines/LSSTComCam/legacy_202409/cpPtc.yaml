@@ -1,0 +1,18 @@
+description: ComCam Photon-Transfer Curve calibration construction.
+instrument: lsst.obs.lsst.LsstComCam
+imports:
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpPtc.yaml
+tasks:
+  cpPtcIsr:
+    class: lsst.ip.isr.IsrTask
+    config:
+      doCrosstalk: false
+      doDefect: false
+  cpPtcExtract:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
+    config:
+      matchExposuresType: TIME
+  cpPtcSolve:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
+    config:
+      ptcFitType: EXPAPPROXIMATION
