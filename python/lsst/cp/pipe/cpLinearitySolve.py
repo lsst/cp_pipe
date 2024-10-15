@@ -179,12 +179,12 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
     )
     maxLinearAdu = pexConfig.Field(
         dtype=float,
-        doc="Maximum DN value to use to estimate linear term.",
+        doc="Maximum adu value to use to estimate linear term; not used with spline fits.",
         default=20000.0,
     )
     minLinearAdu = pexConfig.Field(
         dtype=float,
-        doc="Minimum DN value to use to estimate linear term.",
+        doc="Minimum adu value to use to estimate linear term.",
         default=30.0,
     )
     nSigmaClipLinear = pexConfig.Field(
@@ -196,6 +196,19 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
         dtype=bool,
         doc="Ignore the expIdMask set by the PTC solver?",
         default=False,
+        deprecated="This field is no longer used. Will be removed after v28.",
+    )
+    maxFracLinearityDeviation = pexConfig.Field(
+        dtype=float,
+        doc="Maximum fraction deviation from raw linearity to compute "
+            "linearityTurnoff and linearityMaxSignal.",
+        # TODO: DM-46811 investigate if this can be raised to 0.05.
+        default=0.01,
+    )
+    minSignalFitLinearityTurnoff = pexConfig.Field(
+        dtype=float,
+        doc="Minimum signal to compute raw linearity slope for linearityTurnoff.",
+        default=1000.0,
     )
     usePhotodiode = pexConfig.Field(
         dtype=bool,
@@ -444,12 +457,8 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                     "If you really know what you are doing, you may reduce "
                     "config.splineGroupingMinPoints.")
 
-            if (len(inputPtc.expIdMask[ampName]) == 0) or self.config.ignorePtcMask:
-                self.log.warning("Mask not found for %s in detector %s in fit. Using all points.",
-                                 ampName, detector.getName())
-                mask = np.ones(len(inputPtc.expIdMask[ampName]), dtype=bool)
-            else:
-                mask = inputPtc.expIdMask[ampName].copy()
+            # We start with all finite values.
+            mask = np.isfinite(inputPtc.rawMeans[ampName])
 
             if self.config.linearityType == "Spline" and temperatureValues is not None:
                 mask &= np.isfinite(temperatureValues)
@@ -477,9 +486,25 @@ class LinearitySolveTask(pipeBase.PipelineTask):
             else:
                 inputAbscissa = inputPtc.rawExpTimes[ampName].copy()
 
+            # Compute linearityTurnoff and linearitySignalMax.
+            turnoff, maxSignal = self._computeTurnoffAndMax(
+                inputAbscissa[mask],
+                inputPtc.rawMeans[ampName][mask],
+                inputPtc.expIdMask[ampName][mask],
+                ampName=ampName,
+            )
+            linearizer.linearityTurnoff[ampName] = turnoff
+            linearizer.linearityMaxSignal[ampName] = maxSignal
+
             inputOrdinate = inputPtc.rawMeans[ampName].copy()
 
-            mask &= (inputOrdinate < self.config.maxLinearAdu)
+            if self.config.linearityType != 'Spline':
+                mask &= (inputOrdinate < self.config.maxLinearAdu)
+            else:
+                # For spline fits, cut above the turnoff.
+                self.log.info("Using linearityTurnoff of %.4f adu for amplifier %s", turnoff, ampName)
+                mask &= (inputOrdinate <= turnoff)
+
             mask &= (inputOrdinate > self.config.minLinearAdu)
 
             if mask.sum() < 2:
@@ -579,7 +604,7 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 nodes = np.linspace(0.0, np.max(inputOrdinate[mask]), self.config.splineKnots)
 
                 if temperatureValues is not None:
-                    temperatureValuesScaled = temperatureValues - np.median(temperatureValues[~mask])
+                    temperatureValuesScaled = temperatureValues - np.median(temperatureValues[mask])
                 else:
                     temperatureValuesScaled = None
 
@@ -595,6 +620,7 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                     weight_pars_start=self.config.splineFitWeightParsStart,
                     fit_temperature=self.config.doSplineFitTemperature,
                     temperature_scaled=temperatureValuesScaled,
+                    max_signal_nearly_linear=inputPtc.ptcTurnoff[ampName],
                 )
                 p0 = fitter.estimate_p0()
                 pars = fitter.fit(
@@ -756,6 +782,8 @@ class LinearitySolveTask(pipeBase.PipelineTask):
         linearizer.fitResiduals[ampName] = np.zeros(len(inputPtc.expIdMask[ampName]))
         linearizer.fitResidualsSigmaMad[ampName] = np.nan
         linearizer.linearFit[ampName] = np.zeros(2)
+        linearizer.linearityTurnoff[ampName] = np.nan
+        linearizer.linearityMaxSignal[ampName] = np.nan
         return linearizer
 
     def fixupBadAmps(self, linearizer):
@@ -777,6 +805,65 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 linearizer.fitParamsErr[ampName] = np.zeros(fitParamsMaxLen)
             elif len(linearizer.fitParams[ampName]) != fitParamsMaxLen:
                 raise RuntimeError("Linearity has mismatched fitParams; check code/data.")
+
+    def _computeTurnoffAndMax(self, abscissa, ordinate, initialMask, ampName="UNKNOWN"):
+        """Compute the turnoff and max signal.
+
+        Parameters
+        ----------
+        abscissa : `np.ndarray`
+            Input x values, either photoCharges or exposure times.
+            These should be cleaned of any non-finite values.
+        ordinate : `np.ndarray`
+            Input y values, the raw mean values for the amp.
+            These should be cleaned of any non-finite values.
+        initialMask : `np.ndarray`
+            Mask to use for initial fit (usually from PTC).
+        ampName : `str`, optional
+            Amplifier name (used for logging).
+
+        Returns
+        -------
+        turnoff : `float`
+            Fit turnoff value.
+        maxSignal : `float`
+            Fit maximum signal value.
+        """
+        # Follow eo_pipe:
+        # https://github.com/lsst-camera-dh/eo_pipe/blob/6afa546569f622b8d604921e248200481c445730/python/lsst/eo/pipe/linearityPlotsTask.py#L50
+        # Replacing flux with abscissa, Ne with ordinate.
+
+        # Fit a line with the y-intercept fixed to zero, using the
+        # signal counts Ne as the variance in the chi-square, i.e.,
+        # chi2 = sum( (ordinate - aa*abscissa)**2/ordinate )
+        # Minimizing chi2 wrt aa, gives
+        # aa = sum(abscissa) / sum(abscissa**2/ordinate)
+
+        fitMask = initialMask.copy()
+        fitMask[ordinate < self.config.minSignalFitLinearityTurnoff] = False
+
+        aa = sum(abscissa[fitMask])/sum(abscissa[fitMask]**2/ordinate[fitMask])
+
+        # Use the residuals to compute the turnoff.
+        residuals = (ordinate - aa*abscissa)/ordinate
+        turnoffIndex = np.argmax(ordinate[np.abs(residuals) < self.config.maxFracLinearityDeviation])
+        turnoff = ordinate[turnoffIndex]
+
+        # Fit the maximum signal.
+        if turnoffIndex == (len(residuals) - 1):
+            # This is the last point; we can't do a fit.
+            self.log.warning(
+                "No linearity turnoff detected for amplifier %s; try to increase the signal range.",
+                ampName,
+            )
+            maxSignal = ordinate[turnoffIndex]
+        else:
+            maxSignalInitial = np.max(ordinate)
+
+            highFluxPoints = (ordinate > (1.0 - self.config.maxFracLinearityDeviation)*maxSignalInitial)
+            maxSignal = np.median(ordinate[highFluxPoints])
+
+        return turnoff, maxSignal
 
     def debugFit(self, stepname, xVector, yVector, yModel, mask, ampName):
         """Debug method for linearity fitting.

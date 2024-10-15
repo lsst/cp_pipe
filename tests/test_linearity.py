@@ -24,6 +24,7 @@
 #
 """Test cases for cp_pipe linearity code."""
 
+import logging
 import unittest
 import numpy as np
 
@@ -63,7 +64,16 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
         for amp in self.detector:
             self.amp_names.append(amp.getName())
 
-    def _create_ptc(self, amp_names, exp_times, means, ccobcurr=None, photo_charges=None, temperatures=None):
+    def _create_ptc(
+        self,
+        amp_names,
+        exp_times,
+        means,
+        ccobcurr=None,
+        photo_charges=None,
+        temperatures=None,
+        ptc_turnoff=None,
+    ):
         """
         Create a PTC with values for linearity tests.
 
@@ -81,6 +91,8 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
             Array of photoCharges to put into ptc.
         temperatures : `np.ndarray`, optional
             Array of temperatures (TEMP6) to put into ptc.
+        ptc_turnoff : `float`, optional
+            Turnoff value to set (by hand) for testing.
 
         Returns
         -------
@@ -132,10 +144,23 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
         config.maximumRangeCovariancesAstier = 1
         config.maxDeltaInitialPtcOutlierFit = 100_000.0
         solve_task = PhotonTransferCurveSolveTask(config=config)
-        ptc = solve_task.run(datasets).outputPtcDataset
+        # Suppress logging here.
+        with self.assertNoLogs(level=logging.CRITICAL):
+            ptc = solve_task.run(datasets).outputPtcDataset
 
         # Make the last amp a bad amp.
         ptc.badAmps = [amp_names[-1]]
+
+        if ptc_turnoff is not None:
+            for amp_name in amp_names:
+                if amp_name in ptc.badAmps:
+                    ptc.ptcTurnoff[amp_name] = np.nan
+                    ptc.finalMeans[amp_name][:] = np.nan
+                else:
+                    ptc.ptcTurnoff[amp_name] = ptc_turnoff
+                    high = (ptc.rawMeans[amp_name] > ptc_turnoff)
+                    ptc.expIdMask[amp_name][high] = False
+                    ptc.finalMeans[amp_name][high] = np.nan
 
         return ptc
 
@@ -395,13 +420,13 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
         config.linearityType = "Spline"
         config.usePhotodiode = True
         config.minLinearAdu = 0.0
-        config.maxLinearAdu = np.nanmax(mu_values) + 1.0
         config.splineKnots = n_nodes
         config.splineGroupingMinPoints = 101
         config.doSplineFitOffset = do_mu_offset
         config.doSplineFitWeights = do_weight_fit
         config.splineFitWeightParsStart = [7.2e-5, 1e-4]
         config.doSplineFitTemperature = do_temperature_fit
+        config.maxFracLinearityDeviation = 0.05
 
         if do_pd_offsets:
             config.splineGroupingColumn = "CCOBCURR"
@@ -424,15 +449,22 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
 
         # Skip the last amp which is marked bad.
         for amp_name in ptc.ampNames[:-1]:
+            # This test data doesn't have a real turnoff.
+            self.assertEqual(linearizer.linearityTurnoff[amp_name], np.nanmax(ptc.rawMeans[amp_name]))
+            self.assertEqual(linearizer.linearityMaxSignal[amp_name], np.nanmax(ptc.rawMeans[amp_name]))
+
             lin_mask = np.isfinite(linearizer.fitResiduals[amp_name])
 
-            # Make sure that anything in the input mask is still masked.
-            check, = np.where(~ptc.expIdMask[amp_name])
+            # Make sure that non-finite initial values in range are also
+            # masked.
+            check, = np.where(~np.isfinite(ptc.rawMeans[amp_name]))
             if len(check) > 0:
-                self.assertEqual(np.all(lin_mask[check]), False)
+                np.testing.assert_array_equal(lin_mask[check], False)
 
             # Make sure the outliers are masked.
-            self.assertEqual(np.all(lin_mask[outlier_indices]), False)
+            np.testing.assert_array_equal(lin_mask[outlier_indices], False)
+
+            # Check the turnoff and max values.
 
             # The first point at very low flux is noisier and so we exclude
             # it from the test here.
@@ -549,6 +581,161 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
     def test_linearity_spline_offsets_too_few_points(self):
         with self.assertRaisesRegex(RuntimeError, "too few points"):
             self._check_linearity_spline(do_pd_offsets=True, n_points=100)
+
+    def test_linearity_turnoff(self):
+        # Use some real LSSTComCam linearity data to measure the turnoff.
+        abscissa, ordinate, ptc_mask = self._comcam_raw_linearity_data()
+
+        config = LinearitySolveTask.ConfigClass()
+        task = LinearitySolveTask(config=config)
+
+        with self.assertNoLogs(level=logging.WARNING):
+            turnoff, max_signal = task._computeTurnoffAndMax(abscissa, ordinate, ptc_mask)
+
+        # This was visually inspected such that these are reasonable.
+        np.testing.assert_almost_equal(turnoff, 99756.30512572)
+        np.testing.assert_almost_equal(max_signal, 108730.32842316)
+
+        # Do the linearity fit with these data.
+        ptc = self._create_ptc(
+            self.amp_names,
+            abscissa * 1000000000,
+            ordinate,
+            photo_charges=abscissa,
+            ptc_turnoff=np.max(ordinate[ptc_mask]),
+        )
+        config = LinearitySolveTask.ConfigClass()
+        config.linearityType = "Spline"
+        config.usePhotodiode = True
+        config.minLinearAdu = 30.0
+        config.splineKnots = 10
+        config.doSplineFitOffset = False
+        config.doSplineFitWeights = False
+        config.splineFitWeightParsStart = [7.2e-5, 1e-4]
+        config.doSplineFitTemperature = False
+
+        task = LinearitySolveTask(config=config)
+        linearizer = task.run(
+            ptc,
+            [self.dummy_exposure],
+            self.camera,
+            self.input_dims,
+        ).outputLinearizer
+
+        # Confirm that the turnoff for the good amps is the same.
+        for amp_name in self.amp_names:
+            if amp_name in ptc.badAmps:
+                self.assertTrue(np.isnan(linearizer.linearityTurnoff[amp_name]))
+                self.assertTrue(np.isnan(linearizer.linearityMaxSignal[amp_name]))
+            else:
+                self.assertEqual(linearizer.linearityTurnoff[amp_name], turnoff)
+                self.assertEqual(linearizer.linearityMaxSignal[amp_name], max_signal)
+
+                # Check that the linearizer gives reasonable values over the
+                # range up to the ptc turnoff.
+                nodes, values = np.split(linearizer.linearityCoeffs[amp_name], 2)
+                self.assertEqual(values[0], 0.0)
+                to_test = (nodes > 0.0) & (nodes < ptc.ptcTurnoff[amp_name])
+                np.testing.assert_array_less(np.abs(values[to_test]/nodes[to_test]), 0.002)
+
+                # Check the residuals are reasonable up to the linearity
+                # turnoff.
+                to_test = ((ptc.rawMeans[amp_name] <= linearizer.linearityTurnoff[amp_name])
+                           & np.isfinite(ptc.rawMeans[amp_name]))
+                residuals_scaled = linearizer.fitResiduals[amp_name][to_test]/ptc.rawMeans[amp_name][to_test]
+                np.testing.assert_array_less(np.abs(residuals_scaled), 0.0015)
+
+        # Try again after cutting it off, make sure it warns.
+        cutoff = (ordinate < turnoff)
+
+        with self.assertLogs(level=logging.WARNING) as cm:
+            turnoff2, max_signal2 = task._computeTurnoffAndMax(
+                abscissa[cutoff],
+                ordinate[cutoff],
+                ptc_mask[cutoff],
+            )
+        self.assertIn("No linearity turnoff", cm.output[0])
+
+    def _comcam_raw_linearity_data(self):
+        # These are LSSTComCam measurements taken from a calibration
+        # run as part of DM-46357.
+        photo_charges = np.array(
+            [
+                3.22636000e-10, 3.38780400e-10, 3.54841300e-10, 3.87126000e-10,
+                4.03360000e-10, 4.35709800e-10, 4.51693200e-10, 4.83922500e-10,
+                5.16297600e-10, 5.48525400e-10, 5.80748400e-10, 6.13082500e-10,
+                6.45148000e-10, 6.77922000e-10, 7.25721750e-10, 7.74712800e-10,
+                8.22586650e-10, 8.70876900e-10, 9.19831800e-10, 9.68568000e-10,
+                1.03278400e-09, 1.08122255e-09, 1.14522645e-09, 1.22590280e-09,
+                1.29087600e-09, 1.37134750e-09, 1.45214100e-09, 1.53323350e-09,
+                1.62903910e-09, 1.72676065e-09, 1.83921900e-09, 1.93578600e-09,
+                2.06456960e-09, 2.17876500e-09, 2.30696180e-09, 2.45230720e-09,
+                2.59714735e-09, 2.74327300e-09, 2.91997345e-09, 3.08153670e-09,
+                3.27340599e-09, 3.46962700e-09, 3.67778820e-09, 3.88937850e-09,
+                4.12976640e-09, 4.37225980e-09, 4.62984095e-09, 4.90212160e-09,
+                5.19730540e-09, 5.50027885e-09, 5.83860750e-09, 6.17903475e-09,
+                6.54889207e-09, 6.93710400e-09, 7.35386640e-09, 7.79136960e-09,
+                8.25815040e-09, 8.74769030e-09, 9.27673375e-09, 9.82420530e-09,
+                1.04087197e-08, 1.10388366e-08, 1.17030225e-08, 1.23862272e-08,
+                1.31366576e-08, 1.39122921e-08, 1.47334462e-08, 1.56154856e-08,
+                1.65528171e-08, 1.75371688e-08, 1.85675291e-08, 1.96824430e-08,
+                2.08605509e-08, 2.21063200e-08, 2.34186546e-08, 2.48260115e-08,
+                2.62975235e-08, 2.78649723e-08, 2.95408665e-08, 3.12853772e-08,
+                3.31612268e-08, 3.51149011e-08, 3.72152551e-08, 3.94439604e-08,
+                4.17678940e-08, 4.42723820e-08, 4.69153456e-08, 4.96932949e-08,
+                5.27096702e-08, 5.58084160e-08, 5.91300138e-08, 6.26865948e-08,
+                6.64351212e-08, 7.03429300e-08, 7.45695391e-08, 7.89900791e-08,
+                8.37413792e-08, 9.40025100e-08, 9.95942560e-08, 8.87289232e-08,
+            ],
+        )
+        raw_means = np.array(
+            [
+                545.61773431, 572.92351724, 599.73600889, 654.80522687,
+                681.89236561, 736.36468948, 763.35233159, 818.3558025,
+                872.28757051, 926.97891772, 981.93722274, 1036.0641088,
+                1091.15536336, 1145.34900099, 1227.09504139, 1308.5247877,
+                1390.45828326, 1472.05043362, 1553.69250543, 1636.30579999,
+                1744.80644944, 1826.53524631, 1936.27610568, 2072.63450198,
+                2181.56004372, 2316.47487095, 2453.76647885, 2589.54660646,
+                2754.19117479, 2916.91523806, 3107.95392897, 3272.65202763,
+                3490.14569333, 3680.430583, 3896.17664859, 4146.03684447,
+                4391.418256, 4633.96031196, 4935.13618128, 5208.9852533,
+                5533.58336929, 5860.25295412, 6218.8609866, 6570.97901761,
+                6977.63082612, 7386.3804372, 7823.50205095, 8291.10153869,
+                8780.51405056, 9300.4324222, 9870.51463262, 10446.11494902,
+                11069.51440385, 11733.55548663, 12437.83099445, 13179.9215084,
+                13972.28308964, 14789.63243003, 15692.2466057, 16622.22691148,
+                17592.14597643, 18670.98290396, 19778.68937623, 20960.06668402,
+                22216.68121994, 23518.23906809, 24907.61374144, 26424.82837902,
+                28002.38769651, 29681.8198974, 31422.27519355, 33285.31574829,
+                35303.14661517, 37381.69611718, 39633.10759127, 41958.90250067,
+                44458.19627488, 47100.85288959, 49902.33562771, 52837.68322699,
+                55976.05887806, 59291.58601354, 62822.08965674, 66519.7625026,
+                70480.78728045, 74721.82649122, 79220.00783343, 83928.39988665,
+                88959.09479122, 94289.83758648, 99756.30512572, 104244.9446884,
+                106938.47971957, 108134.21868844, 108602.08685706, 108702.48845118,
+                108730.32842316, 108799.56402709, 108803.45364906, 108851.90458027,
+            ],
+        )
+
+        ptc_mask = np.array(
+            [
+                True, True, True, True, True, True, True, True, True,
+                True, True, True, True, True, True, True, True, True,
+                True, True, True, True, True, True, True, True, True,
+                True, True, True, True, True, True, True, True, True,
+                True, True, True, True, True, True, True, True, True,
+                True, True, True, True, True, True, True, True, True,
+                True, True, True, True, True, True, True, True, True,
+                True, True, True, True, True, True, True, True, True,
+                True, True, True, True, True, True, True, True, True,
+                True, True, True, True, True, True, True, False, False,
+                False, False, False, False, False, False, False, False, False,
+                False,
+            ],
+        )
+
+        return photo_charges, raw_means, ptc_mask
 
 
 class TestMemory(lsst.utils.tests.MemoryTestCase):
