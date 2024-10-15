@@ -796,7 +796,6 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         lenParams = matrixSideFit*matrixSideFit
         aMatrix = params[:lenParams].reshape((matrixSideFit, matrixSideFit))
         cMatrix = np.zeros_like(aMatrix)
-        # params[lenParams:2*lenParams].reshape((matrixSideFit, matrixSideFit))
         noiseMatrix = params[lenParams:2*lenParams].reshape((matrixSideFit, matrixSideFit))
         gain = params[-1]
 
