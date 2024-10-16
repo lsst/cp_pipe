@@ -1,0 +1,4 @@
+description: LATISS bootstrap dark calibration construction
+instrument: lsst.obs.lsst.Latiss
+imports:
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpDarkBootstrapLSST.yaml
