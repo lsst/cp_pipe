@@ -261,6 +261,10 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 "cpPlotPtc.yaml",
                 "cpPtc.yaml",
                 "cpSky.yaml",
+                "cpBiasBootstrap.yaml",
+                "cpDarkBootstrap.yaml",
+                "cpFlatBootstrap.yaml",
+                "cpSpectroFlat.yaml",
         ]):
             self._check_pipeline(os.path.join(self.pipeline_path, "StarTrackerFast", pipeline))
 
