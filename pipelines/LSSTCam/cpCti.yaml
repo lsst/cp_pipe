@@ -1,0 +1,4 @@
+description: LSSTCam cti calibration construction
+instrument: lsst.obs.lsst.LsstCam
+imports:
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpCtiLSST.yaml
