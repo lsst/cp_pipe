@@ -842,11 +842,34 @@ class LinearitySolveTask(pipeBase.PipelineTask):
         fitMask = initialMask.copy()
         fitMask[ordinate < self.config.minSignalFitLinearityTurnoff] = False
 
-        aa = sum(abscissa[fitMask])/sum(abscissa[fitMask]**2/ordinate[fitMask])
+        found = False
+        while (fitMask.sum() >= 4) and not found:
+            aa = sum(abscissa[fitMask])/sum(abscissa[fitMask]**2/ordinate[fitMask])
 
-        # Use the residuals to compute the turnoff.
-        residuals = (ordinate - aa*abscissa)/ordinate
-        turnoffIndex = np.argmax(ordinate[np.abs(residuals) < self.config.maxFracLinearityDeviation])
+            # Use the residuals to compute the turnoff.
+            residuals = (ordinate - aa*abscissa)/ordinate
+
+            goodPoints = np.abs(residuals) < self.config.maxFracLinearityDeviation
+
+            if goodPoints.sum() > 4:
+                # This was an adequate fit.
+                found = True
+                turnoffIndex = np.argmax(ordinate[goodPoints])
+            else:
+                # This was a bad fit; remove the largest outlier.
+                badIndex = np.argmax(np.abs(residuals)[fitMask])
+                fitIndices, = np.nonzero(fitMask)
+                fitMask[fitIndices[badIndex]] = False
+
+        if not found:
+            # Could not find any reasonable value.
+            self.log.warning(
+                "Could not find a reasonable initial linear fit to compute linearity turnoff for "
+                "amplifier %s; may need finer sampling of input data?",
+                ampName,
+            )
+            turnoffIndex = np.nonzero(fitMask)[0][-1]
+
         turnoff = ordinate[turnoffIndex]
 
         # Fit the maximum signal.
