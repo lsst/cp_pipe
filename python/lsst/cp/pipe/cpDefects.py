@@ -1096,11 +1096,23 @@ class MergeDefectsCombinedConnections(pipeBase.PipelineTaskConnections,
         isCalibration=True,
     )
 
+    def __init__(self, *, config=None):
+        super().__init__(config=config)
+
+        if config.skipFlatDefects:
+            del self.inputFlatDefects
+
 
 class MergeDefectsCombinedTaskConfig(MergeDefectsTaskConfig,
                                      pipelineConnections=MergeDefectsCombinedConnections):
     """Configuration for merging defects from combined exposure.
     """
+    skipFlatDefects = pexConfig.Field(
+        dtype=bool,
+        default=False,
+        doc="Exclude flat defects from combination.",
+    )
+
     def validate(self):
         super().validate()
         if self.combinationMode != 'OR':
@@ -1132,9 +1144,13 @@ class MergeDefectsCombinedTask(MergeDefectsTask):
         # Turn inputFlatDefects and inputDarkDefects into a list which
         # is what MergeDefectsTask expects.  If there are multiple,
         # use the one with the most inputs.
-        tempList = [self.chooseBest(inputs['inputFlatDefects']),
-                    self.chooseBest(inputs['inputDarkDefects']),
-                    self.chooseBest(inputs['inputBiasDefects'])]
+        if not self.config.skipFlatDefects:
+            tempList = [self.chooseBest(inputs['inputFlatDefects']),
+                        self.chooseBest(inputs['inputDarkDefects']),
+                        self.chooseBest(inputs['inputBiasDefects'])]
+        else:
+            tempList = [self.chooseBest(inputs['inputDarkDefects']),
+                        self.chooseBest(inputs['inputBiasDefects'])]
 
         # Rename inputDefects
         inputsCombined = {'inputDefects': tempList, 'camera': inputs['camera']}
