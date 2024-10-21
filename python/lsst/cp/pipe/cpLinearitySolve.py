@@ -869,6 +869,7 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 ampName,
             )
             turnoffIndex = np.nonzero(fitMask)[0][-1]
+            residuals = np.zeros(len(ordinate))
 
         turnoff = ordinate[turnoffIndex]
 
