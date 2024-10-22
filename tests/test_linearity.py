@@ -590,9 +590,10 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
         task = LinearitySolveTask(config=config)
 
         with self.assertNoLogs(level=logging.WARNING):
-            turnoff, max_signal = task._computeTurnoffAndMax(abscissa, ordinate, ptc_mask)
+            turnoff_index, turnoff, max_signal = task._computeTurnoffAndMax(abscissa, ordinate, ptc_mask)
 
         # This was visually inspected such that these are reasonable.
+        self.assertEqual(turnoff_index, 90)
         np.testing.assert_almost_equal(turnoff, 99756.30512572)
         np.testing.assert_almost_equal(max_signal, 108730.32842316)
 
@@ -649,12 +650,13 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
         cutoff = (ordinate < turnoff)
 
         with self.assertLogs(level=logging.WARNING) as cm:
-            turnoff2, max_signal2 = task._computeTurnoffAndMax(
+            turnoff_index2, turnoff2, max_signal2 = task._computeTurnoffAndMax(
                 abscissa[cutoff],
                 ordinate[cutoff],
                 ptc_mask[cutoff],
             )
         self.assertIn("No linearity turnoff", cm.output[0])
+        self.assertEqual(turnoff_index2, len(ptc_mask[cutoff]) - 1)
 
     def _comcam_raw_linearity_data(self):
         # These are LSSTComCam measurements taken from a calibration
