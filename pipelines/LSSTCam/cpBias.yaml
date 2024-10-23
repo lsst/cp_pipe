@@ -1,4 +1,4 @@
-description: cp_pipe BIAS calibration construction
+description: cp_pipe LSSTCam BIAS calibration construction
 instrument: lsst.obs.lsst.LsstCam
 imports:
-  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpBias.yaml
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpBiasLSST.yaml

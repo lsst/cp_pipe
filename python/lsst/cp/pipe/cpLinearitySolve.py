@@ -487,10 +487,12 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 inputAbscissa = inputPtc.rawExpTimes[ampName].copy()
 
             # Compute linearityTurnoff and linearitySignalMax.
-            turnoff, maxSignal = self._computeTurnoffAndMax(
-                inputAbscissa[mask],
-                inputPtc.rawMeans[ampName][mask],
-                inputPtc.expIdMask[ampName][mask],
+            turnoffMask = inputPtc.expIdMask[ampName].copy()
+            turnoffMask &= mask
+            turnoffIndex, turnoff, maxSignal = self._computeTurnoffAndMax(
+                inputAbscissa,
+                inputPtc.rawMeans[ampName],
+                turnoffMask,
                 ampName=ampName,
             )
             linearizer.linearityTurnoff[ampName] = turnoff
@@ -503,7 +505,9 @@ class LinearitySolveTask(pipeBase.PipelineTask):
             else:
                 # For spline fits, cut above the turnoff.
                 self.log.info("Using linearityTurnoff of %.4f adu for amplifier %s", turnoff, ampName)
-                mask &= (inputOrdinate <= turnoff)
+                extraMask = np.ones(len(inputOrdinate), dtype=bool)
+                extraMask[turnoffIndex + 1:] = False
+                mask &= extraMask
 
             mask &= (inputOrdinate > self.config.minLinearAdu)
 
@@ -601,7 +605,7 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 # fits deviations from linearity, rather than the linear
                 # function itself which is degenerate with the gain.
 
-                nodes = np.linspace(0.0, np.max(inputOrdinate[mask]), self.config.splineKnots)
+                nodes = np.linspace(0.0, np.max(inputOrdinate[mask]) + 1.0, self.config.splineKnots)
 
                 if temperatureValues is not None:
                     temperatureValuesScaled = temperatureValues - np.median(temperatureValues[mask])
@@ -824,6 +828,8 @@ class LinearitySolveTask(pipeBase.PipelineTask):
 
         Returns
         -------
+        turnoffIndex : `int`
+            Fit turnoff index (keyed to raw input).
         turnoff : `float`
             Fit turnoff value.
         maxSignal : `float`
@@ -842,12 +848,38 @@ class LinearitySolveTask(pipeBase.PipelineTask):
         fitMask = initialMask.copy()
         fitMask[ordinate < self.config.minSignalFitLinearityTurnoff] = False
 
-        aa = sum(abscissa[fitMask])/sum(abscissa[fitMask]**2/ordinate[fitMask])
+        found = False
+        while (fitMask.sum() >= 4) and not found:
+            aa = sum(abscissa[fitMask])/sum(abscissa[fitMask]**2/ordinate[fitMask])
 
-        # Use the residuals to compute the turnoff.
-        residuals = (ordinate - aa*abscissa)/ordinate
-        turnoffIndex = np.argmax(ordinate[np.abs(residuals) < self.config.maxFracLinearityDeviation])
-        turnoff = ordinate[turnoffIndex]
+            # Use the residuals to compute the turnoff.
+            residuals = (ordinate - aa*abscissa)/ordinate
+            residuals -= np.nanmedian(residuals)
+
+            goodPoints = np.abs(residuals) < self.config.maxFracLinearityDeviation
+
+            if goodPoints.sum() > 4:
+                # This was an adequate fit.
+                found = True
+                turnoff = np.max(ordinate[goodPoints])
+                turnoffIndex = np.where(np.isclose(ordinate, turnoff))[0][0]
+            else:
+                # This was a bad fit; remove the largest outlier.
+                badIndex = np.argmax(np.abs(residuals)[fitMask])
+                fitIndices, = np.nonzero(fitMask)
+                fitMask[fitIndices[badIndex]] = False
+
+        if not found:
+            # Could not find any reasonable value.
+            self.log.warning(
+                "Could not find a reasonable initial linear fit to compute linearity turnoff for "
+                "amplifier %s; may need finer sampling of input data?",
+                ampName,
+            )
+            turnoff = np.max(ordinate[fitMask])
+            turnoffIndex = np.where(np.isclose(ordinate, turnoff))[0][0]
+
+            residuals = np.zeros(len(ordinate))
 
         # Fit the maximum signal.
         if turnoffIndex == (len(residuals) - 1):
@@ -858,12 +890,13 @@ class LinearitySolveTask(pipeBase.PipelineTask):
             )
             maxSignal = ordinate[turnoffIndex]
         else:
-            maxSignalInitial = np.max(ordinate)
+            maxSignalInitial = np.nanmax(ordinate)
 
-            highFluxPoints = (ordinate > (1.0 - self.config.maxFracLinearityDeviation)*maxSignalInitial)
+            highFluxPoints = (np.nan_to_num(ordinate)
+                              > (1.0 - self.config.maxFracLinearityDeviation)*maxSignalInitial)
             maxSignal = np.median(ordinate[highFluxPoints])
 
-        return turnoff, maxSignal
+        return turnoffIndex, turnoff, maxSignal
 
     def debugFit(self, stepname, xVector, yVector, yModel, mask, ampName):
         """Debug method for linearity fitting.

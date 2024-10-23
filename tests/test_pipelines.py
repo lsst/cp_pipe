@@ -148,10 +148,11 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 "cpFilterScan.yaml",
                 "cpMonochromatorScan.yaml",
                 "cpSpectroFlat.yaml",
-                # TODO DM-46358: Remove following from exclusion list.
-                "cpBiasBootstrap.yaml",
-                "cpDarkBootstrap.yaml",
-                "cpFlatBootstrap.yaml",
+                "cpDarkForDefects.yaml",
+                "cpDefectsIndividual.yaml",
+                # Unsupported pipelines.
+                "cpCrosstalk.yaml",
+                "cpFringe.yaml",
         ]):
             self._check_pipeline(os.path.join(self.pipeline_path, "LSSTCam", pipeline))
 
