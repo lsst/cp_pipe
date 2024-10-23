@@ -1339,7 +1339,14 @@ class AstierSplineLinearityFitter:
             log_w = np.sqrt(-2.*np.log(fact*self._w[self._w > 0]))
             constraint = np.hstack([constraint, log_w])
 
-        return np.hstack([resid, constraint])
+        # Don't let it get to >5% correction.
+        values = pars[self.par_indices["values"]]
+        if np.abs(values[-1])/self._nodes[-1] > 0.25:
+            extra_constraint = 1e10
+        else:
+            extra_constraint = 0
+
+        return np.hstack([resid, constraint, extra_constraint])
 
 
 def getReadNoise(exposure, ampName, taskMetadata=None, log=None):
