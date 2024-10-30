@@ -22,7 +22,7 @@ tasks:
         config.ampOffset.ampEdgeInset = 10
         config.ampOffset.doBackground = False
         config.ampOffset.doDetection = False
-        config.ampOffset.doApplyAmpOffset = False
+        config.ampOffset.measureOnly = True
   cpBfkPtcExtract:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
     config:

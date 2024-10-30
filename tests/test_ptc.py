@@ -923,7 +923,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             config.ampEdgeInset = 10
             config.doBackground = False
             config.doDetection = False
-            config.doApplyAmpOffset = False
+            config.measureOnly = True
 
             ampOffset = AmpOffsetTask(config=config)
 
