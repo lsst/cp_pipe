@@ -146,15 +146,15 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
             with measurements organized by amplifier name, containing
             keys:
 
-            ``"FIRST_MEAN"``
+            ``"FIRST_COLUMN_MEAN"``
                 Mean value of first image column (`float`).
-            ``"LAST_MEAN"``
+            ``"LAST_COLUMN_MEAN"``
                 Mean value of last image column (`float`).
             ``"IMAGE_MEAN"``
                 Mean value of the entire image region (`float`).
-            ``"OVERSCAN_COLUMNS"``
+            ``"SERIAL_OVERSCAN_COLUMNS"``
                 List of overscan column indicies (`list` [`int`]).
-            ``"OVERSCAN_VALUES"``
+            ``"SERIAL_OVERSCAN_VALUES"``
                 List of overscan column means (`list` [`float`]).
         camera : `lsst.afw.cameraGeom.Camera`
             Camera geometry to use to find detectors.
@@ -209,15 +209,15 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
             with measurements organized by amplifier name, containing
             keys:
 
-            ``"FIRST_MEAN"``
+            ``"FIRST_COLUMN_MEAN"``
                 Mean value of first image column (`float`).
-            ``"LAST_MEAN"``
+            ``"LAST_COLUMN_MEAN"``
                 Mean value of last image column (`float`).
             ``"IMAGE_MEAN"``
                 Mean value of the entire image region (`float`).
-            ``"OVERSCAN_COLUMNS"``
+            ``"SERIAL_OVERSCAN_COLUMNS"``
                 List of overscan column indicies (`list` [`int`]).
-            ``"OVERSCAN_VALUES"``
+            ``"SERIAL_OVERSCAN_VALUES"``
                 List of overscan column means (`list` [`float`]).
         calib : `lsst.ip.isr.DeferredChargeCalib`
             Calibration to populate with values.
@@ -271,7 +271,7 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
                 exposureDict = exposureEntry['CTI']
                 if exposureDict[ampName]['IMAGE_MEAN'] < self.config.maxImageMean:
                     signal.append(exposureDict[ampName]['IMAGE_MEAN'])
-                    data.append(exposureDict[ampName]['OVERSCAN_VALUES'][start:stop+1])
+                    data.append(exposureDict[ampName]['SERIAL_OVERSCAN_VALUES'][start:stop+1])
                 else:
                     Nskipped += 1
             self.log.info(f"Skipped {Nskipped} exposures brighter than {self.config.maxImageMean}.")
@@ -324,15 +324,15 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
             with measurements organized by amplifier name, containing
             keys:
 
-            ``"FIRST_MEAN"``
+            ``"FIRST_COLUMN_MEAN"``
                 Mean value of first image column (`float`).
-            ``"LAST_MEAN"``
+            ``"LAST_COLUMN_MEAN"``
                 Mean value of last image column (`float`).
             ``"IMAGE_MEAN"``
                 Mean value of the entire image region (`float`).
-            ``"OVERSCAN_COLUMNS"``
+            ``"SERIAL_OVERSCAN_COLUMNS"``
                 List of overscan column indicies (`list` [`int`]).
-            ``"OVERSCAN_VALUES"``
+            ``"SERIAL_OVERSCAN_VALUES"``
                 List of overscan column means (`list` [`float`]).
         calib : `lsst.ip.isr.DeferredChargeCalib`
             Calibration to populate with values.
@@ -386,7 +386,7 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
                 exposureDict = exposureEntry['CTI']
                 if exposureDict[ampName]['IMAGE_MEAN'] < self.config.maxSignalForCti:
                     signal.append(exposureDict[ampName]['IMAGE_MEAN'])
-                    data.append(exposureDict[ampName]['OVERSCAN_VALUES'][start:stop+1])
+                    data.append(exposureDict[ampName]['SERIAL_OVERSCAN_VALUES'][start:stop+1])
                 else:
                     Nskipped += 1
             self.log.info(f"Skipped {Nskipped} exposures brighter than {self.config.maxSignalForCti}.")
@@ -492,15 +492,15 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
             with measurements organized by amplifier name, containing
             keys:
 
-            ``"FIRST_MEAN"``
+            ``"FIRST_COLUMN_MEAN"``
                 Mean value of first image column (`float`).
-            ``"LAST_MEAN"``
+            ``"LAST_COLUMN_MEAN"``
                 Mean value of last image column (`float`).
             ``"IMAGE_MEAN"``
                 Mean value of the entire image region (`float`).
-            ``"OVERSCAN_COLUMNS"``
+            ``"SERIAL_OVERSCAN_COLUMNS"``
                 List of overscan column indicies (`list` [`int`]).
-            ``"OVERSCAN_VALUES"``
+            ``"SERIAL_OVERSCAN_VALUES"``
                 List of overscan column means (`list` [`float`]).
         calib : `lsst.ip.isr.DeferredChargeCalib`
             Calibration to populate with values.
@@ -556,8 +556,8 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
                 exposureDict = exposureEntry['CTI']
                 if exposureDict[ampName]['IMAGE_MEAN'] < self.config.maxImageMean:
                     signal.append(exposureDict[ampName]['IMAGE_MEAN'])
-                    data.append(exposureDict[ampName]['OVERSCAN_VALUES'][start:stop+1])
-                    new_signal.append(exposureDict[ampName]['LAST_MEAN'])
+                    data.append(exposureDict[ampName]['SERIAL_OVERSCAN_VALUES'][start:stop+1])
+                    new_signal.append(exposureDict[ampName]['LAST_COLUMN_MEAN'])
                 else:
                     Nskipped += 1
             self.log.info(f"Skipped {Nskipped} exposures brighter than {self.config.maxImageMean}.")
