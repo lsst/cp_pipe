@@ -134,11 +134,16 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
     @unittest.skipIf(not has_obs_lsst, reason="Cannot test LATISS pipelines without obs_lsst")
     def test_latiss_pipelines(self):
         for pipeline in self._get_pipelines(exclude=[
+                # The following two tasks are not part of the new pipelines.
+                "cpDarkForDefects.yaml",
+                "cpDefectsIndividual.yaml",
+                # The following task is not defined for LATISS.
                 "cpMonochromatorScan.yaml",
-                # TODO DM-46356: Remove following from exclusion list.
-                "cpBiasBootstrap.yaml",
-                "cpDarkBootstrap.yaml",
-                "cpFlatBootstrap.yaml",
+                # The following tasks will be added in the future.
+                "cpCrosstalk.yaml",
+                "cpFringe.yaml",
+                # TODO: DM-46426
+                "cpCti.yaml",
         ]):
             self._check_pipeline(os.path.join(self.pipeline_path, "LATISS", pipeline))
 

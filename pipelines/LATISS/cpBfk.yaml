@@ -1,4 +1,17 @@
-description: Latiss Brighter-Fatter kernel calibration construction.
+description: LATISS Brighter-Fatter kernel calibration construction.
 instrument: lsst.obs.lsst.Latiss
 imports:
-  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpBfk.yaml
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpBfkLSST.yaml
+tasks:
+  cpBfkPtcExtract:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
+    config:
+      # Limit the covariance range unless we get a super-dense
+      # PTC run for LATISS.
+      maximumRangeCovariancesAstier: 8
+      efdSalIndex: 201
+  cpBfkPtcSolve:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
+    config:
+      maximumRangeCovariancesAstier: 8
+      maximumRangeCovariancesAstierFullCovFit: 8
