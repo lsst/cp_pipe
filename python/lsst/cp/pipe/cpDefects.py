@@ -84,6 +84,21 @@ class MeasureDefectsTaskConfig(pipeBase.PipelineTaskConfig,
         allowed={'STDEV': "Use a multiple of the image standard deviation to determine detection threshold.",
                  'VALUE': "Use pixel value to determine detection threshold."},
     )
+    doVampirePixels = pexConfig.Field(
+        dtype=bool,
+        doc=("TODO: ADD info."),
+        default=False,
+    )
+    thresholdVampirePixels = pexConfig.Field(
+        dtype=float,
+        doc=("TODO: ADD info."),
+        default=1.4,
+    )
+    radiusVampirePixels = pexConfig.Field(
+        dtype=int,
+        doc=("TODO: ADD info."),
+        default=4,
+    )
     darkCurrentThreshold = pexConfig.Field(
         dtype=float,
         doc=("If thresholdType=``VALUE``, dark current threshold (in e-/sec) to define "
@@ -247,6 +262,18 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
             nPix += defect.getBBox().getArea()
         return nPix
 
+    def getVampirePixels(self,ampImg):
+        """TODO: Add documentation once done
+        """
+
+        # Find bright pixels
+        thresh = afwDetection.Threshold(self.config.thresholdVampirePixels)
+        # Bright pixels footprint grown by a radius of radiusVampire pixels
+        fs = afwDetection.FootprintSet(ampImg, thresh)
+        fs_grow = afwDetection.FootprintSet(fs, rGrow=self.config.radiusVampirePixels, isotropic=True)
+
+        return fs_grow
+
     def _findHotAndColdPixels(self, exp):
         """Find hot and cold pixels in an image.
 
@@ -298,6 +325,11 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
 
             if self._getNumGoodPixels(ampImg) == 0:  # amp contains no usable pixels
                 continue
+
+            if self.config.doVampirePixels:
+                # This is only applied in LSSTComCam flatBootstrap pipeline
+                footprintSet_VampirePixel = self.getVampirePixels(ampImg)
+                footprintSet_VampirePixel.setMask(maskedIm.mask, ("BAD"))
 
             # Remove a background estimate
             meanClip = afwMath.makeStatistics(ampImg, afwMath.MEANCLIP, ).getValue()
@@ -387,6 +419,10 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
                     # cold pixels
                     for fp in footprintSet.getFootprints():
                         coldPixelCount[ampName] += fp.getArea()
+
+            if self.config.doVampirePixels:
+                # Add vampire pixels to footprint
+                footprintList += footprintSet_VampirePixel.getFootprints()
 
             footprintList += mergedSet.getFootprints()
 
