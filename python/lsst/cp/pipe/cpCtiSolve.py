@@ -361,12 +361,6 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
         CTISIM.  This offset removes that last imaging data column
         from the count.
         """
-        # Range to fit.  These are in "camera" coordinates, and so
-        # need to have the count for last image column removed.
-        start, stop = self.config.globalCtiColumnRange
-        start -= 1
-        stop -= 1
-
         # Loop over amps/inputs, fitting those columns from
         # "non-saturated" inputs.
         for amp in detector.getAmplifiers():
@@ -375,36 +369,7 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
             # Number of serial shifts.
             nCols = amp.getRawDataBBox().getWidth() + amp.getRawSerialPrescanBBox().getWidth()
 
-            # The signal is the mean intensity of each input, and the
-            # data are the overscan columns to fit.  For detectors
-            # with non-zero CTI, the charge from the imaging region
-            # leaks into the overscan region.
-            signal = []
-            data = []
-            Nskipped = 0
-            for exposureEntry in inputMeasurements:
-                exposureDict = exposureEntry['CTI']
-                if exposureDict[ampName]['IMAGE_MEAN'] < self.config.maxSignalForCti:
-                    signal.append(exposureDict[ampName]['IMAGE_MEAN'])
-                    data.append(exposureDict[ampName]['SERIAL_OVERSCAN_VALUES'][start:stop+1])
-                else:
-                    Nskipped += 1
-            self.log.info(f"Skipped {Nskipped} exposures brighter than {self.config.maxSignalForCti}.")
-            if len(signal) == 0 or len(data) == 0:
-                raise RuntimeError("All exposures brighter than config.maxSignalForCti and excluded.")
-
-            signal = np.array(signal)
-            data = np.array(data)
-
-            ind = signal.argsort()
-            signal = signal[ind]
-            data = data[ind]
-
-            # CTI test.  This looks at the charge that has leaked into
-            # the first few columns of the overscan.
-            overscan1 = data[:, 0]
-            overscan2 = data[:, 1]
-            test = (np.array(overscan1) + np.array(overscan2))/(nCols*np.array(signal))
+            signal, data, start, stop, test = self.serialEper(inputMeasurements, amp)
             testResult = np.median(test) > 5.E-6
             self.log.info("Estimate of CTI test is %f for amp %s, %s.", np.median(test), ampName,
                           "full fitting will be performed" if testResult else
@@ -611,3 +576,84 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
             calib.serialTraps[ampName] = trap
 
         return calib
+
+    def serialEper(self, inputMeasurements, amp):
+        """Solve for serial global CTI using the extended pixel edge
+        response (EPER) method.
+
+        Parameters
+        ----------
+        inputMeasurements : `list` [`dict`]
+            List of overscan measurements from each input exposure.
+            Each dictionary is nested within a top level 'CTI' key,
+            with measurements organized by amplifier name, containing
+            keys:
+
+            ``"FIRST_COLUMN_MEAN"``
+                Mean value of first image column (`float`).
+            ``"LAST_COLUMN_MEAN"``
+                Mean value of last image column (`float`).
+            ``"IMAGE_MEAN"``
+                Mean value of the entire image region (`float`).
+            ``"SERIAL_OVERSCAN_COLUMNS"``
+                List of overscan column indicies (`list` [`int`]).
+            ``"SERIAL_OVERSCAN_VALUES"``
+                List of overscan column means (`list` [`float`]).
+        calib : `lsst.ip.isr.DeferredChargeCalib`
+            Calibration to populate with values.
+        amp : `lsst.afw.cameraGeom.Amplifier`
+            Amplifier object containing the geometry information for
+            the amplifier.
+
+        Returns
+        -------
+        calib : `lsst.ip.isr.DeferredChargeCalib`
+            Populated calibration.
+
+        Raises
+        ------
+        RuntimeError : Raised if no data remains after flux filtering.
+        """
+        ampName = amp.getName()
+
+        # Range to fit.  These are in "camera" coordinates, and so
+        # need to have the count for last image column removed.
+        start, stop = self.config.globalCtiColumnRange
+        start -= 1
+        stop -= 1
+
+        # Number of serial shifts.
+        nCols = amp.getRawDataBBox().getWidth() + amp.getRawSerialPrescanBBox().getWidth()
+
+        # The signal is the mean intensity of each input, and the
+        # data are the overscan columns to fit.  For detectors
+        # with non-zero CTI, the charge from the imaging region
+        # leaks into the overscan region.
+        signal = []
+        data = []
+        Nskipped = 0
+        for exposureEntry in inputMeasurements:
+            exposureDict = exposureEntry['CTI']
+            if exposureDict[ampName]['IMAGE_MEAN'] < self.config.maxSignalForCti:
+                signal.append(exposureDict[ampName]['IMAGE_MEAN'])
+                data.append(exposureDict[ampName]['SERIAL_OVERSCAN_VALUES'][start:stop+1])
+            else:
+                Nskipped += 1
+        self.log.info(f"Skipped {Nskipped} exposures brighter than {self.config.maxSignalForCti}.")
+        if len(signal) == 0 or len(data) == 0:
+            raise RuntimeError("All exposures brighter than config.maxSignalForCti and excluded.")
+
+        signal = np.array(signal)
+        data = np.array(data)
+
+        ind = signal.argsort()
+        signal = signal[ind]
+        data = data[ind]
+
+        # CTI test.  This looks at the charge that has leaked into
+        # the first few columns of the overscan.
+        overscan1 = data[:, 0]
+        overscan2 = data[:, 1]
+        serialCtiEstimate = (np.array(overscan1) + np.array(overscan2))/(nCols*np.array(signal))
+
+        return signal, data, start, stop, serialCtiEstimate
