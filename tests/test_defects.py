@@ -734,6 +734,34 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
 
         self.check_dilateSaturatedColumns(exp, defects, expectedDefects)
 
+    def test_defectVampirePixels(self):
+        config = copy.copy(self.defaultConfig)
+        config.doVampirePixels = True
+        # Flat mock has higher pixel values than real flats
+        config.thresholdVampirePixels = 2500.
+
+        task = self.defaultTask
+        task.config = config
+
+        exp = self.flatExp.clone()
+
+        # Square set of pixels set to a high value
+        # (simplified version of a vampire pixel)
+        yVampirePixel = 130
+        xVampirePixel = 50
+        exp.image.array[yVampirePixel-3:yVampirePixel+3,xVampirePixel-3:xVampirePixel+3] = 2600.
+
+        # Find usual hot and pixels as well as the square defect
+        defects = task._findHotAndColdPixels(exp)
+
+        # Make square defect BBox
+        vampireBBoxes = Box2I(Point2I(xVampirePixel-3, yVampirePixel-3), Extent2I(6, 6))
+        # Test that the BBox is within the defects measured
+        boxesMeasured = []
+        for defect in defects:
+            boxesMeasured.append(defect.getBBox())
+        self.assertIn(vampireBBoxes, boxesMeasured)
+
     def test_defectFindingAllSensor(self):
         config = copy.copy(self.defaultConfig)
         config.nPixBorderLeftRight = 0
