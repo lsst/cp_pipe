@@ -92,7 +92,14 @@ class CpCtiSolveConfig(pipeBase.PipelineTaskConfig,
     globalCtiColumnRange = pexConfig.ListField(
         dtype=int,
         default=[1, 2],
-        doc="First and last overscan column to use for global CTI fit.",
+        doc="First and last serialoverscan column to use for "
+            "global CTI fit.",
+    )
+    globalCtiRowRange = pexConfig.ListField(
+        dtype=int,
+        default=[1, 2],
+        doc="First and last parallel overscan row to use for "
+            "global CTI fit.",
     )
 
     trapColumnRange = pexConfig.ListField(
@@ -156,6 +163,10 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
                 List of overscan column indicies (`list` [`int`]).
             ``"SERIAL_OVERSCAN_VALUES"``
                 List of overscan column means (`list` [`float`]).
+            ``"PARALLEL_OVERSCAN_ROWS"``
+                List of overscan row indicies (`list` [`int`]).
+            ``"PARALLEL_OVERSCAN_VALUES"``
+                List of overscan row means (`list` [`float`).
         camera : `lsst.afw.cameraGeom.Camera`
             Camera geometry to use to find detectors.
         inputDims : `list` [`dict`]
@@ -219,6 +230,10 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
                 List of overscan column indicies (`list` [`int`]).
             ``"SERIAL_OVERSCAN_VALUES"``
                 List of overscan column means (`list` [`float`]).
+            ``"PARALLEL_OVERSCAN_ROWS"``
+                List of overscan row indicies (`list` [`int`]).
+            ``"PARALLEL_OVERSCAN_VALUES"``
+                List of overscan row means (`list` [`float`).
         calib : `lsst.ip.isr.DeferredChargeCalib`
             Calibration to populate with values.
         detector : `lsst.afw.cameraGeom.Detector`
@@ -334,6 +349,10 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
                 List of overscan column indicies (`list` [`int`]).
             ``"SERIAL_OVERSCAN_VALUES"``
                 List of overscan column means (`list` [`float`]).
+            ``"PARALLEL_OVERSCAN_ROWS"``
+                List of overscan row indicies (`list` [`int`]).
+            ``"PARALLEL_OVERSCAN_VALUES"``
+                List of overscan row means (`list` [`float`).
         calib : `lsst.ip.isr.DeferredChargeCalib`
             Calibration to populate with values.
         detector : `lsst.afw.cameraGeom.Detector`
@@ -369,28 +388,31 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
             # Number of serial shifts.
             nCols = amp.getRawDataBBox().getWidth() + amp.getRawSerialPrescanBBox().getWidth()
 
-            signal, data, start, stop, test = self.serialEper(inputMeasurements, amp)
-            testResult = np.median(test) > 5.E-6
-            self.log.info("Estimate of CTI test is %f for amp %s, %s.", np.median(test), ampName,
-                          "full fitting will be performed" if testResult else
-                          "only global CTI fitting will be performed")
+            # Do serial CTI calculation
+            signals, data, start, stop, serialEperEstimate = self.calcEper("SERIAL", inputMeasurements, amp)
+            serialEperResult = np.median(serialEperEstimate) > 5.E-6
+            self.log.info(
+                "Estimate of CTI test is %f for amp %s, %s.", np.median(serialEperEstimate), ampName,
+                "full fitting will be performed" if serialEperResult else
+                "only global CTI fitting will be performed"
+            )
 
-            self.debugView(ampName, signal, test)
+            self.debugView(ampName, signals, serialEperEstimate)
 
             params = Parameters()
             params.add('ctiexp', value=-6, min=-7, max=-5, vary=True)
-            params.add('trapsize', value=5.0 if testResult else 0.0, min=0.0, max=30.,
-                       vary=True if testResult else False)
+            params.add('trapsize', value=5.0 if serialEperResult else 0.0, min=0.0, max=30.,
+                       vary=True if serialEperResult else False)
             params.add('scaling', value=0.08, min=0.0, max=1.0,
-                       vary=True if testResult else False)
+                       vary=True if serialEperResult else False)
             params.add('emissiontime', value=0.35, min=0.1, max=1.0,
-                       vary=True if testResult else False)
+                       vary=True if serialEperResult else False)
             params.add('driftscale', value=calib.driftScale[ampName], min=0., max=0.001, vary=False)
             params.add('decaytime', value=calib.decayTime[ampName], min=0.1, max=4.0, vary=False)
 
             model = SimulatedModel()
             minner = Minimizer(model.difference, params,
-                               fcn_args=(signal, data, self.config.fitError, nCols, amp),
+                               fcn_args=(signals, data, self.config.fitError, nCols, amp),
                                fcn_kws={'start': start, 'stop': stop, 'trap_type': 'linear'})
             result = minner.minimize()
 
@@ -399,6 +421,17 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
             self.log.info("CTI Global Cti %s: cti: %g decayTime: %g driftScale %g",
                           ampName, calib.globalCti[ampName], calib.decayTime[ampName],
                           calib.driftScale[ampName])
+
+            # Do parallel EPER calculation
+            signals, data, start, stop, parallelEperEstimate = self.calcEper(
+                "PARALLEL",
+                inputMeasurements,
+                amp,
+            )
+
+            calib.signals[ampName] = signals
+            calib.serialEper[ampName] = serialEperEstimate
+            calib.parallelEper[ampName] = parallelEperEstimate
 
         return calib
 
@@ -577,12 +610,15 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
 
         return calib
 
-    def serialEper(self, inputMeasurements, amp):
+    def calcEper(self, mode, inputMeasurements, amp):
         """Solve for serial global CTI using the extended pixel edge
         response (EPER) method.
 
         Parameters
         ----------
+        mode : `str`
+            The orientation of the calculation to perform. Can be
+            either `SERIAL` or `PARALLEL`.
         inputMeasurements : `list` [`dict`]
             List of overscan measurements from each input exposure.
             Each dictionary is nested within a top level 'CTI' key,
@@ -596,9 +632,17 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
             ``"IMAGE_MEAN"``
                 Mean value of the entire image region (`float`).
             ``"SERIAL_OVERSCAN_COLUMNS"``
-                List of overscan column indicies (`list` [`int`]).
+                List of serial overscan column
+                indicies (`list` [`int`]).
             ``"SERIAL_OVERSCAN_VALUES"``
-                List of overscan column means (`list` [`float`]).
+                List of serial overscan column
+                means (`list` [`float`]).
+            ``"PARALLEL_OVERSCAN_ROWS"``
+                List of parallel overscan row
+                indicies (`list` [`int`]).
+            ``"PARALLEL_OVERSCAN_VALUES"``
+                List of parallel overscan row
+                means (`list` [`float`]).
         calib : `lsst.ip.isr.DeferredChargeCalib`
             Calibration to populate with values.
         amp : `lsst.afw.cameraGeom.Amplifier`
@@ -612,18 +656,29 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
 
         Raises
         ------
-        RuntimeError : Raised if no data remains after flux filtering.
+        RuntimeError : Raised if no data remains after flux filtering or if
+            the mode string is not one of "SERIAL" or "PARALLEL".
         """
         ampName = amp.getName()
 
         # Range to fit.  These are in "camera" coordinates, and so
         # need to have the count for last image column removed.
-        start, stop = self.config.globalCtiColumnRange
-        start -= 1
-        stop -= 1
+        if mode == "SERIAL":
+            start, stop = self.config.globalCtiColumnRange
+            start -= 1
+            stop -= 1
 
-        # Number of serial shifts.
-        nCols = amp.getRawDataBBox().getWidth() + amp.getRawSerialPrescanBBox().getWidth()
+            # Number of serial shifts = nCols
+            nShifts = amp.getRawDataBBox().getWidth() + amp.getRawSerialPrescanBBox().getWidth()
+        elif mode == "PARALLEL":
+            start, stop = self.config.globalCtiRowRange
+            start -= 1
+            stop -= 1
+
+            # Number of parallel shifts = nRows
+            nShifts = amp.getRawDataBBox().getHeight()
+        else:
+            raise RuntimeError(f"{mode} is not a known orientation for the EPER calculation.")
 
         # The signal is the mean intensity of each input, and the
         # data are the overscan columns to fit.  For detectors
@@ -632,11 +687,11 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
         signal = []
         data = []
         Nskipped = 0
-        for exposureEntry in inputMeasurements:
+        for idx, exposureEntry in enumerate(inputMeasurements):
             exposureDict = exposureEntry['CTI']
             if exposureDict[ampName]['IMAGE_MEAN'] < self.config.maxSignalForCti:
                 signal.append(exposureDict[ampName]['IMAGE_MEAN'])
-                data.append(exposureDict[ampName]['SERIAL_OVERSCAN_VALUES'][start:stop+1])
+                data.append(exposureDict[ampName][f'{mode}_OVERSCAN_VALUES'][start:stop+1])
             else:
                 Nskipped += 1
         self.log.info(f"Skipped {Nskipped} exposures brighter than {self.config.maxSignalForCti}.")
@@ -650,10 +705,10 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
         signal = signal[ind]
         data = data[ind]
 
-        # CTI test.  This looks at the charge that has leaked into
+        # This looks at the charge that has leaked into
         # the first few columns of the overscan.
         overscan1 = data[:, 0]
         overscan2 = data[:, 1]
-        serialCtiEstimate = (np.array(overscan1) + np.array(overscan2))/(nCols*np.array(signal))
+        ctiEstimate = (np.array(overscan1) + np.array(overscan2))/(nShifts*np.array(signal))
 
-        return signal, data, start, stop, serialCtiEstimate
+        return signal, data, start, stop, ctiEstimate
