@@ -14,6 +14,7 @@ def configureIsrTaskLSSTForCalibrations(config):
     config.doDiffNonLinearCorrection = False
     config.doCorrectGains = False
     config.doSaturation = False
+    config.doSuspect = False
     config.doApplyGains = False
     config.doCrosstalk = False
     config.crosstalk.doQuadraticCrosstalkCorrection = False
