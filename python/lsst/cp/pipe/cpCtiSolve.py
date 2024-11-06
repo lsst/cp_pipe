@@ -95,6 +95,16 @@ class CpCtiSolveConfig(pipeBase.PipelineTaskConfig,
         default=[-1.0e-6, 3.0e-6],
         doc="Serial CTI range within containing serial turnoff.",
     )
+    turnoffFinderSigmaClip = pexConfig.Field(
+        dtype=int,
+        default=1,
+        doc="n for n*sigma to use for sigma clipping in turnoff finder.",
+    )
+    turnoffFinderSigmaClipMaxIters = pexConfig.Field(
+        dtype=int,
+        default=5,
+        doc="Maximum iterations for sigma clipping in turnoff finder.",
+    )
     parallelCtiRange = pexConfig.ListField(
         dtype=float,
         default=[-2.0e-6, 2.0e-6],
@@ -829,15 +839,17 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
         turnoffIdx = np.argwhere(good)[-1]
         turnoff = np.max(signalVec[good])
 
-        if cleanDataVec[-1] in ctiRange or turnoffIdx in [0, len(signalVec)-1]:
+        if cleanDataVec[good][-1] in ctiRange or turnoffIdx in [0, len(signalVec)-1]:
             self.log.warning("Turnoff point is at the edge of the allowed range for "
                              f"amplifier {amp.getName()}.")
+
+        self.log.debug(f"There are {len(cleanDataVec[good])}/{len(dataVec)} data points "
+                       f"left to determine turnoff point for amplifier {amp.getName()}.")
 
         # Compute the sampliing error as one half the
         # difference between the previous and next point.
         # Or, if it is the last index, just compute the
         # interval.
-
         if turnoffIdx == len(signalVec) - 1:
             samplingError = signalVec[turnoffIdx-1] - signalVec[turnoffIdx]
         elif turnoffIdx == 0:
