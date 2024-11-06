@@ -441,16 +441,24 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
             )
 
             # Calculate the serial and parallel turnoffs
-            serialCtiTurnoff = self.calcTurnoff(
+            serialCtiTurnoff, serialCtiTurnoffSamplingErr = self.calcTurnoff(
                 signals,
                 serialEperEstimate,
                 self.config.serialCtiRange,
+                amp,
             )
-            parallelCtiTurnoff = self.calcTurnoff(
+            parallelCtiTurnoff, parallelCtiTurnoffSamplingErr = self.calcTurnoff(
                 signals,
                 parallelEperEstimate,
                 self.config.parallelCtiRange,
+                amp,
             )
+
+            # Output the results
+            self.log.info("Amplifier %s: serial CTI turnoff is %f +/- %f",
+                          amp.getName(), serialCtiTurnoff, serialCtiTurnoffSamplingErr)
+            self.log.info("Amplifier %s: parallel CTI turnoff is %f +/- %f",
+                          amp.getName(), parallelCtiTurnoff, parallelCtiTurnoffSamplingErr)
 
             # Save everything to the DeferredChargeCalib
             calib.signals[ampName] = signals
@@ -458,6 +466,8 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
             calib.parallelEper[ampName] = parallelEperEstimate
             calib.serialCtiTurnoff[ampName] = serialCtiTurnoff
             calib.parallelCtiTurnoff[ampName] = parallelCtiTurnoff
+            calib.serialCtiTurnoffSamplingErr[ampName] = serialCtiTurnoffSamplingErr
+            calib.parallelCtiTurnoffSamplingErr[ampName] = parallelCtiTurnoffSamplingErr
 
         return calib
 
@@ -739,7 +749,7 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
 
         return signal, data, start, stop, ctiEstimate
 
-    def calcTurnoff(self, signalVec, dataVec, ctiRange):
+    def calcTurnoff(self, signalVec, dataVec, ctiRange, amp):
         """Solve for turnoff value in a sequenced dataset.
 
 
@@ -774,6 +784,18 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
         dataVec = dataVec[idxs]
         signalVec = signalVec[idxs]
 
+        if dataVec.size < 2:
+            if dataVec.size == 0:
+                self.log.warning("No data points after cti range cut to compute turnoff "
+                                 f" for amplifier {amp.getName()}. Setting turnoff point "
+                                 "to 0 el.")
+                return 0.0, 0.0
+            else:
+                self.log.warning("Insufficient data points after cti range cut to compute turnoff "
+                                 f" for amplifier {amp.getName()}. Setting turnoff point "
+                                 "to the maximum signal value.")
+                return signalVec[-1], signalVec[-1]
+
         # Detrend the data
         # We will use np.gradient since this method of
         # detrending turns out to be more practical
@@ -797,10 +819,30 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
         # Retrieve the result
         good = ~np.ma.getmask(cleanDataVecMaArray)
         cleanDataVec = np.ma.getdata(cleanDataVecMaArray)
+
+        if cleanDataVec.size == 0:
+            self.log.warning("No data points after sigma clipping to compute turnoff "
+                             f" for amplifier {amp.getName()}. Setting turnoff point "
+                             "to 0 el.")
+            return 0.0, 0.0
+
+        turnoffIdx = np.argwhere(good)[-1]
         turnoff = np.max(signalVec[good])
 
-        if cleanDataVec[-1] in ctiRange:
-            self.log.warning("Turnoff point is at the edge of the data range. Setting "
-                             "turnoff to the maximum signal value.")
+        if cleanDataVec[-1] in ctiRange or turnoffIdx in [0, len(signalVec)-1]:
+            self.log.warning("Turnoff point is at the edge of the allowed range for "
+                             f"amplifier {amp.getName()}.")
 
-        return turnoff
+        # Compute the sampliing error as one half the
+        # difference between the previous and next point.
+        # Or, if it is the last index, just compute the
+        # interval.
+
+        if turnoffIdx == len(signalVec) - 1:
+            samplingError = signalVec[turnoffIdx-1] - signalVec[turnoffIdx]
+        elif turnoffIdx == 0:
+            samplingError = signalVec[turnoffIdx]
+        else:
+            samplingError = (signalVec[turnoffIdx+1] - signalVec[turnoffIdx-1]) / 2.0
+
+        return turnoff, samplingError
