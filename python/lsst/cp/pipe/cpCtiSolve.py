@@ -35,6 +35,7 @@ from lsst.ip.isr.deferredCharge import (DeferredChargeCalib,
                                         SimulatedModel,
                                         SerialTrap)
 from lmfit import Minimizer, Parameters
+from astropy.stats import sigma_clip
 
 
 class CpCtiSolveConnections(pipeBase.PipelineTaskConnections,
@@ -89,10 +90,27 @@ class CpCtiSolveConfig(pipeBase.PipelineTaskConfig,
         default=10000.0,
         doc="Upper flux limit to use for CTI fit (electron).",
     )
+    serialCtiRange = pexConfig.ListField(
+        dtype=float,
+        default=[-1.0e-6, 3.0e-6],
+        doc="Serial CTI range within containing serial turnoff.",
+    )
+    parallelCtiRange = pexConfig.ListField(
+        dtype=float,
+        default=[-2.0e-6, 2.0e-6],
+        doc="Parallel CTI range within containing serial turnoff.",
+    )
     globalCtiColumnRange = pexConfig.ListField(
         dtype=int,
         default=[1, 2],
-        doc="First and last overscan column to use for global CTI fit.",
+        doc="First and last serialoverscan column to use for "
+            "global CTI fit.",
+    )
+    globalCtiRowRange = pexConfig.ListField(
+        dtype=int,
+        default=[1, 2],
+        doc="First and last parallel overscan row to use for "
+            "global CTI fit.",
     )
 
     trapColumnRange = pexConfig.ListField(
@@ -146,16 +164,20 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
             with measurements organized by amplifier name, containing
             keys:
 
-            ``"FIRST_MEAN"``
+            ``"FIRST_COLUMN_MEAN"``
                 Mean value of first image column (`float`).
-            ``"LAST_MEAN"``
+            ``"LAST_COLUMN_MEAN"``
                 Mean value of last image column (`float`).
             ``"IMAGE_MEAN"``
                 Mean value of the entire image region (`float`).
-            ``"OVERSCAN_COLUMNS"``
+            ``"SERIAL_OVERSCAN_COLUMNS"``
                 List of overscan column indicies (`list` [`int`]).
-            ``"OVERSCAN_VALUES"``
+            ``"SERIAL_OVERSCAN_VALUES"``
                 List of overscan column means (`list` [`float`]).
+            ``"PARALLEL_OVERSCAN_ROWS"``
+                List of overscan row indicies (`list` [`int`]).
+            ``"PARALLEL_OVERSCAN_VALUES"``
+                List of overscan row means (`list` [`float`).
         camera : `lsst.afw.cameraGeom.Camera`
             Camera geometry to use to find detectors.
         inputDims : `list` [`dict`]
@@ -209,16 +231,20 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
             with measurements organized by amplifier name, containing
             keys:
 
-            ``"FIRST_MEAN"``
+            ``"FIRST_COLUMN_MEAN"``
                 Mean value of first image column (`float`).
-            ``"LAST_MEAN"``
+            ``"LAST_COLUMN_MEAN"``
                 Mean value of last image column (`float`).
             ``"IMAGE_MEAN"``
                 Mean value of the entire image region (`float`).
-            ``"OVERSCAN_COLUMNS"``
+            ``"SERIAL_OVERSCAN_COLUMNS"``
                 List of overscan column indicies (`list` [`int`]).
-            ``"OVERSCAN_VALUES"``
+            ``"SERIAL_OVERSCAN_VALUES"``
                 List of overscan column means (`list` [`float`]).
+            ``"PARALLEL_OVERSCAN_ROWS"``
+                List of overscan row indicies (`list` [`int`]).
+            ``"PARALLEL_OVERSCAN_VALUES"``
+                List of overscan row means (`list` [`float`).
         calib : `lsst.ip.isr.DeferredChargeCalib`
             Calibration to populate with values.
         detector : `lsst.afw.cameraGeom.Detector`
@@ -271,7 +297,7 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
                 exposureDict = exposureEntry['CTI']
                 if exposureDict[ampName]['IMAGE_MEAN'] < self.config.maxImageMean:
                     signal.append(exposureDict[ampName]['IMAGE_MEAN'])
-                    data.append(exposureDict[ampName]['OVERSCAN_VALUES'][start:stop+1])
+                    data.append(exposureDict[ampName]['SERIAL_OVERSCAN_VALUES'][start:stop+1])
                 else:
                     Nskipped += 1
             self.log.info(f"Skipped {Nskipped} exposures brighter than {self.config.maxImageMean}.")
@@ -324,16 +350,20 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
             with measurements organized by amplifier name, containing
             keys:
 
-            ``"FIRST_MEAN"``
+            ``"FIRST_COLUMN_MEAN"``
                 Mean value of first image column (`float`).
-            ``"LAST_MEAN"``
+            ``"LAST_COLUMN_MEAN"``
                 Mean value of last image column (`float`).
             ``"IMAGE_MEAN"``
                 Mean value of the entire image region (`float`).
-            ``"OVERSCAN_COLUMNS"``
+            ``"SERIAL_OVERSCAN_COLUMNS"``
                 List of overscan column indicies (`list` [`int`]).
-            ``"OVERSCAN_VALUES"``
+            ``"SERIAL_OVERSCAN_VALUES"``
                 List of overscan column means (`list` [`float`]).
+            ``"PARALLEL_OVERSCAN_ROWS"``
+                List of overscan row indicies (`list` [`int`]).
+            ``"PARALLEL_OVERSCAN_VALUES"``
+                List of overscan row means (`list` [`float`).
         calib : `lsst.ip.isr.DeferredChargeCalib`
             Calibration to populate with values.
         detector : `lsst.afw.cameraGeom.Detector`
@@ -361,12 +391,6 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
         CTISIM.  This offset removes that last imaging data column
         from the count.
         """
-        # Range to fit.  These are in "camera" coordinates, and so
-        # need to have the count for last image column removed.
-        start, stop = self.config.globalCtiColumnRange
-        start -= 1
-        stop -= 1
-
         # Loop over amps/inputs, fitting those columns from
         # "non-saturated" inputs.
         for amp in detector.getAmplifiers():
@@ -375,57 +399,31 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
             # Number of serial shifts.
             nCols = amp.getRawDataBBox().getWidth() + amp.getRawSerialPrescanBBox().getWidth()
 
-            # The signal is the mean intensity of each input, and the
-            # data are the overscan columns to fit.  For detectors
-            # with non-zero CTI, the charge from the imaging region
-            # leaks into the overscan region.
-            signal = []
-            data = []
-            Nskipped = 0
-            for exposureEntry in inputMeasurements:
-                exposureDict = exposureEntry['CTI']
-                if exposureDict[ampName]['IMAGE_MEAN'] < self.config.maxSignalForCti:
-                    signal.append(exposureDict[ampName]['IMAGE_MEAN'])
-                    data.append(exposureDict[ampName]['OVERSCAN_VALUES'][start:stop+1])
-                else:
-                    Nskipped += 1
-            self.log.info(f"Skipped {Nskipped} exposures brighter than {self.config.maxSignalForCti}.")
-            if len(signal) == 0 or len(data) == 0:
-                raise RuntimeError("All exposures brighter than config.maxSignalForCti and excluded.")
+            # Do serial CTI calculation
+            signals, data, start, stop, serialEperEstimate = self.calcEper("SERIAL", inputMeasurements, amp)
+            serialEperResult = np.median(serialEperEstimate) > 5.E-6
+            self.log.info(
+                "Estimate of CTI test is %f for amp %s, %s.", np.median(serialEperEstimate), ampName,
+                "full fitting will be performed" if serialEperResult else
+                "only global CTI fitting will be performed"
+            )
 
-            signal = np.array(signal)
-            data = np.array(data)
-
-            ind = signal.argsort()
-            signal = signal[ind]
-            data = data[ind]
-
-            # CTI test.  This looks at the charge that has leaked into
-            # the first few columns of the overscan.
-            overscan1 = data[:, 0]
-            overscan2 = data[:, 1]
-            test = (np.array(overscan1) + np.array(overscan2))/(nCols*np.array(signal))
-            testResult = np.median(test) > 5.E-6
-            self.log.info("Estimate of CTI test is %f for amp %s, %s.", np.median(test), ampName,
-                          "full fitting will be performed" if testResult else
-                          "only global CTI fitting will be performed")
-
-            self.debugView(ampName, signal, test)
+            self.debugView(ampName, signals, serialEperEstimate)
 
             params = Parameters()
             params.add('ctiexp', value=-6, min=-7, max=-5, vary=True)
-            params.add('trapsize', value=5.0 if testResult else 0.0, min=0.0, max=30.,
-                       vary=True if testResult else False)
+            params.add('trapsize', value=5.0 if serialEperResult else 0.0, min=0.0, max=30.,
+                       vary=True if serialEperResult else False)
             params.add('scaling', value=0.08, min=0.0, max=1.0,
-                       vary=True if testResult else False)
+                       vary=True if serialEperResult else False)
             params.add('emissiontime', value=0.35, min=0.1, max=1.0,
-                       vary=True if testResult else False)
+                       vary=True if serialEperResult else False)
             params.add('driftscale', value=calib.driftScale[ampName], min=0., max=0.001, vary=False)
             params.add('decaytime', value=calib.decayTime[ampName], min=0.1, max=4.0, vary=False)
 
             model = SimulatedModel()
             minner = Minimizer(model.difference, params,
-                               fcn_args=(signal, data, self.config.fitError, nCols, amp),
+                               fcn_args=(signals, data, self.config.fitError, nCols, amp),
                                fcn_kws={'start': start, 'stop': stop, 'trap_type': 'linear'})
             result = minner.minimize()
 
@@ -434,6 +432,42 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
             self.log.info("CTI Global Cti %s: cti: %g decayTime: %g driftScale %g",
                           ampName, calib.globalCti[ampName], calib.decayTime[ampName],
                           calib.driftScale[ampName])
+
+            # Do parallel EPER calculation
+            signals, data, start, stop, parallelEperEstimate = self.calcEper(
+                "PARALLEL",
+                inputMeasurements,
+                amp,
+            )
+
+            # Calculate the serial and parallel turnoffs
+            serialCtiTurnoff, serialCtiTurnoffSamplingErr = self.calcTurnoff(
+                signals,
+                serialEperEstimate,
+                self.config.serialCtiRange,
+                amp,
+            )
+            parallelCtiTurnoff, parallelCtiTurnoffSamplingErr = self.calcTurnoff(
+                signals,
+                parallelEperEstimate,
+                self.config.parallelCtiRange,
+                amp,
+            )
+
+            # Output the results
+            self.log.info("Amp %s: Setting serial CTI turnoff is %f +/- %f",
+                          amp.getName(), serialCtiTurnoff, serialCtiTurnoffSamplingErr)
+            self.log.info("Amp %s: Setting parallel CTI turnoff is %f +/- %f",
+                          amp.getName(), parallelCtiTurnoff, parallelCtiTurnoffSamplingErr)
+
+            # Save everything to the DeferredChargeCalib
+            calib.signals[ampName] = signals
+            calib.serialEper[ampName] = serialEperEstimate
+            calib.parallelEper[ampName] = parallelEperEstimate
+            calib.serialCtiTurnoff[ampName] = serialCtiTurnoff
+            calib.parallelCtiTurnoff[ampName] = parallelCtiTurnoff
+            calib.serialCtiTurnoffSamplingErr[ampName] = serialCtiTurnoffSamplingErr
+            calib.parallelCtiTurnoffSamplingErr[ampName] = parallelCtiTurnoffSamplingErr
 
         return calib
 
@@ -492,15 +526,15 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
             with measurements organized by amplifier name, containing
             keys:
 
-            ``"FIRST_MEAN"``
+            ``"FIRST_COLUMN_MEAN"``
                 Mean value of first image column (`float`).
-            ``"LAST_MEAN"``
+            ``"LAST_COLUMN_MEAN"``
                 Mean value of last image column (`float`).
             ``"IMAGE_MEAN"``
                 Mean value of the entire image region (`float`).
-            ``"OVERSCAN_COLUMNS"``
+            ``"SERIAL_OVERSCAN_COLUMNS"``
                 List of overscan column indicies (`list` [`int`]).
-            ``"OVERSCAN_VALUES"``
+            ``"SERIAL_OVERSCAN_VALUES"``
                 List of overscan column means (`list` [`float`]).
         calib : `lsst.ip.isr.DeferredChargeCalib`
             Calibration to populate with values.
@@ -556,8 +590,8 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
                 exposureDict = exposureEntry['CTI']
                 if exposureDict[ampName]['IMAGE_MEAN'] < self.config.maxImageMean:
                     signal.append(exposureDict[ampName]['IMAGE_MEAN'])
-                    data.append(exposureDict[ampName]['OVERSCAN_VALUES'][start:stop+1])
-                    new_signal.append(exposureDict[ampName]['LAST_MEAN'])
+                    data.append(exposureDict[ampName]['SERIAL_OVERSCAN_VALUES'][start:stop+1])
+                    new_signal.append(exposureDict[ampName]['LAST_COLUMN_MEAN'])
                 else:
                     Nskipped += 1
             self.log.info(f"Skipped {Nskipped} exposures brighter than {self.config.maxImageMean}.")
@@ -611,3 +645,204 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
             calib.serialTraps[ampName] = trap
 
         return calib
+
+    def calcEper(self, mode, inputMeasurements, amp):
+        """Solve for serial global CTI using the extended pixel edge
+        response (EPER) method.
+
+        Parameters
+        ----------
+        mode : `str`
+            The orientation of the calculation to perform. Can be
+            either `SERIAL` or `PARALLEL`.
+        inputMeasurements : `list` [`dict`]
+            List of overscan measurements from each input exposure.
+            Each dictionary is nested within a top level 'CTI' key,
+            with measurements organized by amplifier name, containing
+            keys:
+
+            ``"FIRST_COLUMN_MEAN"``
+                Mean value of first image column (`float`).
+            ``"LAST_COLUMN_MEAN"``
+                Mean value of last image column (`float`).
+            ``"IMAGE_MEAN"``
+                Mean value of the entire image region (`float`).
+            ``"SERIAL_OVERSCAN_COLUMNS"``
+                List of serial overscan column
+                indicies (`list` [`int`]).
+            ``"SERIAL_OVERSCAN_VALUES"``
+                List of serial overscan column
+                means (`list` [`float`]).
+            ``"PARALLEL_OVERSCAN_ROWS"``
+                List of parallel overscan row
+                indicies (`list` [`int`]).
+            ``"PARALLEL_OVERSCAN_VALUES"``
+                List of parallel overscan row
+                means (`list` [`float`]).
+        calib : `lsst.ip.isr.DeferredChargeCalib`
+            Calibration to populate with values.
+        amp : `lsst.afw.cameraGeom.Amplifier`
+            Amplifier object containing the geometry information for
+            the amplifier.
+
+        Returns
+        -------
+        calib : `lsst.ip.isr.DeferredChargeCalib`
+            Populated calibration.
+
+        Raises
+        ------
+        RuntimeError : Raised if no data remains after flux filtering or if
+            the mode string is not one of "SERIAL" or "PARALLEL".
+        """
+        ampName = amp.getName()
+
+        # Range to fit.  These are in "camera" coordinates, and so
+        # need to have the count for last image column removed.
+        if mode == "SERIAL":
+            start, stop = self.config.globalCtiColumnRange
+            start -= 1
+            stop -= 1
+
+            # Number of serial shifts = nCols
+            nShifts = amp.getRawDataBBox().getWidth() + amp.getRawSerialPrescanBBox().getWidth()
+        elif mode == "PARALLEL":
+            start, stop = self.config.globalCtiRowRange
+            start -= 1
+            stop -= 1
+
+            # Number of parallel shifts = nRows
+            nShifts = amp.getRawDataBBox().getHeight()
+        else:
+            raise RuntimeError(f"{mode} is not a known orientation for the EPER calculation.")
+
+        # The signal is the mean intensity of each input, and the
+        # data are the overscan columns to fit.  For detectors
+        # with non-zero CTI, the charge from the imaging region
+        # leaks into the overscan region.
+        signal = []
+        data = []
+        Nskipped = 0
+        for exposureEntry in inputMeasurements:
+            exposureDict = exposureEntry['CTI']
+            if exposureDict[ampName]['IMAGE_MEAN'] < self.config.maxSignalForCti:
+                signal.append(exposureDict[ampName]['IMAGE_MEAN'])
+                data.append(exposureDict[ampName][f'{mode}_OVERSCAN_VALUES'][start:stop+1])
+            else:
+                Nskipped += 1
+        self.log.info(f"Skipped {Nskipped} exposures brighter than {self.config.maxSignalForCti}.")
+        if len(signal) == 0 or len(data) == 0:
+            raise RuntimeError("All exposures brighter than config.maxSignalForCti and excluded.")
+
+        signal = np.array(signal)
+        data = np.array(data)
+
+        ind = signal.argsort()
+        signal = signal[ind]
+        data = data[ind]
+
+        # This looks at the charge that has leaked into
+        # the first few columns of the overscan.
+        overscan1 = data[:, 0]
+        overscan2 = data[:, 1]
+        ctiEstimate = (np.array(overscan1) + np.array(overscan2))/(nShifts*np.array(signal))
+
+        return signal, data, start, stop, ctiEstimate
+
+    def calcTurnoff(self, signalVec, dataVec, ctiRange, amp):
+        """Solve for turnoff value in a sequenced dataset.
+
+
+        Parameters
+        ----------
+        signalVec : `np.ndarray`
+            Signal values for the dataset. Must be sorted
+            in ascending order.
+        dataVec : `np.ndarray`
+            Data values for the dataset. Must be sorted
+            in ascending order.
+        ctiRange : `list` [`float`]
+            Range of CTI within which to search for the
+            turnoff point.
+
+        Returns
+        -------
+        turnoff : `float`
+            the turnoff point in the same units as the
+            input signals
+
+        Notes
+        ------
+        If the data is sparse and does not cover the turnoff region,
+        it will likely just return the highest signal in the dataset.
+
+        However, it will issue a warning if the turnoff point is at
+        the edge of the search range.
+        """
+        # First, trim the data
+        idxs = (dataVec >= ctiRange[0]) * (dataVec <= ctiRange[1])
+        dataVec = dataVec[idxs]
+        signalVec = signalVec[idxs]
+
+        if dataVec.size < 2:
+            if dataVec.size == 0:
+                self.log.warning("No data points after cti range cut to compute turnoff "
+                                 f" for amplifier {amp.getName()}. Setting turnoff point "
+                                 "to 0 el.")
+                return 0.0, 0.0
+            else:
+                self.log.warning("Insufficient data points after cti range cut to compute turnoff "
+                                 f" for amplifier {amp.getName()}. Setting turnoff point "
+                                 "to the maximum signal value.")
+                return signalVec[-1], signalVec[-1]
+
+        # Detrend the data
+        # We will use np.gradient since this method of
+        # detrending turns out to be more practical
+        # than using np.diff, which tends to be noisier.
+        # Besides, this tends to filter out the low
+        # gradient features of the data, particularly
+        # in the parallel turnoff.
+        detrendedDataVec = np.gradient(dataVec)
+
+        # Sigma clip the data to remove the
+        # turnoff points
+        cleanDataVecMaArray = sigma_clip(
+            detrendedDataVec,
+            sigma=self.config.turnoffFinderSigmaClip,
+            maxiters=self.config.turnoffFinderSigmaClipMaxIters,
+            cenfunc=np.nanmedian,
+            stdfunc=np.nanstd,
+            masked=True,
+        )
+
+        # Retrieve the result
+        good = ~np.ma.getmask(cleanDataVecMaArray)
+        cleanDataVec = np.ma.getdata(cleanDataVecMaArray)
+
+        if cleanDataVec.size == 0:
+            self.log.warning("No data points after sigma clipping to compute turnoff "
+                             f" for amplifier {amp.getName()}. Setting turnoff point "
+                             "to 0 el.")
+            return 0.0, 0.0
+
+        turnoffIdx = np.argwhere(good)[-1]
+        turnoff = np.max(signalVec[good])
+
+        if cleanDataVec[-1] in ctiRange or turnoffIdx in [0, len(signalVec)-1]:
+            self.log.warning("Turnoff point is at the edge of the allowed range for "
+                             f"amplifier {amp.getName()}.")
+
+        # Compute the sampliing error as one half the
+        # difference between the previous and next point.
+        # Or, if it is the last index, just compute the
+        # interval.
+
+        if turnoffIdx == len(signalVec) - 1:
+            samplingError = signalVec[turnoffIdx-1] - signalVec[turnoffIdx]
+        elif turnoffIdx == 0:
+            samplingError = signalVec[turnoffIdx]
+        else:
+            samplingError = (signalVec[turnoffIdx+1] - signalVec[turnoffIdx-1]) / 2.0
+
+        return turnoff, samplingError
