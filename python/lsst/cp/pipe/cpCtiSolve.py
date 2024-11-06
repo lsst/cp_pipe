@@ -35,6 +35,7 @@ from lsst.ip.isr.deferredCharge import (DeferredChargeCalib,
                                         SimulatedModel,
                                         SerialTrap)
 from lmfit import Minimizer, Parameters
+from astropy.stats import sigma_clip
 
 
 class CpCtiSolveConnections(pipeBase.PipelineTaskConnections,
@@ -88,6 +89,16 @@ class CpCtiSolveConfig(pipeBase.PipelineTaskConfig,
         dtype=float,
         default=10000.0,
         doc="Upper flux limit to use for CTI fit (electron).",
+    )
+    serialCtiRange = pexConfig.ListField(
+        dtype=float,
+        default=[-1.0e-6, 3.0e-6],
+        doc="Serial CTI range within containing serial turnoff.",
+    )
+    parallelCtiRange = pexConfig.ListField(
+        dtype=float,
+        default=[-2.0e-6, 2.0e-6],
+        doc="Parallel CTI range within containing serial turnoff.",
     )
     globalCtiColumnRange = pexConfig.ListField(
         dtype=int,
@@ -429,9 +440,24 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
                 amp,
             )
 
+            # Calculate the serial and parallel turnoffs
+            serialCtiTurnoff = self.calcTurnoff(
+                signals,
+                serialEperEstimate,
+                self.config.serialCtiRange,
+            )
+            parallelCtiTurnoff = self.calcTurnoff(
+                signals,
+                parallelEperEstimate,
+                self.config.parallelCtiRange,
+            )
+
+            # Save everything to the DeferredChargeCalib
             calib.signals[ampName] = signals
             calib.serialEper[ampName] = serialEperEstimate
             calib.parallelEper[ampName] = parallelEperEstimate
+            calib.serialCtiTurnoff[ampName] = serialCtiTurnoff
+            calib.parallelCtiTurnoff[ampName] = parallelCtiTurnoff
 
         return calib
 
@@ -687,7 +713,7 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
         signal = []
         data = []
         Nskipped = 0
-        for idx, exposureEntry in enumerate(inputMeasurements):
+        for exposureEntry in inputMeasurements:
             exposureDict = exposureEntry['CTI']
             if exposureDict[ampName]['IMAGE_MEAN'] < self.config.maxSignalForCti:
                 signal.append(exposureDict[ampName]['IMAGE_MEAN'])
@@ -712,3 +738,69 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
         ctiEstimate = (np.array(overscan1) + np.array(overscan2))/(nShifts*np.array(signal))
 
         return signal, data, start, stop, ctiEstimate
+
+    def calcTurnoff(self, signalVec, dataVec, ctiRange):
+        """Solve for turnoff value in a sequenced dataset.
+
+
+        Parameters
+        ----------
+        signalVec : `np.ndarray`
+            Signal values for the dataset. Must be sorted
+            in ascending order.
+        dataVec : `np.ndarray`
+            Data values for the dataset. Must be sorted
+            in ascending order.
+        ctiRange : `list` [`float`]
+            Range of CTI within which to search for the
+            turnoff point.
+
+        Returns
+        -------
+        turnoff : `float`
+            the turnoff point in the same units as the
+            input signals
+
+        Notes
+        ------
+        If the data is sparse and does not cover the turnoff region,
+        it will likely just return the highest signal in the dataset.
+
+        However, it will issue a warning if the turnoff point is at
+        the edge of the search range.
+        """
+        # First, trim the data
+        idxs = (dataVec >= ctiRange[0]) * (dataVec <= ctiRange[1])
+        dataVec = dataVec[idxs]
+        signalVec = signalVec[idxs]
+
+        # Detrend the data
+        # We will use np.gradient since this method of
+        # detrending turns out to be more practical
+        # than using np.diff, which tends to be noisier.
+        # Besides, this tends to filter out the low
+        # gradient features of the data, particularly
+        # in the parallel turnoff.
+        detrendedDataVec = np.gradient(dataVec)
+
+        # Sigma clip the data to remove the
+        # turnoff points
+        cleanDataVecMaArray = sigma_clip(
+            detrendedDataVec,
+            sigma=self.config.turnoffFinderSigmaClip,
+            maxiters=self.config.turnoffFinderSigmaClipMaxIters,
+            cenfunc=np.nanmedian,
+            stdfunc=np.nanstd,
+            masked=True,
+        )
+
+        # Retrieve the result
+        good = ~np.ma.getmask(cleanDataVecMaArray)
+        cleanDataVec = np.ma.getdata(cleanDataVecMaArray)
+        turnoff = np.max(signalVec[good])
+
+        if cleanDataVec[-1] in ctiRange:
+            self.log.warning("Turnoff point is at the edge of the data range. Setting "
+                             "turnoff to the maximum signal value.")
+
+        return turnoff
