@@ -78,6 +78,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
             "cpFlatBootstrap.yaml",
             "cpSpectroFlat.yaml",
             "cpPtcFixupGainRatios.yaml",
+            "cpPtcRename.yaml",
         }
 
         for ex in exclude:
@@ -159,6 +160,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 "cpDarkBootstrap.yaml",
                 "cpFlatBootstrap.yaml",
                 "cpPtcFixupGainRatios.yaml",
+                "cpPtcRename.yaml",
         ]):
             self._check_pipeline(os.path.join(self.pipeline_path, "LSSTCam", pipeline))
 
@@ -173,6 +175,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 "cpDarkBootstrap.yaml",
                 "cpFlatBootstrap.yaml",
                 "cpPtcFixupGainRatios.yaml",
+                "cpPtcRename.yaml",
         ]):
             self._check_pipeline(os.path.join(self.pipeline_path, "LSSTCam-imSim", pipeline))
 
@@ -208,6 +211,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 "cpCrosstalk.yaml",
                 "cpCti.yaml",
                 "cpPtcFixupGainRatios.yaml",
+                "cpPtcRename.yaml",
         ]):
             self._check_pipeline(os.path.join(self.pipeline_path, "LSSTComCamSim", pipeline))
 
@@ -221,6 +225,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 "cpDarkBootstrap.yaml",
                 "cpFlatBootstrap.yaml",
                 "cpPtcFixupGainRatios.yaml",
+                "cpPtcRename.yaml",
         ]):
             self._check_pipeline(os.path.join(self.pipeline_path, "LSST-TS8", pipeline))
 
@@ -235,6 +240,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 "cpDarkBootstrap.yaml",
                 "cpFlatBootstrap.yaml",
                 "cpPtcFixupGainRatios.yaml",
+                "cpPtcRename.yaml",
         ]):
             self._check_pipeline(os.path.join(self.pipeline_path, "DECam", pipeline))
 
@@ -249,6 +255,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 "cpDarkBootstrap.yaml",
                 "cpFlatBootstrap.yaml",
                 "cpPtcFixupGainRatios.yaml",
+                "cpPtcRename.yaml",
         ]):
             self._check_pipeline(os.path.join(self.pipeline_path, "HSC", pipeline))
 
