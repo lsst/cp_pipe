@@ -455,9 +455,9 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
             )
 
             # Output the results
-            self.log.info("Amplifier %s: serial CTI turnoff is %f +/- %f",
+            self.log.info("Amp %s: Setting serial CTI turnoff is %f +/- %f",
                           amp.getName(), serialCtiTurnoff, serialCtiTurnoffSamplingErr)
-            self.log.info("Amplifier %s: parallel CTI turnoff is %f +/- %f",
+            self.log.info("Amp %s: Setting parallel CTI turnoff is %f +/- %f",
                           amp.getName(), parallelCtiTurnoff, parallelCtiTurnoffSamplingErr)
 
             # Save everything to the DeferredChargeCalib
