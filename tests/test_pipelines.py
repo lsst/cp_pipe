@@ -77,6 +77,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
             "cpDarkBootstrap.yaml",
             "cpFlatBootstrap.yaml",
             "cpSpectroFlat.yaml",
+            "cpPtcFixupGainRatios.yaml",
         }
 
         for ex in exclude:
@@ -157,6 +158,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 "cpBiasBootstrap.yaml",
                 "cpDarkBootstrap.yaml",
                 "cpFlatBootstrap.yaml",
+                "cpPtcFixupGainRatios.yaml",
         ]):
             self._check_pipeline(os.path.join(self.pipeline_path, "LSSTCam", pipeline))
 
@@ -170,6 +172,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 "cpBiasBootstrap.yaml",
                 "cpDarkBootstrap.yaml",
                 "cpFlatBootstrap.yaml",
+                "cpPtcFixupGainRatios.yaml",
         ]):
             self._check_pipeline(os.path.join(self.pipeline_path, "LSSTCam-imSim", pipeline))
 
@@ -204,6 +207,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 "cpLinearizer.yaml",
                 "cpCrosstalk.yaml",
                 "cpCti.yaml",
+                "cpPtcFixupGainRatios.yaml",
         ]):
             self._check_pipeline(os.path.join(self.pipeline_path, "LSSTComCamSim", pipeline))
 
@@ -216,6 +220,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 "cpBiasBootstrap.yaml",
                 "cpDarkBootstrap.yaml",
                 "cpFlatBootstrap.yaml",
+                "cpPtcFixupGainRatios.yaml",
         ]):
             self._check_pipeline(os.path.join(self.pipeline_path, "LSST-TS8", pipeline))
 
@@ -229,6 +234,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 "cpBiasBootstrap.yaml",
                 "cpDarkBootstrap.yaml",
                 "cpFlatBootstrap.yaml",
+                "cpPtcFixupGainRatios.yaml",
         ]):
             self._check_pipeline(os.path.join(self.pipeline_path, "DECam", pipeline))
 
@@ -242,6 +248,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 "cpBiasBootstrap.yaml",
                 "cpDarkBootstrap.yaml",
                 "cpFlatBootstrap.yaml",
+                "cpPtcFixupGainRatios.yaml",
         ]):
             self._check_pipeline(os.path.join(self.pipeline_path, "HSC", pipeline))
 
