@@ -30,7 +30,12 @@ import lsst.pipe.base.connectionTypes as cT
 from ..utils import ampOffsetGainRatioFixup
 
 
-__all__ = ["PhotonTransferCurveFixupGainRatiosConfig", "PhotonTransferCurveFixupGainRatiosTask"]
+__all__ = [
+    "PhotonTransferCurveFixupGainRatiosConfig",
+    "PhotonTransferCurveFixupGainRatiosTask",
+    "PhotonTransferCurveRenameConfig",
+    "PhotonTransferCurveRenameTask",
+]
 
 
 class PhotonTransferCurveFixupGainRatiosConnections(
@@ -171,3 +176,47 @@ class PhotonTransferCurveFixupGainRatiosTask(pipeBase.PipelineTask):
         return pipeBase.Struct(
             outputPtc=outputPtc,
         )
+
+
+class PhotonTransferCurveRenameConnections(
+    pipeBase.PipelineTaskConnections,
+    dimensions=("instrument", "detector")
+):
+    inputPtc = cT.PrerequisiteInput(
+        name="ptcFixed",
+        doc="Input PTC to rename.",
+        storageClass="PhotonTransferCurveDataset",
+        dimensions=("instrument", "detector"),
+        isCalibration=True,
+    )
+    outputPtc = cT.Output(
+        name="ptc",
+        doc="Output PTC that has been renamed.",
+        storageClass="PhotonTransferCurveDataset",
+        dimensions=("instrument", "detector"),
+        multiple=False,
+        isCalibration=True,
+    )
+
+
+class PhotonTransferCurveRenameConfig(
+    pipeBase.PipelineTaskConfig,
+    pipelineConnections=PhotonTransferCurveRenameConnections,
+):
+    pass
+
+
+class PhotonTransferCurveRenameTask(pipeBase.PipelineTask):
+    """Task to rename a ptcFixed into a ptc."""
+    ConfigClass = PhotonTransferCurveRenameConfig
+    _DefaultName = "cpPhotonTransferCurveRename"
+
+    def runQuantum(self, butlerQC, inputRefs, outputRefs):
+        # docstring inherited.
+        inputs = butlerQC.get(inputRefs)
+
+        outputs = pipeBase.Struct(ptc=inputs["inputPtc"])
+        butlerQC.put(outputs, outputRefs)
+
+    def run(self):
+        pass
