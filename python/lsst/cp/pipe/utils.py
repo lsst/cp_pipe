@@ -29,6 +29,7 @@ import numpy as np
 import itertools
 import numpy.polynomial.polynomial as poly
 
+from scipy.interpolate import Akima1DInterpolator
 from scipy.optimize import leastsq
 from scipy.stats import median_abs_deviation, norm
 
@@ -1183,14 +1184,10 @@ class AstierSplineLinearityFitter:
         -------
         ratio_models : `np.ndarray` (N,)
             Model ratio, (mu_i - S(mu_i) - O)/(k_j * D_i)
-        spl : `lsst.afw.math.thing`
+        spl : `scipy.interpolate.Akima1DInterpolator`
             Spline interpolator (returned if return_spline=True).
         """
-        spl = lsst.afw.math.makeInterpolate(
-            nodes,
-            pars[par_indices["values"]],
-            lsst.afw.math.stringToInterpStyle("AKIMA_SPLINE"),
-        )
+        spl = Akima1DInterpolator(nodes, pars[par_indices["values"]], method="akima")
 
         # Check if we want to do just the left or both with temp scale.
         if len(par_indices["temperature_coeff"]) == 1:
@@ -1198,7 +1195,7 @@ class AstierSplineLinearityFitter:
         else:
             mu_corr = mu
 
-        numerator = mu_corr - spl.interpolate(mu_corr)
+        numerator = mu_corr - spl(np.clip(mu_corr, nodes[0], nodes[-1]))
         if len(par_indices["offset"]) == 1:
             numerator -= pars[par_indices["offset"][0]]
         denominator = pd.copy()
@@ -1328,9 +1325,9 @@ class AstierSplineLinearityFitter:
         # Ensure masked points have 0 residual.
         resid[~_mask] = 0.0
 
-        constraint = [1e3 * np.mean(spl.interpolate(self._x_regularize))]
+        constraint = [1e3 * np.mean(spl(np.clip(self._x_regularize, self._nodes[0], self._nodes[-1])))]
         # 0 should transform to 0
-        constraint.append(spl.interpolate(0)*1e10)
+        constraint.append(spl(0)*1e10)
         # Use a Jeffreys prior on the weight if we are fitting it.
         if self._fit_weights:
             # This factor ensures that log(fact * w) is negative.
