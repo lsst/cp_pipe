@@ -215,7 +215,7 @@ class PhotonTransferCurveRenameTask(pipeBase.PipelineTask):
         # docstring inherited.
         inputs = butlerQC.get(inputRefs)
 
-        outputs = pipeBase.Struct(ptc=inputs["inputPtc"])
+        outputs = pipeBase.Struct(outputPtc=inputs["inputPtc"])
         butlerQC.put(outputs, outputRefs)
 
     def run(self):
