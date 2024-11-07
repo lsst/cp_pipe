@@ -20,6 +20,7 @@ tasks:
   cpMeasureFlatDefects:
     class: lsst.cp.pipe.MeasureDefectsCombinedWithFilterTask
     config:
+      doVampirePixels: True
       thresholdType: "VALUE"
       fracThresholdFlat: 0.9
       badPixelsToFillColumnThreshold: 1000

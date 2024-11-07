@@ -746,7 +746,7 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
         exp = self.flatExp.clone()
 
         # Square set of pixels set to a high value
-        # (simplified version of a vampire pixel)
+        # (simplified version of vampire pixels)
         yVampirePixel = 130
         xVampirePixel = 50
         exp.image.array[yVampirePixel-3:yVampirePixel+3,xVampirePixel-3:xVampirePixel+3] = 2600.

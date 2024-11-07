@@ -421,8 +421,8 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
                         coldPixelCount[ampName] += fp.getArea()
 
             if self.config.doVampirePixels:
-                # Add vampire pixels to footprint
-                footprintList += footprintSet_VampirePixel.getFootprints()
+                # Add vampire pixels to footprint set
+                mergedSet.merge(footprintSet_VampirePixel)
 
             footprintList += mergedSet.getFootprints()
 
