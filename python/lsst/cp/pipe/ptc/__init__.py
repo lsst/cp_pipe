@@ -24,3 +24,4 @@
 from .cpPlotPtc import *
 from .cpPtcExtract import *
 from .cpPtcSolve import *
+from .cpPtcFixupGainRatios import *

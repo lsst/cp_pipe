@@ -877,7 +877,8 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             self.ptcFitAndCheckPtc(fitType=fitType, order=order, doFitBootstrap=True)
 
     def test_ampOffsetGainRatioFixup(self):
-        """Test the ampOffsetGainRatioFixup utility code."""
+        """Test the ampOffsetGainRatioFixup code via
+        PhotonTransferCurveFixupGainRatiosTask."""
         rng = np.random.RandomState(12345)
 
         gainsTruth = rng.normal(loc=1.7, scale=0.05, size=len(self.ampNames))
@@ -893,6 +894,12 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         # We have a perfectly flat illuminated detector (in electrons)
         nFlat = 20
         meansElectron = gainsMedian * np.linspace(500.0, 30000.0, nFlat)
+
+        # Set up the fixup task.
+        fixupConfig = cpPipe.ptc.PhotonTransferCurveFixupGainRatiosConfig()
+        fixupConfig.ampOffsetGainRatioMinAdu = 1000.0
+        fixupConfig.ampOffsetGainRatioMaxAdu = 20000.0
+        fixupTask = cpPipe.ptc.PhotonTransferCurveFixupGainRatiosTask(config=fixupConfig)
 
         for testMode in ["full", "badamp"]:
             badAmp = None
@@ -928,17 +935,23 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             ampOffset = AmpOffsetTask(config=config)
 
             detector = self.flatExp1.getDetector()
+            metadatas = []
             for i in range(nFlat):
                 exp = self.flatExp1.clone()
                 for amp in detector:
-                    exp[amp.getBBox()].image.array[:, :] = ptc.finalMeans[amp.getName()][i]
+                    amp_name = amp.getName()
+                    exp[amp.getBBox()].image.array[:, :] = ptc.finalMeans[amp_name][i]
+                    md = exp.metadata
 
-                res = ampOffset.run(exp)
+                    md[f"LSST ISR FINAL MEDIAN {amp_name}"] = ptc.finalMeans[amp_name][i]
+                    md[f"LSST ISR FINAL STDEV {amp_name}"] = np.sqrt(ptc.finalMeans[amp_name][i])
+                    md[f"LSST ISR READNOISE {amp_name}"] = 0.0
 
-                for j, amp in enumerate(detector):
-                    ptc.ampOffsets[amp.getName()][i] = res.pedestals[j]
+                ampOffset.run(exp)
+                metadatas.append(exp.metadata)
 
-            ampOffsetGainRatioFixup(ptc, 1000.0, 20000.0)
+            result = fixupTask.run(inputPtc=ptc, exposureMetadata=metadatas)
+            ptc = result.outputPtc
 
             # Check that the flats are flat after adjustment.
             for i in range(nFlat):
