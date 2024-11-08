@@ -1,0 +1,4 @@
+description: cp_pipe ptc renaming (LSSTCam).
+instrument: lsst.obs.lsst.LsstCam
+imports:
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpPtcRename.yaml
