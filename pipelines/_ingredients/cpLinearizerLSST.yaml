@@ -43,6 +43,12 @@ tasks:
       splineKnots: 10
       trimmedState: false
       usePhotodiode: true
+subsets:
+  cpLinearizerPtc:
+    subset:
+      - cpLinearizerIsr
+      - cpLinearizerPtcExtract
+      - cpLinearizerPtcSolve
 contracts:
   - cpLinearizerIsr.doBootstrap == True
   - cpLinearizerPtcExtract.connections.inputExp == cpLinearizerIsr.connections.outputExposure
