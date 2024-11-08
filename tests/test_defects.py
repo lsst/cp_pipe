@@ -736,31 +736,39 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
 
     def test_defectVampirePixels(self):
         config = copy.copy(self.defaultConfig)
+        # We set configs to mask vampire pixels
         config.doVampirePixels = True
-        # Flat mock has higher pixel values than real flats
-        config.thresholdVampirePixels = 2500.
+        # We choose small radius to get a only 3 bbox to check
+        config.radiusVampirePixels = 1
+        # This is the threshold type that is actually used
+        # for defects search in flats
+        config.thresholdType = 'VALUE'
+        # Flat mock has higher pixel values than real flatBootstrap
+        config.thresholdVampirePixels = 2550.
 
         task = self.defaultTask
         task.config = config
 
         exp = self.flatExp.clone()
 
-        # Square set of pixels set to a high value
-        # (simplified version of vampire pixels)
+        # We set one bright pixel to test the vampire pixel masking
         yVampirePixel = 130
         xVampirePixel = 50
-        exp.image.array[yVampirePixel-3:yVampirePixel+3,xVampirePixel-3:xVampirePixel+3] = 2600.
+        exp.image.array[yVampirePixel, xVampirePixel] = 2600.
 
-        # Find usual hot and pixels as well as the square defect
+        # Find usual hot and pixels as well as the bright defect
         defects = task._findHotAndColdPixels(exp)
 
-        # Make square defect BBox
-        vampireBBoxes = Box2I(Point2I(xVampirePixel-3, yVampirePixel-3), Extent2I(6, 6))
+        # Make bright defect BBox
+        vampireBBox = [Box2I(corner=Point2I(50, 129), dimensions=Extent2I(1, 3)),
+                       Box2I(corner=Point2I(49, 130), dimensions=Extent2I(1, 1)),
+                       Box2I(corner=Point2I(51, 130), dimensions=Extent2I(1, 1))]
         # Test that the BBox is within the defects measured
         boxesMeasured = []
         for defect in defects:
             boxesMeasured.append(defect.getBBox())
-        self.assertIn(vampireBBoxes, boxesMeasured)
+        for expectedBBox in vampireBBox:
+            self.assertIn(expectedBBox, boxesMeasured)
 
     def test_defectFindingAllSensor(self):
         config = copy.copy(self.defaultConfig)

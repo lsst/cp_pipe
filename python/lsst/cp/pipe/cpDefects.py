@@ -262,7 +262,7 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
             nPix += defect.getBBox().getArea()
         return nPix
 
-    def getVampirePixels(self,ampImg):
+    def getVampirePixels(self, ampImg):
         """TODO: Add documentation once done
         """
 
