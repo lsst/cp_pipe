@@ -1,4 +1,5 @@
 description: cp_pipe CTI calibration construction
+instrument: lsst.obs.lsst.LsstComCam
 tasks:
   cpCtiIsr:
     class: lsst.ip.isr.IsrTaskLSST
