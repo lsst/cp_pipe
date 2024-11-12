@@ -86,18 +86,19 @@ class MeasureDefectsTaskConfig(pipeBase.PipelineTaskConfig,
     )
     doVampirePixels = pexConfig.Field(
         dtype=bool,
-        doc=("TODO: ADD info."),
+        doc=("Search for vampire pixels (bright pixels surrounded by ring of low flux) in ComCam "
+             "flatBootstrap and mask the area arount them."),
         default=False,
     )
     thresholdVampirePixels = pexConfig.Field(
         dtype=float,
-        doc=("TODO: ADD info."),
-        default=1.4,
+        doc=("Pixel value threshold to find bright pixels in ComCam flatBootstrap."),
+        default=1.9,
     )
     radiusVampirePixels = pexConfig.Field(
         dtype=int,
-        doc=("TODO: ADD info."),
-        default=4,
+        doc=("Radius (in pixels) of the area to mask around ComCam flatBootstrap bright pixels."),
+        default=8,
     )
     darkCurrentThreshold = pexConfig.Field(
         dtype=float,
@@ -263,7 +264,18 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
         return nPix
 
     def getVampirePixels(self, ampImg):
-        """TODO: Add documentation once done
+        """Find vampire pixels (bright pixels in flats) and get footprint of
+        extended area around them,
+
+        Parameters
+        ----------
+        ampImg : `lsst.afw.image._maskedImage.MaskedImageF`
+            The amplifier masked image to do the vampire pixels search on.
+
+        Returns
+        -------
+        fs_grow : `lsst.afw.detection._detection.FootprintSet`
+            The footprint set of areas around vampire pixels in the amplifier.
         """
 
         # Find bright pixels
@@ -421,6 +433,11 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
                         coldPixelCount[ampName] += fp.getArea()
 
             if self.config.doVampirePixels:
+                # Count the number of pixels masked
+                vampirePixelCount = 0
+                for fp in footprintSet_VampirePixel.getFootprints():
+                    vampirePixelCount += fp.getArea()
+                self.log.info("%s Vampire pixels are masked", vampirePixelCount)
                 # Add vampire pixels to footprint set
                 mergedSet.merge(footprintSet_VampirePixel)
 
