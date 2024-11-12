@@ -734,6 +734,42 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
 
         self.check_dilateSaturatedColumns(exp, defects, expectedDefects)
 
+    def test_defectVampirePixels(self):
+        config = copy.copy(self.defaultConfig)
+        # We set configs to mask vampire pixels
+        config.doVampirePixels = True
+        # We choose small radius to get a only 3 bbox to check
+        config.radiusVampirePixels = 1
+        # This is the threshold type that is actually used
+        # for defects search in flats
+        config.thresholdType = 'VALUE'
+        # Flat mock has higher pixel values than real flatBootstrap
+        config.thresholdVampirePixels = 2550.
+
+        task = self.defaultTask
+        task.config = config
+
+        exp = self.flatExp.clone()
+
+        # We set one bright pixel to test the vampire pixel masking
+        yVampirePixel = 130
+        xVampirePixel = 50
+        exp.image.array[yVampirePixel, xVampirePixel] = 2600.
+
+        # Find usual hot and pixels as well as the bright defect
+        defects = task._findHotAndColdPixels(exp)
+
+        # Make bright defect BBox
+        vampireBBox = [Box2I(corner=Point2I(50, 129), dimensions=Extent2I(1, 3)),
+                       Box2I(corner=Point2I(49, 130), dimensions=Extent2I(1, 1)),
+                       Box2I(corner=Point2I(51, 130), dimensions=Extent2I(1, 1))]
+        # Test that the BBox is within the defects measured
+        boxesMeasured = []
+        for defect in defects:
+            boxesMeasured.append(defect.getBBox())
+        for expectedBBox in vampireBBox:
+            self.assertIn(expectedBBox, boxesMeasured)
+
     def test_defectFindingAllSensor(self):
         config = copy.copy(self.defaultConfig)
         config.nPixBorderLeftRight = 0

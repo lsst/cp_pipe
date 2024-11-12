@@ -84,6 +84,22 @@ class MeasureDefectsTaskConfig(pipeBase.PipelineTaskConfig,
         allowed={'STDEV': "Use a multiple of the image standard deviation to determine detection threshold.",
                  'VALUE': "Use pixel value to determine detection threshold."},
     )
+    doVampirePixels = pexConfig.Field(
+        dtype=bool,
+        doc=("Search for vampire pixels (bright pixels surrounded by ring of low flux) in ComCam "
+             "flatBootstrap and mask the area arount them."),
+        default=False,
+    )
+    thresholdVampirePixels = pexConfig.Field(
+        dtype=float,
+        doc=("Pixel value threshold to find bright pixels in ComCam flatBootstrap."),
+        default=1.9,
+    )
+    radiusVampirePixels = pexConfig.Field(
+        dtype=int,
+        doc=("Radius (in pixels) of the area to mask around ComCam flatBootstrap bright pixels."),
+        default=8,
+    )
     darkCurrentThreshold = pexConfig.Field(
         dtype=float,
         doc=("If thresholdType=``VALUE``, dark current threshold (in e-/sec) to define "
@@ -247,6 +263,29 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
             nPix += defect.getBBox().getArea()
         return nPix
 
+    def getVampirePixels(self, ampImg):
+        """Find vampire pixels (bright pixels in flats) and get footprint of
+        extended area around them,
+
+        Parameters
+        ----------
+        ampImg : `lsst.afw.image._maskedImage.MaskedImageF`
+            The amplifier masked image to do the vampire pixels search on.
+
+        Returns
+        -------
+        fs_grow : `lsst.afw.detection._detection.FootprintSet`
+            The footprint set of areas around vampire pixels in the amplifier.
+        """
+
+        # Find bright pixels
+        thresh = afwDetection.Threshold(self.config.thresholdVampirePixels)
+        # Bright pixels footprint grown by a radius of radiusVampire pixels
+        fs = afwDetection.FootprintSet(ampImg, thresh)
+        fs_grow = afwDetection.FootprintSet(fs, rGrow=self.config.radiusVampirePixels, isotropic=True)
+
+        return fs_grow
+
     def _findHotAndColdPixels(self, exp):
         """Find hot and cold pixels in an image.
 
@@ -298,6 +337,11 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
 
             if self._getNumGoodPixels(ampImg) == 0:  # amp contains no usable pixels
                 continue
+
+            if self.config.doVampirePixels:
+                # This is only applied in LSSTComCam flatBootstrap pipeline
+                footprintSet_VampirePixel = self.getVampirePixels(ampImg)
+                footprintSet_VampirePixel.setMask(maskedIm.mask, ("BAD"))
 
             # Remove a background estimate
             meanClip = afwMath.makeStatistics(ampImg, afwMath.MEANCLIP, ).getValue()
@@ -387,6 +431,15 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
                     # cold pixels
                     for fp in footprintSet.getFootprints():
                         coldPixelCount[ampName] += fp.getArea()
+
+            if self.config.doVampirePixels:
+                # Count the number of pixels masked
+                vampirePixelCount = 0
+                for fp in footprintSet_VampirePixel.getFootprints():
+                    vampirePixelCount += fp.getArea()
+                self.log.info("%s Vampire pixels are masked", vampirePixelCount)
+                # Add vampire pixels to footprint set
+                mergedSet.merge(footprintSet_VampirePixel)
 
             footprintList += mergedSet.getFootprints()
 
