@@ -1132,6 +1132,13 @@ class MergeDefectsCombinedConnections(pipeBase.PipelineTaskConnections,
         dimensions=("instrument", "detector", "physical_filter"),
         multiple=True,
     )
+    inputManualDefects = cT.Input(
+        name="cpManualDefects",
+        doc="Additional manual defects.",
+        storageClass="Defects",
+        dimensions=("instrument", "detector"),
+        multiple=True,
+    )
     camera = cT.PrerequisiteInput(
         name='camera',
         doc="Camera associated with these defects.",
@@ -1149,11 +1156,22 @@ class MergeDefectsCombinedConnections(pipeBase.PipelineTaskConnections,
         isCalibration=True,
     )
 
+    def __init__(self, *, config=None):
+        super().__init__(config=config)
+
+        if config.doManualDefects is not True:
+            del self.inputManualDefects
 
 class MergeDefectsCombinedTaskConfig(MergeDefectsTaskConfig,
                                      pipelineConnections=MergeDefectsCombinedConnections):
     """Configuration for merging defects from combined exposure.
     """
+    doManualDefects = pexConfig.Field(
+        dtype=bool,
+        doc="Apply manual defects?",
+        default=False,
+    )
+
     def validate(self):
         super().validate()
         if self.combinationMode != 'OR':
