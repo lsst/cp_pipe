@@ -549,7 +549,7 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
         """A test for maskBlocksIfIntermitentBadPixelsInColumn, y out of order.
 
         This test is a variant of
-        notest_maskBlocks_every_other_pixel_bad_greater_than_threshold with
+        test_maskBlocks_every_other_pixel_bad_greater_than_threshold with
         an extra out-of-y-order bad pixel to trigger DM-38103.
         """
         expectedDefects = [Box2I(corner=Point2I(50, 110), dimensions=Extent2I(1, 31))]

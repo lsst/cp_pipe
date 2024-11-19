@@ -149,8 +149,8 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         extractConfig.auxiliaryHeaderKeys = ["CCOBCURR", "CCDTEMP"]
         extractTask = cpPipe.ptc.PhotonTransferCurveExtractTask(config=extractConfig)
 
+        # Create solve task config
         solveConfig = self.defaultConfigSolve
-        solveConfig.ptcFitType = "FULLCOVARIANCE"
         # Cut off the low-flux point which is a bad fit, and this
         # also exercises this functionality and makes the tests
         # run a lot faster.
@@ -162,7 +162,6 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         # reliably fit out to a 3x3 covariance matrix.
         # Improvements will be investigated on DM-46131.
         solveConfig.maximumRangeCovariancesAstierFullCovFit = 3
-        solveTask = cpPipe.ptc.PhotonTransferCurveSolveTask(config=solveConfig)
 
         inputGain = self.gain
 
@@ -256,179 +255,176 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         # out sorted afterwards.
         outputCovariancesRev = resultsExtract.outputCovariances[::-1]
 
-        # Ensure no warnings re: read noise mismatches are logged.
-        with self.assertNoLogs(level=logging.WARNING):
-            resultsSolve = solveTask.run(
-                outputCovariancesRev, camera=FakeCamera([self.flatExp1.getDetector()])
-            )
-
-        ptc = resultsSolve.outputPtcDataset
-
         # Some expected values for noise matrix, just to check that
         # it was calculated.
-        noiseMatrixExpected = np.array(
-            [[8.99474598, 9.94916264, -27.90587299],
-             [-2.95079527, -17.11827641, -47.88156244],
-             [5.24915021, -3.25786165, 26.09634067]],
-        )
-        noiseMatrixNoBExpected = np.array(
-            [[8.71049338, 12.48584043, -37.06585088],
-             [-4.80523971, -23.29102809, -66.37815343],
-             [7.48654766, -4.10168337, 35.64469824]],
-        )
+        expectedNoiseMatrix = {
+            "FULLCOVARIANCE": np.array(
+                [[8.99474598, 9.94916264, -27.90587299],
+                 [-2.95079527, -17.11827641, -47.88156244],
+                 [5.24915021, -3.25786165, 26.09634067]],
+            ),
+            "FULLCOVARIANCE_NO_B": np.array(
+                [[8.71049338, 12.48584043, -37.06585088],
+                 [-4.80523971, -23.29102809, -66.37815343],
+                 [7.48654766, -4.10168337, 35.64469824]],
+            ),
+        }
 
-        for amp in self.ampNames:
-            self.assertAlmostEqual(ptc.gain[amp], inputGain, places=2)
-            self.assertFloatsAlmostEqual(
-                np.asarray(varStandard[amp])[ptc.expIdMask[amp]] / ptc.finalVars[amp][ptc.expIdMask[amp]],
-                1.0,
-                rtol=1e-4,
+        for fitType in ["FULLCOVARIANCE", "FULLCOVARIANCE_NO_B"]:
+            solveConfig.ptcFitType = fitType
+            solveTask = cpPipe.ptc.PhotonTransferCurveSolveTask(config=solveConfig)
+
+            # Ensure no warnings re: read noise mismatches are logged.
+            with self.assertNoLogs(level=logging.WARNING):
+                resultsSolve = solveTask.run(
+                    outputCovariancesRev, camera=FakeCamera([self.flatExp1.getDetector()])
+                )
+
+            ptc = resultsSolve.outputPtcDataset
+
+            for amp in self.ampNames:
+                self.assertAlmostEqual(ptc.gain[amp], inputGain, places=2)
+                self.assertFloatsAlmostEqual(
+                    np.asarray(varStandard[amp])[ptc.expIdMask[amp]] / ptc.finalVars[amp][ptc.expIdMask[amp]],
+                    1.0,
+                    rtol=1e-4,
+                )
+
+                # Check that the PTC turnoff is correctly computed.
+                # This will be different for the C:0,0 amp.
+                if amp == "C:0,0":
+                    self.assertAlmostEqual(ptc.ptcTurnoff[amp], ptc.rawMeans[amp][-3])
+                else:
+                    self.assertAlmostEqual(ptc.ptcTurnoff[amp], ptc.rawMeans[amp][-1])
+
+                # Test that all the quantities are correctly ordered and
+                # have not accidentally been masked. We check every other
+                # output ([::2]) because these datasets are in pairs of
+                # [real, dummy] to match the inputs to the extract task.
+                for i, extractPtc in enumerate(resultsExtract.outputCovariances[::2]):
+                    self.assertFloatsAlmostEqual(
+                        extractPtc.rawExpTimes[ampName][0],
+                        ptc.rawExpTimes[ampName][i],
+                    )
+                    self.assertFloatsAlmostEqual(
+                        extractPtc.rawMeans[ampName][0],
+                        ptc.rawMeans[ampName][i],
+                    )
+                    self.assertFloatsAlmostEqual(
+                        extractPtc.rawVars[ampName][0],
+                        ptc.rawVars[ampName][i],
+                    )
+                    self.assertFloatsAlmostEqual(
+                        extractPtc.photoCharges[ampName][0],
+                        ptc.photoCharges[ampName][i],
+                    )
+                    self.assertFloatsAlmostEqual(
+                        extractPtc.histVars[ampName][0],
+                        ptc.histVars[ampName][i],
+                    )
+                    self.assertFloatsAlmostEqual(
+                        extractPtc.histChi2Dofs[ampName][0],
+                        ptc.histChi2Dofs[ampName][i],
+                    )
+                    self.assertFloatsAlmostEqual(
+                        extractPtc.kspValues[ampName][0],
+                        ptc.kspValues[ampName][i],
+                    )
+                    self.assertFloatsAlmostEqual(
+                        extractPtc.covariances[ampName][0],
+                        ptc.covariances[ampName][i],
+                    )
+                    self.assertFloatsAlmostEqual(
+                        extractPtc.covariancesSqrtWeights[ampName][0],
+                        ptc.covariancesSqrtWeights[ampName][i],
+                    )
+                    self.assertFloatsAlmostEqual(
+                        ptc.noiseMatrix[ampName],
+                        expectedNoiseMatrix[fitType],
+                        atol=1e-8,
+                        rtol=None,
+                    )
+                    self.assertFloatsAlmostEqual(
+                        ptc.ampOffsets[ampName],
+                        0.0,
+                    )
+                    self.assertFloatsAlmostEqual(
+                        ptc.noise[ampName],
+                        np.nanmedian(ptc.noiseList[ampName]) * ptc.gain[ampName],
+                        rtol=0.05,
+                    )
+                    # If the noise error is greater than the noise,
+                    # something is seriously wrong. Possibly some
+                    # kind of gain application mismatch.
+                    self.assertLess(
+                        ptc.noiseErr[ampName],
+                        ptc.noise[ampName],
+                    )
+
+                mask = ptc.getGoodPoints(amp)
+
+                values = (
+                    ptc.covariancesModel[amp][mask, 0, 0] - ptc.covariances[amp][mask, 0, 0]
+                ) / ptc.covariancesModel[amp][mask, 0, 0]
+                np.testing.assert_array_less(np.abs(values), 2e-3)
+
+                if ptc.ptcFitType == "FULLCOVARIANCE":
+                    values = (
+                        ptc.covariancesModel[amp][mask, 0, 1] - ptc.covariances[amp][mask, 0, 1]
+                    ) / ptc.covariancesModel[amp][mask, 0, 1]
+                    np.testing.assert_array_less(np.abs(values), 0.3)
+
+                    values = (
+                        ptc.covariancesModel[amp][mask, 1, 0] - ptc.covariances[amp][mask, 1, 0]
+                    ) / ptc.covariancesModel[amp][mask, 1, 0]
+                    np.testing.assert_array_less(np.abs(values), 0.3)
+
+            # And test that the auxiliary values are there and
+            # correctly ordered.
+            self.assertIn('CCOBCURR', ptc.auxValues)
+            self.assertIn('CCDTEMP', ptc.auxValues)
+            firstExpIds = np.array([i for i, _ in ptc.inputExpIdPairs['C:0,0']], dtype=np.float64)
+            self.assertFloatsAlmostEqual(ptc.auxValues['CCOBCURR'], firstExpIds)
+            self.assertFloatsAlmostEqual(ptc.auxValues['CCDTEMP'], firstExpIds + 1)
+
+            expIdsUsed = ptc.getExpIdsUsed("C:0,0")
+            # Check that these are the same as the inputs, paired up, with the
+            # first two (low flux) and final four (outliers, nans) removed.
+            self.assertTrue(
+                np.all(expIdsUsed == np.array(expIds).reshape(len(expIds) // 2, 2)[1:-2])
             )
 
-            # Check that the PTC turnoff is correctly computed.
-            # This will be different for the C:0,0 amp.
-            if amp == "C:0,0":
-                self.assertAlmostEqual(ptc.ptcTurnoff[amp], ptc.rawMeans[ampName][-3])
-            else:
-                self.assertAlmostEqual(ptc.ptcTurnoff[amp], ptc.rawMeans[ampName][-1])
+            goodAmps = ptc.getGoodAmps()
+            self.assertEqual(goodAmps, self.ampNames)
 
-            # Test that all the quantities are correctly ordered and have
-            # not accidentally been masked. We check every other output ([::2])
-            # because these datasets are in pairs of [real, dummy] to
-            # match the inputs to the extract task.
-            for i, extractPtc in enumerate(resultsExtract.outputCovariances[::2]):
-                self.assertFloatsAlmostEqual(
-                    extractPtc.rawExpTimes[ampName][0],
-                    ptc.rawExpTimes[ampName][i],
-                )
-                self.assertFloatsAlmostEqual(
-                    extractPtc.rawMeans[ampName][0],
-                    ptc.rawMeans[ampName][i],
-                )
-                self.assertFloatsAlmostEqual(
-                    extractPtc.rawVars[ampName][0],
-                    ptc.rawVars[ampName][i],
-                )
-                self.assertFloatsAlmostEqual(
-                    extractPtc.photoCharges[ampName][0],
-                    ptc.photoCharges[ampName][i],
-                )
-                self.assertFloatsAlmostEqual(
-                    extractPtc.histVars[ampName][0],
-                    ptc.histVars[ampName][i],
-                )
-                self.assertFloatsAlmostEqual(
-                    extractPtc.histChi2Dofs[ampName][0],
-                    ptc.histChi2Dofs[ampName][i],
-                )
-                self.assertFloatsAlmostEqual(
-                    extractPtc.kspValues[ampName][0],
-                    ptc.kspValues[ampName][i],
-                )
-                self.assertFloatsAlmostEqual(
-                    extractPtc.covariances[ampName][0],
-                    ptc.covariances[ampName][i],
-                )
-                self.assertFloatsAlmostEqual(
-                    extractPtc.covariancesSqrtWeights[ampName][0],
-                    ptc.covariancesSqrtWeights[ampName][i],
-                )
-                self.assertFloatsAlmostEqual(
-                    ptc.noiseMatrix[ampName], noiseMatrixExpected, atol=1e-8, rtol=None
-                )
-                self.assertFloatsAlmostEqual(
-                    ptc.noiseMatrixNoB[ampName],
-                    noiseMatrixNoBExpected,
-                    atol=1e-8,
-                    rtol=None,
-                )
-                self.assertFloatsAlmostEqual(
-                    ptc.ampOffsets[ampName],
-                    0.0,
-                )
-                self.assertFloatsAlmostEqual(
-                    ptc.noise[ampName],
-                    np.nanmedian(ptc.noiseList[ampName]) * ptc.gain[ampName],
-                    rtol=0.05,
-                )
-                # If the noise error is greater than the noise, something
-                # is seriously wrong. Possibly some kind of gain application
-                # mismatch.
-                self.assertLess(
-                    ptc.noiseErr[ampName],
-                    ptc.noise[ampName],
-                )
+            # Check that every possibly modified field has the same length.
+            covShape = None
+            covSqrtShape = None
+            covModelShape = None
 
-            mask = ptc.getGoodPoints(amp)
+            for ampName in self.ampNames:
+                if covShape is None:
+                    covShape = ptc.covariances[ampName].shape
+                    covSqrtShape = ptc.covariancesSqrtWeights[ampName].shape
+                    covModelShape = ptc.covariancesModel[ampName].shape
+                else:
+                    self.assertEqual(ptc.covariances[ampName].shape, covShape)
+                    self.assertEqual(
+                        ptc.covariancesSqrtWeights[ampName].shape, covSqrtShape
+                    )
+                    self.assertEqual(ptc.covariancesModel[ampName].shape, covModelShape)
+                # Check if evalPtcModel produces expected values
+                nanMask = ~np.isnan(ptc.finalMeans[ampName])
+                means = ptc.finalMeans[ampName][nanMask]
+                covModel = ptc.covariancesModel[ampName][nanMask]
+                covariancesModel = ptc.evalPtcModel(means)[ampName]
+                self.assertFloatsAlmostEqual(covariancesModel, covModel, atol=1e-12)
 
-            values = (
-                ptc.covariancesModel[amp][mask, 0, 0] - ptc.covariances[amp][mask, 0, 0]
-            ) / ptc.covariancesModel[amp][mask, 0, 0]
-            np.testing.assert_array_less(np.abs(values), 2e-3)
-
-            values = (
-                ptc.covariancesModel[amp][mask, 1, 1] - ptc.covariances[amp][mask, 1, 1]
-            ) / ptc.covariancesModel[amp][mask, 1, 1]
-            np.testing.assert_array_less(np.abs(values), 0.3)
-
-            values = (
-                ptc.covariancesModel[amp][mask, 1, 2] - ptc.covariances[amp][mask, 1, 2]
-            ) / ptc.covariancesModel[amp][mask, 1, 2]
-            np.testing.assert_array_less(np.abs(values), 0.3)
-
-        # And test that the auxiliary values are there and correctly ordered.
-        self.assertIn('CCOBCURR', ptc.auxValues)
-        self.assertIn('CCDTEMP', ptc.auxValues)
-        firstExpIds = np.array([i for i, _ in ptc.inputExpIdPairs['C:0,0']], dtype=np.float64)
-        self.assertFloatsAlmostEqual(ptc.auxValues['CCOBCURR'], firstExpIds)
-        self.assertFloatsAlmostEqual(ptc.auxValues['CCDTEMP'], firstExpIds + 1)
-
-        expIdsUsed = ptc.getExpIdsUsed("C:0,0")
-        # Check that these are the same as the inputs, paired up, with the
-        # first two (low flux) and final four (outliers, nans) removed.
-        self.assertTrue(
-            np.all(expIdsUsed == np.array(expIds).reshape(len(expIds) // 2, 2)[1:-2])
-        )
-
-        goodAmps = ptc.getGoodAmps()
-        self.assertEqual(goodAmps, self.ampNames)
-
-        # Check that every possibly modified field has the same length.
-        covShape = None
-        covSqrtShape = None
-        covModelShape = None
-        covModelNoBShape = None
-
-        for ampName in self.ampNames:
-            if covShape is None:
-                covShape = ptc.covariances[ampName].shape
-                covSqrtShape = ptc.covariancesSqrtWeights[ampName].shape
-                covModelShape = ptc.covariancesModel[ampName].shape
-                covModelNoBShape = ptc.covariancesModelNoB[ampName].shape
-            else:
-                self.assertEqual(ptc.covariances[ampName].shape, covShape)
-                self.assertEqual(
-                    ptc.covariancesSqrtWeights[ampName].shape, covSqrtShape
-                )
-                self.assertEqual(ptc.covariancesModel[ampName].shape, covModelShape)
-                self.assertEqual(
-                    ptc.covariancesModelNoB[ampName].shape, covModelNoBShape
-                )
-            # Check if evalPtcModel produces expected values
-            nanMask = ~np.isnan(ptc.finalMeans[ampName])
-            means = ptc.finalMeans[ampName][nanMask]
-            covModel = ptc.covariancesModel[ampName][nanMask]
-            covariancesModel = ptc.evalPtcModel(means, setBtoZero=False)[ampName]
-            self.assertFloatsAlmostEqual(covariancesModel, covModel, atol=1e-12)
-            # Note that the PhotoTransferCurveDataset does not store the gain
-            # fit parameter for FULLCOVARIANCE with b=0, so we can't compare
-            # exactly.
-
-        # And check that this is serializable
-        with tempfile.NamedTemporaryFile(suffix=".fits") as f:
-            usedFilename = ptc.writeFits(f.name)
-            fromFits = PhotonTransferCurveDataset.readFits(usedFilename)
-        self.assertEqual(fromFits, ptc)
+            # And check that this is serializable
+            with tempfile.NamedTemporaryFile(suffix=".fits") as f:
+                usedFilename = ptc.writeFits(f.name)
+                fromFits = PhotonTransferCurveDataset.readFits(usedFilename)
+            self.assertEqual(fromFits, ptc)
 
     def ptcFitAndCheckPtc(
         self,
