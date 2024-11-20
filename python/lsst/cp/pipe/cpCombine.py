@@ -351,11 +351,32 @@ class CalibCombineTask(pipeBase.PipelineTask):
 
         # The calibration should _never_ have NO_DATA set.
         if self.config.checkNoData:
-            test = ((combinedExp.mask.array & afwImage.Mask.getPlaneBitMask("NO_DATA")) > 0)
-            if (nnodata := test.sum()) > 0:
-                raise RuntimeError(f"Combined calibration has {nnodata} pixels!")
+            passesCheck = True
+            nnodata = [0, 0, 0]
 
-        self.interpolateNans(combined)
+            test = np.isnan(combinedExp.image.array)
+            nnodata[0] = test.sum()
+            if nnodata[0] > 0:
+                passesCheck = False
+
+            test = ((combinedExp.mask.array & afwImage.Mask.getPlaneBitMask("NO_DATA")) > 0)
+            nnodata[1] = test.sum()
+            if nnodata[1] > 0:
+                passesCheck = False
+
+            test = np.isnan(combinedExp.variance.array)
+            nnodata[2] = test.sum()
+            if nnodata[2] > 0:
+                passesCheck = False
+
+            if not passesCheck:
+                raise RuntimeError(f"Combined calibration has {nnodata} non-finite/empty pixels!")
+        else:
+            # Censor any NaN pixels in the image and variance.
+            array = combined.image.array
+            self.interpolateNans(array, logMessage="image")
+            array = combined.variance.array
+            self.interpolateNans(array, logMessage="variance")
 
         if self.config.doVignette:
             polygon = inputExpHandles[0].get(component="validPolygon")
@@ -642,25 +663,27 @@ class CalibCombineTask(pipeBase.PipelineTask):
 
         return header
 
-    def interpolateNans(self, exp):
-        """Interpolate over NANs in the combined image.
+    def interpolateNans(self, array, logMessage="(not supplied)"):
+        """Interpolate over NANs in the combined image array.
 
         NANs can result from masked areas on the CCD.  We don't want
         them getting into our science images, so we replace them with
-        the median of the image.
+        the median of the data.
 
         Parameters
         ----------
-        exp : `lsst.afw.image.Exposure`
-            Exp to check for NaNs.
+        array : `np.array`
+            Exposure array to check for NaNs.
+        logMessage : `str`
+            String to add to log message to disambiguate image and
+            variance.
         """
-        array = exp.getImage().getArray()
         bad = np.isnan(array)
         if np.any(bad):
             median = np.median(array[np.logical_not(bad)])
             count = np.sum(bad)
             array[bad] = median
-            self.log.warning("Found and fixed %s NAN pixels", count)
+            self.log.warning("Found and fixed %s NAN pixels from %s ", count, logMessage)
 
     @staticmethod
     def setFilter(exp, filterLabel):
