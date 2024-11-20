@@ -27,7 +27,7 @@ import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 import lsst.pipe.base.connectionTypes as cT
 
-from lsst.ip.isr import gainContext
+from lsst.ip.isr import gainContext, interpolateFromMask
 from lsst.pex.exceptions import LengthError
 from lsst.pipe.tasks.repair import RepairTask
 
@@ -73,6 +73,16 @@ class CpDarkTaskConfig(pipeBase.PipelineTaskConfig,
         target=RepairTask,
         doc="Repair task to use.",
     )
+    maskListToInterpolate = pexConfig.ListField(
+        dtype=str,
+        doc="List of mask planes that should be interpolated.",
+        default=['SAT', 'BAD'],
+    )
+    useLegacyInterp = pexConfig.Field(
+        dtype=bool,
+        doc="Use the legacy interpolation algorithm. If False use Gaussian Process.",
+        default=True,
+    )
 
 
 class CpDarkTask(pipeBase.PipelineTask):
@@ -114,19 +124,35 @@ class CpDarkTask(pipeBase.PipelineTask):
         # exposure, if possible.  Otherwise, use the cameraGeom value.
         gains = self._get_gains(inputExp)
 
+        # Is this gainContext load bearing?
         with gainContext(inputExp, inputExp.getVariance(), apply=True, gains=gains):
             # Scale the variance to match the image plane.  A similar
             # scaling happens during flat-field correction for science
             # images.
             self.log.debug("Median image and variance: %f %f",
                            np.median(inputExp.image.array), np.median(inputExp.variance.array))
+            crImage = inputExp.clone()
+            # Interpolate the crImage, so the CR code can ignore
+            # defects (which will now be interpolated).
+            interpolateFromMask(
+                maskedImage=crImage.getMaskedImage(),
+                fwhm=self.config.psdfFwhm,
+                growSaturatedFootprints=self.config.crGrow,
+                maskNameList=list(self.config.maskListToInterpolate),
+                useLegacyInterp=self.config.useLegacyInterp,
+            )
+
             try:
-                self.repair.run(inputExp, keepCRs=False)
+                self.repair.run(crImage, keepCRs=False)
             except LengthError:
                 self.log.warning("CR rejection failed!")
+
+            # Copy results to input frame.
+            crBit = crImage.mask.getPlaneBitMask('CR')
+            crPixels = np.bitwise_and(crImage.mask.array, crBit)
+            inputExp.mask.array[crPixels] |= crBit
             self.log.info("Number of CR pixels: %d",
-                          np.count_nonzero(np.bitwise_and(inputExp.mask.array,
-                                                          inputExp.mask.getPlaneBitMask('CR'))))
+                          np.count_nonzero(np.bitwise_and(crImage.mask.array, crBit)))
 
         if self.config.crGrow > 0:
             crMask = inputExp.getMaskedImage().getMask().getPlaneBitMask("CR")

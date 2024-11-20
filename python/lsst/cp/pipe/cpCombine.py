@@ -355,25 +355,28 @@ class CalibCombineTask(pipeBase.PipelineTask):
             nnodata = [0, 0, 0]
 
             test = np.isnan(combinedExp.image.array)
-            if (nnodata[0] := test.sum()) > 0:
+            nnodata[0] = test.sum()
+            if nnodata[0] > 0:
                 passesCheck = False
 
             test = ((combinedExp.mask.array & afwImage.Mask.getPlaneBitMask("NO_DATA")) > 0)
-            if (nnodata[1] := test.sum()) > 0:
+            nnodata[1] = test.sum()
+            if nnodata[1] > 0:
                 passesCheck = False
 
             test = np.isnan(combinedExp.variance.array)
-            if (nnodata[2] := test.sum()) > 0:
+            nnodata[2] = test.sum()
+            if nnodata[2] > 0:
                 passesCheck = False
 
             if not passesCheck:
-                raise RuntimeError(f"Combined calibration has {nnodata} pixels!")
-
-        # Censor any NaN pixels in the image and variance.
-        array = combined.image.array
-        self.interpolateNans(array, logMessage="image")
-        array = combined.variance.array
-        self.interpolateNans(array, logMessage="variance")
+                raise RuntimeError(f"Combined calibration has {nnodata} non-finite/empty pixels!")
+        else:
+            # Censor any NaN pixels in the image and variance.
+            array = combined.image.array
+            self.interpolateNans(array, logMessage="image")
+            array = combined.variance.array
+            self.interpolateNans(array, logMessage="variance")
 
         if self.config.doVignette:
             polygon = inputExpHandles[0].get(component="validPolygon")
