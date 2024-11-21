@@ -1133,7 +1133,7 @@ class MergeDefectsCombinedConnections(pipeBase.PipelineTaskConnections,
         multiple=True,
     )
     inputManualDefects = cT.Input(
-        name="cpManualDefects",
+        name="manual_defects",
         doc="Additional manual defects.",
         storageClass="Defects",
         dimensions=("instrument", "detector"),
