@@ -1133,7 +1133,7 @@ class MergeDefectsCombinedConnections(pipeBase.PipelineTaskConnections,
         multiple=True,
     )
     inputManualDefects = cT.Input(
-        name="manual_defects",
+        name="cpManualDefects",
         doc="Additional manual defects.",
         storageClass="Defects",
         dimensions=("instrument", "detector"),
@@ -1161,6 +1161,7 @@ class MergeDefectsCombinedConnections(pipeBase.PipelineTaskConnections,
 
         if config.doManualDefects is not True:
             del self.inputManualDefects
+
 
 class MergeDefectsCombinedTaskConfig(MergeDefectsTaskConfig,
                                      pipelineConnections=MergeDefectsCombinedConnections):
@@ -1207,6 +1208,7 @@ class MergeDefectsCombinedTask(MergeDefectsTask):
                     self.chooseBest(inputs['inputDarkDefects']),
                     self.chooseBest(inputs['inputBiasDefects'])]
 
+        tempList.extend(inputs["inputManualDefects"])
         # Rename inputDefects
         inputsCombined = {'inputDefects': tempList, 'camera': inputs['camera']}
 
