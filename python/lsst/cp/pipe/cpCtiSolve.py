@@ -867,8 +867,11 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
         Returns
         -------
         turnoff : `float`
-            the turnoff point in the same units as the
+            The turnoff point in the same units as the
             input signals
+        turnoffSamplingError : `float`
+            The sampling error of the turnoff point, equals
+            turnoff when not enough data points.
 
         Notes
         ------
@@ -886,13 +889,13 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
         # Check for remaining data points
         if dataVec.size == 0:
             self.log.warning("No data points after cti range cut to compute turnoff "
-                             f" for amplifier {amp.getName()}. Setting turnoff point "
+                             f"for amplifier {amp.getName()}. Setting turnoff point "
                              "to 0 el.")
             return 0.0, 0.0
 
         if dataVec.size < 2:
             self.log.warning("Insufficient data points after cti range cut to compute turnoff "
-                             f" for amplifier {amp.getName()}. Setting turnoff point "
+                             f"for amplifier {amp.getName()}. Setting turnoff point "
                              "to the maximum signal value.")
             return signalVec[-1], signalVec[-1]
 
@@ -947,4 +950,4 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
         else:
             samplingError = (signalVec[turnoffIdx+1] - signalVec[turnoffIdx-1]) / 2.0
 
-        return turnoff, np.abs(samplingError)
+        return turnoff, np.abs(np.float64(samplingError))
