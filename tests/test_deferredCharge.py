@@ -23,6 +23,7 @@
 """Test cases for lsst.cp.pipe.deferredCharge."""
 
 import unittest
+import numpy
 
 import lsst.utils
 import lsst.utils.tests
@@ -277,6 +278,11 @@ class CpCtiSolveTaskTestCase(lsst.utils.tests.TestCase):
         results = self.task.run(self.inputMeasurements, self.camera, self.inputDims)
 
         calib = results.outputCalib
+
+        # Check that the signals array is sorted
+        for ampName in calib.signals.keys():
+            assert numpy.all(numpy.diff(calib.signals[ampName]) > 0)
+
         # Check that the result matches expectation.
         self.assertAlmostEqual(calib.globalCti['C:0,0'], 1.0e-7, 4)
         self.assertAlmostEqual(calib.driftScale['C:0,0'], 1.8105e-4, 4)
@@ -287,6 +293,16 @@ class CpCtiSolveTaskTestCase(lsst.utils.tests.TestCase):
             self.assertEqual(calib.globalCti['C:0,0'], calib.globalCti[ampName])
             self.assertEqual(calib.driftScale['C:0,0'], calib.driftScale[ampName])
             self.assertEqual(calib.decayTime['C:0,0'], calib.decayTime[ampName])
+            self.assertEqual(calib.signals[ampName][-2], calib.serialCtiTurnoff[ampName])
+            self.assertEqual(calib.signals[ampName][-1], calib.parallelCtiTurnoff[ampName])
+            self.assertEqual(
+                (calib.signals[ampName][-1] - calib.signals[ampName][-3]) / 2.0,
+                calib.serialCtiTurnoffSamplingErr[ampName],
+            )
+            self.assertEqual(
+                calib.signals[ampName][-1] - calib.signals[ampName][-2],
+                calib.parallelCtiTurnoffSamplingErr[ampName],
+            )
 
 
 class TestMemory(lsst.utils.tests.MemoryTestCase):
