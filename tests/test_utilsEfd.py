@@ -29,12 +29,13 @@ from lsst.cp.pipe.utilsEfd import CpEfdClient
 class UtilsEfdTestCase(lsst.utils.tests.TestCase):
     """Unit test for EFD access code."""
 
-    def setUp(self):
+    @classmethod
+    def setUpClass(cls):
         # Initialize a client.
         try:
-            self.client = CpEfdClient()
+            cls.client = CpEfdClient()
         except Exception as e:
-            self.client = None
+            cls.client = None
             raise unittest.SkipTest(f"Could not initialize EFD client: {e}")
 
     def test_monochromator(self):
