@@ -52,6 +52,8 @@ class CpEfdClient():
         self._databaseName = "efd"
         self._databaseUrl = urljoin(f"https://{authDict['host']}", authDict["path"])
 
+        self.checkConnection()
+
     def _getAuth(self, instanceAlias):
         """Get authorization credentials.
 
@@ -88,6 +90,23 @@ class CpEfdClient():
             return response.json()
         else:
             raise RuntimeError(f"Could not connect to {url}")
+
+    def checkConnection(self):
+        """Check the connection to the EFD.
+
+        Raises
+        ------
+        RuntimeError :
+            Raised if the connection check fails.
+        """
+        # The ping command will return 204 (No Content) on success.
+
+        params = {"wait_for_leader": "5s"}
+
+        response = requests.get(f"{self._databaseUrl}/ping", params=params, auth=self._auth)
+        response.raise_for_status()
+        if response.status_code != 204:
+            raise RuntimeError(f"Connection check failed for {self._databaseUrl}")
 
     def getSchemaDtype(self, topicName):
         """Get datatypes for a topic.
