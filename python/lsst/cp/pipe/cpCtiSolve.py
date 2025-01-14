@@ -112,20 +112,20 @@ class CpCtiSolveConfig(pipeBase.PipelineTaskConfig,
     )
     globalCtiColumnRange = pexConfig.ListField(
         dtype=int,
-        default=[1, 2],
-        doc="First and last serialoverscan column to use for "
-            "global CTI fit.",
+        default=[1, 15],
+        doc="First and last serial overscan column to use for "
+            "serial EPER estimate.",
     )
     globalCtiRowRange = pexConfig.ListField(
         dtype=int,
         default=[1, 2],
         doc="First and last parallel overscan row to use for "
-            "global CTI fit.",
+            "parallel EPER estimate.",
     )
 
     trapColumnRange = pexConfig.ListField(
         dtype=int,
-        default=[1, 20],
+        default=[1, 2],
         doc="First and last overscan column to use for serial trap fit.",
     )
 
@@ -841,10 +841,10 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
         data = data[ind]
 
         # This looks at the charge that has leaked into
-        # the first few columns of the overscan.
+        # the first few columns or rows of the overscan.
         overscan1 = data[:, 0]
         overscan2 = data[:, 1]
-        ctiEstimate = (np.array(overscan1) + np.array(overscan2))/(nShifts*np.array(signal))
+        ctiEstimate = (overscan1 + overscan2)/(nShifts*np.array(signal))
 
         return signal, ctiEstimate
 
