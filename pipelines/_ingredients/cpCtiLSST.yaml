@@ -24,6 +24,6 @@ tasks:
     class: lsst.cp.pipe.CpCtiSolveTask
     config:
       connections.inputMeasurements: "cpCtiStatistics"
-      connections.outputCalib: "cpCti"
+      connections.outputCalib: "cpCtiCalib"
 contracts:
   - cpCtiSolve.connections.inputMeasurements == cpCtiIsr.connections.outputStatistics
