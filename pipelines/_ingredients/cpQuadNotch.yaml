@@ -1,0 +1,22 @@
+description: cp_pipe quad-notch spectrum reduction
+task:
+  cpQuadNotchIsr:
+    class: lsst.ip.isr.IsrTask
+    config:
+      connections.ccdExposure: 'raw'
+      connections.outputExposure: 'cpQnIsrExp'
+      doWrite: true
+      doBias: true
+      doDark: false
+      doFlat: false
+      doDefect: true
+      doSaturation: false
+      doNanInterpolation: false
+      doNanMasking: false
+      doSaturation: false
+      doWidenSaturationTrails: false
+  cpQuadNotchExtract:
+    class: lsst.cp.pipe.cpQuadNotchExtractTask
+  cpQuadNotchMerge:
+    class: lsst.cp.pipe.cpQuadNotchMergeTask
+
