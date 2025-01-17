@@ -220,13 +220,18 @@ class CalibCombineConfig(pipeBase.PipelineTaskConfig,
     )
     noGoodPixelsMask = pexConfig.Field(
         dtype=str,
-        default="BAD",
+        default="NO_DATA",
         doc="Mask bit to set when there are no good input pixels.",
     )
     checkNoData = pexConfig.Field(
         dtype=bool,
         default=True,
         doc="Check that the calibration does not have NO_DATA set?",
+    )
+    censorMaskPlanes = pexConfig.Field(
+        dtype=bool,
+        default=False,
+        doc="Unset mask planes other than NO_DATA in output calibration?",
     )
     stats = pexConfig.ConfigurableField(
         target=CalibStatsTask,
@@ -349,9 +354,19 @@ class CalibCombineTask(pipeBase.PipelineTask):
 
         self.combine(combinedExp, inputExpHandles, expScales, stats)
 
+        if self.config.censorMaskPlanes:
+            # Any mask planes that are not the noGoodPixelsMask plane
+            # should be cleared.  This should remove things like the
+            # CROSSTALK plane from printing into the calibration.
+            mask = combinedExp.mask
+            for plane in mask.getMaskPlaneDict().keys():
+                if plane != self.config.noGoodPixelsMask:
+                    mask.clearMaskPlane(plane)
+
         # The calibration should _never_ have NO_DATA set.
         if self.config.checkNoData:
-            test = ((combinedExp.mask.array & afwImage.Mask.getPlaneBitMask("NO_DATA")) > 0)
+            test = ((combinedExp.mask.array
+                     & afwImage.Mask.getPlaneBitMask(self.config.noGoodPixelsMask)) > 0)
             if (nnodata := test.sum()) > 0:
                 raise RuntimeError(f"Combined calibration has {nnodata} pixels!")
 
