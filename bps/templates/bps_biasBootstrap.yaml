@@ -1,0 +1,15 @@
+pipelineYaml: "${CP_PIPE_DIR}/pipelines/${INSTRUMENT}/cpBiasBootstrap.yaml"
+
+project: "${TICKET}"
+campaign: "${TICKET}"
+
+biasBootstrapCollection: "${USER_CALIB_PREFIX}$INSTRUMENT/calib/$TICKET/$TAG/biasBootstrapGen.$RERUN"
+biasBootstrapRun: "{biasBootstrapCollection}/run${BOOTSTRAP_RUN_NUMBER}"
+
+payload:
+  payloadName: "${INSTRUMENT}_${TICKET}_biasBootstrap"
+  output: "{biasBootstrapCollection}"
+  outputRun: "{biasBootstrapRun}"
+  butlerConfig: "${REPO}"
+  inCollection: "${RAW_COLLECTION},${CALIB_COLLECTIONS}"
+  dataQuery: "${SELECTION_BIAS}"
