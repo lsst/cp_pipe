@@ -1,0 +1,11 @@
+pipelineYaml: "${CP_PIPE_DIR}/pipelines/${INSTRUMENT}/cpPtc.yaml"
+
+project: "${TICKET}"
+campaign: "${TICKET}"
+
+payload:
+  payloadName: "${INSTRUMENT}_${TICKET}_ptc"
+  output: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET}/${TAG}/ptcGen.${RERUN}"
+  butlerConfig: "${REPO}"
+  inCollection: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET}/${TAG},${RAW_COLLECTION},${CALIB_COLLECTIONS}"
+  dataQuery: "${SELECTION_PTC}"
