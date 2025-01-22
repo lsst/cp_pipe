@@ -146,6 +146,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         extractConfig.minNumberGoodPixelsForCovariance = 5000
         extractConfig.detectorMeasurementRegion = "FULL"
         extractConfig.doExtractPhotodiodeData = True
+        extractConfig.doKsHistMeasurement = True
         extractConfig.auxiliaryHeaderKeys = ["CCOBCURR", "CCDTEMP"]
         extractTask = cpPipe.ptc.PhotonTransferCurveExtractTask(config=extractConfig)
 
