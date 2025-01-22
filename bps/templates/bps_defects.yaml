@@ -1,0 +1,15 @@
+pipelineYaml: "${CP_PIPE_DIR}/pipelines/${INSTRUMENT}/cpDefects.yaml"
+
+project: "${TICKET}"
+campaign: "${TICKET}"
+
+biasBootstrapRun: "${USER_CALIB_PREFIX}$INSTRUMENT/calib/$TICKET/$TAG/biasBootstrapGen.$RERUN/run${BOOTSTRAP_RUN_NUMBER}"
+darkBootstrapRun: "${USER_CALIB_PREFIX}$INSTRUMENT/calib/$TICKET/$TAG/darkBootstrapGen.$RERUN/run${BOOTSTRAP_RUN_NUMBER}"
+flatBootstrapRun: "${USER_CALIB_PREFIX}$INSTRUMENT/calib/$TICKET/$TAG/flatBootstrapGen.$RERUN/run${BOOTSTRAP_RUN_NUMBER}"
+
+payload:
+  payloadName: "${INSTRUMENT}_${TICKET}_defects"
+  output: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET}/${TAG}/defectGen.${RERUN}"
+  butlerConfig: "${REPO}"
+  inCollection: "{biasBootstrapRun},{darkBootstrapRun},{flatBootstrapRun},${RAW_COLLECTION},${CALIB_COLLECTIONS}"
+  dataQuery: "instrument='${INSTRUMENT}'"
