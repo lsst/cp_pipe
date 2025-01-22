@@ -201,6 +201,12 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
             'FULL': 'Second order correction.'
         }
     )
+    doKsHistMeasurement = pexConfig.Field(
+        dtype=bool,
+        doc="Do the Ks test of gaussianity? If False, kspValue will be filled "
+            "with all 1.0s.",
+        default=False,
+    )
     ksHistNBins = pexConfig.Field(
         dtype=int,
         doc="Number of bins for the KS test histogram.",
@@ -693,9 +699,9 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                 # the combined dataset).
                 covArray[0, 0, 0] /= varFactor
 
-                if expIdMask:
+                if expIdMask and self.config.doKsHistMeasurement:
                     # Run the Gaussian histogram only if this is a legal
-                    # amplifier.
+                    # amplifier and configured to do so.
                     histVar, histChi2Dof, kspValue = self.computeGaussianHistogramParameters(
                         im1Area,
                         im2Area,
@@ -706,7 +712,12 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                 else:
                     histVar = np.nan
                     histChi2Dof = np.nan
-                    kspValue = 0.0
+                    if self.config.doKsHistMeasurement:
+                        kspValue = 0.0
+                    else:
+                        # When this is turned off, we will always allow it to
+                        # pass downstream.
+                        kspValue = 1.0
 
                 if self.config.doExtractPhotodiodeData or self.config.useEfdPhotodiodeData:
                     nExps = 0
