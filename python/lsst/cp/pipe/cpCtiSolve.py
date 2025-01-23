@@ -56,7 +56,7 @@ class CpCtiSolveConnections(pipeBase.PipelineTaskConnections,
     )
 
     outputCalib = cT.Output(
-        name="cpCtiCalib",
+        name="cti",
         doc="Output CTI calibration.",
         storageClass="IsrCalib",
         dimensions=("instrument", "detector"),
@@ -93,12 +93,12 @@ class CpCtiSolveConfig(pipeBase.PipelineTaskConfig,
     serialCtiRange = pexConfig.ListField(
         dtype=float,
         default=[-1.0e-5, 1.0e-5],
-        doc="Serial CTI range within containing serial turnoff.",
+        doc="Serial CTI range to search for serial turnoff.",
     )
     parallelCtiRange = pexConfig.ListField(
         dtype=float,
         default=[-1.0e-5, 1.0e-5],
-        doc="Parallel CTI range within containing serial turnoff.",
+        doc="Parallel CTI range to search for parallel turnoff.",
     )
     turnoffFinderSigmaClip = pexConfig.Field(
         dtype=int,
@@ -114,13 +114,13 @@ class CpCtiSolveConfig(pipeBase.PipelineTaskConfig,
         dtype=int,
         default=[1, 15],
         doc="First and last serial overscan column to use for "
-            "serial EPER estimate.",
+            "serial extended pixel edge response (EPER) estimate.",
     )
     globalCtiRowRange = pexConfig.ListField(
         dtype=int,
         default=[1, 2],
         doc="First and last parallel overscan row to use for "
-            "parallel EPER estimate.",
+            "parallel extended pixel edge response (EPER) estimate.",
     )
 
     trapColumnRange = pexConfig.ListField(
@@ -170,7 +170,7 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
         ----------
         inputMeasurements : `list` [`dict`]
             List of overscan measurements from each input exposure.
-            Each dictionary is nested within a top level 'CTI' key,
+            Each dictionary is nested within a top level "CTI" key,
             with measurements organized by amplifier name, containing
             keys:
 
@@ -239,7 +239,7 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
         ----------
         inputMeasurements : `list` [`dict`]
             List of overscan measurements from each input exposure.
-            Each dictionary is nested within a top level 'CTI' key,
+            Each dictionary is nested within a top level "CTI" key,
             with measurements organized by amplifier name, containing
             keys:
 
@@ -358,7 +358,7 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
         ----------
         inputMeasurements : `list` [`dict`]
             List of overscan measurements from each input exposure.
-            Each dictionary is nested within a top level 'CTI' key,
+            Each dictionary is nested within a top level "CTI" key,
             with measurements organized by amplifier name, containing
             keys:
 
@@ -480,13 +480,14 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
         return calib
 
     def solveEper(self, inputMeasurements, calib, detector):
-        """Solve for serial and parallel EPER (estimator of CTI).
+        """Solve for serial and parallel extended pixel edge response (EPER),
+        which is an esimator of CTI defined in Snyder et al. 2021.
 
         Parameters
         ----------
         inputMeasurements : `list` [`dict`]
             List of overscan measurements from each input exposure.
-            Each dictionary is nested within a top level 'CTI' key,
+            Each dictionary is nested within a top level "CTI" key,
             with measurements organized by amplifier name, containing
             keys:
 
@@ -543,13 +544,13 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
             )
 
             # Calculate the serial and parallel turnoffs
-            serialCtiTurnoff, serialCtiTurnoffSamplingErr = self.calcTurnoff(
+            serialCtiTurnoff, serialCtiTurnoffSamplingErr = self.calcCtiTurnoff(
                 signals,
                 serialEperEstimate,
                 self.config.serialCtiRange,
                 amp,
             )
-            parallelCtiTurnoff, parallelCtiTurnoffSamplingErr = self.calcTurnoff(
+            parallelCtiTurnoff, parallelCtiTurnoffSamplingErr = self.calcCtiTurnoff(
                 signals,
                 parallelEperEstimate,
                 self.config.parallelCtiRange,
@@ -624,7 +625,7 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
         ----------
         inputMeasurements : `list` [`dict`]
             List of overscan measurements from each input exposure.
-            Each dictionary is nested within a top level 'CTI' key,
+            Each dictionary is nested within a top level "CTI" key,
             with measurements organized by amplifier name, containing
             keys:
 
@@ -756,10 +757,10 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
         ----------
         mode : `str`
             The orientation of the calculation to perform. Can be
-            either `SERIAL` or `PARALLEL`.
+            either "SERIAL" or "PARALLEL".
         inputMeasurements : `list` [`dict`]
             List of overscan measurements from each input exposure.
-            Each dictionary is nested within a top level 'CTI' key,
+            Each dictionary is nested within a top level "CTI" key,
             with measurements organized by amplifier name, containing
             keys:
 
@@ -848,9 +849,8 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
 
         return signal, ctiEstimate
 
-    def calcTurnoff(self, signalVec, dataVec, ctiRange, amp):
+    def calcCtiTurnoff(self, signalVec, dataVec, ctiRange, amp):
         """Solve for turnoff value in a sequenced dataset.
-
 
         Parameters
         ----------
@@ -890,7 +890,7 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
         if dataVec.size == 0:
             self.log.warning("No data points after cti range cut to compute turnoff "
                              f"for amplifier {amp.getName()}. Setting turnoff point "
-                             "to 0 el.")
+                             "to 0 electrons.")
             return 0.0, 0.0
 
         if dataVec.size < 2:
@@ -926,7 +926,7 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
         if cleanDataVec.size == 0:
             self.log.warning("No data points after sigma clipping to compute turnoff "
                              f" for amplifier {amp.getName()}. Setting turnoff point "
-                             "to 0 el.")
+                             "to 0 electrons.")
             return 0.0, 0.0
 
         turnoffIdx = np.argwhere(good)[-1]
@@ -939,7 +939,7 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
         self.log.info(f"Amp {amp.getName()}: There are {len(cleanDataVec[good])}/{len(dataVec)} data points "
                       f"left to determine turnoff point.")
 
-        # Compute the sampliing error as one half the
+        # Compute the sampling error as one half the
         # difference between the previous and next point.
         # Or, if it is the last index, just compute the
         # interval.
