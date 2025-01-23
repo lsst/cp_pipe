@@ -1,0 +1,11 @@
+pipelineYaml: "${CP_PIPE_DIR}/pipelines/${INSTRUMENT}/cpFlat.yaml"
+
+project: "${TICKET}"
+campaign: "${TICKET}"
+
+payload:
+  payloadName: "${INSTRUMENT}_${TICKET}_flat_g"
+  output: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET}/${TAG}/flatGen-g.${RERUN}"
+  butlerConfig: "${REPO}"
+  inCollection: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET}/${TAG},${RAW_COLLECTION},${CALIB_COLLECTIONS}"
+  dataQuery: "${SELECTION_FLAT_g} and band='g'"
