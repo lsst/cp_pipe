@@ -378,9 +378,9 @@ class CalibCombineTask(pipeBase.PipelineTask):
             # after the checkNoData pass so that we don't censor what
             # we want to raise on.
             mask = combinedExp.mask
-            for plane in mask.getMaskPlaneDict().keys():
+            for plane, value in mask.getMaskPlaneDict().items():
                 if plane != self.config.noGoodPixelsMask:
-                    mask.clearMaskPlane(plane)
+                    mask.clearMaskPlane(value)
 
         self.interpolateNans(combined, maskPlane=self.config.noGoodPixelsMask)
 
