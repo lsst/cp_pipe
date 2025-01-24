@@ -251,7 +251,7 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
     photodiodeIntegrationMethod = pexConfig.ChoiceField(
         dtype=str,
         doc="Integration method for photodiode monitoring data.",
-        default="CHARGE_SUM",
+        default="TRIMMED_SUM",
         allowed={
             "DIRECT_SUM": ("Use numpy's trapz integrator on all photodiode "
                            "readout entries"),
@@ -266,7 +266,7 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
     photodiodeCurrentScale = pexConfig.Field(
         dtype=float,
         doc="Scale factor to apply to photodiode current values for the "
-            "``CHARGE_SUM`` integration method.",
+            "``CHARGE_SUM`` and ``TRIMMED_SUM`` integration methods.",
         default=-1.0,
     )
 
