@@ -221,12 +221,17 @@ class CalibCombineConfig(pipeBase.PipelineTaskConfig,
     noGoodPixelsMask = pexConfig.Field(
         dtype=str,
         default="BAD",
-        doc="Mask bit to set when there are no good input pixels.",
+        doc="Mask bit to set when there are no good input pixels.  See code comments for details.",
     )
     checkNoData = pexConfig.Field(
         dtype=bool,
         default=True,
         doc="Check that the calibration does not have NO_DATA set?",
+    )
+    censorMaskPlanes = pexConfig.Field(
+        dtype=bool,
+        default=True,
+        doc="Unset mask planes other than NO_DATA in output calibration?",
     )
     stats = pexConfig.ConfigurableField(
         target=CalibStatsTask,
@@ -295,7 +300,16 @@ class CalibCombineTask(pipeBase.PipelineTask):
             numIter=self.config.nIter,
             andMask=afwImage.Mask.getPlaneBitMask(self.config.mask),
         )
+
+        # Normally, this would be set to NO_DATA.  However, we want
+        # pixels in the combined calibration that had no good inputs
+        # to be treated as a defect (which are interpolated) and not
+        # like an empty region (such as vignetted corners, which are
+        # not interpolated).  To handle this, we use the config to
+        # override the mask plane used (BAD by default), and censor
+        # all other mask planes below.
         stats.setNoGoodPixelsMask(afwImage.Mask.getPlaneBitMask(self.config.noGoodPixelsMask))
+
         numExps = len(inputExpHandles)
         if numExps < 1:
             raise RuntimeError("No valid input data")
@@ -349,13 +363,26 @@ class CalibCombineTask(pipeBase.PipelineTask):
 
         self.combine(combinedExp, inputExpHandles, expScales, stats)
 
-        # The calibration should _never_ have NO_DATA set.
+        # The calibration should _never_ have NO_DATA set, as this is
+        # handled poorly downstream, and so we raise here after
+        # explicitly checking for pixels with that bit set.
         if self.config.checkNoData:
             test = ((combinedExp.mask.array & afwImage.Mask.getPlaneBitMask("NO_DATA")) > 0)
             if (nnodata := test.sum()) > 0:
-                raise RuntimeError(f"Combined calibration has {nnodata} pixels!")
+                raise RuntimeError(f"Combined calibration has {nnodata} NO_DATA pixels!")
 
-        self.interpolateNans(combined)
+        if self.config.censorMaskPlanes:
+            # Any mask planes that are not the noGoodPixelsMask plane
+            # should be cleared.  This should remove things like the
+            # CROSSTALK plane from printing into the calibration.  Run
+            # after the checkNoData pass so that we don't censor what
+            # we want to raise on.
+            mask = combinedExp.mask
+            for plane, value in mask.getMaskPlaneDict().items():
+                if plane != self.config.noGoodPixelsMask:
+                    mask.clearMaskPlane(value)
+
+        self.interpolateNans(combined, maskPlane=self.config.noGoodPixelsMask)
 
         if self.config.doVignette:
             polygon = inputExpHandles[0].get(component="validPolygon")
@@ -642,7 +669,7 @@ class CalibCombineTask(pipeBase.PipelineTask):
 
         return header
 
-    def interpolateNans(self, exp):
+    def interpolateNans(self, exp, maskPlane="BAD"):
         """Interpolate over NANs in the combined image.
 
         NANs can result from masked areas on the CCD.  We don't want
@@ -653,13 +680,23 @@ class CalibCombineTask(pipeBase.PipelineTask):
         ----------
         exp : `lsst.afw.image.Exposure`
             Exp to check for NaNs.
+        maskPlane : `str`, optional
+            Mask plane to set where we have replaced a NAN.
         """
-        array = exp.getImage().getArray()
-        bad = np.isnan(array)
+        array = exp.image.array
+        mask = exp.mask.array
+        variance = exp.variance.array
+        badMaskValue = exp.mask.getPlaneBitMask(maskPlane)
+
+        bad = np.isnan(array) | np.isnan(variance)
         if np.any(bad):
-            median = np.median(array[np.logical_not(bad)])
+            median = np.median(array[~bad])
+            medianVariance = np.median(variance[~bad])
             count = np.sum(bad)
+
             array[bad] = median
+            mask[bad] |= badMaskValue
+            variance[bad] = medianVariance
             self.log.warning("Found and fixed %s NAN pixels", count)
 
     @staticmethod
@@ -701,6 +738,10 @@ class CalibCombineTask(pipeBase.PipelineTask):
             bad = ((ampImage.mask.array & noGoodPixelsBit) > 0)
             key = f"LSST CALIB {calibrationType.upper()} {amp.getName()} BADPIX-NUM"
             metadata[key] = bad.sum()
+            if metadata[key] > 0:
+                self.log.warning(f"Found {metadata[key]} pixels with "
+                                 f"mask plane {self.config.noGoodPixelsMask} "
+                                 f"for amp {amp.getName()}.")
 
 
 # Create versions of the Connections, Config, and Task that support
