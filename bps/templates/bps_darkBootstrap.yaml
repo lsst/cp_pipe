@@ -1,0 +1,16 @@
+pipelineYaml: "${CP_PIPE_DIR}/pipelines/${INSTRUMENT}/cpDarkBootstrap.yaml"
+
+project: "${TICKET}"
+campaign: "${TICKET}"
+
+darkBootstrapCollection: "${USER_CALIB_PREFIX}$INSTRUMENT/calib/$TICKET/$TAG/darkBootstrapGen.$RERUN"
+biasBootstrapRun: "${USER_CALIB_PREFIX}$INSTRUMENT/calib/$TICKET/$TAG/biasBootstrapGen.$RERUN/run${BOOTSTRAP_RUN_NUMBER}"
+darkBootstrapRun: "{darkBootstrapCollection}/run${BOOTSTRAP_RUN_NUMBER}"
+
+payload:
+  payloadName: "${INSTRUMENT}_${TICKET}_darkBootstrap"
+  output: "{darkBootstrapCollection}"
+  outputRun: "{darkBootstrapRun}"
+  butlerConfig: "${REPO}"
+  inCollection: "{biasBootstrapRun},${RAW_COLLECTION},${CALIB_COLLECTIONS}"
+  dataQuery: "${SELECTION_DARK}"
