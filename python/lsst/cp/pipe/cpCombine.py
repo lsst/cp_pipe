@@ -36,6 +36,7 @@ from lsst.ip.isr.vignette import maskVignettedRegion
 
 from astro_metadata_translator import merge_headers
 from astro_metadata_translator.serialize import dates_to_fits
+from lsst.obs.base.utils import strip_provenance_from_fits_header
 
 
 __all__ = ["CalibStatsConfig", "CalibStatsTask",
@@ -600,6 +601,10 @@ class CalibCombineTask(pipeBase.PipelineTask):
         # Merge input headers
         inputHeaders = [expHandle.get(component="metadata") for expHandle in expHandleList]
         merged = merge_headers(inputHeaders, mode="drop")
+
+        # Remove any left over provenance headers that weren't dropped
+        # (for example if different numbers of input datasets were present).
+        strip_provenance_from_fits_header(merged)
 
         # Add the unchanging headers from all inputs to the given header.
         for k, v in merged.items():
