@@ -144,10 +144,7 @@ class CpDarkTask(pipeBase.PipelineTask):
             )
 
             try:
-                # Convert the BAD mask plane to defects to supply to
-                # CR repair.
-                defects = Defects.fromMask(crImage.maskedImage, "BAD")
-                self.repair.run(crImage, keepCRs=False, defects=defects)
+                self.repair.run(crImage, keepCRs=False)
             except LengthError:
                 self.log.warning("CR rejection failed!")
 
