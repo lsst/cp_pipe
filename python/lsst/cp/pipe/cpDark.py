@@ -76,7 +76,7 @@ class CpDarkTaskConfig(pipeBase.PipelineTaskConfig,
     maskListToInterpolate = pexConfig.ListField(
         dtype=str,
         doc="List of mask planes that should be interpolated.",
-        default=['SAT', 'BAD'],
+        default=["SAT", "BAD"],
     )
     useLegacyInterp = pexConfig.Field(
         dtype=bool,
@@ -149,7 +149,7 @@ class CpDarkTask(pipeBase.PipelineTask):
                 self.log.warning("CR rejection failed!")
 
             # Copy results to input frame.
-            crBit = crImage.mask.getPlaneBitMask('CR')
+            crBit = crImage.mask.getPlaneBitMask("CR")
             crPixels = np.bitwise_and(crImage.mask.array, crBit)
             inputExp.mask.array[crPixels] |= crBit
             self.log.info("Number of CR pixels: %d",
