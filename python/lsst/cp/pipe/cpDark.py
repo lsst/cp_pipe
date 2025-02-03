@@ -27,7 +27,7 @@ import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 import lsst.pipe.base.connectionTypes as cT
 
-from lsst.ip.isr import gainContext, interpolateFromMask
+from lsst.ip.isr import gainContext, interpolateFromMask, Defects
 from lsst.pex.exceptions import LengthError
 from lsst.pipe.tasks.repair import RepairTask
 
@@ -143,7 +143,10 @@ class CpDarkTask(pipeBase.PipelineTask):
             )
 
             try:
-                self.repair.run(crImage, keepCRs=False)
+                # Convert the BAD mask plane to defects to supply to
+                # CR repair.
+                defects = Defects.fromMask(crImage.maskedImage, "BAD")
+                self.repair.run(crImage, keepCRs=False, defects=defects)
             except LengthError:
                 self.log.warning("CR rejection failed!")
 
