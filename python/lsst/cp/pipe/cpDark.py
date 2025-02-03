@@ -27,7 +27,7 @@ import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 import lsst.pipe.base.connectionTypes as cT
 
-from lsst.ip.isr import gainContext, interpolateFromMask, Defects
+from lsst.ip.isr import gainContext, interpolateFromMask
 from lsst.pex.exceptions import LengthError
 from lsst.pipe.tasks.repair import RepairTask
 
@@ -124,8 +124,8 @@ class CpDarkTask(pipeBase.PipelineTask):
         # exposure, if possible.  Otherwise, use the cameraGeom value.
         gains = self._get_gains(inputExp)
 
-        # Is this gainContext still required?
-        # TODO DM-48754: Investigate cosmic ray rejection during dark construction
+        # Is this gainContext still required?  TODO DM-48754:
+        # Investigate cosmic ray rejection during dark construction
         with gainContext(inputExp, inputExp.getVariance(), apply=True, gains=gains):
             # Scale the variance to match the image plane.  A similar
             # scaling happens during flat-field correction for science
