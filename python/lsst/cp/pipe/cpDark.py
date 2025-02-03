@@ -124,7 +124,8 @@ class CpDarkTask(pipeBase.PipelineTask):
         # exposure, if possible.  Otherwise, use the cameraGeom value.
         gains = self._get_gains(inputExp)
 
-        # Is this gainContext load bearing?
+        # Is this gainContext still required?
+        # TODO DM-48754: Investigate cosmic ray rejection during dark construction
         with gainContext(inputExp, inputExp.getVariance(), apply=True, gains=gains):
             # Scale the variance to match the image plane.  A similar
             # scaling happens during flat-field correction for science
@@ -155,7 +156,7 @@ class CpDarkTask(pipeBase.PipelineTask):
             crPixels = np.bitwise_and(crImage.mask.array, crBit)
             inputExp.mask.array[crPixels] |= crBit
             self.log.info("Number of CR pixels: %d",
-                          np.count_nonzero(np.bitwise_and(crImage.mask.array, crBit)))
+                          np.count_nonzero(crPixels))
 
         if self.config.crGrow > 0:
             crMask = inputExp.getMaskedImage().getMask().getPlaneBitMask("CR")
