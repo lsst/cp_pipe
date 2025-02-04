@@ -137,7 +137,7 @@ class CpDarkTask(pipeBase.PipelineTask):
             # defects (which will now be interpolated).
             interpolateFromMask(
                 maskedImage=crImage.getMaskedImage(),
-                fwhm=self.config.psdfFwhm,
+                fwhm=self.config.psfFwhm,
                 growSaturatedFootprints=self.config.crGrow,
                 maskNameList=list(self.config.maskListToInterpolate),
                 useLegacyInterp=self.config.useLegacyInterp,
