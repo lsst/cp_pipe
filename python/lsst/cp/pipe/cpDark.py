@@ -138,7 +138,7 @@ class CpDarkTask(pipeBase.PipelineTask):
             interpolateFromMask(
                 maskedImage=crImage.getMaskedImage(),
                 fwhm=self.config.psfFwhm,
-                growSaturatedFootprints=self.config.crGrow,
+                growSaturatedFootprints=0,
                 maskNameList=list(self.config.maskListToInterpolate),
                 useLegacyInterp=self.config.useLegacyInterp,
             )
@@ -150,7 +150,7 @@ class CpDarkTask(pipeBase.PipelineTask):
 
             # Copy results to input frame.
             crBit = crImage.mask.getPlaneBitMask("CR")
-            crPixels = np.bitwise_and(crImage.mask.array, crBit)
+            crPixels = (crImage.mask.array & crBit) > 0
             inputExp.mask.array[crPixels] |= crBit
             self.log.info("Number of CR pixels: %d",
                           np.count_nonzero(crPixels))
