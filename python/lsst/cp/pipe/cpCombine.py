@@ -674,7 +674,7 @@ class CalibCombineTask(pipeBase.PipelineTask):
 
         NANs can result from masked areas on the CCD.  We don't want
         them getting into our science images, so we replace them with
-        the median of the image.
+        the median of the data.
 
         Parameters
         ----------
@@ -689,6 +689,7 @@ class CalibCombineTask(pipeBase.PipelineTask):
         badMaskValue = exp.mask.getPlaneBitMask(maskPlane)
 
         bad = np.isnan(array) | np.isnan(variance)
+
         if np.any(bad):
             median = np.median(array[~bad])
             medianVariance = np.median(variance[~bad])
