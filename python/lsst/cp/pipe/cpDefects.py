@@ -1138,6 +1138,7 @@ class MergeDefectsCombinedConnections(pipeBase.PipelineTaskConnections,
         storageClass="Defects",
         dimensions=("instrument", "detector"),
         multiple=True,
+        isCalibration=True,
     )
     camera = cT.PrerequisiteInput(
         name='camera',
