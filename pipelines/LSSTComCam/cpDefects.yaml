@@ -20,7 +20,7 @@ tasks:
   cpMeasureFlatDefects:
     class: lsst.cp.pipe.MeasureDefectsCombinedWithFilterTask
     config:
-      doVampirePixels: True
+      doVampirePixels: true
       thresholdType: "VALUE"
       fracThresholdFlat: 0.9
       badPixelsToFillColumnThreshold: 1000
@@ -28,5 +28,5 @@ tasks:
     class: lsst.cp.pipe.MergeDefectsCombinedTask
     config:
       connections.inputManualDefects: "manual_defects"
-      doManualDefects: True
+      doManualDefects: true
       edgesAsDefects: true
