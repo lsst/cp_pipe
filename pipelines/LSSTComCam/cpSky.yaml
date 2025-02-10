@@ -6,7 +6,7 @@ tasks:
   cpSkyIsr:
     class: lsst.ip.isr.IsrTaskLSST
     config:
-      crosstalk.doQuadraticCrosstalkCorrection: false
+      doDeferredCharge: true
   cpSkyImage:
     class: lsst.cp.pipe.CpSkyImageTask
     config:
