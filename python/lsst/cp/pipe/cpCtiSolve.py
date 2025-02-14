@@ -929,8 +929,10 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
                              "to 0 electrons.")
             return 0.0, 0.0
 
-        turnoffIdx = np.argwhere(good)[-1]
-        turnoff = np.max(signalVec[good])
+        # Get the index of the highest true value in
+        # the bool array
+        turnoffIdx = np.argwhere(good)[-1][0]
+        turnoff = signalVec[turnoffIdx]
 
         if cleanDataVec[good][-1] in ctiRange or turnoffIdx in [0, len(signalVec)-1]:
             self.log.warning("Turnoff point is at the edge of the allowed range for "
@@ -950,4 +952,4 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
         else:
             samplingError = (signalVec[turnoffIdx+1] - signalVec[turnoffIdx-1]) / 2.0
 
-        return turnoff, np.abs(np.float64(samplingError))
+        return turnoff, np.fabs(samplingError, dtype=np.float64)
