@@ -45,6 +45,7 @@ These are the environment variables that must be used. Examples are substituted 
 * `export SELECTION_PTC_BFK=$SELECTION_PTC`: The selection of raws to generate the brighter-fatter kernel; usually will be the same as the PTC selection.
 * `export SELECTION_PTC_CTI=$SELECTION_PTC`: The selection of raws to generate the charge-transfer-inefficiency dataset; usually will be the same as the PTC selection.
 * `export SELECTION_FLAT_g="instrument='LSSTComCam' and selection_string": The selection of raws to generate the g-band flat. See below for additional info.
+* `export SELECTION_ILLUMINATION_CORRECTION="instrument='LSSTComCam' and selection_string": The selection of raws to generate illumination corrections. See below for additional info.
 
 Checking Environment Variables
 ------------------------------
@@ -72,3 +73,11 @@ Due to limitations in BPS environment variable expansion, we have one template
 file for each band. There are template files for each of ugrizy. Note that it is
 **strongly** recommended that the relevant physical filter be used in the
 `selection_string` constraint on each flat selection.
+
+
+A Note on Illumination Correction Generation
+--------------------------------------------
+
+The illumination corrections depend on the full stack of previously generated calibrations.
+The bps template here assumes that these are being run after a full calibration certification process.
+Therefore, any calibrations used for this generation need to be explicitly put into the `CALIB_COLLECTIONS` environment variable.
