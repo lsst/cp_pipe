@@ -465,12 +465,9 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
             np.testing.assert_array_equal(lin_mask[outlier_indices], False)
 
             # Check the turnoff and max values.
-
-            # The first point at very low flux is noisier and so we exclude
-            # it from the test here.
-            resid_atol = 1.1e-3
+            resid_atol = 4e-4
             self.assertFloatsAlmostEqual(
-                (linearizer.fitResiduals[amp_name][lin_mask] / mu_linear[lin_mask])[1:],
+                linearizer.fitResiduals[amp_name][lin_mask] / mu_linear[lin_mask],
                 0.0,
                 atol=resid_atol,
             )
