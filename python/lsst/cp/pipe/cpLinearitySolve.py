@@ -722,7 +722,11 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                     linearizeModel[mask],
                     funcPolynomial,
                 )
-                residuals = linearizeModel - (postLinearFit[0] + postLinearFit[1] * inputAbscissa)
+                # When computing residuals, we only care about the slope of
+                # the postLinearFit and not the intercept. The intercept
+                # itself depends on a possibly unknown zero in the abscissa
+                # (often photodiode) which may have an arbitrary value.
+                residuals = linearizeModel - (postLinearFit[1] * inputAbscissa)
                 # We set masked residuals to nan.
                 residuals[~mask] = np.nan
 
