@@ -62,6 +62,7 @@ tasks:
     config:
       doMultipleCycles: true
       multipleCyclesFinalCycleNumber: 5
+      superStarForceZeroMean: true
   cpIlluminationCorrectionFgcmOutputIlluminationCorrection:
     class: lsst.fgcmcal.fgcmOutputIlluminationCorrection.FgcmOutputIlluminationCorrectionTask
     config:
