@@ -253,9 +253,9 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
         doc="Integration method for photodiode monitoring data.",
         default="TRIMMED_SUM",
         allowed={
-            "DIRECT_SUM": ("Use numpy's trapz integrator on all photodiode "
+            "DIRECT_SUM": ("Use numpy's trapezoid integrator on all photodiode "
                            "readout entries"),
-            "TRIMMED_SUM": ("Use numpy's trapz integrator, clipping the "
+            "TRIMMED_SUM": ("Use numpy's trapezoid integrator, clipping the "
                             "leading and trailing entries, which are "
                             "nominally at zero baseline level."),
             "CHARGE_SUM": ("Treat the current values as integrated charge "
