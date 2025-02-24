@@ -79,3 +79,38 @@ tasks:
     config:
       connections.cycleNumber: 5
       include_wcs_jacobian: true
+  cpIlluminationCorrectionBin8:
+    class: lsst.pipe.tasks.visualizeVisit.VisualizeBinCalibFilterTask
+    config:
+      connections.inputExp: "illuminationCorrection"
+      connections.outputExp: "illuminationCorrectionBin8"
+      binning: 8
+  cpIlluminationCorrectionBin64:
+    class: lsst.pipe.tasks.visualizeVisit.VisualizeBinCalibFilterTask
+    config:
+      connections.inputExp: "illuminationCorrection"
+      connections.outputExp: "illuminationCorrectionBin64"
+      binning: 64
+  cpIlluminationCorrectionMosaic8:
+    class: lsst.pipe.tasks.visualizeVisit.VisualizeMosaicCalibFilterTask
+    config:
+      connections.inputExps: "illuminationCorrectionBin8"
+      connections.outputData: "illuminationCorrectionMosaic8"
+      binning: 8
+  cpIlluminationCorrectionMosaic64:
+    class: lsst.pipe.tasks.visualizeVisit.VisualizeMosaicCalibFilterTask
+    config:
+      connections.inputExps: "illuminationCorrectionBin64"
+      connections.outputData: "illuminationCorrectionMosaic64"
+      binning: 64
+contracts:
+  - cpIlluminationCorrectionCalibrateImage.do_calibrate_pixels == False
+  - cpIlluminationCorrectionCalibrateImage.do_illumination_correction == False
+  - cpIlluminationCorrectionCalibrateImage.psf_subtract_background.doApplyFlatBackgroundRatio == False
+  - cpIlluminationCorrectionCalibrateImage.psf_detection.doApplyFlatBackgroundRatio == False
+  - cpIlluminationCorrectionCalibrateImage.star_detection.doApplyFlatBackgroundRatio == False
+  - cpIlluminationCorrectionFgcmBuildFromIsolatedStars.doApplyWcsJacobian == True
+  - cpIlluminationCorrectionFgcmFitCycle.superStarForceZeroMean == True
+  - cpIlluminationCorrectionFgcmOutputIlluminationCorrection.include_wcs_jacobian == True
+  - cpIlluminationCorrectionMosaic8.binning == cpIlluminationCorrectionBin8.binning
+  - cpIlluminationCorrectionMosaic64.binning == cpIlluminationCorrectionBin64.binning
