@@ -1,0 +1,19 @@
+pipelineYaml: "${CP_PIPE_DIR}/pipelines/${INSTRUMENT}/cpIlluminationCorrection.yaml"
+
+project: "${TICKET}"
+campaign: "${TICKET}"
+
+payload:
+  payloadName: "${INSTRUMENT}_${TICKET}_illuminationCorrection"
+  output: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET}/${TAG}/illuminationCorrectionGen.${RERUN}"
+  butlerConfig: "${REPO}"
+  inCollection: "${RAW_COLLECTION},${CALIB_COLLECTIONS}"
+  dataQuery: "${SELECTION_ILLUMINATION_CORRECTION}"
+
+pipetask:
+  cpIlluminationCorrectionFgcmBuildFromIsolatedStars:
+    requestMemory: 8192
+  cpIlluminationCorrectionFgcmFitCycle:
+    requestMemory: 32000
+    requestCpus: 8
+    extraRunQuantumOptions: "-j 1 -n 8"

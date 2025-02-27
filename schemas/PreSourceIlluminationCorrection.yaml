@@ -1,0 +1,189 @@
+# This file defines the mapping between the columns in a single visit+detector
+# source table and their respective DPDD-style column names, as used by
+# `lsst.pipe.tasks.postprocess.TransformSourceTableTask`.
+# See the DPDD for more information about the output: https://lse-163.lsst.io
+funcs:
+    sourceId:
+        functor: Column
+        args: id
+    coord_ra:
+        # reference position required by db. Not in DPDD
+        functor: CoordColumn
+        args: coord_ra
+    coord_dec:
+        # Reference position required by db. Not in DPDD
+        functor: CoordColumn
+        args: coord_dec
+    parentSourceId:
+        functor: Column
+        args: parent
+    x:
+        functor: Column
+        args: slot_Centroid_x
+    y:
+        functor: Column
+        args: slot_Centroid_y
+    xErr:
+        functor: Column
+        args: slot_Centroid_xErr
+    yErr:
+        functor: Column
+        args: slot_Centroid_yErr
+    ra:
+        functor: RAColumn
+    dec:
+        functor: DecColumn
+    raErr:
+        functor: RAErrColumn
+    decErr:
+        functor: DecErrColumn
+    ra_dec_Cov:
+        functor: RADecCovColumn
+    psfFlux:
+        functor: Column
+        args:
+            - slot_PsfFlux_flux
+    psfFluxErr:
+        functor: Column
+        args:
+            - slot_PsfFlux_fluxErr
+
+    ixx:
+        functor: Column
+        args: slot_Shape_xx
+    iyy:
+        functor: Column
+        args: slot_Shape_yy
+    ixy:
+        functor: Column
+        args: slot_Shape_xy
+    # DPDD should include Psf Shape
+    ixxPSF:
+        functor: Column
+        args: slot_PsfShape_xx
+    iyyPSF:
+        functor: Column
+        args: slot_PsfShape_yy
+    ixyPSF:
+        functor: Column
+        args: slot_PsfShape_xy
+    # DPDD does not include gaussianFluxes, however they are used for
+    # the single frame extendedness column which is used for QA.
+    gaussianFlux:
+        functor: Column
+        args:
+            - base_GaussianFlux_flux
+    gaussianFluxErr:
+        functor: Column
+        args:
+            - base_GaussianFlux_fluxErr
+    extendedness:
+        functor: Column
+        args: base_ClassificationExtendedness_value
+    sizeExtendedness:
+        functor: Column
+        args: base_ClassificationSizeExtendedness_value
+flags:
+   - base_Blendedness_abs
+   - base_Blendedness_flag
+   - base_Blendedness_flag_noCentroid
+   - base_Blendedness_flag_noShape
+   - base_CircularApertureFlux_12_0_flag
+   - base_CircularApertureFlux_12_0_flag_apertureTruncated
+   - base_CircularApertureFlux_12_0_flag_sincCoeffsTruncated
+   - base_CircularApertureFlux_12_0_instFlux
+   - base_CircularApertureFlux_12_0_instFluxErr
+   - base_CircularApertureFlux_17_0_flag
+   - base_CircularApertureFlux_17_0_instFlux
+   - base_CircularApertureFlux_17_0_instFluxErr
+   - base_CircularApertureFlux_35_0_flag
+   - base_CircularApertureFlux_35_0_instFlux
+   - base_CircularApertureFlux_35_0_instFluxErr
+   - base_CircularApertureFlux_50_0_flag
+   - base_CircularApertureFlux_50_0_instFlux
+   - base_CircularApertureFlux_50_0_instFluxErr
+   - base_NormalizedCompensatedTophatFlux_flag
+   - base_NormalizedCompensatedTophatFlux_instFlux
+   - base_NormalizedCompensatedTophatFlux_instFluxErr
+   - base_ClassificationExtendedness_flag
+   - base_ClassificationSizeExtendedness_flag
+   - base_FootprintArea_value
+   - base_InvalidPsf_flag
+   - base_Jacobian_flag
+   - base_Jacobian_value
+   - base_PixelFlags_flag_bad
+   - base_PixelFlags_flag_cr
+   - base_PixelFlags_flag_crCenter
+   - base_PixelFlags_flag_edge
+   - base_PixelFlags_flag_interpolated
+   - base_PixelFlags_flag_interpolatedCenter
+   - base_PixelFlags_flag_offimage
+   - base_PixelFlags_flag_saturated
+   - base_PixelFlags_flag_saturatedCenter
+   - base_PixelFlags_flag_suspect
+   - base_PixelFlags_flag_suspectCenter
+   - base_PsfFlux_apCorr
+   - base_PsfFlux_apCorrErr
+   - base_PsfFlux_area
+   - base_PsfFlux_flag
+   - base_PsfFlux_flag_apCorr
+   - base_PsfFlux_flag_edge
+   - base_PsfFlux_flag_noGoodPixels
+   - base_GaussianFlux_flag
+   - base_SdssCentroid_flag
+   - base_SdssCentroid_flag_almostNoSecondDerivative
+   - base_SdssCentroid_flag_badError
+   - base_SdssCentroid_flag_edge
+   - base_SdssCentroid_flag_noSecondDerivative
+   - base_SdssCentroid_flag_notAtMaximum
+   - base_SdssCentroid_flag_resetToPeak
+   - base_Variance_flag
+   - base_Variance_flag_emptyFootprint
+   - base_Variance_value
+   - calib_astrometry_used
+   - calib_photometry_reserved
+   - calib_photometry_used
+   - calib_psf_candidate
+   - calib_psf_reserved
+   - calib_psf_used
+   - deblend_deblendedAsPsf
+   - deblend_hasStrayFlux
+   - deblend_masked
+   - deblend_nChild
+   - deblend_parentTooBig
+   - deblend_patchedTemplate
+   - deblend_rampedTemplate
+   - deblend_skipped
+   - deblend_tooManyPeaks
+   - ext_shapeHSM_HsmPsfMoments_flag
+   - ext_shapeHSM_HsmPsfMoments_flag_no_pixels
+   - ext_shapeHSM_HsmPsfMoments_flag_not_contained
+   - ext_shapeHSM_HsmPsfMoments_flag_parent_source
+   - sky_source
+   - detect_isPrimary
+
+flag_rename_rules:
+    # Taken from db-meas-forced
+    - ['ext_photometryKron_', '']
+    - ['base_Blendedness', 'base_blendedness']
+    - ['base_Local', 'local']
+    - ['base_PixelFlags_flag', 'pixelFlags']
+    - ['base_ClassificationE', 'e']
+    - ['base_ClassificationS', 's']
+    - ['base_SdssCentroid', 'centroid']
+    - ['base_Variance', 'variance']
+    - ['base_Psf', 'psf']
+    - ['base_InvalidPsf_flag', 'invalidPsfFlag']
+    - ['base_GaussianFlux', 'gaussianFlux']
+    - ['base_CircularApertureFlux', 'apFlux']
+    - ['base_NormalizedCompensatedTophatFlux', 'normCompTophatFlux']
+    - ['base_FootprintArea', 'footprintArea']
+    - ['base_Jacobian', 'jacobian']
+    - ['ext_shapeHSM_HsmPsfMomentsDebiased', 'iDebiasedPSF']
+    - ['ext_shapeHSM_Hsm', 'hsm']
+    - ['ext_convolved_', '']
+    - ['undeblended_base', 'undeblended']
+    - ['undeblended_ext_photometryKron', 'undeblended']
+    - ['ext_photometryKron_', '']
+    - ['base_', '']
+    - ['slot_', '']

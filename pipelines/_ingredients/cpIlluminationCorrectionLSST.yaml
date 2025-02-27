@@ -1,0 +1,116 @@
+description: cp_pipe illumination correction calibration construction.
+tasks:
+  cpIlluminationCorrectionIsr:
+    class: lsst.ip.isr.IsrTaskLSST
+    config:
+      doAmpOffset: false
+      connections.outputExposure: "postISRCCD"
+  cpIlluminationCorrectionCalibrateImage:
+    class: lsst.pipe.tasks.calibrateImage.CalibrateImageTask
+    config:
+      connections.exposures: "postISRCCD"
+      connections.initial_stars_schema: "src_schema"
+      connections.stars_footprints: "src"
+      connections.stars: "preSource"
+      connections.exposure: "calexp"
+      connections.background: "calexpBackground"
+      do_calibrate_pixels: false
+      # Ensure that all illumination correction parameters are turned
+      # off when making illumination corrections.
+      do_illumination_correction: false
+      psf_subtract_background.doApplyFlatBackgroundRatio: false
+      psf_detection.doApplyFlatBackgroundRatio: false
+      star_detection.doApplyFlatBackgroundRatio: false
+      python: |
+        config.star_detection.includeThresholdMultiplier = 1.0
+        config.star_selector["science"].doUnresolved = False
+        config.star_selector["science"].doSignalToNoise = False
+        config.star_measurement.plugins["base_CircularApertureFlux"].radii = [
+            12.0, 17.0, 35.0, 50.0,
+        ]
+        config.star_measurement.plugins.names |= [
+          "base_Variance",
+          "base_Blendedness",
+          "base_Jacobian",
+        ]
+
+        # fgcmcal needs an inner and outer aperture.
+        config.star_measurement.plugins["base_CircularApertureFlux"].maxSincRadius = 12.0
+        config.star_measurement.plugins["base_CompensatedTophatFlux"].apertures = [12, 17]
+  cpIlluminationCorrectionTransformPreSourceTable:
+    class: lsst.pipe.tasks.postprocess.TransformSourceTableTask
+    config:
+      functorFile: "$CP_PIPE_DIR/schemas/PreSourceIlluminationCorrection.yaml"
+      connections.inputCatalog: "preSource"
+      connections.outputCatalog: "preSourceTable"
+  cpIlluminationCorrectionConsolidatePreSourceTable:
+    class: lsst.pipe.tasks.postprocess.ConsolidateSourceTableTask
+    config:
+      connections.inputCatalogs: "preSourceTable"
+      connections.outputCatalog: "preSourceTable_visit"
+  cpIlluminationCorrectionConsolidateVisitSummary: lsst.pipe.tasks.postprocess.ConsolidateVisitSummaryTask
+  cpIlluminationCorrectionIsolatedStarAssociation:
+    class: lsst.pipe.tasks.isolatedStarAssociation.IsolatedStarAssociationTask
+    config:
+      connections.source_table_visit: "preSourceTable_visit"
+      python: |
+        config.extra_columns = [
+          "x",
+          "y",
+          "apFlux_12_0_instFlux",
+          "apFlux_12_0_instFluxErr",
+          "apFlux_12_0_flag",
+          "apFlux_17_0_instFlux",
+          "apFlux_17_0_instFluxErr",
+          "apFlux_17_0_flag",
+        ]
+  cpIlluminationCorrectionFgcmBuildFromIsolatedStars:
+    class: lsst.fgcmcal.fgcmBuildFromIsolatedStars.FgcmBuildFromIsolatedStarsTask
+    config:
+      doApplyWcsJacobian: true
+  cpIlluminationCorrectionFgcmFitCycle:
+    class: lsst.fgcmcal.fgcmFitCycle.FgcmFitCycleTask
+    config:
+      doMultipleCycles: true
+      multipleCyclesFinalCycleNumber: 5
+      superStarForceZeroMean: true
+  cpIlluminationCorrectionFgcmOutputIlluminationCorrection:
+    class: lsst.fgcmcal.fgcmOutputIlluminationCorrection.FgcmOutputIlluminationCorrectionTask
+    config:
+      connections.cycleNumber: 5
+      include_wcs_jacobian: true
+  cpIlluminationCorrectionBin8:
+    class: lsst.pipe.tasks.visualizeVisit.VisualizeBinCalibFilterTask
+    config:
+      connections.inputExp: "illuminationCorrection"
+      connections.outputExp: "illuminationCorrectionBin8"
+      binning: 8
+  cpIlluminationCorrectionBin64:
+    class: lsst.pipe.tasks.visualizeVisit.VisualizeBinCalibFilterTask
+    config:
+      connections.inputExp: "illuminationCorrection"
+      connections.outputExp: "illuminationCorrectionBin64"
+      binning: 64
+  cpIlluminationCorrectionMosaic8:
+    class: lsst.pipe.tasks.visualizeVisit.VisualizeMosaicCalibFilterTask
+    config:
+      connections.inputExps: "illuminationCorrectionBin8"
+      connections.outputData: "illuminationCorrectionMosaic8"
+      binning: 8
+  cpIlluminationCorrectionMosaic64:
+    class: lsst.pipe.tasks.visualizeVisit.VisualizeMosaicCalibFilterTask
+    config:
+      connections.inputExps: "illuminationCorrectionBin64"
+      connections.outputData: "illuminationCorrectionMosaic64"
+      binning: 64
+contracts:
+  - cpIlluminationCorrectionCalibrateImage.do_calibrate_pixels == False
+  - cpIlluminationCorrectionCalibrateImage.do_illumination_correction == False
+  - cpIlluminationCorrectionCalibrateImage.psf_subtract_background.doApplyFlatBackgroundRatio == False
+  - cpIlluminationCorrectionCalibrateImage.psf_detection.doApplyFlatBackgroundRatio == False
+  - cpIlluminationCorrectionCalibrateImage.star_detection.doApplyFlatBackgroundRatio == False
+  - cpIlluminationCorrectionFgcmBuildFromIsolatedStars.doApplyWcsJacobian == True
+  - cpIlluminationCorrectionFgcmFitCycle.superStarForceZeroMean == True
+  - cpIlluminationCorrectionFgcmOutputIlluminationCorrection.include_wcs_jacobian == True
+  - cpIlluminationCorrectionMosaic8.binning == cpIlluminationCorrectionBin8.binning
+  - cpIlluminationCorrectionMosaic64.binning == cpIlluminationCorrectionBin64.binning
