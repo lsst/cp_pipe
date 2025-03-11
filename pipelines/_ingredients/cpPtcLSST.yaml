@@ -14,6 +14,7 @@ tasks:
         config.doCrosstalk = True
         config.crosstalk.doQuadraticCrosstalkCorrection = False
         config.doLinearize = True
+        config.doDeferredCharge = True
         config.doDefect = True
         config.doAmpOffset = True
         config.ampOffset.ampEdgeMaxOffset = 100000.0

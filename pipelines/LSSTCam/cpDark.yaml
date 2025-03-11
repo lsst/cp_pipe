@@ -2,3 +2,12 @@ description: cp_pipe DARK calibration construction
 instrument: lsst.obs.lsst.LsstCam
 imports:
   - location: $CP_PIPE_DIR/pipelines/_ingredients/cpDarkLSST.yaml
+cpDarkCombine:
+    class: lsst.cp.pipe.CalibCombineTask
+    config:
+      # For initial LSSTCam dark calib, there are
+      # too few statistics, so we set all pixels
+      # of the dark the ampwise mean. Reset the
+      # output connection to this new calibration.
+      connections.outputData: "combinedDark"
+      connections.meanOutputData: "dark"
