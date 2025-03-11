@@ -287,6 +287,9 @@ class CalibCombineTask(pipeBase.PipelineTask):
             ``outputData``
                 Final combined exposure generated from the inputs
                 (`lsst.afw.image.Exposure`).
+            ``meanOutputData``
+                Final combined exposure, with data set to ampwise mean.
+                (`lsst.afw.image.Exposure`)
 
         Raises
         ------
@@ -322,6 +325,7 @@ class CalibCombineTask(pipeBase.PipelineTask):
         # Create output exposure for combined data.
         combined = afwImage.MaskedImageF(width, height)
         combinedExp = afwImage.makeExposure(combined)
+        meanCombinedExp = combinedExp.clone()
 
         # Apply scaling:
         expScales = []
@@ -385,6 +389,12 @@ class CalibCombineTask(pipeBase.PipelineTask):
 
         self.interpolateNans(combined, maskPlane=self.config.noGoodPixelsMask)
 
+
+        for amp in inputDetector:
+            ampDataBbox = amp.getBBox()
+            ampDataMean = np.mean(combinedExp.image[ampDataBbox].array)
+            meanCombinedExp.image[ampDataBbox].array = ampDataMean
+
         if self.config.doVignette:
             polygon = inputExpHandles[0].get(component="validPolygon")
             maskVignettedRegion(combined, polygon=polygon, vignetteValue=0.0)
@@ -406,6 +416,7 @@ class CalibCombineTask(pipeBase.PipelineTask):
         # Return
         return pipeBase.Struct(
             outputData=combinedExp,
+            meanOutputData=meanCombinedExp,
         )
 
     def getDimensions(self, expHandleList):
