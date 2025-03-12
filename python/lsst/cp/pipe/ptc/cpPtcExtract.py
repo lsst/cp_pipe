@@ -447,9 +447,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                 minMeanSignalDict[ampName] = self.config.minMeanSignal['ALL_AMPS']
             elif ampName in self.config.minMeanSignal:
                 minMeanSignalDict[ampName] = self.config.minMeanSignal[ampName]
-        # These are the column names for `tupleRows` below.
-        tags = [('mu', '<f8'), ('afwVar', '<f8'), ('i', '<i8'), ('j', '<i8'), ('var', '<f8'),
-                ('cov', '<f8'), ('npix', '<i8'), ('ext', '<i8'), ('expTime', '<f8'), ('ampName', '<U3')]
+
         # Create a dummy ptcDataset. Dummy datasets will be
         # used to ensure that the number of output and input
         # dimensions match.
@@ -460,9 +458,9 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
             dummyPtcDataset.setAmpValuesPartialDataset(ampName)
 
         # Extract the photodiode data if requested.
+        monitorDiodeCharge = {}
         if self.config.doExtractPhotodiodeData:
             # Compute the photodiode integrals once, at the start.
-            monitorDiodeCharge = {}
             for handle in inputPhotodiodeData:
                 expId = handle.dataId['exposure']
                 pdCalib = handle.get()
@@ -471,7 +469,6 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                 monitorDiodeCharge[expId] = pdCalib.integrate()
         elif self.config.useEfdPhotodiodeData:
             client = CpEfdClient()
-            monitorDiodeCharge = {}  # This is technically an average current.
             obsDates = {}
             obsMin = None
             obsMax = None
@@ -518,7 +515,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
             partialPtcDatasetList.append(dummyPtcDataset)
 
         if self.config.numEdgeSuspect > 0:
-            isrTask = IsrTask()
+            self.isrTask = IsrTask()
             self.log.info("Masking %d pixels from the edges of all %ss as SUSPECT.",
                           self.config.numEdgeSuspect, self.config.edgeMaskLevel)
 
@@ -535,6 +532,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                                  self.config.matchExposuresType, expTime, exposures[0][1])
                 continue
             else:
+
                 # Only use the first two exposures at expTime. Each
                 # element is a tuple (exposure, expId)
                 expRef1, expId1 = exposures[0]
@@ -546,219 +544,15 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                     self.log.warning("Already found 2 exposures at %s %f. Ignoring exposures: %s",
                                      self.config.matchExposuresType, expTime,
                                      ", ".join(str(i[1]) for i in exposures[2:]))
-            self.log.info("Extracting PTC data from flat pair %d, %d", expId1, expId2)
-            # Mask pixels at the edge of the detector or of each amp
-            if self.config.numEdgeSuspect > 0:
-                isrTask.maskEdges(exp1, numEdgePixels=self.config.numEdgeSuspect,
-                                  maskPlane="SUSPECT", level=self.config.edgeMaskLevel)
-                isrTask.maskEdges(exp2, numEdgePixels=self.config.numEdgeSuspect,
-                                  maskPlane="SUSPECT", level=self.config.edgeMaskLevel)
 
-            # Extract any metadata keys from the headers.
-            auxDict = {}
-            metadata = exp1.getMetadata()
-            for key in self.config.auxiliaryHeaderKeys:
-                if key not in metadata:
-                    self.log.warning(
-                        "Requested auxiliary keyword %s not found in exposure metadata for %d",
-                        key,
-                        expId1,
-                    )
-                    value = np.nan
-                else:
-                    value = metadata[key]
-
-                auxDict[key] = value
-
-            # Pull key visitInfo data into the auxDict.
-            visitInfo = exp1.info.getVisitInfo()
-            auxDict["observationType"] = visitInfo.getObservationType()
-            auxDict["observationReason"] = visitInfo.getObservationReason()
-            auxDict["scienceProgram"] = visitInfo.getScienceProgram()
-
-            nAmpsNan = 0
-            partialPtcDataset = PhotonTransferCurveDataset(
-                ampNames, 'PARTIAL',
-                covMatrixSide=self.config.maximumRangeCovariancesAstier)
-            for ampNumber, amp in enumerate(detector):
-                ampName = amp.getName()
-                if self.config.detectorMeasurementRegion == 'AMP':
-                    region = amp.getBBox()
-                elif self.config.detectorMeasurementRegion == 'FULL':
-                    region = None
-
-                # Get masked image regions, masking planes, statistic control
-                # objects, and clipped means. Calculate once to reuse in
-                # `measureMeanVarCov` and `getGainFromFlatPair`.
-                im1Area, im2Area, imStatsCtrl, mu1, mu2 = self.getImageAreasMasksStats(exp1, exp2,
-                                                                                       region=region)
-
-                # Get the read noise for each exposure
-                readNoise1 = dict()
-                readNoise2 = dict()
-                meanReadNoise = dict()
-
-                readNoise1[ampName] = getReadNoise(exp1, ampName)
-                readNoise2[ampName] = getReadNoise(exp2, ampName)
-
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    # We allow the mean read noise to be nan if both read noise
-                    # values are nan, so suppress this warning.
-                    meanReadNoise[ampName] = np.nanmean([readNoise1[ampName], readNoise2[ampName]])
-
-                # We demand that both mu1 and mu2 be finite and greater than 0.
-                if not np.isfinite(mu1) or not np.isfinite(mu2) \
-                   or ((np.nan_to_num(mu1) + np.nan_to_num(mu2)/2.) <= 0.0):
-                    self.log.warning(
-                        "Illegal mean value(s) detected for amp %s on exposure pair %d/%d",
-                        ampName,
-                        expId1,
-                        expId2,
-                    )
-                    partialPtcDataset.setAmpValuesPartialDataset(
-                        ampName,
-                        inputExpIdPair=(expId1, expId2),
-                        rawExpTime=expTime,
-                        expIdMask=False,
-                    )
-                    continue
-
-                # `measureMeanVarCov` is the function that measures
-                # the variance and covariances from a region of
-                # the difference image of two flats at the same
-                # exposure time.  The variable `covAstier` that is
-                # returned is of the form:
-                # [(i, j, var (cov[0,0]), cov, npix) for (i,j) in
-                # {maxLag, maxLag}^2].
-                muDiff, varDiff, covAstier, rowMeanVariance = self.measureMeanVarCov(im1Area,
-                                                                                     im2Area,
-                                                                                     imStatsCtrl,
-                                                                                     mu1,
-                                                                                     mu2)
-                # Estimate the gain from the flat pair
-                if self.config.doGain:
-                    gain = self.getGainFromFlatPair(im1Area, im2Area, imStatsCtrl, mu1, mu2,
-                                                    correctionType=self.config.gainCorrectionType,
-                                                    readNoise=meanReadNoise[ampName])
-                else:
-                    gain = np.nan
-
-                # Correction factor for bias introduced by sigma
-                # clipping.
-                # Function returns 1/sqrt(varFactor), so it needs
-                # to be squared. varDiff is calculated via
-                # afwMath.VARIANCECLIP.
-                varFactor = sigmaClipCorrection(self.config.nSigmaClipPtc)**2
-                varDiff *= varFactor
-
-                expIdMask = True
-                # Mask data point at this mean signal level if
-                # the signal, variance, or covariance calculations
-                # from `measureMeanVarCov` resulted in NaNs.
-                if (np.isnan(muDiff) or np.isnan(varDiff) or (covAstier is None)
-                   or (rowMeanVariance is np.nan)):
-                    self.log.warning("NaN mean, var or rowmeanVariance, or None cov in amp %s "
-                                     "in exposure pair %d, %d of "
-                                     "detector %d.", ampName, expId1, expId2, detNum)
-                    nAmpsNan += 1
-                    expIdMask = False
-                    covArray = np.full((1, self.config.maximumRangeCovariancesAstier,
-                                        self.config.maximumRangeCovariancesAstier), np.nan)
-                    covSqrtWeights = np.full_like(covArray, np.nan)
-
-                # Mask data point if it is outside of the
-                # specified mean signal range.
-                if (muDiff <= minMeanSignalDict[ampName]) or (muDiff >= maxMeanSignalDict[ampName]):
-                    expIdMask = False
-
-                if covAstier is not None:
-                    # Turn the tuples with the measured information
-                    # into covariance arrays.
-                    # covrow: (i, j, var (cov[0,0]), cov, npix)
-                    tupleRows = [(muDiff, varDiff) + covRow + (ampNumber, expTime,
-                                                               ampName) for covRow in covAstier]
-                    tempStructArray = np.array(tupleRows, dtype=tags)
-
-                    covArray, vcov, _ = self.makeCovArray(tempStructArray,
-                                                          self.config.maximumRangeCovariancesAstier)
-
-                    # The returned covArray should only have 1 entry;
-                    # raise if this is not the case.
-                    if covArray.shape[0] != 1:
-                        raise RuntimeError("Serious programming error in covArray shape.")
-
-                    covSqrtWeights = np.nan_to_num(1./np.sqrt(vcov))
-
-                # Correct covArray for sigma clipping:
-                # 1) Apply varFactor twice for the whole covariance matrix
-                covArray *= varFactor**2
-                # 2) But, only once for the variance element of the
-                # matrix, covArray[0, 0, 0] (so divide one factor out).
-                # (the first 0 is because this is a 3D array for insertion into
-                # the combined dataset).
-                covArray[0, 0, 0] /= varFactor
-
-                if expIdMask and self.config.doKsHistMeasurement:
-                    # Run the Gaussian histogram only if this is a legal
-                    # amplifier and configured to do so.
-                    histVar, histChi2Dof, kspValue = self.computeGaussianHistogramParameters(
-                        im1Area,
-                        im2Area,
-                        imStatsCtrl,
-                        mu1,
-                        mu2,
-                    )
-                else:
-                    histVar = np.nan
-                    histChi2Dof = np.nan
-                    if self.config.doKsHistMeasurement:
-                        kspValue = 0.0
-                    else:
-                        # When this is turned off, we will always allow it to
-                        # pass downstream.
-                        kspValue = 1.0
-
-                if self.config.doExtractPhotodiodeData or self.config.useEfdPhotodiodeData:
-                    nExps = 0
-                    photoCharge = 0.0
-                    for expId in [expId1, expId2]:
-                        if expId in monitorDiodeCharge:
-                            photoCharge += monitorDiodeCharge[expId]
-                            nExps += 1
-                    if nExps > 0:
-                        photoCharge /= nExps
-                    else:
-                        photoCharge = np.nan
-                else:
-                    photoCharge = np.nan
-
-                # Get amp offsets if available.
-                ampOffsetKey = f"LSST ISR AMPOFFSET PEDESTAL {ampName}"
-                ampOffset1 = exp1.metadata.get(ampOffsetKey, np.nan)
-                ampOffset2 = exp2.metadata.get(ampOffsetKey, np.nan)
-                ampOffset = (ampOffset1 + ampOffset2) / 2.0
-
-                partialPtcDataset.setAmpValuesPartialDataset(
-                    ampName,
-                    inputExpIdPair=(expId1, expId2),
-                    rawExpTime=expTime,
-                    rawMean=muDiff,
-                    rawVar=varDiff,
-                    photoCharge=photoCharge,
-                    ampOffset=ampOffset,
-                    expIdMask=expIdMask,
-                    covariance=covArray[0, :, :],
-                    covSqrtWeights=covSqrtWeights[0, :, :],
-                    gain=gain,
-                    noise=meanReadNoise[ampName],
-                    histVar=histVar,
-                    histChi2Dof=histChi2Dof,
-                    kspValue=kspValue,
-                    rowMeanVariance=rowMeanVariance,
-                )
-
-            partialPtcDataset.setAuxValuesPartialDataset(auxDict)
+            partialPtcDataset, nAmpsNan = self._extractOneFlatPair(
+                [expId1, expId2],
+                [exp1, exp2],
+                monitorDiodeCharge,
+                expTime,
+                minMeanSignalDict,
+                maxMeanSignalDict,
+            )
 
             # Use location of exp1 to save PTC dataset from (exp1, exp2) pair.
             # Below, np.where(expId1 == np.array(inputDims)) returns a tuple
@@ -787,6 +581,268 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
         return pipeBase.Struct(
             outputCovariances=partialPtcDatasetList,
         )
+
+    def _extractOneFlatPair(
+        self,
+        expIds,
+        exps,
+        monitorDiodeCharge,
+        expTime,
+        minMeanSignalDict,
+        maxMeanSignalDict,
+    ):
+        """Extract a single flat pair.
+
+        Parameters
+        ----------
+        expIds : `tuple` [`int`]
+            Tuple of two exposure IDs for the flat pair.
+        exps : `tuple` [`lsst.afw.image.Exposure`]
+            Tuple of two exposures for the flat pair.
+        monitorDiodeCharge : `dict` [`int`, `float`]
+            Dict of photocharge values, keyed by expId. May be empty.
+        expTime : `float`
+            Exposure time.
+        minMeanSignalDict : `dict` [`str`, `float`]
+            Minimum mean signal to use, keyed by amp.
+        maxMeanSignalDict : `dict` [`str`, `float`]
+            Maximum mean signal to use, keyed by amp.
+
+        Returns
+        -------
+        partialPtcDataset : `lsst.ip.isr.PhotonTransferCurveDataset`
+            PTC dataset for this flat pair.
+        nAmpsNan : `int`
+            Number of amps that have no measurements.
+        """
+        expId1, expId2 = expIds
+        exp1, exp2 = exps
+
+        self.log.info("Extracting PTC data from flat pair %d, %d", expId1, expId2)
+
+        # These are the column names for `tupleRows` below.
+        tags = [('mu', '<f8'), ('afwVar', '<f8'), ('i', '<i8'), ('j', '<i8'), ('var', '<f8'),
+                ('cov', '<f8'), ('npix', '<i8'), ('ext', '<i8'), ('expTime', '<f8'), ('ampName', '<U3')]
+
+        detector = exp1.getDetector()
+        detNum = detector.getId()
+        amps = detector.getAmplifiers()
+        ampNames = [amp.getName() for amp in amps]
+
+        # Mask pixels at the edge of the detector or of each amp
+        if self.config.numEdgeSuspect > 0:
+            self.isrTask.maskEdges(exp1, numEdgePixels=self.config.numEdgeSuspect,
+                                   maskPlane="SUSPECT", level=self.config.edgeMaskLevel)
+            self.isrTask.maskEdges(exp2, numEdgePixels=self.config.numEdgeSuspect,
+                                   maskPlane="SUSPECT", level=self.config.edgeMaskLevel)
+
+        # Extract any metadata keys from the headers.
+        auxDict = {}
+        metadata = exp1.getMetadata()
+        for key in self.config.auxiliaryHeaderKeys:
+            if key not in metadata:
+                self.log.warning(
+                    "Requested auxiliary keyword %s not found in exposure metadata for %d",
+                    key,
+                    expId1,
+                )
+                value = np.nan
+            else:
+                value = metadata[key]
+
+            auxDict[key] = value
+
+        # Pull key visitInfo data into the auxDict.
+        visitInfo = exp1.info.getVisitInfo()
+        auxDict["observationType"] = visitInfo.getObservationType()
+        auxDict["observationReason"] = visitInfo.getObservationReason()
+        auxDict["scienceProgram"] = visitInfo.getScienceProgram()
+
+        nAmpsNan = 0
+        partialPtcDataset = PhotonTransferCurveDataset(
+            ampNames, 'PARTIAL',
+            covMatrixSide=self.config.maximumRangeCovariancesAstier)
+        for ampNumber, amp in enumerate(detector):
+            ampName = amp.getName()
+            if self.config.detectorMeasurementRegion == 'AMP':
+                region = amp.getBBox()
+            elif self.config.detectorMeasurementRegion == 'FULL':
+                region = None
+
+            # Get masked image regions, masking planes, statistic control
+            # objects, and clipped means. Calculate once to reuse in
+            # `measureMeanVarCov` and `getGainFromFlatPair`.
+            im1Area, im2Area, imStatsCtrl, mu1, mu2 = self.getImageAreasMasksStats(exp1, exp2,
+                                                                                   region=region)
+
+            # Get the read noise for each exposure
+            readNoise1 = dict()
+            readNoise2 = dict()
+            meanReadNoise = dict()
+
+            readNoise1[ampName] = getReadNoise(exp1, ampName)
+            readNoise2[ampName] = getReadNoise(exp2, ampName)
+
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                # We allow the mean read noise to be nan if both read noise
+                # values are nan, so suppress this warning.
+                meanReadNoise[ampName] = np.nanmean([readNoise1[ampName], readNoise2[ampName]])
+
+            # We demand that both mu1 and mu2 be finite and greater than 0.
+            if not np.isfinite(mu1) or not np.isfinite(mu2) \
+               or ((np.nan_to_num(mu1) + np.nan_to_num(mu2)/2.) <= 0.0):
+                self.log.warning(
+                    "Illegal mean value(s) detected for amp %s on exposure pair %d/%d",
+                    ampName,
+                    expId1,
+                    expId2,
+                )
+                partialPtcDataset.setAmpValuesPartialDataset(
+                    ampName,
+                    inputExpIdPair=(expId1, expId2),
+                    rawExpTime=expTime,
+                    expIdMask=False,
+                )
+                continue
+
+            # `measureMeanVarCov` is the function that measures
+            # the variance and covariances from a region of
+            # the difference image of two flats at the same
+            # exposure time.  The variable `covAstier` that is
+            # returned is of the form:
+            # [(i, j, var (cov[0,0]), cov, npix) for (i,j) in
+            # {maxLag, maxLag}^2].
+            muDiff, varDiff, covAstier, rowMeanVariance = self.measureMeanVarCov(im1Area,
+                                                                                 im2Area,
+                                                                                 imStatsCtrl,
+                                                                                 mu1,
+                                                                                 mu2)
+            # Estimate the gain from the flat pair
+            if self.config.doGain:
+                gain = self.getGainFromFlatPair(im1Area, im2Area, imStatsCtrl, mu1, mu2,
+                                                correctionType=self.config.gainCorrectionType,
+                                                readNoise=meanReadNoise[ampName])
+            else:
+                gain = np.nan
+
+            # Correction factor for bias introduced by sigma
+            # clipping.
+            # Function returns 1/sqrt(varFactor), so it needs
+            # to be squared. varDiff is calculated via
+            # afwMath.VARIANCECLIP.
+            varFactor = sigmaClipCorrection(self.config.nSigmaClipPtc)**2
+            varDiff *= varFactor
+
+            expIdMask = True
+            # Mask data point at this mean signal level if
+            # the signal, variance, or covariance calculations
+            # from `measureMeanVarCov` resulted in NaNs.
+            if (np.isnan(muDiff) or np.isnan(varDiff) or (covAstier is None)
+               or (rowMeanVariance is np.nan)):
+                self.log.warning("NaN mean, var or rowmeanVariance, or None cov in amp %s "
+                                 "in exposure pair %d, %d of "
+                                 "detector %d.", ampName, expId1, expId2, detNum)
+                nAmpsNan += 1
+                expIdMask = False
+                covArray = np.full((1, self.config.maximumRangeCovariancesAstier,
+                                    self.config.maximumRangeCovariancesAstier), np.nan)
+                covSqrtWeights = np.full_like(covArray, np.nan)
+
+            # Mask data point if it is outside of the
+            # specified mean signal range.
+            if (muDiff <= minMeanSignalDict[ampName]) or (muDiff >= maxMeanSignalDict[ampName]):
+                expIdMask = False
+
+            if covAstier is not None:
+                # Turn the tuples with the measured information
+                # into covariance arrays.
+                # covrow: (i, j, var (cov[0,0]), cov, npix)
+                tupleRows = [(muDiff, varDiff) + covRow + (ampNumber, expTime,
+                                                           ampName) for covRow in covAstier]
+                tempStructArray = np.array(tupleRows, dtype=tags)
+
+                covArray, vcov, _ = self.makeCovArray(tempStructArray,
+                                                      self.config.maximumRangeCovariancesAstier)
+
+                # The returned covArray should only have 1 entry;
+                # raise if this is not the case.
+                if covArray.shape[0] != 1:
+                    raise RuntimeError("Serious programming error in covArray shape.")
+
+                covSqrtWeights = np.nan_to_num(1./np.sqrt(vcov))
+
+            # Correct covArray for sigma clipping:
+            # 1) Apply varFactor twice for the whole covariance matrix
+            covArray *= varFactor**2
+            # 2) But, only once for the variance element of the
+            # matrix, covArray[0, 0, 0] (so divide one factor out).
+            # (the first 0 is because this is a 3D array for insertion into
+            # the combined dataset).
+            covArray[0, 0, 0] /= varFactor
+
+            if expIdMask and self.config.doKsHistMeasurement:
+                # Run the Gaussian histogram only if this is a legal
+                # amplifier and configured to do so.
+                histVar, histChi2Dof, kspValue = self.computeGaussianHistogramParameters(
+                    im1Area,
+                    im2Area,
+                    imStatsCtrl,
+                    mu1,
+                    mu2,
+                )
+            else:
+                histVar = np.nan
+                histChi2Dof = np.nan
+                if self.config.doKsHistMeasurement:
+                    kspValue = 0.0
+                else:
+                    # When this is turned off, we will always allow it to
+                    # pass downstream.
+                    kspValue = 1.0
+
+            if self.config.doExtractPhotodiodeData or self.config.useEfdPhotodiodeData:
+                nExps = 0
+                photoCharge = 0.0
+                for expId in [expId1, expId2]:
+                    if expId in monitorDiodeCharge:
+                        photoCharge += monitorDiodeCharge[expId]
+                        nExps += 1
+                if nExps > 0:
+                    photoCharge /= nExps
+                else:
+                    photoCharge = np.nan
+            else:
+                photoCharge = np.nan
+
+            # Get amp offsets if available.
+            ampOffsetKey = f"LSST ISR AMPOFFSET PEDESTAL {ampName}"
+            ampOffset1 = exp1.metadata.get(ampOffsetKey, np.nan)
+            ampOffset2 = exp2.metadata.get(ampOffsetKey, np.nan)
+            ampOffset = (ampOffset1 + ampOffset2) / 2.0
+
+            partialPtcDataset.setAmpValuesPartialDataset(
+                ampName,
+                inputExpIdPair=(expId1, expId2),
+                rawExpTime=expTime,
+                rawMean=muDiff,
+                rawVar=varDiff,
+                photoCharge=photoCharge,
+                ampOffset=ampOffset,
+                expIdMask=expIdMask,
+                covariance=covArray[0, :, :],
+                covSqrtWeights=covSqrtWeights[0, :, :],
+                gain=gain,
+                noise=meanReadNoise[ampName],
+                histVar=histVar,
+                histChi2Dof=histChi2Dof,
+                kspValue=kspValue,
+                rowMeanVariance=rowMeanVariance,
+            )
+
+        partialPtcDataset.setAuxValuesPartialDataset(auxDict)
+
+        return partialPtcDataset, nAmpsNan
 
     def makeCovArray(self, inputTuple, maxRangeFromTuple):
         """Make covariances array from tuple.
