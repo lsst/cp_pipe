@@ -435,18 +435,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
 
         # Each amp may have a different min and max ADU signal
         # specified in the config.
-        maxMeanSignalDict = {ampName: 1e6 for ampName in ampNames}
-        minMeanSignalDict = {ampName: 0.0 for ampName in ampNames}
-        for ampName in ampNames:
-            if 'ALL_AMPS' in self.config.maxMeanSignal:
-                maxMeanSignalDict[ampName] = self.config.maxMeanSignal['ALL_AMPS']
-            elif ampName in self.config.maxMeanSignal:
-                maxMeanSignalDict[ampName] = self.config.maxMeanSignal[ampName]
-
-            if 'ALL_AMPS' in self.config.minMeanSignal:
-                minMeanSignalDict[ampName] = self.config.minMeanSignal['ALL_AMPS']
-            elif ampName in self.config.minMeanSignal:
-                minMeanSignalDict[ampName] = self.config.minMeanSignal[ampName]
+        minMeanSignalDict, maxMeanSignalDict = self. _getMinMaxMeanSignalDict(ampNames)
 
         # Create a dummy ptcDataset. Dummy datasets will be
         # used to ensure that the number of output and input
@@ -581,6 +570,36 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
         return pipeBase.Struct(
             outputCovariances=partialPtcDatasetList,
         )
+
+    def _getMinMaxMeanSignalDict(self, ampNames):
+        """Get the minMeanSignalDict and maxMeanSignalDict.
+
+        Parameters
+        ----------
+        ampNames : `list` [`str`]
+            List of amplifier names.
+
+        Returns
+        -------
+        minMeanSignalDict : `dict` [`str`, `float`]
+            Minimum mean signal to use, keyed by amp.
+        maxMeanSignalDict : `dict` [`str`, `float`]
+            Maximum mean signal to use, keyed by amp.
+        """
+        maxMeanSignalDict = {ampName: 1e6 for ampName in ampNames}
+        minMeanSignalDict = {ampName: 0.0 for ampName in ampNames}
+        for ampName in ampNames:
+            if 'ALL_AMPS' in self.config.maxMeanSignal:
+                maxMeanSignalDict[ampName] = self.config.maxMeanSignal['ALL_AMPS']
+            elif ampName in self.config.maxMeanSignal:
+                maxMeanSignalDict[ampName] = self.config.maxMeanSignal[ampName]
+
+            if 'ALL_AMPS' in self.config.minMeanSignal:
+                minMeanSignalDict[ampName] = self.config.minMeanSignal['ALL_AMPS']
+            elif ampName in self.config.minMeanSignal:
+                minMeanSignalDict[ampName] = self.config.minMeanSignal[ampName]
+
+        return minMeanSignalDict, maxMeanSignalDict
 
     def _extractOneFlatPair(
         self,
