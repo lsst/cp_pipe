@@ -61,15 +61,6 @@ class PhotonTransferCurveExtractConnections(pipeBase.PipelineTaskConnections,
         multiple=True,
         deferLoad=True,
     )
-    # TODO DM-45802: Remove deprecated taskMetadata connection in cpPtcExtract
-    taskMetadata = cT.Input(
-        name="isr_metadata",
-        doc="Input task metadata to extract statistics from.",
-        storageClass="TaskMetadata",
-        dimensions=("instrument", "exposure", "detector"),
-        multiple=True,
-        deprecated="This connection is deprecated and will be removed after v28.",
-    )
     outputCovariances = cT.Output(
         name="ptcCovariances",
         doc="Extracted flat (co)variances.",
