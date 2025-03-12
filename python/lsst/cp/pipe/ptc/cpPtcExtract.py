@@ -108,24 +108,6 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
         doc="Bin the image by this factor in both dimensions.",
         default=1,
     )
-    minMeanSignal = pexConfig.DictField(
-        keytype=str,
-        itemtype=float,
-        doc="Minimum values (inclusive) of mean signal (in ADU) per amp to use."
-            " The same cut is applied to all amps if this parameter [`dict`] is passed as "
-            " {'ALL_AMPS': value}",
-        default={'ALL_AMPS': 0.0},
-        deprecated="This config has been moved to cpSolvePtcTask, and will be removed after v26.",
-    )
-    maxMeanSignal = pexConfig.DictField(
-        keytype=str,
-        itemtype=float,
-        doc="Maximum values (inclusive) of mean signal (in ADU) below which to consider, per amp."
-            " The same cut is applied to all amps if this dictionary is of the form"
-            " {'ALL_AMPS': value}",
-        default={'ALL_AMPS': 1e6},
-        deprecated="This config has been moved to cpSolvePtcTask, and will be removed after v26.",
-    )
     maskNameList = pexConfig.ListField(
         dtype=str,
         doc="Mask list to exclude from statistics calculations.",
@@ -618,8 +600,6 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
         exps,
         photoChargeDict,
         expTime,
-        minMeanSignalDict,
-        maxMeanSignalDict,
     ):
         """Extract a single flat pair.
 
@@ -633,10 +613,6 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
             Dict of photocharge values, keyed by expId. May be empty.
         expTime : `float`
             Exposure time.
-        minMeanSignalDict : `dict` [`str`, `float`]
-            Minimum mean signal to use, keyed by amp.
-        maxMeanSignalDict : `dict` [`str`, `float`]
-            Maximum mean signal to use, keyed by amp.
 
         Returns
         -------
@@ -778,11 +754,6 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                 covArray = np.full((1, self.config.maximumRangeCovariancesAstier,
                                     self.config.maximumRangeCovariancesAstier), np.nan)
                 covSqrtWeights = np.full_like(covArray, np.nan)
-
-            # Mask data point if it is outside of the
-            # specified mean signal range.
-            if (muDiff <= minMeanSignalDict[ampName]) or (muDiff >= maxMeanSignalDict[ampName]):
-                expIdMask = False
 
             if covAstier is not None:
                 # Turn the tuples with the measured information
