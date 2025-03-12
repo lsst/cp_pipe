@@ -1077,7 +1077,7 @@ class PhotonTransferCurveExtractTaskBase(pipeBase.PipelineTask):
 
 class PhotonTransferCurveExtractTask(PhotonTransferCurveExtractTaskBase):
     ConfigClass = PhotonTransferCurveExtractConfig
-    _DefaultName = 'cpPtcExtractBase'
+    _DefaultName = 'cpPtcExtract'
 
     def runQuantum(self, butlerQC, inputRefs, outputRefs):
         """Ensure that the input and output dimensions are passed along.
