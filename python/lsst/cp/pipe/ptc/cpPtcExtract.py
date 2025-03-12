@@ -446,55 +446,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
         for ampName in ampNames:
             dummyPtcDataset.setAmpValuesPartialDataset(ampName)
 
-        # Extract the photodiode data if requested.
-        monitorDiodeCharge = {}
-        if self.config.doExtractPhotodiodeData:
-            # Compute the photodiode integrals once, at the start.
-            for handle in inputPhotodiodeData:
-                expId = handle.dataId['exposure']
-                pdCalib = handle.get()
-                pdCalib.integrationMethod = self.config.photodiodeIntegrationMethod
-                pdCalib.currentScale = self.config.photodiodeCurrentScale
-                monitorDiodeCharge[expId] = pdCalib.integrate()
-        elif self.config.useEfdPhotodiodeData:
-            client = CpEfdClient()
-            obsDates = {}
-            obsMin = None
-            obsMax = None
-            for _, expList in inputExp.items():
-                for ref, refId in expList:
-                    ts = ref.dataId.exposure.timespan
-                    dt = ts.end - ts.begin
-                    obsDates[refId] = {
-                        'mid': ts.begin + dt / 2.0,
-                        'dt': dt,
-                        'begin': ts.begin,
-                        'end': ts.end,
-                        'exptime': ref.dataId.exposure.exposure_time,
-                    }
-                    if not obsMin or ts.begin < obsMin:
-                        obsMin = ts.begin - dt
-                    if not obsMax or ts.end > obsMax:
-                        obsMax = ts.end + dt
-
-            pdData = client.getEfdElectrometerData(dataSeries=self.config.efdPhotodiodeSeries,
-                                                   dateMin=obsMin.isot,
-                                                   dateMax=obsMax.isot)
-            for expId, expDate in obsDates.items():
-                # This returns matchDate, intensity, and optional
-                # endDate.  The matchDate is the most recent date
-                # prior to that being searched.
-                results = client.parseElectrometerStatus(pdData,
-                                                         expDate['end'],
-                                                         index=self.config.efdSalIndex)
-                # The monitor diode charge is negative and a time average,
-                # so we need to flip the sign and multiply by the exposure
-                # time.
-                monitorDiodeCharge[expId] = -1.0 * results[1] * expDate['exptime']
-
-            # The data can be large, so:
-            del pdData
-            del client
+        photoChargeDict = self._extractPhotoChargeDict(inputPhotodiodeData, inputExp)
 
         # Output list with PTC datasets.
         partialPtcDatasetList = []
@@ -537,7 +489,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
             partialPtcDataset, nAmpsNan = self._extractOneFlatPair(
                 [expId1, expId2],
                 [exp1, exp2],
-                monitorDiodeCharge,
+                photoChargeDict,
                 expTime,
                 minMeanSignalDict,
                 maxMeanSignalDict,
@@ -601,11 +553,79 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
 
         return minMeanSignalDict, maxMeanSignalDict
 
+    def _extractPhotoChargeDict(self, inputPhotodiodeData, inputExp):
+        """Extract the photodiode charge.
+
+        Parameters
+        ----------
+        inputPhotoDiodeData : `dict` [`str`, `lsst.ip.isr.PhotodiodeCalib`]
+            Photodiode readings data (optional).
+        inputExp : `dict` [`float`, `list`
+                          [`~lsst.pipe.base.connections.DeferredDatasetRef`]]
+            Dictionary that groups references to flat-field exposures.
+
+        Returns
+        -------
+        photoChargeDict : `dict` [`int`, `float`]
+            Dict of photocharge values, keyed by expId. May be empty.
+        """
+        # Extract the photodiode data if requested.
+        photoChargeDict = {}
+        if self.config.doExtractPhotodiodeData:
+            # Compute the photodiode integrals once, at the start.
+            for handle in inputPhotodiodeData:
+                expId = handle.dataId['exposure']
+                pdCalib = handle.get()
+                pdCalib.integrationMethod = self.config.photodiodeIntegrationMethod
+                pdCalib.currentScale = self.config.photodiodeCurrentScale
+                photoChargeDict[expId] = pdCalib.integrate()
+        elif self.config.useEfdPhotodiodeData:
+            client = CpEfdClient()
+            obsDates = {}
+            obsMin = None
+            obsMax = None
+            for _, expList in inputExp.items():
+                for ref, refId in expList:
+                    ts = ref.dataId.exposure.timespan
+                    dt = ts.end - ts.begin
+                    obsDates[refId] = {
+                        'mid': ts.begin + dt / 2.0,
+                        'dt': dt,
+                        'begin': ts.begin,
+                        'end': ts.end,
+                        'exptime': ref.dataId.exposure.exposure_time,
+                    }
+                    if not obsMin or ts.begin < obsMin:
+                        obsMin = ts.begin - dt
+                    if not obsMax or ts.end > obsMax:
+                        obsMax = ts.end + dt
+
+            pdData = client.getEfdElectrometerData(dataSeries=self.config.efdPhotodiodeSeries,
+                                                   dateMin=obsMin.isot,
+                                                   dateMax=obsMax.isot)
+            for expId, expDate in obsDates.items():
+                # This returns matchDate, intensity, and optional
+                # endDate.  The matchDate is the most recent date
+                # prior to that being searched.
+                results = client.parseElectrometerStatus(pdData,
+                                                         expDate['end'],
+                                                         index=self.config.efdSalIndex)
+                # The monitor diode charge is negative and a time average,
+                # so we need to flip the sign and multiply by the exposure
+                # time.
+                photoChargeDict[expId] = -1.0 * results[1] * expDate['exptime']
+
+            # The data can be large, so:
+            del pdData
+            del client
+
+        return photoChargeDict
+
     def _extractOneFlatPair(
         self,
         expIds,
         exps,
-        monitorDiodeCharge,
+        photoChargeDict,
         expTime,
         minMeanSignalDict,
         maxMeanSignalDict,
@@ -618,7 +638,7 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
             Tuple of two exposure IDs for the flat pair.
         exps : `tuple` [`lsst.afw.image.Exposure`]
             Tuple of two exposures for the flat pair.
-        monitorDiodeCharge : `dict` [`int`, `float`]
+        photoChargeDict : `dict` [`int`, `float`]
             Dict of photocharge values, keyed by expId. May be empty.
         expTime : `float`
             Exposure time.
@@ -824,8 +844,8 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                 nExps = 0
                 photoCharge = 0.0
                 for expId in [expId1, expId2]:
-                    if expId in monitorDiodeCharge:
-                        photoCharge += monitorDiodeCharge[expId]
+                    if expId in photoChargeDict:
+                        photoCharge += photoChargeDict[expId]
                         nExps += 1
                 if nExps > 0:
                     photoCharge /= nExps
