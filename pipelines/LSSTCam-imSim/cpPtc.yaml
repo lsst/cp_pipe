@@ -8,8 +8,8 @@ tasks:
     config:
       doCrosstalk: false
       doDefect: false
-  cpPtcExtract:
-    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
+  cpPtcExtractPair:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractPairTask
     config:
       matchExposuresType: EXPID
   cpPtcSolve:

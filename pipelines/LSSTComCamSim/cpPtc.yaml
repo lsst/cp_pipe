@@ -11,8 +11,8 @@ tasks:
       doCrosstalk: false
       doLinearize: false
       doDefect: false
-  cpPtcExtract:
-    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
+  cpPtcExtractPair:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractPairTask
     config:
       useEfdPhotodiodeData: false
       auxiliaryHeaderKeys: []

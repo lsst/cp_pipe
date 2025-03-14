@@ -3,8 +3,8 @@ instrument: lsst.obs.lsst.LsstTS8
 imports:
   - location: $CP_PIPE_DIR/pipelines/_ingredients/cpPtc.yaml
 tasks:
-  cpPtcExtract:
-    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
+  cpPtcExtractPair:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractPairTask
     config:
       edgeMaskLevel: AMP
       numEdgeSuspect: 20

@@ -3,8 +3,8 @@ instrument: lsst.obs.lsst.LsstCam
 imports:
   - location: $CP_PIPE_DIR/pipelines/_ingredients/cpPtcLSST.yaml
 tasks:
-  cpPtcExtract:
-    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
+  cpPtcExtractPair:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractPairTask
     config:
       useEfdPhotodiodeData: false
       doExtractPhotodiodeData: true
