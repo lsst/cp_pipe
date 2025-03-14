@@ -23,11 +23,11 @@ tasks:
         config.ampOffset.doBackground = False
         config.ampOffset.doDetection = False
         config.ampOffset.doApplyAmpOffset = False
-  cpBfkPtcExtract:
-    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
+  cpBfkPtcExtractPair:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractPairTask
     config:
       connections.inputExp: "cpBfkIsrExp"
-      connections.outputCovariances: "cpBfkPtcPartial"
+      connections.outputCovariance: "cpBfkPtcPartial"
       maximumRangeCovariancesAstier: 15
       numEdgeSuspect: 20
       edgeMaskLevel: "AMP"
@@ -52,8 +52,8 @@ tasks:
       connections.outputBFK: bfk
 contracts:
   - cpBfkIsr.doBootstrap == True
-  - cpBfkPtcExtract.connections.inputExp == cpBfkIsr.connections.outputExposure
-  - cpBfkPtcSolve.binSize == cpBfkPtcExtract.binSize
-  - cpBfkPtcSolve.maximumRangeCovariancesAstier == cpBfkPtcExtract.maximumRangeCovariancesAstier
-  - cpBfkPtcSolve.connections.inputCovariances == cpBfkPtcExtract.connections.outputCovariances
+  - cpBfkPtcExtractPair.connections.inputExp == cpBfkIsr.connections.outputExposure
+  - cpBfkPtcSolve.binSize == cpBfkPtcExtractPair.binSize
+  - cpBfkPtcSolve.maximumRangeCovariancesAstier == cpBfkPtcExtractPair.maximumRangeCovariancesAstier
+  - cpBfkPtcSolve.connections.inputCovariances == cpBfkPtcExtractPair.connections.outputCovariance
   - cpBfkSolveX.connections.inputPtc == cpBfkPtcSolve.connections.outputPtcDataset
