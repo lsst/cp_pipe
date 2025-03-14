@@ -14,11 +14,11 @@ tasks:
         config.doCrosstalk = True
         config.crosstalk.doQuadraticCrosstalkCorrection = False
         config.doDefect = True
-  cpLinearizerPtcExtract:
-    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
+  cpLinearizerPtcExtractPair:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractPairTask
     config:
       connections.inputExp: "cpLinearizerIsrExp"
-      connections.outputCovariances: "cpLinearizerPtcPartial"
+      connections.outputCovariance: "cpLinearizerPtcPartial"
       maximumRangeCovariancesAstier: 1
       numEdgeSuspect: 20
       edgeMaskLevel: "AMP"
@@ -47,12 +47,12 @@ subsets:
   cpLinearizerPtc:
     subset:
       - cpLinearizerIsr
-      - cpLinearizerPtcExtract
+      - cpLinearizerPtcExtractPair
       - cpLinearizerPtcSolve
 contracts:
   - cpLinearizerIsr.doBootstrap == True
-  - cpLinearizerPtcExtract.connections.inputExp == cpLinearizerIsr.connections.outputExposure
-  - cpLinearizerPtcSolve.binSize == cpLinearizerPtcExtract.binSize
-  - cpLinearizerPtcSolve.maximumRangeCovariancesAstier == cpLinearizerPtcExtract.maximumRangeCovariancesAstier
-  - cpLinearizerPtcSolve.connections.inputCovariances == cpLinearizerPtcExtract.connections.outputCovariances
+  - cpLinearizerPtcExtractPair.connections.inputExp == cpLinearizerIsr.connections.outputExposure
+  - cpLinearizerPtcSolve.binSize == cpLinearizerPtcExtractPair.binSize
+  - cpLinearizerPtcSolve.maximumRangeCovariancesAstier == cpLinearizerPtcExtractPair.maximumRangeCovariancesAstier
+  - cpLinearizerPtcSolve.connections.inputCovariances == cpLinearizerPtcExtractPair.connections.outputCovariance
   - cpLinearizerSolve.connections.inputLinearizerPtc == cpLinearizerPtcSolve.connections.outputPtcDataset
