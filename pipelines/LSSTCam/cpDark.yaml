@@ -9,5 +9,4 @@ cpDarkCombine:
       # too few statistics, so we set all pixels
       # of the dark the ampwise mean. Reset the
       # output connection to this new calibration.
-      connections.outputData: "combinedDark"
-      connections.meanOutputData: "dark"
+      setAllPixelsToAmpMean: true
