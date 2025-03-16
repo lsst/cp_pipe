@@ -314,7 +314,17 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
                     Nskipped += 1
             self.log.info(f"Skipped {Nskipped} exposures brighter than {self.config.maxImageMean}.")
             if len(signal) == 0 or len(data) == 0:
-                raise RuntimeError("All exposures brighter than config.maxImageMean and excluded.")
+                # All exposures excluded, set the calibration so that
+                # there is no correction
+                self.log.warning("All exposures brighter than config.maxImageMean are excluded. "
+                                 "Setting local offset drift scale to zero for amp {ampName}.")
+                # Arbitrary, will be overwritten by solveGlobalCti
+                calib.globalCti[ampName] = 10**(-6)
+                # Set to zero so that there is no correction
+                calib.driftScale[ampName] = 0.0
+                # Arbitrary, unused if driftScale=0
+                calib.decayTime[ampName] = 2.4
+                continue
 
             signal = np.array(signal)
             data = np.array(data)
@@ -433,7 +443,11 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
                     Nskipped += 1
             self.log.info(f"Skipped {Nskipped} exposures brighter than {self.config.maxSignalForCti}.")
             if len(signal) == 0 or len(data) == 0:
-                raise RuntimeError("All exposures brighter than config.maxSignalForCti and excluded.")
+                # There are no exposures left, set globalCTI to 0
+                self.log.warning("All exposures brighter than config.maxSignalForCti are excluded. "
+                                 f"Setting {ampName} global CTI to zero.")
+                calib.globalCti[ampName] = 0.0
+                continue
 
             signal = np.array(signal)
             data = np.array(data)
@@ -699,7 +713,14 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
                     Nskipped += 1
             self.log.info(f"Skipped {Nskipped} exposures brighter than {self.config.maxImageMean}.")
             if len(signal) == 0 or len(data) == 0:
-                raise RuntimeError("All exposures brighter than config.maxImageMean and excluded.")
+                # There are no exposures left, so set trap so that
+                # there is no correction
+                self.log.warning("All exposures brighter than config.maxImageMean are excluded. "
+                                 "Setting zero-sized serial trap for amp {ampName}.")
+                # Arbitrary trap with no size
+                trap = SerialTrap(0.0, 0.4, 1, 'linear', [1.0])
+                calib.serialTraps[ampName] = trap
+                continue
 
             signal = np.array(signal)
             data = np.array(data)
