@@ -389,7 +389,6 @@ class CalibCombineTask(pipeBase.PipelineTask):
 
         self.interpolateNans(combined, maskPlane=self.config.noGoodPixelsMask)
 
-
         for amp in inputDetector:
             ampDataBbox = amp.getBBox()
             ampDataMean = np.mean(combinedExp.image[ampDataBbox].array)
