@@ -2,6 +2,7 @@ pipelineYaml: "${CP_PIPE_DIR}/pipelines/${INSTRUMENT}/cpBiasBootstrap.yaml"
 
 project: "${TICKET}"
 campaign: "${TICKET}"
+submitPath: $SCRATCH/submit/{outputRun}
 
 biasBootstrapCollection: "${USER_CALIB_PREFIX}$INSTRUMENT/calib/$TICKET/$TAG/biasBootstrapGen.$RERUN"
 biasBootstrapRun: "{biasBootstrapCollection}/run${BOOTSTRAP_RUN_NUMBER}"

@@ -2,6 +2,7 @@ pipelineYaml: "${CP_PIPE_DIR}/pipelines/${INSTRUMENT}/cpDark.yaml"
 
 project: "${TICKET}"
 campaign: "${TICKET}"
+submitPath: $SCRATCH/submit/{outputRun}
 
 payload:
   payloadName: "${INSTRUMENT}_${TICKET}_dark"

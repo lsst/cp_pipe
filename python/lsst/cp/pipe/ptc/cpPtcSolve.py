@@ -183,7 +183,7 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
             "mean from the previous ``good`` point are allowed. If "
             "scaleMaxSignalInitialPtcOutlierFit=True then the units are electrons; "
             "otherwise adu.",
-        default=9_000.,
+        default=1_000.,
     )
     scaleMaxSignalInitialPtcOutlierFit = pexConfig.Field(
         dtype=bool,
