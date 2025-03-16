@@ -166,10 +166,25 @@ class BrighterFatterKernelSolveConfig(pipeBase.PipelineTaskConfig,
         doc="Slope of the correlation model for radii larger than correlationModelRadius",
         default=-1.35,
     )
+
+    nSigmaTolForValidEdge = pexConfig.Field(
+        dtype=float,
+        doc="A valid kernel will have all pixels in a 3px picture frame (edges) "
+            "be within +/- nSigmaTolForValidEdge of zero.",
+        default=5.0,
+    )
+
     useBfkPtc = pexConfig.Field(
         dtype=bool,
         doc="Use a BFK ptc in a single pipeline?",
         default=False,
+    )
+
+    doCheckValidity = pexConfig.Field(
+        dtype=bool,
+        doc="Check the AMP kernels for basic validity criteria? "
+            "Will set bfk.valid for each amp.",
+        default=True,
     )
 
 
@@ -415,7 +430,52 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask):
             if self.config.level == 'DETECTOR' and ampName not in self.config.ignoreAmpsForAveraging:
                 detectorCorrList.extend(scaledCorrList)
                 detectorFluxes.extend(fluxes)
-            bfk.valid[ampName] = True
+
+            # Check for validity
+            if self.config.doCheckValidity:
+                kernelSize = bfk.ampKernels[ampName].shape[0]
+                kernelCenterValue = bfk.ampKernels[ampName][kernelSize//2, kernelSize//2]
+                xv, yv = np.meshgrid(range(kernelSize), range(kernelSize))
+
+                # Get a mask for a 3px picture frame
+                valid = True
+                if kernelSize >= 7:
+                    edges = (xv < 3)
+                    edges += (xv > kernelSize - 3 - 1)
+                    edges += (yv < 3)
+                    edges += (yv > kernelSize - 3 - 1)
+
+                    kernelEdges = bfk.ampKernels[ampName][edges].ravel()
+                    kernelEdgeStd = np.std(kernelEdges)
+
+                    threshold = self.config.nSigmaTolForValidEdge*kernelEdgeStd
+
+                    # Edges should converge to zero
+                    valid = np.all(np.isclose(
+                        kernelEdges, 0,
+                        rtol=threshold,
+                    ))
+                    if not valid:
+                        self.log.warning("%s: the kernel edges did not converge to 0 within "
+                                         "+/- %s sigma.", ampName, threshold)
+
+                    # Kernel should be negative
+                    valid *= np.all(bfk.ampKernels[ampName][~edges] <= threshold)
+                    if not np.all(bfk.ampKernels[ampName][~edges] <= threshold):
+                        self.log.warning("%s: the kernel is not negative", ampName)
+
+                    # The center should be the minimum
+                    valid *= np.all(bfk.ampKernels[ampName] >= kernelCenterValue)
+                    if not np.all(bfk.ampKernels[ampName] >= kernelCenterValue):
+                        self.log.warning("%s: the kernel center is not the absolute minimum.", ampName)
+                else:
+                    raise RuntimeError("%s: The kernel is too small for validity check.", ampName)
+
+                bfk.valid[ampName] = valid
+            else:
+                # The kernel at this point will be valid
+                bfk.valid[ampName] = True
+
             self.log.info("Amp: %s Sum: %g  Center Info Pre: %g  Post: %g",
                           ampName, finalSum, preKernel[center, center], postKernel[center, center])
 
