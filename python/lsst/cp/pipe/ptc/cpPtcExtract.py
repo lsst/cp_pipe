@@ -140,19 +140,22 @@ class PhotonTransferCurveExtractPairConnections(
             remove : `bool`, optional
                 Remove the sourceExposure from the quantum dict?
             """
-            for detector in quantumIdDict[exposure].keys():
+            for detector in quantumIdDict[sourceExposure].keys():
                 inputs = adjuster.get_inputs(quantumIdDict[sourceExposure][detector])
-                adjuster.add_input(
-                    quantumIdDict[targetExposure][detector],
-                    "inputExp",
-                    inputs["inputExp"][0],
-                )
-                if self.config.doExtractPhotodiodeData:
+                if detector in quantumIdDict[targetExposure]:
                     adjuster.add_input(
                         quantumIdDict[targetExposure][detector],
-                        "inputPhotodiodeData",
-                        inputs["inputPhotodiodeData"][0],
+                        "inputExp",
+                        inputs["inputExp"][0],
                     )
+                    if self.config.doExtractPhotodiodeData:
+                        adjuster.add_input(
+                            quantumIdDict[targetExposure][detector],
+                            "inputPhotodiodeData",
+                            inputs["inputPhotodiodeData"][0],
+                        )
+                else:
+                    _LOG.warning("Exposure %d does not include detector %d", targetExposure, detector)
                 if remove:
                     adjuster.remove_quantum(quantumIdDict[sourceExposure][detector])
 
