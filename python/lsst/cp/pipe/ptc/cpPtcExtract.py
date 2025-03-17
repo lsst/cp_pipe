@@ -100,20 +100,31 @@ class PhotonTransferCurveExtractPairConnections(
     )
 
     def adjust_all_quanta(self, adjuster):
-        # FIXME: inputPhotoDiodeData!  Dang, that's annoying and not tested.
-
         _LOG = logging.getLogger(__name__)
 
         # Extract the exposure IDs.
         exposures = [quantumId['exposure'] for quantumId in adjuster.iter_data_ids()]
         quantumIds = list(adjuster.iter_data_ids())
         exposures, quantumIds = zip(*sorted(zip(exposures, quantumIds), key=lambda pair: pair[0]))
-        if self.config.matchExposuresType == 'TIME':
+
+        # Ensure we are only using "flat" types.
+        exposures = list(exposures)
+        quantumIds = list(quantumIds)
+        for exposure, quantumId in zip(exposures, quantumIds):
+            obsType = adjuster.expand_quantum_data_id(quantumId).exposure.observation_type
+            if obsType != "flat":
+                _LOG.warning("Exposure %d is not of 'flat' type; removing.", exposure)
+                adjuster.remove_quantum(quantumId)
+                exposures.remove(exposure)
+                quantumIds.remove(quantumId)
+                continue
+
+        if self.config.matchExposuresType == "TIME":
             # Extract the exposure times.
             exposureTimes = []
             for dataId in quantumIds:
                 exposureTimes.append(adjuster.expand_quantum_data_id(dataId).exposure.exposure_time)
-            # Okay, what we need is to go through the sorted exposures.
+
             lastExposureTime = -1.0
             nInPair = 1
             for i in range(len(exposures)):
@@ -128,10 +139,13 @@ class PhotonTransferCurveExtractPairConnections(
                         adjuster.remove_quantum(quantumIds[i])
                     else:
                         inputs = adjuster.get_inputs(quantumIds[i])
-                        adjuster.add_input(quantumIds[i-1], "inputExp", inputs["inputExp"][0])
+                        # Add the inputs from the current quantumId to the
+                        # previous one, and remove the current quantumId
+                        # from the set to run.
+                        adjuster.add_input(quantumIds[i - 1], "inputExp", inputs["inputExp"][0])
                         if self.config.doExtractPhotodiodeData:
                             adjuster.add_input(
-                                quantumIds[i-1],
+                                quantumIds[i - 1],
                                 "inputPhotodiodeData",
                                 inputs["inputPhotodiodeData"][0],
                             )
@@ -147,10 +161,13 @@ class PhotonTransferCurveExtractPairConnections(
                 if (i % 2) == 1:
                     # This is the second of a pair.
                     inputs = adjuster.get_inputs(quantumIds[i])
-                    adjuster.add_input(quantumIds[i-1], "inputExp", inputs["inputExp"][0])
+                    # Add the inputs from the current quantumId to the
+                    # previous one, and remove the current quantumId
+                    # from the set to run.
+                    adjuster.add_input(quantumIds[i - 1], "inputExp", inputs["inputExp"][0])
                     if self.config.doExtractPhotodiodeData:
                         adjuster.add_input(
-                            quantumIds[i-1],
+                            quantumIds[i - 1],
                             "inputPhotodiodeData",
                             inputs["inputPhotodiodeData"][0],
                         )
@@ -1403,92 +1420,91 @@ class PhotonTransferCurveExtractTask(PhotonTransferCurveExtractTaskBase):
 
 class PhotonTransferCurveExtractPairTask(PhotonTransferCurveExtractTaskBase):
     ConfigClass = PhotonTransferCurveExtractPairConfig
-    _DefaultName = 'cpPtcExtractPair'
+    _DefaultName = "cpPtcExtractPair"
 
     def runQuantum(self, butlerQC, inputRefs, outputRefs):
         inputs = butlerQC.get(inputRefs)
 
-        quantumExposure = butlerQC.quantum.dataId['exposure']
+        quantumExposure = butlerQC.quantum.dataId["exposure"]
 
         if len(inputRefs.inputExp) == 1:
-            self.log.warning('Exposure %d does not have a pair; skipping.', quantumExposure)
-            raise pipeBase.NoWorkFound(f'Exposure {quantumExposure} does not have a pair.')
+            self.log.warning("Exposure %d does not have a pair; skipping.", quantumExposure)
+            raise pipeBase.NoWorkFound(f"Exposure {quantumExposure} does not have a pair.")
 
-        if self.config.matchExposuresType == 'FLUX':
+        if self.config.matchExposuresType == "FLUX":
             # Get the flux keyword value for each of the inputs.
-            if len(inputs['inputExp']) > 3:
-                raise RuntimeError('Error in matching inputs to PhotonTransferCurveExtractPairTask')
+            if len(inputs["inputExp"]) > 3:
+                raise RuntimeError("Error in matching inputs to PhotonTransferCurveExtractPairTask")
 
             fluxValues = []
             inputExposures = []
-            for inputExpRef in inputs['inputExp']:
-                md = inputExpRef.get(component='metadata')
-                fluxValue = md.get(self.config.matchExposuresByFluxKeyword, None)
-                if fluxValue is None:
+            for inputExpRef in inputs["inputExp"]:
+                md = inputExpRef.get(component="metadata")
+                # Note that nan will never match anything.
+                fluxValue = md.get(self.config.matchExposuresByFluxKeyword, np.nan)
+                if np.isnan(fluxValue):
                     self.log.warning(
-                        'Exposure %d is missing flux keyword %s',
-                        inputExpRef.dataId['exposure'],
+                        "Exposure %d is missing flux keyword %s",
+                        inputExpRef.dataId["exposure"],
                         self.config.matchExposuresByFluxKeyword,
                     )
-                    # The nan value will never match with anything.
-                    fluxValue = np.nan
                 fluxValues.append(fluxValue)
-                inputExposures.append(inputExpRef.dataId['exposure'])
+                inputExposures.append(inputExpRef.dataId["exposure"])
 
             if len(fluxValues) == 2:
                 # The simple case that we are at a boundary.
                 if fluxValues[0] != fluxValues[1]:
                     self.log.warning(
-                        'Exposure %d may not have a match via %s',
+                        "Exposure %d may not have a match via %s",
                         quantumExposure,
                         self.config.matchExposuresByFluxKeyword,
                     )
                     raise pipeBase.NoWorkFound(
-                        f'Exposure {quantumExposure} does not have a match.'
+                        f"Exposure {quantumExposure} does not have a match."
                     )
-                elif quantumExposure != inputs['inputExp'][0].dataId['exposure']:
-                    # Not primary; that's okay.
+                elif quantumExposure != inputs["inputExp"][0].dataId["exposure"]:
+                    # Not primary; that's okay, we can skip.
                     raise pipeBase.NoWorkFound(
-                        f'Exposure {quantumExposure} is not the primary in a pair.',
+                        f"Exposure {quantumExposure} is not the primary in a pair.",
                     )
             else:
                 # We have a set of three.
                 if np.all(np.asarray(fluxValues) == fluxValues[0]):
                     self.log.warning(
-                        'More than two exposures have matching %s to exposure %d',
+                        "More than two exposures have matching %s to exposure %d",
                         self.config.matchExposuresByFluxKeyword,
                         quantumExposure,
                     )
                     raise pipeBase.NoWorkFound(
-                        f'Exposure {quantumExposure} matches too many '
-                        f'{self.config.matchExposuresByFluxKeyword}',
+                        f"Exposure {quantumExposure} matches too many "
+                        f"{self.config.matchExposuresByFluxKeyword}",
                     )
                 if fluxValues[0] == fluxValues[1] and inputExposures[0] == quantumExposure:
                     # Remove the last input.
-                    inputs['inputExp'].pop(2)
+                    inputs["inputExp"].pop(2)
                     if self.config.doExtractPhotodiodeData:
-                        inputs['inputPhotodiodeData'].pop(2)
+                        inputs["inputPhotodiodeData"].pop(2)
                 elif fluxValues[1] == fluxValues[2] and inputExposures[1] == quantumExposure:
                     # Remove the first input
-                    inputs['inputExp'].pop(0)
+                    inputs["inputExp"].pop(0)
                     if self.config.doExtractPhotodiodeData:
-                        inputs['inputPhotodiodeData'].pop(0)
+                        inputs["inputPhotodiodeData"].pop(0)
                 elif fluxValues[0] != fluxValues[1] and fluxValues[1] != fluxValues[2]:
                     self.log.warning(
-                        'Exposure %d may not have a match via %s',
+                        "Exposure %d may not have a match via %s",
                         quantumExposure,
                         self.config.matchExposuresByFluxKeyword,
                     )
                     raise pipeBase.NoWorkFound(
-                        f'Exposure {quantumExposure} does not have a match.'
+                        f"Exposure {quantumExposure} does not have a match."
                     )
                 else:
-                    # Not primary; that's okay.
+                    # Not primary; that's okay, we can skip.
                     raise pipeBase.NoWorkFound(
-                        f'Exposure {quantumExposure} is not the primary in a pair.',
+                        f"Exposure {quantumExposure} is not the primary in a pair.",
                     )
 
-        inputs['inputDims'] = [expRef.dataId['exposure'] for expRef in inputs['inputExp']]
+        inputs["inputDims"] = [expRef.dataId["exposure"] for expRef in inputs["inputExp"]]
 
         outputs = self.run(**inputs)
         butlerQC.put(outputs, outputRefs)
@@ -1498,9 +1514,22 @@ class PhotonTransferCurveExtractPairTask(PhotonTransferCurveExtractTaskBase):
 
         Parameters
         ----------
+        inputExp : `list` [`lsst.pipe.base.connections.DeferredDatasetRef`]
+            List of 2 references to the input flat exposures.
+        inputDims : `list` [`int`]
+            List of 2 exposure numbers for the input flat exposures.
+        inputPhotodiodeData : `list`
+                [`lsst.pipe.base.connections.DeferredDatasetRef`], optional
+            List of 2 references to input photodiode data.
 
         Returns
         -------
+        results : `lsst.pipe.base.Struct`
+            The resulting Struct contains:
+
+            ``outputCovariance``
+                The single-pair PTC measurement
+                `lsst.ip.isr.PhotonTransferCurveDataset`
         """
         partialPtcDataset = None
 
@@ -1535,7 +1564,7 @@ class PhotonTransferCurveExtractPairTask(PhotonTransferCurveExtractTaskBase):
 
         if nAmpsNan == len(ampNames):
             self.log.warning(
-                'NaN mean in all amps of exposure pair %d, %d of detector %d.',
+                "NaN mean in all amps of exposure pair %d, %d of detector %d.",
                 expId1,
                 expId2,
                 detNum,
