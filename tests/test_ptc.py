@@ -148,7 +148,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         extractConfig.doExtractPhotodiodeData = True
         extractConfig.doKsHistMeasurement = True
         extractConfig.auxiliaryHeaderKeys = ["CCOBCURR", "CCDTEMP"]
-        extractTask = cpPipe.ptc.PhotonTransferCurveExtractTask(config=extractConfig)
+        extractPairTask = cpPipe.ptc.PhotonTransferCurveExtractPairTask(config=extractConfig)
 
         # Create solve task config
         solveConfig = self.defaultConfigSolve
@@ -167,7 +167,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         inputGain = self.gain
 
         muStandard, varStandard = {}, {}
-        expDict = {}
+        expHandles = []
         expIds = []
         pdHandles = []
         idCounter = 0
@@ -190,7 +190,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
             mockExpRef1 = PretendRef(mockExp1)
             mockExpRef2 = PretendRef(mockExp2)
-            expDict[expTime] = ((mockExpRef1, idCounter), (mockExpRef2, idCounter + 1))
+            expHandles.extend((mockExpRef1, mockExpRef2))
             expIds.append(idCounter)
             expIds.append(idCounter + 1)
             for ampNumber, ampName in enumerate(self.ampNames):
@@ -201,8 +201,8 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                     imStatsCtrl,
                     mu1,
                     mu2,
-                ) = extractTask.getImageAreasMasksStats(mockExp1, mockExp2)
-                muDiff, varDiff, covAstier, rowMeanVariance = extractTask.measureMeanVarCov(
+                ) = extractPairTask.getImageAreasMasksStats(mockExp1, mockExp2)
+                muDiff, varDiff, covAstier, rowMeanVariance = extractPairTask.measureMeanVarCov(
                     im1Area, im2Area, imStatsCtrl, mu1, mu2
                 )
                 muStandard.setdefault(ampName, []).append(muDiff)
@@ -231,30 +231,33 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             )
             idCounter += 2
 
-        resultsExtract = extractTask.run(
-            inputExp=expDict,
-            inputDims=expIds,
-            inputPhotodiodeData=pdHandles,
-        )
+        # Divide out the pairs.
+        outputCovariances = []
+        for i in range(len(expHandles) // 2):
+            inputExp = [expHandles[2*i], expHandles[2*i + 1]]
+            inputDims = [expIds[2*i], expIds[2*i + 1]]
+            inputPhotodiodeData = [pdHandles[2*i], pdHandles[2*i + 1]]
+            results = extractPairTask.run(
+                inputExp=inputExp,
+                inputDims=inputDims,
+                inputPhotodiodeData=inputPhotodiodeData,
+            )
+            outputCovariances.append(results.outputCovariance)
 
         # Force the last PTC dataset to have a NaN, and ensure that the
         # task runs (DM-38029).  This is a minor perturbation and does not
-        # affect the output comparison. Note that we use index -2 because
-        # these datasets are in pairs of [real, dummy] to match the inputs
-        # to the extract task.
-        resultsExtract.outputCovariances[-2].rawMeans["C:0,0"] = np.array([np.nan])
-        resultsExtract.outputCovariances[-2].rawVars["C:0,0"] = np.array([np.nan])
+        # affect the output comparison.
+        outputCovariances[-1].rawMeans["C:0,0"] = np.array([np.nan])
+        outputCovariances[-1].rawVars["C:0,0"] = np.array([np.nan])
 
         # Force the next-to-last PTC dataset to have a decreased variance to
-        # ensure that the outlier fit rejection works. Note that we use
-        # index -4 because these datasets are in pairs of [real, dummy] to
-        # match the inputs to the extract task.
-        rawVar = resultsExtract.outputCovariances[-4].rawVars["C:0,0"]
-        resultsExtract.outputCovariances[-4].rawVars["C:0,0"] = rawVar * 0.9
+        # ensure that the outlier fit rejection works.
+        rawVar = outputCovariances[-2].rawVars["C:0,0"]
+        outputCovariances[-2].rawVars["C:0,0"] = rawVar * 0.9
 
         # Reorganize the outputCovariances so we can confirm they come
         # out sorted afterwards.
-        outputCovariancesRev = resultsExtract.outputCovariances[::-1]
+        outputCovariancesRev = outputCovariances[::-1]
 
         # Some expected values for noise matrix, just to check that
         # it was calculated.
@@ -299,10 +302,8 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                     self.assertAlmostEqual(ptc.ptcTurnoff[amp], ptc.rawMeans[amp][-1])
 
                 # Test that all the quantities are correctly ordered and
-                # have not accidentally been masked. We check every other
-                # output ([::2]) because these datasets are in pairs of
-                # [real, dummy] to match the inputs to the extract task.
-                for i, extractPtc in enumerate(resultsExtract.outputCovariances[::2]):
+                # have not accidentally been masked.
+                for i, extractPtc in enumerate(outputCovariances):
                     self.assertFloatsAlmostEqual(
                         extractPtc.rawExpTimes[ampName][0],
                         ptc.rawExpTimes[ampName][i],
@@ -825,6 +826,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             expIds.append(idCounter + 1)
             idCounter += 2
 
+        # This will test the full extract task.
         resultsExtract = extractTask.run(
             inputExp=expDict,
             inputDims=expIds,
