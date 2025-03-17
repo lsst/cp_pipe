@@ -102,76 +102,124 @@ class PhotonTransferCurveExtractPairConnections(
     def adjust_all_quanta(self, adjuster):
         _LOG = logging.getLogger(__name__)
 
-        # Extract the exposure IDs.
-        exposures = [quantumId['exposure'] for quantumId in adjuster.iter_data_ids()]
-        quantumIds = list(adjuster.iter_data_ids())
-        exposures, quantumIds = zip(*sorted(zip(exposures, quantumIds), key=lambda pair: pair[0]))
+        def _removeExposure(exposure, pop=False, msg=None):
+            """Remove an exposure from the quanta.
 
-        # Ensure we are only using "flat" types.
-        exposures = list(exposures)
-        quantumIds = list(quantumIds)
-        for exposure, quantumId in zip(exposures, quantumIds):
-            obsType = adjuster.expand_quantum_data_id(quantumId).exposure.observation_type
+            Parameters
+            ----------
+            exposure : `int`
+                Exposure key to quantumIdDict.
+            pop : `bool`, optional
+                Pop the exposure from the dict? Otherwise change
+                to an empty dict.
+            msg : `str`, optional
+                Warning string to log with exposure number.
+            """
+            if msg is not None:
+                _LOG.warning("Exposure %d %s; dropping.", exposure, msg)
+
+            # Remove all quanta associated with this exposure.
+            for element in quantumIdDict[exposure]:
+                adjuster.remove_quantum(element[1])
+            if pop:
+                # Pop it completely from the dict.
+                quantumIdDict.pop(exposure)
+            else:
+                # Set to empty dict.
+                quantumIdDict[exposure] = {}
+
+        def _addInputs(sourceExposure, targetExposure, remove=False):
+            """Add inputs to a quantum.
+
+            Parameters
+            ----------
+            sourceExposure : `int`
+                Take the quanta from this source exposure.
+            targetExposure : `int`
+                And add them to the quanta for this target exposure.
+            remove : `bool`, optional
+                Remove the sourceExposure from the quantum dict?
+            """
+            for detector in quantumIdDict[exposure].keys():
+                inputs = adjuster.get_inputs(quantumIdDict[sourceExposure][detector])
+                adjuster.add_input(
+                    quantumIdDict[targetExposure][detector],
+                    "inputExp",
+                    inputs["inputExp"][0],
+                )
+                if self.config.doExtractPhotodiodeData:
+                    adjuster.add_input(
+                        quantumIdDict[targetExposure][detector],
+                        "inputPhotodiodeData",
+                        inputs["inputPhotodiodeData"][0],
+                    )
+                if remove:
+                    adjuster.remove_quantum(quantumIdDict[sourceExposure][detector])
+
+        # Build a dict keyed by exposure.
+        # Each entry is a tuple of detector, quantumId
+        quantumIdDict = {}
+        for quantumId in adjuster.iter_data_ids():
+            exposure = quantumId["exposure"]
+            if exposure in quantumIdDict:
+                quantumIdDict[exposure][quantumId["detector"]] = quantumId
+            else:
+                quantumIdDict[exposure] = {quantumId["detector"]: quantumId}
+
+        # Sort the exposure keys in the dict.
+        quantumIdDict = dict(sorted(quantumIdDict.items()))
+
+        # And sort the detectors in each exposure entry.
+        for exposure in list(quantumIdDict.keys()):
+            quantumIdDict[exposure] = dict(sorted(quantumIdDict[exposure].items()))
+
+        # Ensure we are only using "flat" image types.
+        for exposure in list(quantumIdDict.keys()):
+            # We only need to check the first detector in each exposure list.
+            firstDet = list(quantumIdDict[exposure].keys())[0]
+            obsType = adjuster.expand_quantum_data_id(
+                quantumIdDict[exposure][firstDet],
+            ).exposure.observation_type
             if obsType != "flat":
-                _LOG.warning("Exposure %d is not of 'flat' type; removing.", exposure)
-                adjuster.remove_quantum(quantumId)
-                exposures.remove(exposure)
-                quantumIds.remove(quantumId)
-                continue
+                _removeExposure(exposure, pop=True, msg="is not of 'flat' type")
 
         if self.config.matchExposuresType == "TIME":
             # Extract the exposure times.
-            exposureTimes = []
-            for dataId in quantumIds:
-                exposureTimes.append(adjuster.expand_quantum_data_id(dataId).exposure.exposure_time)
 
-            lastExposureTime = -1.0
+            exposureTimes = []
+            for exposure in quantumIdDict.keys():
+                firstDet = list(quantumIdDict[exposure].keys())[0]
+                exposureTimes.append(
+                    adjuster.expand_quantum_data_id(quantumIdDict[exposure][firstDet]).exposure.exposure_time,
+                )
+
+            previousExposure = -1
+            previousExposureTime = -1.0
             nInPair = 1
-            for i in range(len(exposures)):
-                if exposureTimes[i] == lastExposureTime:
+            for i, exposure in enumerate(quantumIdDict.keys()):
+                if exposureTimes[i] == previousExposureTime:
                     # This is a match.
                     if nInPair == 2:
                         # We already have a pair!
-                        _LOG.warning(
-                            "Exposure quantum %d already has two exptime matches; dropping",
-                            exposures[i],
-                        )
-                        adjuster.remove_quantum(quantumIds[i])
+                        _removeExposure(exposure, msg="already has two exptime matches")
                     else:
-                        inputs = adjuster.get_inputs(quantumIds[i])
-                        # Add the inputs from the current quantumId to the
-                        # previous one, and remove the current quantumId
+                        # Add the inputs from the current exposure quantum
+                        # to the previous one, and remove the current one
                         # from the set to run.
-                        adjuster.add_input(quantumIds[i - 1], "inputExp", inputs["inputExp"][0])
-                        if self.config.doExtractPhotodiodeData:
-                            adjuster.add_input(
-                                quantumIds[i - 1],
-                                "inputPhotodiodeData",
-                                inputs["inputPhotodiodeData"][0],
-                            )
-                        adjuster.remove_quantum(quantumIds[i])
+                        _addInputs(exposure, previousExposure, remove=True)
                         nInPair += 1
                 else:
                     nInPair = 1
-                    lastExposureTime = exposureTimes[i]
+                    previousExposureTime = exposureTimes[i]
+                    previousExposure = exposure
 
         elif self.config.matchExposuresType == "EXPID":
             # Pair by ExpId sequence.
+            exposures = list(quantumIdDict.keys())
             for i in range(len(exposures)):
                 if (i % 2) == 1:
                     # This is the second of a pair.
-                    inputs = adjuster.get_inputs(quantumIds[i])
-                    # Add the inputs from the current quantumId to the
-                    # previous one, and remove the current quantumId
-                    # from the set to run.
-                    adjuster.add_input(quantumIds[i - 1], "inputExp", inputs["inputExp"][0])
-                    if self.config.doExtractPhotodiodeData:
-                        adjuster.add_input(
-                            quantumIds[i - 1],
-                            "inputPhotodiodeData",
-                            inputs["inputPhotodiodeData"][0],
-                        )
-                    adjuster.remove_quantum(quantumIds[i])
+                    _addInputs(exposures[i], exposures[i - 1], remove=True)
 
         elif self.config.matchExposuresType == "FLUX":
             # When matching by flux keyword, we do not yet have access
@@ -202,25 +250,12 @@ class PhotonTransferCurveExtractPairConnections(
             #  4: 3, 4, 5  - this has a match (4 == 5), 4 == 4 -> do work
             #  5: 4, 5  - this has a match (4 == 5), 4 != 5 -> no work
 
+            exposures = list(quantumIdDict.keys())
             for i in range(len(exposures)):
                 if (i - 1) >= 0:
-                    inputs = adjuster.get_inputs(quantumIds[i - 1])
-                    adjuster.add_input(quantumIds[i], "inputExp", inputs["inputExp"][0])
-                    if self.config.doExtractPhotodiodeData:
-                        adjuster.add_input(
-                            quantumIds[i],
-                            "inputPhotodiodeData",
-                            inputs["inputPhotodiodeData"][0],
-                        )
+                    _addInputs(exposures[i - 1], exposures[i], remove=False)
                 if (i + 1) < len(exposures):
-                    inputs = adjuster.get_inputs(quantumIds[i + 1])
-                    adjuster.add_input(quantumIds[i], "inputExp", inputs["inputExp"][0])
-                    if self.config.doExtractPhotodiodeData:
-                        adjuster.add_input(
-                            quantumIds[i],
-                            "inputPhotodiodeData",
-                            inputs["inputPhotodiodeData"][0],
-                        )
+                    _addInputs(exposures[i + 1], exposures[i], remove=False)
 
 
 class PhotonTransferCurveExtractConfigBase(
