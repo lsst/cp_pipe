@@ -12,8 +12,8 @@ tasks:
       doLinearize: false
       doDeferredCharge: false
       doDefect: false
-  cpBfkPtcExtract:
-    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
+  cpBfkPtcExtractPair:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractPairTask
     config:
       maximumRangeCovariancesAstier: 8
       useEfdPhotodiodeData: false

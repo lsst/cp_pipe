@@ -19,6 +19,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
+from collections import defaultdict
+import logging
 import numpy as np
 from lmfit.models import GaussianModel
 import scipy.stats
@@ -38,11 +40,16 @@ import lsst.pipe.base.connectionTypes as cT
 from lsst.ip.isr import PhotonTransferCurveDataset
 from lsst.ip.isr import IsrTask
 
-__all__ = ['PhotonTransferCurveExtractConfig', 'PhotonTransferCurveExtractTask']
+__all__ = [
+    'PhotonTransferCurveExtractConfig',
+    'PhotonTransferCurveExtractTask',
+    'PhotonTransferCurveExtractPairConfig',
+    'PhotonTransferCurveExtractPairTask',
+]
 
 
-class PhotonTransferCurveExtractConnections(pipeBase.PipelineTaskConnections,
-                                            dimensions=("instrument", "detector")):
+class PhotonTransferCurveExtractConnectionsBase(pipeBase.PipelineTaskConnections,
+                                                dimensions=("instrument", "detector")):
 
     inputExp = cT.Input(
         name="ptcInputExposurePairs",
@@ -61,15 +68,16 @@ class PhotonTransferCurveExtractConnections(pipeBase.PipelineTaskConnections,
         multiple=True,
         deferLoad=True,
     )
-    # TODO DM-45802: Remove deprecated taskMetadata connection in cpPtcExtract
-    taskMetadata = cT.Input(
-        name="isr_metadata",
-        doc="Input task metadata to extract statistics from.",
-        storageClass="TaskMetadata",
-        dimensions=("instrument", "exposure", "detector"),
-        multiple=True,
-        deprecated="This connection is deprecated and will be removed after v28.",
-    )
+
+    def __init__(self, *, config=None):
+        if not config.doExtractPhotodiodeData:
+            del self.inputPhotodiodeData
+
+
+class PhotonTransferCurveExtractConnections(
+    PhotonTransferCurveExtractConnectionsBase,
+    dimensions=("instrument", "detector"),
+):
     outputCovariances = cT.Output(
         name="ptcCovariances",
         doc="Extracted flat (co)variances.",
@@ -79,16 +87,176 @@ class PhotonTransferCurveExtractConnections(pipeBase.PipelineTaskConnections,
         multiple=True,
     )
 
-    def __init__(self, *, config=None):
-        if not config.doExtractPhotodiodeData:
-            del self.inputPhotodiodeData
-        # TODO DM-45802: Remove deprecated taskMetadata connection in
-        # cpPtcExtract
-        del self.taskMetadata
+
+class PhotonTransferCurveExtractPairConnections(
+    PhotonTransferCurveExtractConnectionsBase,
+    dimensions=("instrument", "detector", "exposure"),
+):
+    outputCovariance = cT.Output(
+        name="ptcCovariance",
+        doc="Extracted flat (co)variance.",
+        storageClass="PhotonTransferCurveDataset",
+        dimensions=("instrument", "exposure", "detector"),
+        isCalibration=True,
+    )
+
+    def adjust_all_quanta(self, adjuster):
+        _LOG = logging.getLogger(__name__)
+
+        def _removeExposure(exposure, pop=False, msg=None):
+            """Remove an exposure from the quanta.
+
+            Parameters
+            ----------
+            exposure : `int`
+                Exposure key to quantumIdDict.
+            pop : `bool`, optional
+                Pop the exposure from the dict? Otherwise change
+                to an empty dict.
+            msg : `str`, optional
+                Warning string to log with exposure number.
+            """
+            if msg is not None:
+                _LOG.warning("Exposure %d %s; dropping.", exposure, msg)
+
+            # Remove all quanta associated with this exposure.
+            for element in quantumIdDict[exposure]:
+                adjuster.remove_quantum(element[1])
+            if pop:
+                # Pop it completely from the dict.
+                quantumIdDict.pop(exposure)
+            else:
+                # Set to empty dict.
+                quantumIdDict[exposure] = {}
+
+        def _addInputs(sourceExposure, targetExposure, remove=False):
+            """Add inputs to a quantum.
+
+            Parameters
+            ----------
+            sourceExposure : `int`
+                Take the quanta from this source exposure.
+            targetExposure : `int`
+                And add them to the quanta for this target exposure.
+            remove : `bool`, optional
+                Remove the sourceExposure from the quantum dict?
+            """
+            for detector in quantumIdDict[sourceExposure].keys():
+                inputs = adjuster.get_inputs(quantumIdDict[sourceExposure][detector])
+                if detector in quantumIdDict[targetExposure]:
+                    adjuster.add_input(
+                        quantumIdDict[targetExposure][detector],
+                        "inputExp",
+                        inputs["inputExp"][0],
+                    )
+                    if self.config.doExtractPhotodiodeData:
+                        adjuster.add_input(
+                            quantumIdDict[targetExposure][detector],
+                            "inputPhotodiodeData",
+                            inputs["inputPhotodiodeData"][0],
+                        )
+                else:
+                    _LOG.warning("Exposure %d does not include detector %d", targetExposure, detector)
+                if remove:
+                    adjuster.remove_quantum(quantumIdDict[sourceExposure][detector])
+
+        # Build a dict keyed by exposure.
+        # Each entry is a dict of {detector: quantumId}
+        # And everything will be sorted by exposure and detector.
+        quantumIdDict = defaultdict(dict)
+        for quantumId in sorted(adjuster.iter_data_ids(), key=lambda d: (d["exposure"], d["detector"])):
+            exposure = quantumId["exposure"]
+            quantumIdDict[exposure][quantumId["detector"]] = quantumId
+
+        # Ensure we are only using "flat" image types.
+        for exposure in list(quantumIdDict.keys()):
+            # We only need to check the first detector in each exposure list.
+            firstDet = next(iter(quantumIdDict[exposure].keys()))
+            obsType = adjuster.expand_quantum_data_id(
+                quantumIdDict[exposure][firstDet],
+            ).exposure.observation_type
+            if obsType != "flat":
+                _removeExposure(exposure, pop=True, msg="is not of 'flat' type")
+
+        if self.config.matchExposuresType == "TIME":
+            # Extract the exposure times.
+
+            exposureTimes = []
+            for exposure in quantumIdDict.keys():
+                firstDet = list(quantumIdDict[exposure].keys())[0]
+                exposureTimes.append(
+                    adjuster.expand_quantum_data_id(quantumIdDict[exposure][firstDet]).exposure.exposure_time,
+                )
+
+            previousExposure = -1
+            previousExposureTime = -1.0
+            nInPair = 1
+            for i, exposure in enumerate(quantumIdDict.keys()):
+                if exposureTimes[i] == previousExposureTime:
+                    # This is a match.
+                    if nInPair == 2:
+                        # We already have a pair!
+                        _removeExposure(exposure, msg="already has two exptime matches")
+                    else:
+                        # Add the inputs from the current exposure quantum
+                        # to the previous one, and remove the current one
+                        # from the set to run.
+                        _addInputs(exposure, previousExposure, remove=True)
+                        nInPair += 1
+                else:
+                    nInPair = 1
+                    previousExposureTime = exposureTimes[i]
+                    previousExposure = exposure
+
+        elif self.config.matchExposuresType == "EXPID":
+            # Pair by ExpId sequence.
+            exposures = list(quantumIdDict.keys())
+            for i in range(len(exposures)):
+                if (i % 2) == 1:
+                    # This is the second of a pair.
+                    _addInputs(exposures[i], exposures[i - 1], remove=True)
+
+        elif self.config.matchExposuresType == "FLUX":
+            # When matching by flux keyword, we do not yet have access
+            # to the header information to uniquely pair the exposures.
+            # We do know that exposure pairs will be back-to-back, so
+            # we set up triplets and do the final sorting in runQuantum.
+
+            # For each triplet, we take the index of the sorted exposures,
+            # and set it up with the previous and next exposure.
+            # In runQuantum we will then look at the headers and match.
+            # If all 3 have the same keyword, we are confused and we warn
+            # and raise NoWorkFound.
+            # If all 3 have different keywords, we do not have a pair and
+            # we warn and raise NoWorkFound.
+            # If there is a matched pair, if the first in the pair has the
+            # same exposure number as the quantum id, it is "primary" and
+            # we continue.
+            # If there is a matched pair, if the second in the pair has the
+            # same exposure number as the quantum id, it is "secondary" and
+            # we raise NoWorkFound.
+
+            # For example, the first column is the quantum id and the next
+            # is the triplet (or double at the boundaries).
+            #  0: 0, 1  - this has a match (0 == 1), 0 == 0 do work
+            #  1: 0, 1, 2  - this has a match (0 == 1), 0 != 1 -> no work
+            #  2: 1, 2, 3  - this has a match (2 == 3), 2 == 2 -> do work
+            #  3: 2, 3, 4  - this has a match (2 == 3), 2 != 3 -> no work
+            #  4: 3, 4, 5  - this has a match (4 == 5), 4 == 4 -> do work
+            #  5: 4, 5  - this has a match (4 == 5), 4 != 5 -> no work
+
+            exposures = list(quantumIdDict.keys())
+            for i in range(len(exposures)):
+                if (i - 1) >= 0:
+                    _addInputs(exposures[i - 1], exposures[i], remove=False)
+                if (i + 1) < len(exposures):
+                    _addInputs(exposures[i + 1], exposures[i], remove=False)
 
 
-class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
-                                       pipelineConnections=PhotonTransferCurveExtractConnections):
+class PhotonTransferCurveExtractConfigBase(
+    pipeBase.PipelineTaskConfig,
+    pipelineConnections=PhotonTransferCurveExtractConnectionsBase
+):
     """Configuration for the measurement of covariances from flats.
     """
     matchExposuresType = pexConfig.ChoiceField(
@@ -116,24 +284,6 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
         dtype=int,
         doc="Bin the image by this factor in both dimensions.",
         default=1,
-    )
-    minMeanSignal = pexConfig.DictField(
-        keytype=str,
-        itemtype=float,
-        doc="Minimum values (inclusive) of mean signal (in ADU) per amp to use."
-            " The same cut is applied to all amps if this parameter [`dict`] is passed as "
-            " {'ALL_AMPS': value}",
-        default={'ALL_AMPS': 0.0},
-        deprecated="This config has been moved to cpSolvePtcTask, and will be removed after v26.",
-    )
-    maxMeanSignal = pexConfig.DictField(
-        keytype=str,
-        itemtype=float,
-        doc="Maximum values (inclusive) of mean signal (in ADU) below which to consider, per amp."
-            " The same cut is applied to all amps if this dictionary is of the form"
-            " {'ALL_AMPS': value}",
-        default={'ALL_AMPS': 1e6},
-        deprecated="This config has been moved to cpSolvePtcTask, and will be removed after v26.",
     )
     maskNameList = pexConfig.ListField(
         dtype=str,
@@ -278,7 +428,21 @@ class PhotonTransferCurveExtractConfig(pipeBase.PipelineTaskConfig,
             raise ValueError("doExtractPhotodiodeData and useEfdPhotodiodeData are mutually exclusive.")
 
 
-class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
+class PhotonTransferCurveExtractConfig(
+    PhotonTransferCurveExtractConfigBase,
+    pipelineConnections=PhotonTransferCurveExtractConnections,
+):
+    pass
+
+
+class PhotonTransferCurveExtractPairConfig(
+    PhotonTransferCurveExtractConfigBase,
+    pipelineConnections=PhotonTransferCurveExtractPairConnections,
+):
+    pass
+
+
+class PhotonTransferCurveExtractTaskBase(pipeBase.PipelineTask):
     """Task to measure covariances from flat fields.
 
     This task receives as input a list of flat-field images
@@ -324,154 +488,38 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
     sensors", arXiv:1905.08677.
     """
 
-    ConfigClass = PhotonTransferCurveExtractConfig
-    _DefaultName = 'cpPtcExtract'
+    ConfigClass = PhotonTransferCurveExtractConfigBase
+    _DefaultName = 'cpPtcExtractBase'
 
-    def runQuantum(self, butlerQC, inputRefs, outputRefs):
-        """Ensure that the input and output dimensions are passed along.
-
-        Parameters
-        ----------
-        butlerQC : `~lsst.daf.butler.QuantumContext`
-            Butler to operate on.
-        inputRefs : `~lsst.pipe.base.InputQuantizedConnection`
-            Input data refs to load.
-        ouptutRefs : `~lsst.pipe.base.OutputQuantizedConnection`
-            Output data refs to persist.
-        """
-        inputs = butlerQC.get(inputRefs)
-        # Ids of input list of exposure references
-        # (deferLoad=True in the input connections)
-        inputs['inputDims'] = [expRef.datasetRef.dataId['exposure'] for expRef in inputRefs.inputExp]
-
-        # Dictionary, keyed by expTime (or expFlux or expId), with tuples
-        # containing flat exposures and their IDs.
-        matchType = self.config.matchExposuresType
-        if matchType == 'TIME':
-            inputs['inputExp'] = arrangeFlatsByExpTime(inputs['inputExp'], inputs['inputDims'], log=self.log)
-        elif matchType == 'FLUX':
-            inputs['inputExp'] = arrangeFlatsByExpFlux(
-                inputs['inputExp'],
-                inputs['inputDims'],
-                self.config.matchExposuresByFluxKeyword,
-                log=self.log,
-            )
-        else:
-            inputs['inputExp'] = arrangeFlatsByExpId(inputs['inputExp'], inputs['inputDims'])
-
-        outputs = self.run(**inputs)
-        outputs = self._guaranteeOutputs(inputs['inputDims'], outputs, outputRefs)
-        butlerQC.put(outputs, outputRefs)
-
-    def _guaranteeOutputs(self, inputDims, outputs, outputRefs):
-        """Ensure that all outputRefs have a matching output, and if they do
-        not, fill the output with dummy PTC datasets.
+    def _extractPhotoChargeDict(self, inputPhotodiodeData, inputExp):
+        """Extract the photodiode charge.
 
         Parameters
         ----------
-        inputDims : `dict` [`str`, `int`]
-            Input exposure dimensions.
-        outputs : `lsst.pipe.base.Struct`
-            Outputs from the ``run`` method.  Contains the entry:
-
-            ``outputCovariances``
-                Output PTC datasets (`list` [`lsst.ip.isr.IsrCalib`])
-        outputRefs : `~lsst.pipe.base.OutputQuantizedConnection`
-            Container with all of the outputs expected to be generated.
-
-        Returns
-        -------
-        outputs : `lsst.pipe.base.Struct`
-            Dummy dataset padded version of the input ``outputs`` with
-            the same entries.
-        """
-        newCovariances = []
-        for ref in outputRefs.outputCovariances:
-            outputExpId = ref.dataId['exposure']
-            if outputExpId in inputDims:
-                entry = inputDims.index(outputExpId)
-                newCovariances.append(outputs.outputCovariances[entry])
-            else:
-                newPtc = PhotonTransferCurveDataset(['no amp'], 'DUMMY', covMatrixSide=1)
-                newPtc.setAmpValuesPartialDataset('no amp')
-                newCovariances.append(newPtc)
-        return pipeBase.Struct(outputCovariances=newCovariances)
-
-    def run(self, inputExp, inputDims, taskMetadata=None, inputPhotodiodeData=None):
-
-        """Measure covariances from difference of flat pairs
-
-        Parameters
-        ----------
+        inputPhotoDiodeData : `dict` [`str`,
+            `lsst.pipe.base.connections.DeferredDatasetRef`]
+            Photodiode readings data (optional).
         inputExp : `dict` [`float`, `list`
                           [`~lsst.pipe.base.connections.DeferredDatasetRef`]]
-            Dictionary that groups references to flat-field exposures that
-            have the same exposure time (seconds), or that groups them
-            sequentially by their exposure id.
-        inputDims : `list`
-            List of exposure IDs.
-        taskMetadata : `list` [`lsst.pipe.base.TaskMetadata`], optional
-            List of exposures metadata from ISR.  This is not used,
-            and will be completely removed on DM-45802.
-        inputPhotodiodeData : `dict` [`str`, `lsst.ip.isr.PhotodiodeCalib`]
-            Photodiode readings data (optional).
+            Dictionary that groups references to flat-field exposures.
 
         Returns
         -------
-        results : `lsst.pipe.base.Struct`
-            The resulting Struct contains:
-
-            ``outputCovariances``
-                A list containing the per-pair PTC measurements (`list`
-                [`lsst.ip.isr.PhotonTransferCurveDataset`])
+        photoChargeDict : `dict` [`int`, `float`]
+            Dict of photocharge values, keyed by expId. May be empty.
         """
-        # inputExp.values() returns a view, which we turn into a list. We then
-        # access the first exposure-ID tuple to get the detector.
-        # The first "get()" retrieves the exposure from the exposure reference.
-        detector = list(inputExp.values())[0][0][0].get(component='detector')
-        detNum = detector.getId()
-        amps = detector.getAmplifiers()
-        ampNames = [amp.getName() for amp in amps]
-
-        # Each amp may have a different min and max ADU signal
-        # specified in the config.
-        maxMeanSignalDict = {ampName: 1e6 for ampName in ampNames}
-        minMeanSignalDict = {ampName: 0.0 for ampName in ampNames}
-        for ampName in ampNames:
-            if 'ALL_AMPS' in self.config.maxMeanSignal:
-                maxMeanSignalDict[ampName] = self.config.maxMeanSignal['ALL_AMPS']
-            elif ampName in self.config.maxMeanSignal:
-                maxMeanSignalDict[ampName] = self.config.maxMeanSignal[ampName]
-
-            if 'ALL_AMPS' in self.config.minMeanSignal:
-                minMeanSignalDict[ampName] = self.config.minMeanSignal['ALL_AMPS']
-            elif ampName in self.config.minMeanSignal:
-                minMeanSignalDict[ampName] = self.config.minMeanSignal[ampName]
-        # These are the column names for `tupleRows` below.
-        tags = [('mu', '<f8'), ('afwVar', '<f8'), ('i', '<i8'), ('j', '<i8'), ('var', '<f8'),
-                ('cov', '<f8'), ('npix', '<i8'), ('ext', '<i8'), ('expTime', '<f8'), ('ampName', '<U3')]
-        # Create a dummy ptcDataset. Dummy datasets will be
-        # used to ensure that the number of output and input
-        # dimensions match.
-        dummyPtcDataset = PhotonTransferCurveDataset(
-            ampNames, 'DUMMY',
-            covMatrixSide=self.config.maximumRangeCovariancesAstier)
-        for ampName in ampNames:
-            dummyPtcDataset.setAmpValuesPartialDataset(ampName)
-
         # Extract the photodiode data if requested.
+        photoChargeDict = {}
         if self.config.doExtractPhotodiodeData:
             # Compute the photodiode integrals once, at the start.
-            monitorDiodeCharge = {}
             for handle in inputPhotodiodeData:
                 expId = handle.dataId['exposure']
                 pdCalib = handle.get()
                 pdCalib.integrationMethod = self.config.photodiodeIntegrationMethod
                 pdCalib.currentScale = self.config.photodiodeCurrentScale
-                monitorDiodeCharge[expId] = pdCalib.integrate()
+                photoChargeDict[expId] = pdCalib.integrate()
         elif self.config.useEfdPhotodiodeData:
             client = CpEfdClient()
-            monitorDiodeCharge = {}  # This is technically an average current.
             obsDates = {}
             obsMin = None
             obsMax = None
@@ -504,289 +552,264 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
                 # The monitor diode charge is negative and a time average,
                 # so we need to flip the sign and multiply by the exposure
                 # time.
-                monitorDiodeCharge[expId] = -1.0 * results[1] * expDate['exptime']
+                photoChargeDict[expId] = -1.0 * results[1] * expDate['exptime']
 
             # The data can be large, so:
             del pdData
             del client
 
-        # Output list with PTC datasets.
-        partialPtcDatasetList = []
-        # The number of output references needs to match that of input
-        # references: initialize outputlist with dummy PTC datasets.
-        for i in range(len(inputDims)):
-            partialPtcDatasetList.append(dummyPtcDataset)
+        return photoChargeDict
 
+    def _extractOneFlatPair(
+        self,
+        expIds,
+        exps,
+        photoChargeDict,
+        expTime,
+    ):
+        """Extract a single flat pair.
+
+        Parameters
+        ----------
+        expIds : `tuple` [`int`]
+            Tuple of two exposure IDs for the flat pair.
+        exps : `tuple` [`lsst.afw.image.Exposure`]
+            Tuple of two exposures for the flat pair.
+        photoChargeDict : `dict` [`int`, `float`]
+            Dict of photocharge values, keyed by expId. May be empty.
+        expTime : `float`
+            Exposure time.
+
+        Returns
+        -------
+        partialPtcDataset : `lsst.ip.isr.PhotonTransferCurveDataset`
+            PTC dataset for this flat pair.
+        nAmpsNan : `int`
+            Number of amps that have no measurements.
+        """
+        expId1, expId2 = expIds
+        exp1, exp2 = exps
+
+        self.log.info("Extracting PTC data from flat pair %d, %d", expId1, expId2)
+
+        # These are the column names for `tupleRows` below.
+        tags = [('mu', '<f8'), ('afwVar', '<f8'), ('i', '<i8'), ('j', '<i8'), ('var', '<f8'),
+                ('cov', '<f8'), ('npix', '<i8'), ('ext', '<i8'), ('expTime', '<f8'), ('ampName', '<U3')]
+
+        detector = exp1.getDetector()
+        detNum = detector.getId()
+        amps = detector.getAmplifiers()
+        ampNames = [amp.getName() for amp in amps]
+
+        # Mask pixels at the edge of the detector or of each amp
         if self.config.numEdgeSuspect > 0:
-            isrTask = IsrTask()
-            self.log.info("Masking %d pixels from the edges of all %ss as SUSPECT.",
-                          self.config.numEdgeSuspect, self.config.edgeMaskLevel)
+            self.isrTask.maskEdges(exp1, numEdgePixels=self.config.numEdgeSuspect,
+                                   maskPlane="SUSPECT", level=self.config.edgeMaskLevel)
+            self.isrTask.maskEdges(exp2, numEdgePixels=self.config.numEdgeSuspect,
+                                   maskPlane="SUSPECT", level=self.config.edgeMaskLevel)
 
-        # Depending on the value of config.matchExposuresType
-        # 'expTime' can stand for exposure time, flux, or ID.
-        for expTime in inputExp:
-            exposures = inputExp[expTime]
-            if not np.isfinite(expTime):
-                self.log.warning("Illegal/missing %s found (%s). Dropping exposure %d",
-                                 self.config.matchExposuresType, expTime, exposures[0][1])
-                continue
-            elif len(exposures) == 1:
-                self.log.warning("Only one exposure found at %s %f. Dropping exposure %d.",
-                                 self.config.matchExposuresType, expTime, exposures[0][1])
-                continue
+        # Extract any metadata keys from the headers.
+        auxDict = {}
+        metadata = exp1.getMetadata()
+        for key in self.config.auxiliaryHeaderKeys:
+            if key not in metadata:
+                self.log.warning(
+                    "Requested auxiliary keyword %s not found in exposure metadata for %d",
+                    key,
+                    expId1,
+                )
+                value = np.nan
             else:
-                # Only use the first two exposures at expTime. Each
-                # element is a tuple (exposure, expId)
-                expRef1, expId1 = exposures[0]
-                expRef2, expId2 = exposures[1]
-                # use get() to obtain `lsst.afw.image.Exposure`
-                exp1, exp2 = expRef1.get(), expRef2.get()
+                value = metadata[key]
 
-                if len(exposures) > 2:
-                    self.log.warning("Already found 2 exposures at %s %f. Ignoring exposures: %s",
-                                     self.config.matchExposuresType, expTime,
-                                     ", ".join(str(i[1]) for i in exposures[2:]))
-            self.log.info("Extracting PTC data from flat pair %d, %d", expId1, expId2)
-            # Mask pixels at the edge of the detector or of each amp
-            if self.config.numEdgeSuspect > 0:
-                isrTask.maskEdges(exp1, numEdgePixels=self.config.numEdgeSuspect,
-                                  maskPlane="SUSPECT", level=self.config.edgeMaskLevel)
-                isrTask.maskEdges(exp2, numEdgePixels=self.config.numEdgeSuspect,
-                                  maskPlane="SUSPECT", level=self.config.edgeMaskLevel)
+            auxDict[key] = value
 
-            # Extract any metadata keys from the headers.
-            auxDict = {}
-            metadata = exp1.getMetadata()
-            for key in self.config.auxiliaryHeaderKeys:
-                if key not in metadata:
-                    self.log.warning(
-                        "Requested auxiliary keyword %s not found in exposure metadata for %d",
-                        key,
-                        expId1,
-                    )
-                    value = np.nan
-                else:
-                    value = metadata[key]
+        # Pull key visitInfo data into the auxDict.
+        visitInfo = exp1.info.getVisitInfo()
+        auxDict["observationType"] = visitInfo.getObservationType()
+        auxDict["observationReason"] = visitInfo.getObservationReason()
+        auxDict["scienceProgram"] = visitInfo.getScienceProgram()
 
-                auxDict[key] = value
+        nAmpsNan = 0
+        partialPtcDataset = PhotonTransferCurveDataset(
+            ampNames, 'PARTIAL',
+            covMatrixSide=self.config.maximumRangeCovariancesAstier)
+        for ampNumber, amp in enumerate(detector):
+            ampName = amp.getName()
+            if self.config.detectorMeasurementRegion == 'AMP':
+                region = amp.getBBox()
+            elif self.config.detectorMeasurementRegion == 'FULL':
+                region = None
 
-            # Pull key visitInfo data into the auxDict.
-            visitInfo = exp1.info.getVisitInfo()
-            auxDict["observationType"] = visitInfo.getObservationType()
-            auxDict["observationReason"] = visitInfo.getObservationReason()
-            auxDict["scienceProgram"] = visitInfo.getScienceProgram()
+            # Get masked image regions, masking planes, statistic control
+            # objects, and clipped means. Calculate once to reuse in
+            # `measureMeanVarCov` and `getGainFromFlatPair`.
+            im1Area, im2Area, imStatsCtrl, mu1, mu2 = self.getImageAreasMasksStats(exp1, exp2,
+                                                                                   region=region)
 
-            nAmpsNan = 0
-            partialPtcDataset = PhotonTransferCurveDataset(
-                ampNames, 'PARTIAL',
-                covMatrixSide=self.config.maximumRangeCovariancesAstier)
-            for ampNumber, amp in enumerate(detector):
-                ampName = amp.getName()
-                if self.config.detectorMeasurementRegion == 'AMP':
-                    region = amp.getBBox()
-                elif self.config.detectorMeasurementRegion == 'FULL':
-                    region = None
+            # Get the read noise for each exposure
+            readNoise1 = dict()
+            readNoise2 = dict()
+            meanReadNoise = dict()
 
-                # Get masked image regions, masking planes, statistic control
-                # objects, and clipped means. Calculate once to reuse in
-                # `measureMeanVarCov` and `getGainFromFlatPair`.
-                im1Area, im2Area, imStatsCtrl, mu1, mu2 = self.getImageAreasMasksStats(exp1, exp2,
-                                                                                       region=region)
+            readNoise1[ampName] = getReadNoise(exp1, ampName)
+            readNoise2[ampName] = getReadNoise(exp2, ampName)
 
-                # Get the read noise for each exposure
-                readNoise1 = dict()
-                readNoise2 = dict()
-                meanReadNoise = dict()
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                # We allow the mean read noise to be nan if both read noise
+                # values are nan, so suppress this warning.
+                meanReadNoise[ampName] = np.nanmean([readNoise1[ampName], readNoise2[ampName]])
 
-                readNoise1[ampName] = getReadNoise(exp1, ampName)
-                readNoise2[ampName] = getReadNoise(exp2, ampName)
-
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    # We allow the mean read noise to be nan if both read noise
-                    # values are nan, so suppress this warning.
-                    meanReadNoise[ampName] = np.nanmean([readNoise1[ampName], readNoise2[ampName]])
-
-                # We demand that both mu1 and mu2 be finite and greater than 0.
-                if not np.isfinite(mu1) or not np.isfinite(mu2) \
-                   or ((np.nan_to_num(mu1) + np.nan_to_num(mu2)/2.) <= 0.0):
-                    self.log.warning(
-                        "Illegal mean value(s) detected for amp %s on exposure pair %d/%d",
-                        ampName,
-                        expId1,
-                        expId2,
-                    )
-                    partialPtcDataset.setAmpValuesPartialDataset(
-                        ampName,
-                        inputExpIdPair=(expId1, expId2),
-                        rawExpTime=expTime,
-                        expIdMask=False,
-                    )
-                    continue
-
-                # `measureMeanVarCov` is the function that measures
-                # the variance and covariances from a region of
-                # the difference image of two flats at the same
-                # exposure time.  The variable `covAstier` that is
-                # returned is of the form:
-                # [(i, j, var (cov[0,0]), cov, npix) for (i,j) in
-                # {maxLag, maxLag}^2].
-                muDiff, varDiff, covAstier, rowMeanVariance = self.measureMeanVarCov(im1Area,
-                                                                                     im2Area,
-                                                                                     imStatsCtrl,
-                                                                                     mu1,
-                                                                                     mu2)
-                # Estimate the gain from the flat pair
-                if self.config.doGain:
-                    gain = self.getGainFromFlatPair(im1Area, im2Area, imStatsCtrl, mu1, mu2,
-                                                    correctionType=self.config.gainCorrectionType,
-                                                    readNoise=meanReadNoise[ampName])
-                else:
-                    gain = np.nan
-
-                # Correction factor for bias introduced by sigma
-                # clipping.
-                # Function returns 1/sqrt(varFactor), so it needs
-                # to be squared. varDiff is calculated via
-                # afwMath.VARIANCECLIP.
-                varFactor = sigmaClipCorrection(self.config.nSigmaClipPtc)**2
-                varDiff *= varFactor
-
-                expIdMask = True
-                # Mask data point at this mean signal level if
-                # the signal, variance, or covariance calculations
-                # from `measureMeanVarCov` resulted in NaNs.
-                if (np.isnan(muDiff) or np.isnan(varDiff) or (covAstier is None)
-                   or (rowMeanVariance is np.nan)):
-                    self.log.warning("NaN mean, var or rowmeanVariance, or None cov in amp %s "
-                                     "in exposure pair %d, %d of "
-                                     "detector %d.", ampName, expId1, expId2, detNum)
-                    nAmpsNan += 1
-                    expIdMask = False
-                    covArray = np.full((1, self.config.maximumRangeCovariancesAstier,
-                                        self.config.maximumRangeCovariancesAstier), np.nan)
-                    covSqrtWeights = np.full_like(covArray, np.nan)
-
-                # Mask data point if it is outside of the
-                # specified mean signal range.
-                if (muDiff <= minMeanSignalDict[ampName]) or (muDiff >= maxMeanSignalDict[ampName]):
-                    expIdMask = False
-
-                if covAstier is not None:
-                    # Turn the tuples with the measured information
-                    # into covariance arrays.
-                    # covrow: (i, j, var (cov[0,0]), cov, npix)
-                    tupleRows = [(muDiff, varDiff) + covRow + (ampNumber, expTime,
-                                                               ampName) for covRow in covAstier]
-                    tempStructArray = np.array(tupleRows, dtype=tags)
-
-                    covArray, vcov, _ = self.makeCovArray(tempStructArray,
-                                                          self.config.maximumRangeCovariancesAstier)
-
-                    # The returned covArray should only have 1 entry;
-                    # raise if this is not the case.
-                    if covArray.shape[0] != 1:
-                        raise RuntimeError("Serious programming error in covArray shape.")
-
-                    covSqrtWeights = np.nan_to_num(1./np.sqrt(vcov))
-
-                # Correct covArray for sigma clipping:
-                # 1) Apply varFactor twice for the whole covariance matrix
-                covArray *= varFactor**2
-                # 2) But, only once for the variance element of the
-                # matrix, covArray[0, 0, 0] (so divide one factor out).
-                # (the first 0 is because this is a 3D array for insertion into
-                # the combined dataset).
-                covArray[0, 0, 0] /= varFactor
-
-                if expIdMask and self.config.doKsHistMeasurement:
-                    # Run the Gaussian histogram only if this is a legal
-                    # amplifier and configured to do so.
-                    histVar, histChi2Dof, kspValue = self.computeGaussianHistogramParameters(
-                        im1Area,
-                        im2Area,
-                        imStatsCtrl,
-                        mu1,
-                        mu2,
-                    )
-                else:
-                    histVar = np.nan
-                    histChi2Dof = np.nan
-                    if self.config.doKsHistMeasurement:
-                        kspValue = 0.0
-                    else:
-                        # When this is turned off, we will always allow it to
-                        # pass downstream.
-                        kspValue = 1.0
-
-                if self.config.doExtractPhotodiodeData or self.config.useEfdPhotodiodeData:
-                    nExps = 0
-                    photoCharge = 0.0
-                    for expId in [expId1, expId2]:
-                        if expId in monitorDiodeCharge:
-                            photoCharge += monitorDiodeCharge[expId]
-                            nExps += 1
-                    if nExps > 0:
-                        photoCharge /= nExps
-                    else:
-                        photoCharge = np.nan
-                else:
-                    photoCharge = np.nan
-
-                # Get amp offsets if available.
-                ampOffsetKey = f"LSST ISR AMPOFFSET PEDESTAL {ampName}"
-                ampOffset1 = exp1.metadata.get(ampOffsetKey, np.nan)
-                ampOffset2 = exp2.metadata.get(ampOffsetKey, np.nan)
-                ampOffset = (ampOffset1 + ampOffset2) / 2.0
-
+            # We demand that both mu1 and mu2 be finite and greater than 0.
+            if not np.isfinite(mu1) or not np.isfinite(mu2) \
+               or ((np.nan_to_num(mu1) + np.nan_to_num(mu2)/2.) <= 0.0):
+                self.log.warning(
+                    "Illegal mean value(s) detected for amp %s on exposure pair %d/%d",
+                    ampName,
+                    expId1,
+                    expId2,
+                )
                 partialPtcDataset.setAmpValuesPartialDataset(
                     ampName,
                     inputExpIdPair=(expId1, expId2),
                     rawExpTime=expTime,
-                    rawMean=muDiff,
-                    rawVar=varDiff,
-                    photoCharge=photoCharge,
-                    ampOffset=ampOffset,
-                    expIdMask=expIdMask,
-                    covariance=covArray[0, :, :],
-                    covSqrtWeights=covSqrtWeights[0, :, :],
-                    gain=gain,
-                    noise=meanReadNoise[ampName],
-                    histVar=histVar,
-                    histChi2Dof=histChi2Dof,
-                    kspValue=kspValue,
-                    rowMeanVariance=rowMeanVariance,
+                    expIdMask=False,
                 )
+                continue
 
-            partialPtcDataset.setAuxValuesPartialDataset(auxDict)
+            # `measureMeanVarCov` is the function that measures
+            # the variance and covariances from a region of
+            # the difference image of two flats at the same
+            # exposure time.  The variable `covAstier` that is
+            # returned is of the form:
+            # [(i, j, var (cov[0,0]), cov, npix) for (i,j) in
+            # {maxLag, maxLag}^2].
+            muDiff, varDiff, covAstier, rowMeanVariance = self.measureMeanVarCov(im1Area,
+                                                                                 im2Area,
+                                                                                 imStatsCtrl,
+                                                                                 mu1,
+                                                                                 mu2)
+            # Estimate the gain from the flat pair
+            if self.config.doGain:
+                gain = self.getGainFromFlatPair(im1Area, im2Area, imStatsCtrl, mu1, mu2,
+                                                correctionType=self.config.gainCorrectionType,
+                                                readNoise=meanReadNoise[ampName])
+            else:
+                gain = np.nan
 
-            # Use location of exp1 to save PTC dataset from (exp1, exp2) pair.
-            # Below, np.where(expId1 == np.array(inputDims)) returns a tuple
-            # with a single-element array, so [0][0]
-            # is necessary to extract the required index.
-            datasetIndex = np.where(expId1 == np.array(inputDims))[0][0]
-            # `partialPtcDatasetList` is a list of
-            # `PhotonTransferCurveDataset` objects. Some of them
-            # will be dummy datasets (to match length of input
-            # and output references), and the rest will have
-            # datasets with the mean signal, variance, and
-            # covariance measurements at a given exposure
-            # time. The next ppart of the PTC-measurement
-            # pipeline, `solve`, will take this list as input,
-            # and assemble the measurements in the datasets
-            # in an addecuate manner for fitting a PTC
-            # model.
-            partialPtcDataset.updateMetadataFromExposures([exp1, exp2])
-            partialPtcDataset.updateMetadata(setDate=True, detector=detector)
-            partialPtcDatasetList[datasetIndex] = partialPtcDataset
+            # Correction factor for bias introduced by sigma
+            # clipping.
+            # Function returns 1/sqrt(varFactor), so it needs
+            # to be squared. varDiff is calculated via
+            # afwMath.VARIANCECLIP.
+            varFactor = sigmaClipCorrection(self.config.nSigmaClipPtc)**2
+            varDiff *= varFactor
 
-            if nAmpsNan == len(ampNames):
-                msg = f"NaN mean in all amps of exposure pair {expId1}, {expId2} of detector {detNum}."
-                self.log.warning(msg)
+            expIdMask = True
+            # Mask data point at this mean signal level if
+            # the signal, variance, or covariance calculations
+            # from `measureMeanVarCov` resulted in NaNs.
+            if (np.isnan(muDiff) or np.isnan(varDiff) or (covAstier is None)
+               or (rowMeanVariance is np.nan)):
+                self.log.warning("NaN mean, var or rowmeanVariance, or None cov in amp %s "
+                                 "in exposure pair %d, %d of "
+                                 "detector %d.", ampName, expId1, expId2, detNum)
+                nAmpsNan += 1
+                expIdMask = False
+                covArray = np.full((1, self.config.maximumRangeCovariancesAstier,
+                                    self.config.maximumRangeCovariancesAstier), np.nan)
+                covSqrtWeights = np.full_like(covArray, np.nan)
 
-        return pipeBase.Struct(
-            outputCovariances=partialPtcDatasetList,
-        )
+            if covAstier is not None:
+                # Turn the tuples with the measured information
+                # into covariance arrays.
+                # covrow: (i, j, var (cov[0,0]), cov, npix)
+                tupleRows = [(muDiff, varDiff) + covRow + (ampNumber, expTime,
+                                                           ampName) for covRow in covAstier]
+                tempStructArray = np.array(tupleRows, dtype=tags)
+
+                covArray, vcov, _ = self.makeCovArray(tempStructArray,
+                                                      self.config.maximumRangeCovariancesAstier)
+
+                # The returned covArray should only have 1 entry;
+                # raise if this is not the case.
+                if covArray.shape[0] != 1:
+                    raise RuntimeError("Serious programming error in covArray shape.")
+
+                covSqrtWeights = np.nan_to_num(1./np.sqrt(vcov))
+
+            # Correct covArray for sigma clipping:
+            # 1) Apply varFactor twice for the whole covariance matrix
+            covArray *= varFactor**2
+            # 2) But, only once for the variance element of the
+            # matrix, covArray[0, 0, 0] (so divide one factor out).
+            # (the first 0 is because this is a 3D array for insertion into
+            # the combined dataset).
+            covArray[0, 0, 0] /= varFactor
+
+            if expIdMask and self.config.doKsHistMeasurement:
+                # Run the Gaussian histogram only if this is a legal
+                # amplifier and configured to do so.
+                histVar, histChi2Dof, kspValue = self.computeGaussianHistogramParameters(
+                    im1Area,
+                    im2Area,
+                    imStatsCtrl,
+                    mu1,
+                    mu2,
+                )
+            else:
+                histVar = np.nan
+                histChi2Dof = np.nan
+                if self.config.doKsHistMeasurement:
+                    kspValue = 0.0
+                else:
+                    # When this is turned off, we will always allow it to
+                    # pass downstream.
+                    kspValue = 1.0
+
+            if self.config.doExtractPhotodiodeData or self.config.useEfdPhotodiodeData:
+                nExps = 0
+                photoCharge = 0.0
+                for expId in [expId1, expId2]:
+                    if expId in photoChargeDict:
+                        photoCharge += photoChargeDict[expId]
+                        nExps += 1
+                if nExps > 0:
+                    photoCharge /= nExps
+                else:
+                    photoCharge = np.nan
+            else:
+                photoCharge = np.nan
+
+            # Get amp offsets if available.
+            ampOffsetKey = f"LSST ISR AMPOFFSET PEDESTAL {ampName}"
+            ampOffset1 = exp1.metadata.get(ampOffsetKey, np.nan)
+            ampOffset2 = exp2.metadata.get(ampOffsetKey, np.nan)
+            ampOffset = (ampOffset1 + ampOffset2) / 2.0
+
+            partialPtcDataset.setAmpValuesPartialDataset(
+                ampName,
+                inputExpIdPair=(expId1, expId2),
+                rawExpTime=expTime,
+                rawMean=muDiff,
+                rawVar=varDiff,
+                photoCharge=photoCharge,
+                ampOffset=ampOffset,
+                expIdMask=expIdMask,
+                covariance=covArray[0, :, :],
+                covSqrtWeights=covSqrtWeights[0, :, :],
+                gain=gain,
+                noise=meanReadNoise[ampName],
+                histVar=histVar,
+                histChi2Dof=histChi2Dof,
+                kspValue=kspValue,
+                rowMeanVariance=rowMeanVariance,
+            )
+
+        partialPtcDataset.setAuxValuesPartialDataset(auxDict)
+
+        return partialPtcDataset, nAmpsNan
 
     def makeCovArray(self, inputTuple, maxRangeFromTuple):
         """Make covariances array from tuple.
@@ -1229,3 +1252,354 @@ class PhotonTransferCurveExtractTask(pipeBase.PipelineTask):
             kspValue = 0.0
 
         return varFit, chi2Dof, kspValue
+
+
+class PhotonTransferCurveExtractTask(PhotonTransferCurveExtractTaskBase):
+    ConfigClass = PhotonTransferCurveExtractConfig
+    _DefaultName = 'cpPtcExtract'
+
+    def runQuantum(self, butlerQC, inputRefs, outputRefs):
+        """Ensure that the input and output dimensions are passed along.
+
+        Parameters
+        ----------
+        butlerQC : `~lsst.daf.butler.QuantumContext`
+            Butler to operate on.
+        inputRefs : `~lsst.pipe.base.InputQuantizedConnection`
+            Input data refs to load.
+        ouptutRefs : `~lsst.pipe.base.OutputQuantizedConnection`
+            Output data refs to persist.
+        """
+        inputs = butlerQC.get(inputRefs)
+        # Ids of input list of exposure references
+        # (deferLoad=True in the input connections)
+        inputs['inputDims'] = [expRef.datasetRef.dataId['exposure'] for expRef in inputRefs.inputExp]
+
+        # Dictionary, keyed by expTime (or expFlux or expId), with tuples
+        # containing flat exposures and their IDs.
+        matchType = self.config.matchExposuresType
+        if matchType == 'TIME':
+            inputs['inputExp'] = arrangeFlatsByExpTime(inputs['inputExp'], inputs['inputDims'], log=self.log)
+        elif matchType == 'FLUX':
+            inputs['inputExp'] = arrangeFlatsByExpFlux(
+                inputs['inputExp'],
+                inputs['inputDims'],
+                self.config.matchExposuresByFluxKeyword,
+                log=self.log,
+            )
+        else:
+            inputs['inputExp'] = arrangeFlatsByExpId(inputs['inputExp'], inputs['inputDims'])
+
+        outputs = self.run(**inputs)
+        outputs = self._guaranteeOutputs(inputs['inputDims'], outputs, outputRefs)
+        butlerQC.put(outputs, outputRefs)
+
+    def _guaranteeOutputs(self, inputDims, outputs, outputRefs):
+        """Ensure that all outputRefs have a matching output, and if they do
+        not, fill the output with dummy PTC datasets.
+
+        Parameters
+        ----------
+        inputDims : `dict` [`str`, `int`]
+            Input exposure dimensions.
+        outputs : `lsst.pipe.base.Struct`
+            Outputs from the ``run`` method.  Contains the entry:
+
+            ``outputCovariances``
+                Output PTC datasets (`list` [`lsst.ip.isr.IsrCalib`])
+        outputRefs : `~lsst.pipe.base.OutputQuantizedConnection`
+            Container with all of the outputs expected to be generated.
+
+        Returns
+        -------
+        outputs : `lsst.pipe.base.Struct`
+            Dummy dataset padded version of the input ``outputs`` with
+            the same entries.
+        """
+        newCovariances = []
+        for ref in outputRefs.outputCovariances:
+            outputExpId = ref.dataId['exposure']
+            if outputExpId in inputDims:
+                entry = inputDims.index(outputExpId)
+                newCovariances.append(outputs.outputCovariances[entry])
+            else:
+                newPtc = PhotonTransferCurveDataset(['no amp'], 'DUMMY', covMatrixSide=1)
+                newPtc.setAmpValuesPartialDataset('no amp')
+                newCovariances.append(newPtc)
+        return pipeBase.Struct(outputCovariances=newCovariances)
+
+    def run(self, inputExp, inputDims, inputPhotodiodeData=None):
+        """Measure covariances from difference of flat pairs
+
+        Parameters
+        ----------
+        inputExp : `dict` [`float`, `list`
+                          [`~lsst.pipe.base.connections.DeferredDatasetRef`]]
+            Dictionary that groups references to flat-field exposures that
+            have the same exposure time (seconds), or that groups them
+            sequentially by their exposure id.
+        inputDims : `list`
+            List of exposure IDs.
+        taskMetadata : `list` [`lsst.pipe.base.TaskMetadata`], optional
+            List of exposures metadata from ISR.  This is not used,
+            and will be completely removed on DM-45802.
+        inputPhotodiodeData : `dict` [`str`, `lsst.ip.isr.PhotodiodeCalib`]
+            Photodiode readings data (optional).
+
+        Returns
+        -------
+        results : `lsst.pipe.base.Struct`
+            The resulting Struct contains:
+
+            ``outputCovariances``
+                A list containing the per-pair PTC measurements (`list`
+                [`lsst.ip.isr.PhotonTransferCurveDataset`])
+        """
+        # inputExp.values() returns a view, which we turn into a list. We then
+        # access the first exposure-ID tuple to get the detector.
+        # The first "get()" retrieves the exposure from the exposure reference.
+        detector = list(inputExp.values())[0][0][0].get(component='detector')
+        detNum = detector.getId()
+        amps = detector.getAmplifiers()
+        ampNames = [amp.getName() for amp in amps]
+
+        # Create a dummy ptcDataset. Dummy datasets will be
+        # used to ensure that the number of output and input
+        # dimensions match.
+        dummyPtcDataset = PhotonTransferCurveDataset(
+            ampNames, 'DUMMY',
+            covMatrixSide=self.config.maximumRangeCovariancesAstier)
+        for ampName in ampNames:
+            dummyPtcDataset.setAmpValuesPartialDataset(ampName)
+
+        photoChargeDict = self._extractPhotoChargeDict(inputPhotodiodeData, inputExp)
+
+        # Output list with PTC datasets.
+        partialPtcDatasetList = []
+        # The number of output references needs to match that of input
+        # references: initialize outputlist with dummy PTC datasets.
+        for i in range(len(inputDims)):
+            partialPtcDatasetList.append(dummyPtcDataset)
+
+        if self.config.numEdgeSuspect > 0:
+            self.isrTask = IsrTask()
+            self.log.info("Masking %d pixels from the edges of all %ss as SUSPECT.",
+                          self.config.numEdgeSuspect, self.config.edgeMaskLevel)
+
+        # Depending on the value of config.matchExposuresType
+        # 'expTime' can stand for exposure time, flux, or ID.
+        for expTime in inputExp:
+            exposures = inputExp[expTime]
+            if not np.isfinite(expTime):
+                self.log.warning("Illegal/missing %s found (%s). Dropping exposure %d",
+                                 self.config.matchExposuresType, expTime, exposures[0][1])
+                continue
+            elif len(exposures) == 1:
+                self.log.warning("Only one exposure found at %s %f. Dropping exposure %d.",
+                                 self.config.matchExposuresType, expTime, exposures[0][1])
+                continue
+            else:
+
+                # Only use the first two exposures at expTime. Each
+                # element is a tuple (exposure, expId)
+                expRef1, expId1 = exposures[0]
+                expRef2, expId2 = exposures[1]
+                # use get() to obtain `lsst.afw.image.Exposure`
+                exp1, exp2 = expRef1.get(), expRef2.get()
+
+                if len(exposures) > 2:
+                    self.log.warning("Already found 2 exposures at %s %f. Ignoring exposures: %s",
+                                     self.config.matchExposuresType, expTime,
+                                     ", ".join(str(i[1]) for i in exposures[2:]))
+
+            partialPtcDataset, nAmpsNan = self._extractOneFlatPair(
+                [expId1, expId2],
+                [exp1, exp2],
+                photoChargeDict,
+                expTime,
+            )
+
+            # Use location of exp1 to save PTC dataset from (exp1, exp2) pair.
+            # Below, np.where(expId1 == np.array(inputDims)) returns a tuple
+            # with a single-element array, so [0][0]
+            # is necessary to extract the required index.
+            datasetIndex = np.where(expId1 == np.array(inputDims))[0][0]
+            # `partialPtcDatasetList` is a list of
+            # `PhotonTransferCurveDataset` objects. Some of them
+            # will be dummy datasets (to match length of input
+            # and output references), and the rest will have
+            # datasets with the mean signal, variance, and
+            # covariance measurements at a given exposure
+            # time. The next ppart of the PTC-measurement
+            # pipeline, `solve`, will take this list as input,
+            # and assemble the measurements in the datasets
+            # in an addecuate manner for fitting a PTC
+            # model.
+            partialPtcDataset.updateMetadataFromExposures([exp1, exp2])
+            partialPtcDataset.updateMetadata(setDate=True, detector=detector)
+            partialPtcDatasetList[datasetIndex] = partialPtcDataset
+
+            if nAmpsNan == len(ampNames):
+                msg = f"NaN mean in all amps of exposure pair {expId1}, {expId2} of detector {detNum}."
+                self.log.warning(msg)
+
+        return pipeBase.Struct(
+            outputCovariances=partialPtcDatasetList,
+        )
+
+
+class PhotonTransferCurveExtractPairTask(PhotonTransferCurveExtractTaskBase):
+    ConfigClass = PhotonTransferCurveExtractPairConfig
+    _DefaultName = "cpPtcExtractPair"
+
+    def runQuantum(self, butlerQC, inputRefs, outputRefs):
+        inputs = butlerQC.get(inputRefs)
+
+        quantumExposure = butlerQC.quantum.dataId["exposure"]
+
+        if len(inputRefs.inputExp) == 1:
+            self.log.warning("Exposure %d does not have a pair; skipping.", quantumExposure)
+            raise pipeBase.NoWorkFound(f"Exposure {quantumExposure} does not have a pair.")
+
+        if self.config.matchExposuresType == "FLUX":
+            # Get the flux keyword value for each of the inputs.
+            if len(inputs["inputExp"]) > 3:
+                raise RuntimeError("Error in matching inputs to PhotonTransferCurveExtractPairTask")
+
+            fluxValues = []
+            inputExposures = []
+            for inputExpRef in inputs["inputExp"]:
+                md = inputExpRef.get(component="metadata")
+                # Note that nan will never match anything.
+                fluxValue = md.get(self.config.matchExposuresByFluxKeyword, np.nan)
+                if np.isnan(fluxValue):
+                    self.log.warning(
+                        "Exposure %d is missing flux keyword %s",
+                        inputExpRef.dataId["exposure"],
+                        self.config.matchExposuresByFluxKeyword,
+                    )
+                fluxValues.append(fluxValue)
+                inputExposures.append(inputExpRef.dataId["exposure"])
+
+            if len(fluxValues) == 2:
+                # The simple case that we are at a boundary.
+                if fluxValues[0] != fluxValues[1]:
+                    self.log.warning(
+                        "Exposure %d may not have a match via %s",
+                        quantumExposure,
+                        self.config.matchExposuresByFluxKeyword,
+                    )
+                    raise pipeBase.NoWorkFound(
+                        f"Exposure {quantumExposure} does not have a match."
+                    )
+                elif quantumExposure != inputs["inputExp"][0].dataId["exposure"]:
+                    # Not primary; that's okay, we can skip.
+                    raise pipeBase.NoWorkFound(
+                        f"Exposure {quantumExposure} is not the primary in a pair.",
+                    )
+            else:
+                # We have a set of three.
+                if np.all(np.asarray(fluxValues) == fluxValues[0]):
+                    self.log.warning(
+                        "More than two exposures have matching %s to exposure %d",
+                        self.config.matchExposuresByFluxKeyword,
+                        quantumExposure,
+                    )
+                    raise pipeBase.NoWorkFound(
+                        f"Exposure {quantumExposure} matches too many "
+                        f"{self.config.matchExposuresByFluxKeyword}",
+                    )
+                if fluxValues[0] == fluxValues[1] and inputExposures[0] == quantumExposure:
+                    # Remove the last input.
+                    inputs["inputExp"].pop(2)
+                    if self.config.doExtractPhotodiodeData:
+                        inputs["inputPhotodiodeData"].pop(2)
+                elif fluxValues[1] == fluxValues[2] and inputExposures[1] == quantumExposure:
+                    # Remove the first input
+                    inputs["inputExp"].pop(0)
+                    if self.config.doExtractPhotodiodeData:
+                        inputs["inputPhotodiodeData"].pop(0)
+                elif fluxValues[0] != fluxValues[1] and fluxValues[1] != fluxValues[2]:
+                    self.log.warning(
+                        "Exposure %d may not have a match via %s",
+                        quantumExposure,
+                        self.config.matchExposuresByFluxKeyword,
+                    )
+                    raise pipeBase.NoWorkFound(
+                        f"Exposure {quantumExposure} does not have a match."
+                    )
+                else:
+                    # Not primary; that's okay, we can skip.
+                    raise pipeBase.NoWorkFound(
+                        f"Exposure {quantumExposure} is not the primary in a pair.",
+                    )
+
+        inputs["inputDims"] = [expRef.dataId["exposure"] for expRef in inputs["inputExp"]]
+
+        outputs = self.run(**inputs)
+        butlerQC.put(outputs, outputRefs)
+
+    def run(self, *, inputExp, inputDims, inputPhotodiodeData=None):
+        """Measure covariances from a single flat pair.
+
+        Parameters
+        ----------
+        inputExp : `list` [`lsst.pipe.base.connections.DeferredDatasetRef`]
+            List of 2 references to the input flat exposures.
+        inputDims : `list` [`int`]
+            List of 2 exposure numbers for the input flat exposures.
+        inputPhotodiodeData : `list`
+                [`lsst.pipe.base.connections.DeferredDatasetRef`], optional
+            List of 2 references to input photodiode data.
+
+        Returns
+        -------
+        results : `lsst.pipe.base.Struct`
+            The resulting Struct contains:
+
+            ``outputCovariance``
+                The single-pair PTC measurement
+                `lsst.ip.isr.PhotonTransferCurveDataset`
+        """
+        partialPtcDataset = None
+
+        expId1, expId2 = inputDims
+        exp1 = inputExp[0].get()
+        exp2 = inputExp[1].get()
+
+        detector = exp1.getDetector()
+        detNum = detector.getId()
+        amps = detector.getAmplifiers()
+        ampNames = [amp.getName() for amp in amps]
+
+        # Set the exposure time to the real exposure time.
+        expTime = exp1.info.getVisitInfo().exposureTime
+
+        photoChargeDict = self._extractPhotoChargeDict(inputPhotodiodeData, inputExp)
+
+        if self.config.numEdgeSuspect > 0:
+            self.isrTask = IsrTask()
+            self.log.info("Masking %d pixels from the edges of all %ss as SUSPECT.",
+                          self.config.numEdgeSuspect, self.config.edgeMaskLevel)
+
+        partialPtcDataset, nAmpsNan = self._extractOneFlatPair(
+            [expId1, expId2],
+            [exp1, exp2],
+            photoChargeDict,
+            expTime,
+        )
+
+        partialPtcDataset.updateMetadataFromExposures([exp1, exp2])
+        partialPtcDataset.updateMetadata(setDate=True, detector=detector)
+
+        if nAmpsNan == len(ampNames):
+            self.log.warning(
+                "NaN mean in all amps of exposure pair %d, %d of detector %d.",
+                expId1,
+                expId2,
+                detNum,
+            )
+
+        return pipeBase.Struct(
+            outputCovariance=partialPtcDataset,
+        )

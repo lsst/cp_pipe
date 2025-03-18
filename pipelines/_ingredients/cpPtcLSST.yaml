@@ -21,11 +21,11 @@ tasks:
         config.ampOffset.doBackground = False
         config.ampOffset.doDetection = False
         config.ampOffset.doApplyAmpOffset = False
-  cpPtcExtract:
-    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
+  cpPtcExtractPair:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractPairTask
     config:
       connections.inputExp: "cpPtcIsrExp"
-      connections.outputCovariances: "cpPtcPartial"
+      connections.outputCovariance: "cpPtcPartial"
       maximumRangeCovariancesAstier: 8
       numEdgeSuspect: 20
       edgeMaskLevel: "AMP"
@@ -46,11 +46,11 @@ subsets:
   cpPtcGainFromFlatPairs:
       subset:
           - cpPtcIsr
-          - cpPtcExtract
+          - cpPtcExtractPair
       description: Gain estimation from pairs of flats at the same exposure time.
 contracts:
   - cpPtcIsr.doBootstrap == True
-  - cpPtcExtract.connections.inputExp == cpPtcIsr.connections.outputExposure
-  - cpPtcSolve.binSize == cpPtcExtract.binSize
-  - cpPtcSolve.maximumRangeCovariancesAstier == cpPtcExtract.maximumRangeCovariancesAstier
-  - cpPtcSolve.connections.inputCovariances == cpPtcExtract.connections.outputCovariances
+  - cpPtcExtractPair.connections.inputExp == cpPtcIsr.connections.outputExposure
+  - cpPtcSolve.binSize == cpPtcExtractPair.binSize
+  - cpPtcSolve.maximumRangeCovariancesAstier == cpPtcExtractPair.maximumRangeCovariancesAstier
+  - cpPtcSolve.connections.inputCovariances == cpPtcExtractPair.connections.outputCovariance

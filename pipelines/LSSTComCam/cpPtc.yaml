@@ -3,7 +3,7 @@ instrument: lsst.obs.lsst.LsstComCam
 imports:
   - location: $CP_PIPE_DIR/pipelines/_ingredients/cpPtcLSST.yaml
 tasks:
-  cpPtcExtract:
-    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
+  cpPtcExtractPair:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractPairTask
     config:
       efdSalIndex: 101

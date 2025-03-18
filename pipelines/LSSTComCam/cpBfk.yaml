@@ -3,8 +3,8 @@ instrument: lsst.obs.lsst.LsstComCam
 imports:
   - location: $CP_PIPE_DIR/pipelines/_ingredients/cpBfkLSST.yaml
 tasks:
-  cpBfkPtcExtract:
-    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractTask
+  cpBfkPtcExtractPair:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractPairTask
     config:
       # Restrict the covariance range because we do not have
       # dense PTCs for LSSTComCam.
