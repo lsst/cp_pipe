@@ -19,6 +19,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
+from collections import defaultdict
 import logging
 import numpy as np
 from lmfit.models import GaussianModel
@@ -160,26 +161,17 @@ class PhotonTransferCurveExtractPairConnections(
                     adjuster.remove_quantum(quantumIdDict[sourceExposure][detector])
 
         # Build a dict keyed by exposure.
-        # Each entry is a tuple of detector, quantumId
-        quantumIdDict = {}
-        for quantumId in adjuster.iter_data_ids():
+        # Each entry is a dict of {detector: quantumId}
+        # And everything will be sorted by exposure and detector.
+        quantumIdDict = defaultdict(dict)
+        for quantumId in sorted(adjuster.iter_data_ids(), key=lambda d: (d["exposure"], d["detector"])):
             exposure = quantumId["exposure"]
-            if exposure in quantumIdDict:
-                quantumIdDict[exposure][quantumId["detector"]] = quantumId
-            else:
-                quantumIdDict[exposure] = {quantumId["detector"]: quantumId}
-
-        # Sort the exposure keys in the dict.
-        quantumIdDict = dict(sorted(quantumIdDict.items()))
-
-        # And sort the detectors in each exposure entry.
-        for exposure in list(quantumIdDict.keys()):
-            quantumIdDict[exposure] = dict(sorted(quantumIdDict[exposure].items()))
+            quantumIdDict[exposure][quantumId["detector"]] = quantumId
 
         # Ensure we are only using "flat" image types.
         for exposure in list(quantumIdDict.keys()):
             # We only need to check the first detector in each exposure list.
-            firstDet = list(quantumIdDict[exposure].keys())[0]
+            firstDet = next(iter(quantumIdDict[exposure].keys()))
             obsType = adjuster.expand_quantum_data_id(
                 quantumIdDict[exposure][firstDet],
             ).exposure.observation_type
