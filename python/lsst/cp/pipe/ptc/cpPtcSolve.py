@@ -160,12 +160,12 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
     sigmaCutPtcOutliers = pexConfig.Field(
         dtype=float,
         doc="Sigma cut for outlier rejection in PTC.",
-        default=5.0,
+        default=3.0,
     )
     maxIterationsPtcOutliers = pexConfig.RangeField(
         dtype=int,
         doc="Maximum number of iterations for outlier rejection in PTC.",
-        default=2,
+        default=5,
         min=0
     )
     maxSignalInitialPtcOutlierFit = pexConfig.Field(
@@ -191,21 +191,7 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
             "approximate gain?  If yes then "
             "maxSignalInitialPtcOutlierFit and maxDeltaInitialPtcOutlierFit are assumed "
             "to have units of electrons, otherwise adu.",
-        default=True,
-    )
-    clipOnMaxAbsoluteResidualSigmaVsSignalGradient = pexConfig.Field(
-        dtype=bool,
-        doc="Calculate the gradient of the sigma residuals w.r.t. signal for each "
-            "point above 10k adu, and clip out points where the gradient of the sigma "
-            "residuals w.r.t. signal is less than maxAbsoluteResidualSigmaVsSignalSlope. "
-            "Only used if maxIterationsPtcOutliers > 0.",
         default=False,
-    )
-    maxAbsoluteResidualSigmaVsSignalGradient = pexConfig.Field(
-        dtype=float,
-        doc="The maximum absolute gradient of sigma residuals vs signal. Default based on "
-            "empirical testing from Run7 dense PTC for LSSTCam.",
-        default=0.0035,
     )
     minVarPivotSearch = pexConfig.Field(
         dtype=float,
@@ -1225,20 +1211,6 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                         & (np.abs(np.nan_to_num(sigResids)) < sigmaCutPtcOutliers)
                         & mask
                     )
-
-                    sigmaResidGradient = np.gradient(sigResids, meanVecSorted)
-
-                    if self.config.clipOnMaxAbsoluteResidualSigmaVsSignalGradient:
-                        # Caluclate the sigma residuals and the gradient w.r.t.
-                        # signal. Clip out points beyond maximum value. Don't
-                        # test this on points below 10000 adu.
-                        aboveTenThousand = (meanVecSorted > 10000.0)
-                        maxSigmaGradient = self.config.maxAbsoluteResidualSigmaVsSignalGradient
-                        tmpMask = np.isfinite(sigResids[aboveTenThousand])
-                        tmpMask *= (
-                            np.abs(sigmaResidGradient[aboveTenThousand]) < maxSigmaGradient
-                        )
-                        newMask[aboveTenThousand] *= tmpMask
 
                     # Demand at least 2 points to continue.
                     if np.count_nonzero(newMask) < 2:
