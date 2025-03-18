@@ -327,7 +327,6 @@ class CalibCombineTask(pipeBase.PipelineTask):
         # Create output exposure for combined data.
         combined = afwImage.MaskedImageF(width, height)
         combinedExp = afwImage.makeExposure(combined)
-        meanCombinedExp = combinedExp.clone()
 
         # Apply scaling:
         expScales = []
