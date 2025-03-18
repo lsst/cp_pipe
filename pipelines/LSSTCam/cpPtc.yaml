@@ -10,3 +10,6 @@ tasks:
       doExtractPhotodiodeData: true
       auxiliaryHeaderKeys: ["CCOBCURR", "CCOBFLUX", "TEMP6"]
       matchExposuresType: FLUX
+  cpPtcSolve:
+    config:
+      clipOnMaxAbsoluteResidualSigmaVsSignalGradient: false
