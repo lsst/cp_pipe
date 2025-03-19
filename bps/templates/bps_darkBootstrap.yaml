@@ -4,6 +4,12 @@ project: "${TICKET}"
 campaign: "${TICKET}"
 submitPath: $SCRATCH/submit/{outputRun}
 
+clusterAlgorithm: lsst.ctrl.bps.quantum_clustering_funcs.dimension_clustering
+cluster:
+  isrExposure:
+    pipetasks: cpDarkBootstrapIsr
+    dimensions: exposure
+
 darkBootstrapCollection: "${USER_CALIB_PREFIX}$INSTRUMENT/calib/$TICKET/$TAG/darkBootstrapGen.$RERUN"
 biasBootstrapRun: "${USER_CALIB_PREFIX}$INSTRUMENT/calib/$TICKET/$TAG/biasBootstrapGen.$RERUN/run${BOOTSTRAP_RUN_NUMBER}"
 darkBootstrapRun: "{darkBootstrapCollection}/run${BOOTSTRAP_RUN_NUMBER}"

@@ -4,6 +4,12 @@ project: "${TICKET}"
 campaign: "${TICKET}"
 submitPath: $SCRATCH/submit/{outputRun}
 
+clusterAlgorithm: lsst.ctrl.bps.quantum_clustering_funcs.dimension_clustering
+cluster:
+  isrExposure:
+    pipetasks: cpCtiIsr
+    dimensions: exposure
+
 payload:
   payloadName: "${INSTRUMENT}_${TICKET}_cti"
   output: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET}/${TAG}/ctiGen.${RERUN}"

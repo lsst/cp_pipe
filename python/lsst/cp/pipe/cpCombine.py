@@ -234,11 +234,6 @@ class CalibCombineConfig(pipeBase.PipelineTaskConfig,
         default=True,
         doc="Unset mask planes other than NO_DATA in output calibration?",
     )
-    setAllPixelsToAmpMean = pexConfig.Field(
-        dtype=bool,
-        default=False,
-        doc="Return an image with every pixel equal to the amp-wise mean of the combined calib?",
-    )
     stats = pexConfig.ConfigurableField(
         target=CalibStatsTask,
         doc="Background statistics configuration",
@@ -407,17 +402,6 @@ class CalibCombineTask(pipeBase.PipelineTask):
 
         # Set QA headers
         self.calibStats(combinedExp, self.config.calibrationType)
-
-        # Optional: set every pixel in an amplifier to the amp-wise
-        # mean of the combined exposure.
-        if self.config.setAllPixelsToAmpMean:
-            # Possibly a good option if there are
-            # not enough input calibs, and the combined
-            # calib is noise-dominated
-            for amp in inputDetector:
-                ampDataBbox = amp.getBBox()
-                ampDataMean = np.mean(combinedExp.image[ampDataBbox].array)
-                combinedExp.image[ampDataBbox].array = ampDataMean
 
         # Return
         return pipeBase.Struct(
