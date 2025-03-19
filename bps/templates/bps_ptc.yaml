@@ -1,12 +1,18 @@
-pipelineYaml: "${CP_PIPE_DIR}/pipelines/${INSTRUMENT}/cpPtc.yaml#cpPtcSolve"
+pipelineYaml: "${CP_PIPE_DIR}/pipelines/${INSTRUMENT}/cpPtc.yaml"
 
 project: "${TICKET}"
 campaign: "${TICKET}"
 submitPath: $SCRATCH/submit/{outputRun}
 
+clusterAlgorithm: lsst.ctrl.bps.quantum_clustering_funcs.dimension_clustering
+cluster:
+  isrExposure:
+    pipetasks: cpPtcIsr
+    dimensions: exposure
+
 payload:
   payloadName: "${INSTRUMENT}_${TICKET}_ptc"
   output: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET}/${TAG}/ptcGen.${RERUN}"
   butlerConfig: "${REPO}"
-  inCollection: "u/abrought/LSSTCam/calib/DM-49175/test/ptcGen.20250309c,${CALIB_COLLECTIONS}" # ${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET},${RAW_COLLECTION},${CALIB_COLLECTIONS}"
+  inCollection: ${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET},${RAW_COLLECTION},${CALIB_COLLECTIONS}"
   dataQuery: "${SELECTION_PTC}"

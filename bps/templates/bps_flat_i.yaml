@@ -4,6 +4,12 @@ project: "${TICKET}"
 campaign: "${TICKET}"
 submitPath: $SCRATCH/submit/{outputRun}
 
+clusterAlgorithm: lsst.ctrl.bps.quantum_clustering_funcs.dimension_clustering
+cluster:
+  isrExposure:
+    pipetasks: cpFlatIsr
+    dimensions: exposure
+
 payload:
   payloadName: "${INSTRUMENT}_${TICKET}_flat_i"
   output: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET}/${TAG}/flatGen-i.${RERUN}"
