@@ -160,12 +160,12 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
     sigmaCutPtcOutliers = pexConfig.Field(
         dtype=float,
         doc="Sigma cut for outlier rejection in PTC.",
-        default=3.0,
+        default=5.0,
     )
     maxIterationsPtcOutliers = pexConfig.RangeField(
         dtype=int,
         doc="Maximum number of iterations for outlier rejection in PTC.",
-        default=5,
+        default=2,
         min=0
     )
     maxSignalInitialPtcOutlierFit = pexConfig.Field(
@@ -183,7 +183,7 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
             "mean from the previous ``good`` point are allowed. If "
             "scaleMaxSignalInitialPtcOutlierFit=True then the units are electrons; "
             "otherwise adu.",
-        default=1_000.,
+        default=9_000.,
     )
     scaleMaxSignalInitialPtcOutlierFit = pexConfig.Field(
         dtype=bool,
@@ -191,7 +191,7 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
             "approximate gain?  If yes then "
             "maxSignalInitialPtcOutlierFit and maxDeltaInitialPtcOutlierFit are assumed "
             "to have units of electrons, otherwise adu.",
-        default=False,
+        default=True,
     )
     minVarPivotSearch = pexConfig.Field(
         dtype=float,
