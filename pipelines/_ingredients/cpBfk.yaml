@@ -2,7 +2,7 @@ description: cp_pipe brighter-fatter kernel calibration construction.
 tasks:
   # TODO DM-46439: This can be renamed back to cpBfkSolve when repos
   # are cleaned up for the previous dimensionality error.
-  cpBfkSolveX:
+  cpBfkSolve:
     class: lsst.cp.pipe.BrighterFatterKernelSolveTask
     config:
       connections.inputPtc: ptc
