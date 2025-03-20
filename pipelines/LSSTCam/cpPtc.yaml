@@ -10,3 +10,8 @@ tasks:
       doExtractPhotodiodeData: true
       auxiliaryHeaderKeys: ["CCOBCURR", "CCOBFLUX", "TEMP6"]
       matchExposuresType: FLUX
+  cpPtcSolve:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
+    config:
+      sigmaCutPtcOutliers: 3.0
+      maxDeltaInitialPtcOutlierFit: 1_000
