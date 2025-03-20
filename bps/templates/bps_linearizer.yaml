@@ -14,5 +14,5 @@ payload:
   payloadName: "${INSTRUMENT}_${TICKET}_linearizer"
   output: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET}/${TAG}/linearizerGen.${RERUN}"
   butlerConfig: "${REPO}"
-  inCollection: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET},${RAW_COLLECTION},${CALIB_COLLECTIONS}"
+  inCollection: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET}/${TAG},${RAW_COLLECTION},${CALIB_COLLECTIONS}"
   dataQuery: "${SELECTION_PTC_LINEARIZER}"
