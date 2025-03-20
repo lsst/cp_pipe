@@ -304,21 +304,22 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
             # leaks into the overscan region.
             signal = []
             data = []
-            Nskipped = 0
+            nSkipped = 0
             for exposureEntry in inputMeasurements:
                 exposureDict = exposureEntry['CTI']
                 if exposureDict[ampName]['IMAGE_MEAN'] < self.config.maxImageMean:
                     signal.append(exposureDict[ampName]['IMAGE_MEAN'])
                     data.append(exposureDict[ampName]['SERIAL_OVERSCAN_VALUES'][start:stop+1])
                 else:
-                    Nskipped += 1
+                    nSkipped += 1
             self.log.info("Skipped %d exposures brighter than %f.",
-                          Nskipped, self.config.maxImageMean)
+                          nSkipped, self.config.maxImageMean)
             if len(signal) == 0 or len(data) == 0:
                 # All exposures excluded, set the calibration so that
                 # there is no correction
                 self.log.warning("All exposures brighter than config.maxImageMean are excluded. "
-                                 "Setting local offset drift scale to zero for amp {ampName}.")
+                                 "Setting local offset drift scale to zero for amp %s.",
+                                 ampName)
                 # Arbitrary, will be overwritten by solveGlobalCti
                 calib.globalCti[ampName] = 10**(-6)
                 # Set to zero so that there is no correction
@@ -434,15 +435,15 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
             # leaks into the overscan region.
             signal = []
             data = []
-            Nskipped = 0
+            nSkipped = 0
             for exposureEntry in inputMeasurements:
                 exposureDict = exposureEntry['CTI']
                 if exposureDict[ampName]['IMAGE_MEAN'] < self.config.maxSignalForCti:
                     signal.append(exposureDict[ampName]['IMAGE_MEAN'])
                     data.append(exposureDict[ampName]['SERIAL_OVERSCAN_VALUES'][start:stop+1])
                 else:
-                    Nskipped += 1
-            self.log.info(f"Skipped {Nskipped} exposures brighter than {self.config.maxSignalForCti}.")
+                    nSkipped += 1
+            self.log.info(f"Skipped {nSkipped} exposures brighter than {self.config.maxSignalForCti}.")
             if len(signal) == 0 or len(data) == 0:
                 # There are no exposures left, set globalCTI to 0
                 self.log.warning("All exposures brighter than config.maxSignalForCti=%f "
@@ -704,7 +705,7 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
             signal = []
             data = []
             new_signal = []
-            Nskipped = 0
+            nSkipped = 0
             for exposureEntry in inputMeasurements:
                 exposureDict = exposureEntry['CTI']
                 if exposureDict[ampName]['IMAGE_MEAN'] < self.config.maxImageMean:
@@ -712,9 +713,9 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
                     data.append(exposureDict[ampName]['SERIAL_OVERSCAN_VALUES'][start:stop+1])
                     new_signal.append(exposureDict[ampName]['LAST_COLUMN_MEAN'])
                 else:
-                    Nskipped += 1
+                    nSkipped += 1
             self.log.info("Skipped %d exposures brighter than %f.",
-                          Nskipped, self.config.maxImageMean)
+                          nSkipped, self.config.maxImageMean)
             if len(signal) == 0 or len(data) == 0:
                 # There are no exposures left, so set trap so that
                 # there is no correction
@@ -845,8 +846,7 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
             # Number of parallel shifts = nRows
             nShifts = amp.getRawDataBBox().getHeight()
         else:
-            raise RuntimeError("%s is not a known orientation for the EPER "
-                               "calculation.", mode)
+            raise RuntimeError(f"{mode} is not a known orientation for the EPER calculation.")
 
         # The signal is the mean intensity of each input, and the
         # data are the overscan columns to fit.  For detectors
