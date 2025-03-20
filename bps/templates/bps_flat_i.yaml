@@ -14,5 +14,5 @@ payload:
   payloadName: "${INSTRUMENT}_${TICKET}_flat_i"
   output: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET}/${TAG}/flatGen-i.${RERUN}"
   butlerConfig: "${REPO}"
-  inCollection: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET},${RAW_COLLECTION},${CALIB_COLLECTIONS}"
+  inCollection: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET}/${TAG},${RAW_COLLECTION},${CALIB_COLLECTIONS}"
   dataQuery: "${SELECTION_FLAT_i} and band='i'"
