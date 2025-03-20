@@ -2,17 +2,20 @@ pipelineYaml: "${CP_PIPE_DIR}/pipelines/${INSTRUMENT}/cpPtc.yaml"
 
 project: "${TICKET}"
 campaign: "${TICKET}"
-submitPath: $SCRATCH/submit/{outputRun}
+submitPath: "$SCRATCH/submit/{outputRun}"
 
 clusterAlgorithm: lsst.ctrl.bps.quantum_clustering_funcs.dimension_clustering
 cluster:
-  isrExposure:
+  cpPtcIsrByExposure:
     pipetasks: cpPtcIsr
+    dimensions: exposure
+  cpPtcExtractPairByExposure:
+    pipetasks: cpPtcExtractPair
     dimensions: exposure
 
 payload:
   payloadName: "${INSTRUMENT}_${TICKET}_ptc"
   output: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET}/${TAG}/ptcGen.${RERUN}"
   butlerConfig: "${REPO}"
-  inCollection: ${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET},${RAW_COLLECTION},${CALIB_COLLECTIONS}"
+  inCollection: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET},${RAW_COLLECTION},${CALIB_COLLECTIONS}"
   dataQuery: "${SELECTION_PTC}"

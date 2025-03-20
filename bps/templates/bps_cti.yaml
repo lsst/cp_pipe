@@ -2,11 +2,11 @@ pipelineYaml: "${CP_PIPE_DIR}/pipelines/${INSTRUMENT}/cpCti.yaml"
 
 project: "${TICKET}"
 campaign: "${TICKET}"
-submitPath: $SCRATCH/submit/{outputRun}
+submitPath: "$SCRATCH/submit/{outputRun}"
 
 clusterAlgorithm: lsst.ctrl.bps.quantum_clustering_funcs.dimension_clustering
 cluster:
-  isrExposure:
+  cpCtiIsrByExposure:
     pipetasks: cpCtiIsr
     dimensions: exposure
 
