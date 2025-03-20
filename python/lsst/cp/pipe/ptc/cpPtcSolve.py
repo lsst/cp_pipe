@@ -1211,7 +1211,6 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                         & (np.abs(np.nan_to_num(sigResids)) < sigmaCutPtcOutliers)
                         & mask
                     )
-
                     # Demand at least 2 points to continue.
                     if np.count_nonzero(newMask) < 2:
                         msg = (f"SERIOUS: All points after outlier rejection are bad. "
