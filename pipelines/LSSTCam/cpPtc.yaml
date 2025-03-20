@@ -15,3 +15,5 @@ tasks:
     config:
       sigmaCutPtcOutliers: 3.0
       maxDeltaInitialPtcOutlierFit: 1_000
+      maxSignalInitialPtcOutlierFit: 30_000
+      scaleMaxSignalInitialPtcOutlierFit: False
