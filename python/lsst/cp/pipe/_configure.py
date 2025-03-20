@@ -23,6 +23,7 @@ def configureIsrTaskLSSTForCalibrations(config):
     config.doAssembleCcd = True
     config.expectWcs = False
     config.doITLEdgeBleedMask = False
+    config.doITLDipMask = False
     config.doBias = False
     config.doDark = False
     config.doDefect = False
