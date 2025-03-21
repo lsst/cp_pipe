@@ -24,8 +24,10 @@ import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 import lsst.pipe.base.connectionTypes as cT
 
+__all__ = ["CpQuadNotchExtractConfig", "CpQuadNotchExtractTask",
+           "CpQuadNotchExtractConfig", "CpQuadNotchExtractTask"]
 
-class CpQuadNotchExtractConnecxtions(pipeBase.PipelineTaskConnecxtions,
+class CpQuadNotchExtractConnections(pipeBase.PipelineTaskConnections,
                                      dimensions=("instrument", "exposure", "detector")):
     inputExp = cT.Input(
         name="cpQnIsrExp",
@@ -101,3 +103,81 @@ class CpQuadNotchExtractTask(pipeBase.PipelineTask):
             outputData=outputTable,
         )
 
+
+class CpQuadNotchMergeConnections(pipeBase.PipelineTaskConnections,
+                                  dimensions=("instrument", "detector")):
+    inputData = cT.Input(
+        name="cpQuadNotchSingle",
+        doc="Quad-notch measurements from individual exposures.",
+        storageClass="ArrowAstropy",
+        dimensions=("instrument", "exposure", "detector"),
+        multiple=True
+        deferLoad=False,
+    )
+    outputData = cT.Output(
+        name="cpQuadNotch",
+        doc="Output combined quad-notch analysis.",
+        storageClass="ArrowAstropy",
+        dimensions=("instrument", "detector"),
+    )
+
+
+class CpQuadNotchMergeConfig(pipeBase.PipelineTaskConfig,
+                               pipelineConnections=CpQuadNotchMergeConnections):
+    """Configuration for quad-notch processing."""
+    nSigma = pexConfig.Field(
+        dtype=float,
+        default=2.0,
+        doc="",
+    )
+    nPixMin = pexConfig.Field(
+        dtype=int,
+        default=0,
+        doc="",
+    )
+    grow = pexConfig.Field(
+        dtype=int,
+        default=0,
+        doc="",
+    )
+    xWindow = pexConfig.Field(
+        dtype=int,
+        default=0,
+        doc="",
+    )
+    yWindow = pexConfig.Field(
+        dtype=int,
+        default=50,
+        doc="",
+    )
+    xGauge = pexConfig.Field(
+        dtype=float,
+        default=1.75,
+        doc="",
+    )
+    threshold = pexConfig.Field(
+        dtype=float,
+        default=1.2e5,
+        doc="",
+    )
+
+
+class CpQuadNotchMergeTask(pipeBase.PipelineTask):
+    """Task to measure quad-notch data."""
+
+    ConfigClass = CpQuadNotchMerge
+    _DefaultName = "cpQuadNotchMerge"
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def run(self, inputExp, camera):
+        """
+        """
+
+
+        return pipeBase.Struct(
+            outputData=outputTable,
+        )
+
+    
