@@ -304,17 +304,29 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
             # leaks into the overscan region.
             signal = []
             data = []
-            Nskipped = 0
+            nSkipped = 0
             for exposureEntry in inputMeasurements:
                 exposureDict = exposureEntry['CTI']
                 if exposureDict[ampName]['IMAGE_MEAN'] < self.config.maxImageMean:
                     signal.append(exposureDict[ampName]['IMAGE_MEAN'])
                     data.append(exposureDict[ampName]['SERIAL_OVERSCAN_VALUES'][start:stop+1])
                 else:
-                    Nskipped += 1
-            self.log.info(f"Skipped {Nskipped} exposures brighter than {self.config.maxImageMean}.")
+                    nSkipped += 1
+            self.log.info("Skipped %d exposures brighter than %f.",
+                          nSkipped, self.config.maxImageMean)
             if len(signal) == 0 or len(data) == 0:
-                raise RuntimeError("All exposures brighter than config.maxImageMean and excluded.")
+                # All exposures excluded, set the calibration so that
+                # there is no correction
+                self.log.warning("All exposures brighter than config.maxImageMean are excluded. "
+                                 "Setting local offset drift scale to zero for amp %s.",
+                                 ampName)
+                # Arbitrary, will be overwritten by solveGlobalCti
+                calib.globalCti[ampName] = 10**(-6)
+                # Set to zero so that there is no correction
+                calib.driftScale[ampName] = 0.0
+                # Arbitrary, unused if driftScale=0
+                calib.decayTime[ampName] = 2.4
+                continue
 
             signal = np.array(signal)
             data = np.array(data)
@@ -423,17 +435,22 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
             # leaks into the overscan region.
             signal = []
             data = []
-            Nskipped = 0
+            nSkipped = 0
             for exposureEntry in inputMeasurements:
                 exposureDict = exposureEntry['CTI']
                 if exposureDict[ampName]['IMAGE_MEAN'] < self.config.maxSignalForCti:
                     signal.append(exposureDict[ampName]['IMAGE_MEAN'])
                     data.append(exposureDict[ampName]['SERIAL_OVERSCAN_VALUES'][start:stop+1])
                 else:
-                    Nskipped += 1
-            self.log.info(f"Skipped {Nskipped} exposures brighter than {self.config.maxSignalForCti}.")
+                    nSkipped += 1
+            self.log.info(f"Skipped {nSkipped} exposures brighter than {self.config.maxSignalForCti}.")
             if len(signal) == 0 or len(data) == 0:
-                raise RuntimeError("All exposures brighter than config.maxSignalForCti and excluded.")
+                # There are no exposures left, set globalCTI to 0
+                self.log.warning("All exposures brighter than config.maxSignalForCti=%f "
+                                 "are excluded for %s. Setting global CTI to zero.",
+                                 self.config.maxSignalForCti, ampName)
+                calib.globalCti[ampName] = 0.0
+                continue
 
             signal = np.array(signal)
             data = np.array(data)
@@ -688,7 +705,7 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
             signal = []
             data = []
             new_signal = []
-            Nskipped = 0
+            nSkipped = 0
             for exposureEntry in inputMeasurements:
                 exposureDict = exposureEntry['CTI']
                 if exposureDict[ampName]['IMAGE_MEAN'] < self.config.maxImageMean:
@@ -696,10 +713,18 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
                     data.append(exposureDict[ampName]['SERIAL_OVERSCAN_VALUES'][start:stop+1])
                     new_signal.append(exposureDict[ampName]['LAST_COLUMN_MEAN'])
                 else:
-                    Nskipped += 1
-            self.log.info(f"Skipped {Nskipped} exposures brighter than {self.config.maxImageMean}.")
+                    nSkipped += 1
+            self.log.info("Skipped %d exposures brighter than %f.",
+                          nSkipped, self.config.maxImageMean)
             if len(signal) == 0 or len(data) == 0:
-                raise RuntimeError("All exposures brighter than config.maxImageMean and excluded.")
+                # There are no exposures left, so set trap so that
+                # there is no correction
+                self.log.warning("All exposures brighter than config.maxImageMean are excluded. "
+                                 "Setting zero-sized serial trap for amp %s.", ampName)
+                # Arbitrary trap with no size
+                trap = SerialTrap(0.0, 0.4, 1, 'linear', [1.0])
+                calib.serialTraps[ampName] = trap
+                continue
 
             signal = np.array(signal)
             data = np.array(data)
@@ -889,14 +914,14 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
         # Check for remaining data points
         if dataVec.size == 0:
             self.log.warning("No data points after cti range cut to compute turnoff "
-                             f"for amplifier {amp.getName()}. Setting turnoff point "
-                             "to 0 electrons.")
+                             "for amplifier %s. Setting turnoff point to 0 electrons.",
+                             amp.getName())
             return 0.0, 0.0
 
         if dataVec.size < 2:
             self.log.warning("Insufficient data points after cti range cut to compute turnoff "
-                             f"for amplifier {amp.getName()}. Setting turnoff point "
-                             "to the maximum signal value.")
+                             "for amplifier %s. Setting turnoff point to the maximum signal "
+                             "value.", amp.getName())
             return signalVec[-1], signalVec[-1]
 
         # Detrend the data
@@ -925,8 +950,8 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
 
         if cleanDataVec.size == 0:
             self.log.warning("No data points after sigma clipping to compute turnoff "
-                             f" for amplifier {amp.getName()}. Setting turnoff point "
-                             "to 0 electrons.")
+                             "for amplifier %s. Setting turnoff point to 0 electrons.",
+                             amp.getName())
             return 0.0, 0.0
 
         # Get the index of the highest true value in
@@ -936,10 +961,10 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
 
         if cleanDataVec[good][-1] in ctiRange or turnoffIdx in [0, len(signalVec)-1]:
             self.log.warning("Turnoff point is at the edge of the allowed range for "
-                             f"amplifier {amp.getName()}.")
+                             "amplifier %s.", amp.getName())
 
-        self.log.info(f"Amp {amp.getName()}: There are {len(cleanDataVec[good])}/{len(dataVec)} data points "
-                      f"left to determine turnoff point.")
+        self.log.info("Amp %s: There are %d/%d data points left to determine turnoff point.",
+                      amp.getName(), len(cleanDataVec[good]), len(dataVec))
 
         # Compute the sampling error as one half the
         # difference between the previous and next point.
