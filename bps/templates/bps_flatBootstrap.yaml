@@ -2,17 +2,18 @@ pipelineYaml: "${CP_PIPE_DIR}/pipelines/${INSTRUMENT}/cpFlatBootstrap.yaml"
 
 project: "${TICKET}"
 campaign: "${TICKET}"
-submitPath: "$SCRATCH/submit/{outputRun}"
+submitPath: "${SCRATCH}/submit/{outputRun}"
 
+# Necessary to cluster by exposure if there are many input exposures
 clusterAlgorithm: lsst.ctrl.bps.quantum_clustering_funcs.dimension_clustering
 cluster:
   cpFlatBootstrapIsrByExposure:
     pipetasks: cpFlatBootstrapIsr
     dimensions: exposure
 
-flatBootstrapCollection: "${USER_CALIB_PREFIX}$INSTRUMENT/calib/$TICKET/$TAG/flatBootstrapGen.$RERUN"
-biasBootstrapRun: "${USER_CALIB_PREFIX}$INSTRUMENT/calib/$TICKET/$TAG/biasBootstrapGen.$RERUN/run${BOOTSTRAP_RUN_NUMBER}"
-darkBootstrapRun: "${USER_CALIB_PREFIX}$INSTRUMENT/calib/$TICKET/$TAG/darkBootstrapGen.$RERUN/run${BOOTSTRAP_RUN_NUMBER}"
+flatBootstrapCollection: "${USER_CALIB_PREFIX}$INSTRUMENT/calib/$TICKET/$TAG/flatBootstrapGen.${RERUN}"
+biasBootstrapRun: "${USER_CALIB_PREFIX}$INSTRUMENT/calib/$TICKET/$TAG/biasBootstrapGen.${RERUN}/run${BOOTSTRAP_RUN_NUMBER}"
+darkBootstrapRun: "${USER_CALIB_PREFIX}$INSTRUMENT/calib/$TICKET/$TAG/darkBootstrapGen.${RERUN}/run${BOOTSTRAP_RUN_NUMBER}"
 flatBootstrapRun: "{flatBootstrapCollection}/run${BOOTSTRAP_RUN_NUMBER}"
 
 payload:

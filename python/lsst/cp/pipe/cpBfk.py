@@ -438,6 +438,15 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask):
 
             # Check for validity
             if self.config.doCheckValidity:
+                # We will check 3 boundary conditions to test the
+                # validitity of the kernel:
+                # (1) The edge of the kernel should be consistent with zero.
+                # (2) The kernel should be negative
+                # (3) The center of the kernal should be the absolute minimum.
+
+                # Since there are typically too few pixels along the edge, we
+                # will use the stddev of the 3px picture frame of the kernel to
+                # set the tolerances of the validity conditions.
                 kernelSize = bfk.ampKernels[ampName].shape[0]
                 kernelCenterValue = bfk.ampKernels[ampName][kernelSize//2, kernelSize//2]
                 xv, yv = np.meshgrid(range(kernelSize), range(kernelSize))

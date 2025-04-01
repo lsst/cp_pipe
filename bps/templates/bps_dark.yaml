@@ -2,8 +2,9 @@ pipelineYaml: "${CP_PIPE_DIR}/pipelines/${INSTRUMENT}/cpDark.yaml"
 
 project: "${TICKET}"
 campaign: "${TICKET}"
-submitPath: "$SCRATCH/submit/{outputRun}"
+submitPath: "${SCRATCH}/submit/{outputRun}"
 
+# Necessary to cluster by exposure if there are many input exposures
 clusterAlgorithm: lsst.ctrl.bps.quantum_clustering_funcs.dimension_clustering
 cluster:
   cpDarkIsrByExposure:

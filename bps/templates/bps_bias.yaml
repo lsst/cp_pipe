@@ -1,5 +1,6 @@
 pipelineYaml: "${CP_PIPE_DIR}/pipelines/${INSTRUMENT}/cpBias.yaml"
 
+# Necessary to cluster by exposure if there are many input exposures
 clusterAlgorithm: lsst.ctrl.bps.quantum_clustering_funcs.dimension_clustering
 cluster:
   cpBiasIsrByExposure:
@@ -8,7 +9,7 @@ cluster:
 
 project: "${TICKET}"
 campaign: "${TICKET}"
-submitPath: "$SCRATCH/submit/{outputRun}"
+submitPath: "${SCRATCH}/submit/{outputRun}"
 
 payload:
   payloadName: "${INSTRUMENT}_${TICKET}_bias"
