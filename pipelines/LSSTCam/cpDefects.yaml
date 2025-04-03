@@ -26,4 +26,6 @@ tasks:
   cpMergeDefects:
     class: lsst.cp.pipe.MergeDefectsCombinedTask
     config:
+      connections.inputManualDefects: "manual_defects"
       edgesAsDefects: true
+      doManualDefects: true
