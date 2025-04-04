@@ -29,7 +29,7 @@ import lsst.utils
 import lsst.utils.tests
 
 import lsst.cp.pipe as cpPipe
-from lsst.ip.isr import IsrMock
+from lsst.ip.isr.isrMock import IsrMock
 
 
 class CpCtiSolveTaskTestCase(lsst.utils.tests.TestCase):
