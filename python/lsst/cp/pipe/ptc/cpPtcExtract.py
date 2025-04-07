@@ -573,6 +573,7 @@ class PhotonTransferCurveExtractTaskBase(pipeBase.PipelineTask):
         ----------
         expIds : `tuple` [`int`]
             Tuple of two exposure IDs for the flat pair.
+        expMjds : `tuple` [`float`]
         exps : `tuple` [`lsst.afw.image.Exposure`]
             Tuple of two exposures for the flat pair.
         photoChargeDict : `dict` [`int`, `float`]
@@ -589,6 +590,9 @@ class PhotonTransferCurveExtractTaskBase(pipeBase.PipelineTask):
         """
         expId1, expId2 = expIds
         exp1, exp2 = exps
+
+        expMjd1 = exp1.metadata['MJD']
+        expMjd2 = exp2.metadata['MJD']
 
         self.log.info("Extracting PTC data from flat pair %d, %d", expId1, expId2)
 
@@ -791,6 +795,7 @@ class PhotonTransferCurveExtractTaskBase(pipeBase.PipelineTask):
             partialPtcDataset.setAmpValuesPartialDataset(
                 ampName,
                 inputExpIdPair=(expId1, expId2),
+                inputExpMjdPair=(expMjd1, expMjd2),
                 rawExpTime=expTime,
                 rawMean=muDiff,
                 rawVar=varDiff,
