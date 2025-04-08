@@ -22,6 +22,7 @@ def configureIsrTaskLSSTForCalibrations(config):
     config.doDeferredCharge = False
     config.doAssembleCcd = True
     config.expectWcs = False
+    config.doITLSatSagMask = False
     config.doITLEdgeBleedMask = False
     config.doITLDipMask = False
     config.doBias = False
