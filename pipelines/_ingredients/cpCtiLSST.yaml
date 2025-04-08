@@ -4,6 +4,7 @@ tasks:
     class: lsst.ip.isr.IsrTaskLSST
     config:
       connections.ccdExposure: "raw"
+      connections.ptc: "linearizerPtc"
       connections.outputExposure: "cpCtiIsrExp"
       connections.outputStatistics: "cpCtiStatistics"
       python: |
