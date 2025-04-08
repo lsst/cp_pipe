@@ -1,0 +1,22 @@
+pipelineYaml: "/sdf/home/a/abrought/rubin-user/pipelines/cpCtiCheck.yaml"
+
+project: "${TICKET}"
+campaign: "${TICKET}"
+submitPath: "${SCRATCH}/submit/{outputRun}"
+
+# Necessary to cluster by exposure if there are many input exposures
+clusterAlgorithm: lsst.ctrl.bps.quantum_clustering_funcs.dimension_clustering
+cluster:
+  cpCtiIsrByExposure:
+    pipetasks: cpCtiIsr
+    dimensions: exposure
+
+# linearizerRun: "${USER_CALIB_PREFIX}$INSTRUMENT/calib/$TICKET/$TAG/linearizerGen.${RERUN}/run${LINEARIZER_RUN_NUMBER}"
+
+payload:
+  payloadName: "${INSTRUMENT}_${TICKET}_cti"
+  output: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET}/${TAG}/closedloop/ctiGen.${RERUN}"
+  butlerConfig: "${REPO}"
+  inCollection: "${USER_CALIB_PREFIX}$INSTRUMENT/calib/$TICKET/$TAG/linearizerGen.${RERUN}/20250513T085357Z,${USER_CALIB_PREFIX}$INSTRUMENT/calib/$TICKET/$TAG/linearizerGen.20250501a/run1,${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET},${RAW_COLLECTION},${CALIB_COLLECTIONS}"
+  dataQuery: "instrument='LSSTCam' and exposure.observation_type='flat' and exposure.science_program in ('E2016') and detector in (41, 178, 6, 19, 31, 11, 94)"
+  extraQGraphOptions: "cpCtiIsr:doDeferredCharge=True"
