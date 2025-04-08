@@ -194,6 +194,10 @@ def makeMockFlats(expTime, gain=1.0, readNoiseElectrons=5, fluxElectrons=1000,
         flatExp1.metadata[key] = value
         flatExp2.metadata[key] = value
 
+        key = f"LSST ISR OVERSCAN SERIAL MEDIAN {ampName}"
+        flatExp1.metadata[key] = 25000.0  # adu
+        flatExp2.metadata[key] = 25000.0  # adu
+
         key = f"LSST ISR AMPOFFSET PEDESTAL {ampName}"
         value = 0.0
 
