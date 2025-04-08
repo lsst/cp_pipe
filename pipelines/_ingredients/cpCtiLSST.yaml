@@ -16,6 +16,7 @@ tasks:
 
         config.doDefect = True
         config.doApplyGains = True
+        config.useGainsFrom = "LINEARIZER"
 
         # TODO: toggle to True when DNL correction is supported
         # config.dodiffNonLinearCorrection = True
@@ -24,6 +25,8 @@ tasks:
     class: lsst.cp.pipe.CpCtiSolveTask
     config:
       connections.inputMeasurements: "cpCtiStatistics"
+      connections.linearizer: "linearizer"
       connections.outputCalib: "cti"
 contracts:
   - cpCtiSolve.connections.inputMeasurements == cpCtiIsr.connections.outputStatistics
+  - cpCtiIsr.connections.linearizer == cpCtiSolve.connections.linearizer
