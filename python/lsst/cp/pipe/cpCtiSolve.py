@@ -88,12 +88,6 @@ class CpCtiSolveConfig(pipeBase.PipelineTaskConfig,
         doc="First and last overscan column to use for local offset effect.",
     )
 
-    useGains = pexConfig.Field(
-        dtype=bool,
-        default=True,
-        doc="Use gains in calculation.",
-        deprecated="This field is no longer used. Will be removed after v28.",
-    )
     maxSignalForCti = pexConfig.Field(
         dtype=float,
         default=10000.0,
@@ -197,6 +191,9 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
                 List of overscan row indicies (`list` [`int`]).
             ``"PARALLEL_OVERSCAN_VALUES"``
                 List of overscan row means (`list` [`float`).
+            ``"INPUT_GAIN"``
+                The gains used to convert the image to electrons
+                before calculating CTI statistics. (`float`).
         camera : `lsst.afw.cameraGeom.Camera`
             Camera geometry to use to find detectors.
         inputDims : `list` [`dict`]
@@ -226,6 +223,16 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
 
         # Initialize with detector.
         calib = DeferredChargeCalib(camera=camera, detector=detector)
+
+        # Get the input gains used to measure CTI statistics
+        # All the input measurements (from individual exposures)
+        # will have the same gains, since they are processed
+        # together.
+        firstExposureEntry = inputMeasurements[0]
+        exposureDict = firstExposureEntry['CTI']
+        for amp in detector.getAmplifiers():
+            ampName = amp.getName()
+            calib.inputGains[ampName] = exposureDict[ampName]['INPUT_GAIN']
 
         eperCalib = self.solveEper(inputMeasurements, calib, detector)
 
