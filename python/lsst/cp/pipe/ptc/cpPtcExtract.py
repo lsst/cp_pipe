@@ -573,6 +573,7 @@ class PhotonTransferCurveExtractTaskBase(pipeBase.PipelineTask):
         ----------
         expIds : `tuple` [`int`]
             Tuple of two exposure IDs for the flat pair.
+        expMjds : `tuple` [`float`]
         exps : `tuple` [`lsst.afw.image.Exposure`]
             Tuple of two exposures for the flat pair.
         photoChargeDict : `dict` [`int`, `float`]
@@ -589,6 +590,10 @@ class PhotonTransferCurveExtractTaskBase(pipeBase.PipelineTask):
         """
         expId1, expId2 = expIds
         exp1, exp2 = exps
+
+        expMjd1 = exp1.metadata['MJD']
+        expMjd2 = exp2.metadata['MJD']
+        inputExpPairMjdStart = min([expMjd1, expMjd2])
 
         self.log.info("Extracting PTC data from flat pair %d, %d", expId1, expId2)
 
@@ -634,6 +639,14 @@ class PhotonTransferCurveExtractTaskBase(pipeBase.PipelineTask):
         partialPtcDataset = PhotonTransferCurveDataset(
             ampNames, 'PARTIAL',
             covMatrixSide=self.config.maximumRangeCovariancesAstier)
+
+        # Get the following statistics for each amp
+        readNoise1 = dict()
+        readNoise2 = dict()
+        overscanMedianLevel1 = dict()
+        overscanMedianLevel2 = dict()
+        meanReadNoise = dict()
+        overscanMedianLevel = dict()
         for ampNumber, amp in enumerate(detector):
             ampName = amp.getName()
             if self.config.detectorMeasurementRegion == 'AMP':
@@ -647,19 +660,30 @@ class PhotonTransferCurveExtractTaskBase(pipeBase.PipelineTask):
             im1Area, im2Area, imStatsCtrl, mu1, mu2 = self.getImageAreasMasksStats(exp1, exp2,
                                                                                    region=region)
 
-            # Get the read noise for each exposure
-            readNoise1 = dict()
-            readNoise2 = dict()
-            meanReadNoise = dict()
-
             readNoise1[ampName] = getReadNoise(exp1, ampName)
             readNoise2[ampName] = getReadNoise(exp2, ampName)
-
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
+            if not np.isfinite(readNoise1[ampName]) and not np.isfinite(readNoise2[ampName]):
                 # We allow the mean read noise to be nan if both read noise
-                # values are nan, so suppress this warning.
+                # values are nan, so suppress this warning (e.g. bad amps)
+                meanReadNoise[ampName] = np.nan
+            else:
                 meanReadNoise[ampName] = np.nanmean([readNoise1[ampName], readNoise2[ampName]])
+
+            overscanMedianLevel1[ampName] = exp1.metadata[f'LSST ISR OVERSCAN SERIAL MEDIAN {ampName}']
+            overscanMedianLevel2[ampName] = exp2.metadata[f'LSST ISR OVERSCAN SERIAL MEDIAN {ampName}']
+            if not np.isfinite(overscanMedianLevel1[ampName]) and \
+               not np.isfinite(overscanMedianLevel2[ampName]):
+                # We allow the mean overscan median level to be nan if both
+                # statistics are nan, so suppress this warning (e.g. bad amps)
+                overscanMedianLevel[ampName] = np.nan
+            else:
+                overscanMedianLevel[ampName] = np.nanmean([overscanMedianLevel1[ampName],
+                                                           overscanMedianLevel2[ampName]])
+
+            # with warnings.catch_warnings():
+            #     warnings.simplefilter("ignore")
+            #     # We allow the mean read noise to be nan if both read noise
+            #     # values are nan, so suppress this warning (e.g. bad amps).
 
             # We demand that both mu1 and mu2 be finite and greater than 0.
             if not np.isfinite(mu1) or not np.isfinite(mu2) \
@@ -791,6 +815,7 @@ class PhotonTransferCurveExtractTaskBase(pipeBase.PipelineTask):
             partialPtcDataset.setAmpValuesPartialDataset(
                 ampName,
                 inputExpIdPair=(expId1, expId2),
+                inputExpPairMjdStart=inputExpPairMjdStart,
                 rawExpTime=expTime,
                 rawMean=muDiff,
                 rawVar=varDiff,
@@ -801,6 +826,7 @@ class PhotonTransferCurveExtractTaskBase(pipeBase.PipelineTask):
                 covSqrtWeights=covSqrtWeights[0, :, :],
                 gain=gain,
                 noise=meanReadNoise[ampName],
+                overscanMedianLevel=overscanMedianLevel[ampName],
                 histVar=histVar,
                 histChi2Dof=histChi2Dof,
                 kspValue=kspValue,
