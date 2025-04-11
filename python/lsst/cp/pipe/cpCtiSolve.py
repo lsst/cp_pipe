@@ -37,6 +37,8 @@ from lsst.ip.isr.deferredCharge import (DeferredChargeCalib,
 from lmfit import Minimizer, Parameters
 from astropy.stats import sigma_clip
 
+from .cpLinearitySolve import ptcLookup
+
 
 class CpCtiSolveConnections(pipeBase.PipelineTaskConnections,
                             dimensions=("instrument", "detector")):
@@ -54,7 +56,14 @@ class CpCtiSolveConnections(pipeBase.PipelineTaskConnections,
         dimensions=("instrument", ),
         isCalibration=True,
     )
-
+    inputPtc = cT.PrerequisiteInput(
+        name="ptc",
+        doc="Photon transfer curve dataset.",
+        storageClass="PhotonTransferCurveDataset",
+        dimensions=("instrument", "detector"),
+        isCalibration=True,
+        lookupFunction=ptcLookup,
+    )
     outputCalib = cT.Output(
         name="cti",
         doc="Output CTI calibration.",
@@ -163,7 +172,7 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
         outputs = self.run(**inputs)
         butlerQC.put(outputs, outputRefs)
 
-    def run(self, inputMeasurements, camera, inputDims):
+    def run(self, inputMeasurements, camera, inputDims, inputPtc):
         """Solve for charge transfer inefficiency from overscan measurements.
 
         Parameters
@@ -192,6 +201,8 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
             Camera geometry to use to find detectors.
         inputDims : `list` [`dict`]
             List of input dimensions from each input exposure.
+        inputPtc : `lsst.ip.isr.PhotonTransferCurveDataset`
+            Input PTC.
 
         Returns
         -------
@@ -223,6 +234,9 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
         globalCalib = self.solveGlobalCti(inputMeasurements, localCalib, detector)
 
         finalCalib = self.findTraps(inputMeasurements, globalCalib, detector)
+
+        finalCalib.updateMetadataFromExposures([inputPtc])
+        finalCalib.updateMetadata(setDate=True, camera=camera, detector=detector)
 
         return pipeBase.Struct(
             outputCalib=finalCalib,

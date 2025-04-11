@@ -187,6 +187,9 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                 md['CCOBCURR'] = float(idCounter)
                 md['CCDTEMP'] = float(idCounter + 1)
                 mockExp.setMetadata(md)
+                md['SEQFILE'] = 'a_seqfile'
+                md['SEQNAME'] = 'a_seqfile'
+                md['SEQCKSUM'] = 'deadbeef'
 
             mockExpRef1 = PretendRef(mockExp1)
             mockExpRef2 = PretendRef(mockExp2)
@@ -285,6 +288,15 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                 )
 
             ptc = resultsSolve.outputPtcDataset
+
+            # Confirm that metadata keywords are set.
+            for key in ["SEQFILE", "SEQNAME", "SEQCKSUM"]:
+                self.assertEqual(ptc.metadata[key], expHandles[0].get().metadata[key])
+            self.assertEqual(ptc.metadata["INSTRUME"], FakeCamera().getName())
+            det = expHandles[0].get().getDetector()
+            self.assertEqual(ptc.metadata["DETECTOR"], det.getId())
+            self.assertEqual(ptc.metadata["DET_NAME"], det.getName())
+            self.assertEqual(ptc.metadata["DET_SER"], det.getSerial())
 
             for amp in self.ampNames:
                 self.assertAlmostEqual(ptc.gain[amp], inputGain, places=2)
