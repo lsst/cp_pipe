@@ -29,7 +29,7 @@ import lsst.utils
 import lsst.utils.tests
 
 import lsst.cp.pipe as cpPipe
-from lsst.ip.isr import IsrMock
+from lsst.ip.isr import IsrMock, PhotonTransferCurveDataset
 
 
 class CpCtiSolveTaskTestCase(lsst.utils.tests.TestCase):
@@ -270,14 +270,29 @@ class CpCtiSolveTaskTestCase(lsst.utils.tests.TestCase):
 
         self.task = cpPipe.CpCtiSolveTask()
 
+        self.ptc = PhotonTransferCurveDataset()
+        self.ptc.updateMetadata(camera=self.camera, detector=self.camera[20])
+        self.sequencerMetadata = {
+            "SEQNAME": "a_sequencer",
+            "SEQFILE": "a_sequencer_file",
+            "SEQCKSUM": "deadbeef",
+        }
+        self.ptc.updateMetadata(**self.sequencerMetadata, setCalibInfo=True)
+
     def test_task(self):
         """A test for the main CpCtiSolveTask.
 
         This should excercise most of the new code.
         """
-        results = self.task.run(self.inputMeasurements, self.camera, self.inputDims)
+        results = self.task.run(self.inputMeasurements, self.camera, self.inputDims, self.ptc)
 
         calib = results.outputCalib
+
+        for key, value in self.sequencerMetadata.items():
+            self.assertEqual(calib.metadata[key], value)
+
+        for key in ["INSTRUME", "DETECTOR", "DET_NAME", "DET_SER"]:
+            self.assertEqual(calib.metadata[key], self.ptc.metadata[key])
 
         # Check that the signals array is sorted
         for ampName in calib.signals.keys():
