@@ -74,6 +74,13 @@ class BfkSolveTaskTestCase(lsst.utils.tests.TestCase):
                                               [-1.07164903e-06, -2.14329806e-07, -3.21494709e-08],
                                               [-2.14329806e-07, -1.07164903e-07, -2.14329806e-08]])
 
+        self.sequencerMetadata = {
+            "SEQNAME": "a_sequencer",
+            "SEQFILE": "a_sequencer_file",
+            "SEQCKSUM": "deadbeef",
+        }
+        self.ptc.updateMetadata(**self.sequencerMetadata, setCalibInfo=True)
+
         # This is empirically determined from the above parameters.
         self.expectation = np.array([[4.88348887e-08, 1.01136877e-07, 1.51784114e-07,
                                       1.77570668e-07, 1.51784114e-07, 1.01136877e-07, 4.88348887e-08],
@@ -96,7 +103,16 @@ class BfkSolveTaskTestCase(lsst.utils.tests.TestCase):
         task = cpPipe.BrighterFatterKernelSolveTask()
 
         results = task.run(self.ptc, ['this is a dummy exposure'], self.camera, {'detector': 1})
-        self.assertFloatsAlmostEqual(results.outputBFK.ampKernels['amp 1'], self.expectation, atol=1e-5)
+        bfk = results.outputBFK
+        self.assertFloatsAlmostEqual(bfk.ampKernels['amp 1'], self.expectation, atol=1e-5)
+
+        for key, value in self.sequencerMetadata.items():
+            self.assertEqual(bfk.metadata[key], value)
+
+        self.assertEqual(bfk.metadata["INSTRUME"], self.camera.getName())
+        self.assertEqual(bfk.metadata["DETECTOR"], self.detector.getId())
+        self.assertEqual(bfk.metadata["DET_NAME"], self.detector.getName())
+        self.assertEqual(bfk.metadata["DET_SER"], self.detector.getSerial())
 
     def test_aMatrix(self):
         """Test solution from Astier et al. 2019 "A" matrix

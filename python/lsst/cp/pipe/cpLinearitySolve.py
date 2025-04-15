@@ -754,6 +754,7 @@ class LinearitySolveTask(pipeBase.PipelineTask):
         linearizer.validate()
         linearizer.updateMetadata(camera=camera, detector=detector, filterName='NONE')
         linearizer.updateMetadata(setDate=True, setCalibId=True)
+        linearizer.updateMetadataFromExposures([inputPtc])
         provenance = IsrProvenance(calibType='linearizer')
 
         return pipeBase.Struct(

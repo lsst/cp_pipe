@@ -64,6 +64,12 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
         for amp in self.detector:
             self.amp_names.append(amp.getName())
 
+        self.sequencerMetadata = {
+            "SEQNAME": "a_sequencer",
+            "SEQFILE": "a_sequencer_file",
+            "SEQCKSUM": "deadbeef",
+        }
+
     def _create_ptc(
         self,
         amp_names,
@@ -161,6 +167,9 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
                     high = (ptc.rawMeans[amp_name] > ptc_turnoff)
                     ptc.expIdMask[amp_name][high] = False
                     ptc.finalMeans[amp_name][high] = np.nan
+
+        ptc.updateMetadata(**self.sequencerMetadata, setCalibInfo=True)
+        ptc.updateMetadata(camera=self.camera, detector=self.detector)
 
         return ptc
 
@@ -441,6 +450,12 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
             self.camera,
             self.input_dims,
         ).outputLinearizer
+
+        for key, value in self.sequencerMetadata.items():
+            self.assertEqual(linearizer.metadata[key], value)
+
+        for key in ["INSTRUME", "DETECTOR", "DET_NAME", "DET_SER"]:
+            self.assertEqual(linearizer.metadata[key], ptc.metadata[key])
 
         if do_weight_fit:
             # These checks currently fail, and weight fitting is not
