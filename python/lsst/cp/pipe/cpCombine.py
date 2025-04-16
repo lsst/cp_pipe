@@ -400,6 +400,8 @@ class CalibCombineTask(pipeBase.PipelineTask):
         filterLabel = inputExpHandles[0].get(component="filter")
         self.setFilter(combinedExp, filterLabel)
 
+        self.setFlatSource(combinedExp)
+
         # Set QA headers
         self.calibStats(combinedExp, self.config.calibrationType)
 
@@ -718,6 +720,16 @@ class CalibCombineTask(pipeBase.PipelineTask):
         """
         pass
 
+    def setFlatSource(self, exp):
+        """Set the flat source metadata.
+
+        Parameters
+        ----------
+        exp : `lsst.afw.image.Exposure`
+            Exposure to set the flat source.
+        """
+        pass
+
     def calibStats(self, exp, calibrationType):
         """Measure bulk statistics for the calibration.
 
@@ -779,7 +791,18 @@ class CalibCombineByFilterConnections(CalibCombineConnections,
 
 class CalibCombineByFilterConfig(CalibCombineConfig,
                                  pipelineConnections=CalibCombineByFilterConnections):
-    pass
+    flatSource = pexConfig.ChoiceField(
+        dtype=str,
+        doc="Type of flat constructed. This config is only used if "
+            "calibrationType==``flat``.",
+        default="DOME",
+        allowed={
+            "DOME": "Flat constructed from the dome screen with 'white' light.",
+            "TWILIGHT": "Flat constructed from twilight images.",
+            "PSEUDO": "Flat constructed from the instrument model.",
+            "SKY": "Flat constructed from night-sky images.",
+        }
+    )
 
 
 class CalibCombineByFilterTask(CalibCombineTask):
@@ -801,3 +824,9 @@ class CalibCombineByFilterTask(CalibCombineTask):
         """
         if filterLabel:
             exp.setFilter(filterLabel)
+
+    def setFlatSource(self, exp):
+        if self.config.calibrationType != "flat":
+            return
+
+        exp.metadata["FLATSRC"] = self.config.flatSource

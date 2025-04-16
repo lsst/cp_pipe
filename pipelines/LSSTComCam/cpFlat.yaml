@@ -7,3 +7,7 @@ tasks:
     class: lsst.ip.isr.IsrTaskLSST
     config:
       doDeferredCharge: true
+  cpFlatCombine:
+    class: lsst.cp.pipe.CalibCombineByFilterTask
+    config:
+      flatSource: "TWILIGHT"
