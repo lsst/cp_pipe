@@ -85,6 +85,7 @@ tasks:
       doMultipleCycles: true
       multipleCyclesFinalCycleNumber: 5
       superStarForceZeroMean: true
+      superStarSubCcdChebyshevOrder: 4
   cpIlluminationCorrectionFgcmOutputIlluminationCorrection:
     class: lsst.fgcmcal.fgcmOutputIlluminationCorrection.FgcmOutputIlluminationCorrectionTask
     config:
