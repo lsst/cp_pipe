@@ -4,16 +4,16 @@ tasks:
     class: lsst.ip.isr.IsrTaskLSST
     config:
       doAmpOffset: false
-      connections.outputExposure: "postISRCCD"
+      connections.outputExposure: "post_isr_image"
   cpIlluminationCorrectionCalibrateImage:
     class: lsst.pipe.tasks.calibrateImage.CalibrateImageTask
     config:
-      connections.exposures: "postISRCCD"
-      connections.initial_stars_schema: "src_schema"
-      connections.stars_footprints: "src"
-      connections.stars: "preSource"
-      connections.exposure: "calexp"
-      connections.background: "calexpBackground"
+      connections.exposures: "post_isr_image"
+      connections.initial_stars_schema: "single_visit_star_schema"
+      connections.stars_footprints: "single_visit_star_footprints"
+      connections.stars: "single_visit_star_unstandardized"
+      connections.exposure: "preliminary_visit_image"
+      connections.background: "preliminary_visit_image_background"
       do_calibrate_pixels: false
       # Ensure that all illumination correction parameters are turned
       # off when making illumination corrections.
@@ -41,18 +41,25 @@ tasks:
     class: lsst.pipe.tasks.postprocess.TransformSourceTableTask
     config:
       functorFile: "$CP_PIPE_DIR/schemas/PreSourceIlluminationCorrection.yaml"
-      connections.inputCatalog: "preSource"
-      connections.outputCatalog: "preSourceTable"
+      connections.inputCatalog: "single_visit_star_unstandardized"
+      connections.outputCatalog: "single_visit_star_detector"
   cpIlluminationCorrectionConsolidatePreSourceTable:
     class: lsst.pipe.tasks.postprocess.ConsolidateSourceTableTask
     config:
-      connections.inputCatalogs: "preSourceTable"
-      connections.outputCatalog: "preSourceTable_visit"
-  cpIlluminationCorrectionConsolidateVisitSummary: lsst.pipe.tasks.postprocess.ConsolidateVisitSummaryTask
+      connections.inputCatalogs: "single_visit_star_detector"
+      connections.outputCatalog: "single_visit_star"
+  cpIlluminationCorrectionConsolidateVisitSummary:
+    class: lsst.pipe.tasks.postprocess.ConsolidateVisitSummaryTask
+    config:
+      connections.calexp: "preliminary_visit_image"
+      connections.visitSummary: "preliminary_visit_summary"
+      connections.visitSummarySchema: "preliminary_visit_summary_schema"
   cpIlluminationCorrectionIsolatedStarAssociation:
     class: lsst.pipe.tasks.isolatedStarAssociation.IsolatedStarAssociationTask
     config:
-      connections.source_table_visit: "preSourceTable_visit"
+      connections.source_table_visit: "single_visit_star"
+      connections.isolated_star_sources: "isolated_star"
+      connections.isolated_star_cat: "isolated_star_association"
       python: |
         config.extra_columns = [
           "x",
@@ -67,6 +74,9 @@ tasks:
   cpIlluminationCorrectionFgcmBuildFromIsolatedStars:
     class: lsst.fgcmcal.fgcmBuildFromIsolatedStars.FgcmBuildFromIsolatedStarsTask
     config:
+      connections.isolated_star_cats: "isolated_star_association"
+      connections.isolated_star_sources: "isolated_star"
+      connections.visit_summaries: "preliminary_visit_summary"
       doApplyWcsJacobian: true
       densityCutMaxPerPixel: 1000000
   cpIlluminationCorrectionFgcmFitCycle:
