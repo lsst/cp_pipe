@@ -1,5 +1,7 @@
 __all__ = ["configureIsrTaskLSSTForCalibrations"]
 
+import numpy as np
+
 
 def configureIsrTaskLSSTForCalibrations(config):
     """Apply configuration overrides for a baseline of building calibrations.
@@ -11,8 +13,10 @@ def configureIsrTaskLSSTForCalibrations(config):
     """
     # These are defined in application/run order.
     config.doBootstrap = False
+    config.doCheckUnprocessableData = False
     config.doDiffNonLinearCorrection = False
     config.doCorrectGains = False
+    config.ampNoiseThreshold = np.inf
     config.doSaturation = False
     config.doSuspect = False
     config.doApplyGains = False
