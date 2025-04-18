@@ -11,6 +11,7 @@ def configureIsrTaskLSSTForCalibrations(config):
     """
     # These are defined in application/run order.
     config.doBootstrap = False
+    config.doCheckUnprocessableData = False
     config.doDiffNonLinearCorrection = False
     config.doCorrectGains = False
     config.doSaturation = False
