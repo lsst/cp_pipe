@@ -2,3 +2,13 @@ description: cp_pipe LSSTCam flat calibration construction.
 instrument: lsst.obs.lsst.LsstCam
 imports:
   - location: $CP_PIPE_DIR/pipelines/_ingredients/cpFlatLSST.yaml
+tasks:
+  cpFlatCombine:
+    class: lsst.cp.pipe.CalibCombineByFilterTask
+    config:
+      doVignetteMask: true
+      # The radius is derived from the Batoid vignetting
+      # polynomial, with a threshold of 0.1 (90% vignetted).
+      # This corresponds to roughly 80% vignetting in the dome
+      # flats.
+      vignette.radius: 364.51
