@@ -411,6 +411,9 @@ class CalibCombineTask(pipeBase.PipelineTask):
             polygon = inputExpHandles[0].get(component="validPolygon")
             maskVignettedRegion(combined, polygon=polygon, vignetteValue=0.0)
 
+        # Set the detector
+        combinedExp.setDetector(inputDetector)
+
         if self.config.doVignetteMask:
             self.vignette.run(
                 exposure=combinedExp,
@@ -422,9 +425,6 @@ class CalibCombineTask(pipeBase.PipelineTask):
         # Combine headers
         self.combineHeaders(inputExpHandles, combinedExp,
                             calibType=self.config.calibrationType, scales=expScales)
-
-        # Set the detector
-        combinedExp.setDetector(inputDetector)
 
         # Do we need to set a filter?
         filterLabel = inputExpHandles[0].get(component="filter")
