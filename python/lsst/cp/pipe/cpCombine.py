@@ -32,7 +32,7 @@ import lsst.afw.image as afwImage
 
 import lsst.daf.base
 
-from lsst.ip.isr.vignette import maskVignettedRegion
+from lsst.ip.isr.vignette import VignetteTask, maskVignettedRegion
 
 from astro_metadata_translator import merge_headers
 from astro_metadata_translator.serialize import dates_to_fits
@@ -191,7 +191,19 @@ class CalibCombineConfig(pipeBase.PipelineTaskConfig,
     doVignette = pexConfig.Field(
         dtype=bool,
         default=False,
-        doc="Copy vignette polygon to output and censor vignetted pixels?"
+        doc="Copy vignette polygon to output and censor vignetted pixels? "
+            "(Used for non-LSST flats).",
+    )
+
+    doVignetteMask = pexConfig.Field(
+        dtype=bool,
+        default=False,
+        doc="Compute and attach a validPolygon and mask excluding the "
+            "totally vignetted regions? (Used for LSST flats).",
+    )
+    vignette = pexConfig.ConfigurableField(
+        target=VignetteTask,
+        doc="Vignetting task.",
     )
 
     distributionPercentiles = pexConfig.ListField(
@@ -239,6 +251,14 @@ class CalibCombineConfig(pipeBase.PipelineTaskConfig,
         doc="Background statistics configuration",
     )
 
+    def validate(self):
+        super().validate()
+
+        if self.doVignetteMask and self.calibrationType != "flat":
+            raise ValueError("doVignetteMask is only supported with ``flat`` calibrationType.")
+        if self.doVignetteMask and self.doVignette:
+            raise ValueError("Cannot set both doVignetteMask and doVignette.")
+
 
 class CalibCombineTask(pipeBase.PipelineTask):
     """Task to combine calib exposures."""
@@ -249,6 +269,8 @@ class CalibCombineTask(pipeBase.PipelineTask):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.makeSubtask("stats")
+        if self.config.doVignetteMask:
+            self.makeSubtask("vignette")
 
     def runQuantum(self, butlerQC, inputRefs, outputRefs):
         inputs = butlerQC.get(inputRefs)
@@ -389,12 +411,20 @@ class CalibCombineTask(pipeBase.PipelineTask):
             polygon = inputExpHandles[0].get(component="validPolygon")
             maskVignettedRegion(combined, polygon=polygon, vignetteValue=0.0)
 
+        # Set the detector
+        combinedExp.setDetector(inputDetector)
+
+        if self.config.doVignetteMask:
+            self.vignette.run(
+                exposure=combinedExp,
+                doUpdateMask=True,
+                vignetteValue=0.0,
+                log=self.log,
+            )
+
         # Combine headers
         self.combineHeaders(inputExpHandles, combinedExp,
                             calibType=self.config.calibrationType, scales=expScales)
-
-        # Set the detector
-        combinedExp.setDetector(inputDetector)
 
         # Do we need to set a filter?
         filterLabel = inputExpHandles[0].get(component="filter")
