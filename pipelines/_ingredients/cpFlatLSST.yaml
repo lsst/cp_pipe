@@ -14,8 +14,7 @@ tasks:
         config.crosstalk.doQuadraticCrosstalkCorrection = True
         config.doApplyGains = True
         config.doLinearize = True
-        # TODO DM-46426: Add cpCtiLSST pipeline so that this can be True.
-        config.doDeferredCharge = False
+        config.doDeferredCharge = True
         config.doBias = True
         config.doDark = True
         # TODO DM-50363: Investigate if this can be turned on, looking
