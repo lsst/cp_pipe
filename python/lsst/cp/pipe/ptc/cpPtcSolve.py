@@ -30,6 +30,7 @@ from lsst.cp.pipe.utils import (fitLeastSq, fitBootstrap, funcPolynomial,
 
 from scipy.signal import fftconvolve
 from scipy.optimize import least_squares
+from scipy.stats import median_abs_deviation
 from itertools import groupby
 from operator import itemgetter
 
@@ -461,6 +462,15 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             detector = None
         datasetPtc.updateMetadataFromExposures(inputCovariances)
         datasetPtc.updateMetadata(setDate=True, camera=camera, detector=detector)
+
+        for ampName in ampNames:
+            datasetPtc.overscanMedian[ampName] = np.nanmedian(
+                datasetPtc.overscanMedianLevelList[ampName][datasetPtc.expIdMask[ampName]]
+            )
+            datasetPtc.overscanMedianSigma[ampName] = median_abs_deviation(
+                datasetPtc.overscanMedianLevelList[ampName][datasetPtc.expIdMask[ampName]],
+                scale="normal",
+            )
 
         return pipeBase.Struct(
             outputPtcDataset=datasetPtc,
