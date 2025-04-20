@@ -18,7 +18,9 @@ tasks:
         config.doDeferredCharge = False
         config.doBias = True
         config.doDark = True
-        config.doBrighterFatter = True
+        # TODO DM-50363: Investigate if this can be turned on, looking
+        # at performance and quality of the BF correction.
+        config.doBrighterFatter = False
   cpFlatMeasure:
     class: lsst.cp.pipe.CpFlatMeasureTask
     config:
