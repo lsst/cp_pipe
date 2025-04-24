@@ -13,9 +13,11 @@ def configureIsrTaskLSSTForCalibrations(config):
     """
     # These are defined in application/run order.
     config.doBootstrap = False
+    config.bssVoltageMinimum = 0.0
     config.doCheckUnprocessableData = False
     config.doDiffNonLinearCorrection = False
     config.doCorrectGains = False
+    config.serialOverscanMedianShiftSigmaThreshold = np.inf
     config.ampNoiseThreshold = np.inf
     config.doSaturation = False
     config.doSuspect = False
