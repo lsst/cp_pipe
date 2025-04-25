@@ -12,6 +12,7 @@ tasks:
 
         config.doBootstrap = True
         config.doCrosstalk = True
+        config.doDeferredCharge = True
         config.crosstalk.doQuadraticCrosstalkCorrection = False
         config.doLinearize = True
         config.doDefect = True
