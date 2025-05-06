@@ -954,6 +954,123 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
             defectArea += defect.getBBox().getArea()
         self.assertEqual(defectArea, testImage.getBBox().getArea())
 
+    def test_e2vMidline(self):
+        """Test handling of E2V midline."""
+
+        class MockE2VAmp:
+            def __init__(self, name, bbox):
+                self._name = name
+                self._bbox = bbox
+
+            def getName(self):
+                return self._name
+
+            def getBBox(self):
+                return self._bbox
+
+            def __repr__(self):
+                return f"MockE2VAmp({self._name})"
+
+        class MockE2VDetector(list):
+            def __init__(self):
+                amps = []
+                for i in range(8):
+                    name = f"C1{i}"
+                    bbox = Box2I(corner=Point2I(i*512, 2002), dimensions=Extent2I(512, 2002))
+                    amps.append(MockE2VAmp(name, bbox))
+                for i in reversed(range(8)):
+                    name = f"C0{i}"
+                    bbox = Box2I(corner=Point2I(i*512, 0), dimensions=Extent2I(512, 2002))
+                    amps.append(MockE2VAmp(name, bbox))
+
+                super().__init__(amps)
+
+            def getBBox(self):
+                return Box2I(corner=Point2I(0, 0), dimensions=Extent2I(4096, 4004))
+
+            def getPhysicalType(self):
+                return "E2V"
+
+        class MockE2VExposure(afwImage.ExposureF):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+
+            def setDetector(self, detector):
+                self._detector = detector
+
+            def getDetector(self):
+                return self._detector
+
+        detector = MockE2VDetector()
+        flat = MockE2VExposure(detector.getBBox())
+        flat.setDetector(detector)
+        flat.metadata["IMGTYPE"] = "FLAT"
+        visitInfo = afwImage.VisitInfo(exposureTime=10.0, darkTime=10.0)
+        flat.info.setVisitInfo(visitInfo)
+
+        flat.mask.array[:, :] = 0
+
+        rng = np.random.RandomState(0)
+
+        # Make a flat, and make a very dark midline.
+        flat.image.array[:, :] = rng.normal(1.0, 0.01, flat.image.array.shape)
+        flat.image.array[2001, :] = 0.0
+        flat.image.array[2002, :] = 0.0
+
+        # First test that with midline checking off it is masked.
+        config = cpPipe.MeasureDefectsTask.ConfigClass()
+        config.thresholdType = "VALUE"
+        config.fracThresholdFlat = 0.9
+        config.e2vMidlineBreakNRow = 0
+        task = cpPipe.MeasureDefectsTask(config=config)
+
+        defects = task._findHotAndColdPixels(flat)
+
+        # There should be 16 defects (one for each amp).
+        self.assertEqual(len(defects), len(detector))
+
+        flat.mask.array[:, :] = 0
+        for defect in defects:
+            flat.mask[defect.getBBox()].array |= 1
+
+        np.testing.assert_array_equal(flat.mask.array[2001, :], 1)
+        np.testing.assert_array_equal(flat.mask.array[2002, :], 1)
+
+        # Test again *ignoring* the midline.
+        config = cpPipe.MeasureDefectsTask.ConfigClass()
+        config.thresholdType = "VALUE"
+        config.fracThresholdFlat = 0.9
+        config.e2vMidlineBreakNRow = 1
+        task = cpPipe.MeasureDefectsTask(config=config)
+
+        flat.mask.array[:, :] = 0
+        defects = task._findHotAndColdPixels(flat)
+
+        self.assertEqual(len(defects), 0)
+
+        # Test again *requiring* the midline mask.
+        config = cpPipe.MeasureDefectsTask.ConfigClass()
+        config.thresholdType = "VALUE"
+        config.fracThresholdFlat = 0.9
+        config.e2vMidlineBreakNRow = 1
+        config.e2vMidlineBreakOption = "MASK"
+        task = cpPipe.MeasureDefectsTask(config=config)
+
+        flat.mask.array[:, :] = 0
+        flat.image.array[:, :] = rng.normal(1.0, 0.01, flat.image.array.shape)
+
+        defects = task._findHotAndColdPixels(flat)
+
+        # There should be 16 defects (one for each amp).
+        self.assertEqual(len(defects), len(detector))
+
+        flat.mask.array[:, :] = 0
+        for defect in defects:
+            flat.mask[defect.getBBox()].array |= 1
+
+        np.testing.assert_array_equal(flat.mask.array[2001, :], 1)
+        np.testing.assert_array_equal(flat.mask.array[2002, :], 1)
+
 
 class TestMemory(lsst.utils.tests.MemoryTestCase):
     pass
