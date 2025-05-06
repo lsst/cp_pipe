@@ -131,6 +131,7 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
                     kspValue=1.0,
                     expIdMask=exp_id_mask,
                     photoCharge=photo_charges[i],
+                    overscanMedianLevel=100.0,
                 )
 
             aux_dict = {}
