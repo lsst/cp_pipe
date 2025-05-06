@@ -188,6 +188,23 @@ class MeasureDefectsTaskConfig(pipeBase.PipelineTaskConfig,
              "then no saturated column filling will be performed."),
         default=-1,
     )
+    e2vMidlineBreakNRow = pexConfig.Field(
+        dtype=int,
+        doc="E2V midline break number of midline break rows at the bottom of the top amps "
+            "or the top of the bottom amps to always mask or ignore. Number of rows will "
+            "be twice this config value. Only used if detector is E2V type. Set to <=0 "
+            "to treat E2V midline break rows like any other flat-field pixel.",
+        default=1,
+    )
+    e2vMidlineBreakOption = pexConfig.ChoiceField(
+        dtype=str,
+        doc="How should the E2V midline break be treated? Only used if e2vMidlineBreakNRow > 0.",
+        default="NEVERMASK",
+        allowed={
+            "NEVERMASK": "Never mask the E2V midline break, no matter the flat values.",
+            "MASK": "Always mask the E2V midline break.",
+        },
+    )
 
     def validate(self):
         super().validate()
@@ -285,6 +302,40 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
         fs_grow = afwDetection.FootprintSet(fs, rGrow=self.config.radiusVampirePixels, isotropic=True)
 
         return fs_grow
+
+    def _setE2VMidline(self, amp, ampImg):
+        """Set the E2V midline pixels on this amplifier.
+
+        If the task is configure to always mask it will set the midline rows to
+        an illegal value; if it is to never mask it will set the midline rows
+        to the median value.
+
+        Parameters
+        ----------
+        amp : `lsst.afw.cameraGeom.Amplifier`
+            Amplifier object.
+        ampImg : `lsst.afw.image.ImageF`
+            Image data for the amplifier.
+        """
+        if self.config.e2vMidlineBreakNRow <= 0:
+            return
+
+        if self.config.e2vMidlineBreakOption == "NEVERMASK":
+            # Setting the midline values to the median value ensures
+            # they will never trigger the defect finding threshold.
+            value = np.nanmedian(ampImg.image.array)
+        else:
+            # Setting the midline values to a large negative value
+            # ensures they will always trigger the defect finding
+            # threshold.
+            value = -1e30
+
+        if amp.getName().startswith("C0"):
+            # This is a bottom amplifier, so change the top row(s).
+            ampImg.image.array[-self.config.e2vMidlineBreakNRow:, :] = value
+        else:
+            # This is a top amplifier, so change the bottom row(s).
+            ampImg.image.array[:self.config.e2vMidlineBreakNRow, :] = value
 
     def _findHotAndColdPixels(self, exp):
         """Find hot and cold pixels in an image.
@@ -399,6 +450,10 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
             self.log.info("Image type: %s. Amp: %s. Threshold Type: %s. Sigma values and Pixel"
                           "Values (hot and cold pixels thresholds): %s, %s",
                           datasetType, ampName, thresholdType, nSigmaList, valueThreshold)
+
+            if datasetType.lower() == "flat" and exp.getDetector().getPhysicalType() == "E2V":
+                self._setE2VMidline(amp, ampImg)
+
             mergedSet = None
             for sigma in nSigmaList:
                 nSig = np.abs(sigma)
