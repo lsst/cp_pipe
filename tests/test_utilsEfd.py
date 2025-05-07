@@ -54,7 +54,6 @@ def getVcr():
 safe_vcr = getVcr()
 
 
-@safe_vcr.use_cassette()
 class UtilsEfdTestCase(lsst.utils.tests.TestCase):
     """Unit test for EFD access code."""
 
@@ -143,8 +142,8 @@ class UtilsEfdTestCase(lsst.utils.tests.TestCase):
 
         data = self.client.getEfdElectrometerData(
             dataSeries='lsst.sal.Electrometer.logevent_logMessage',
-            dateMin='2024-07-26T16:00:00',
-            dateMax='2024-07-26T20:00:00')
+            dateMin='2024-07-26T16:30:00',
+            dateMax='2024-07-26T16:45:00')
 
         # Test single lookups.  These should not be integrated.
         for iDate, iVal in zip(["2024-07-26T16:38:32.228",
