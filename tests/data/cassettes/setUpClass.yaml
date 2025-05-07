@@ -1,0 +1,72 @@
+interactions:
+- request:
+    body: null
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate, br, zstd
+      Connection:
+      - keep-alive
+      User-Agent:
+      - python-requests/2.32.3
+    method: GET
+    uri: https://sdfproxy.sdf.slac.stanford.edu:3128/segwarides/creds/usdf_efd
+  response:
+    body:
+      string: '{"host": "usdf-rsp.slac.stanford.edu", "username": "efdreader", "password":
+        "9Wkosj2m1d+NeqaNTyPNBA==", "schema_registry": "http://sasquatch-schema-registry.sasquatch:8081",
+        "port": "443", "path": "/influxdb-enterprise-data/"}'
+    headers:
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '226'
+      Content-Type:
+      - application/json; charset=utf-8
+      Date:
+      - Wed, 07 May 2025 03:01:33 GMT
+      Strict-Transport-Security:
+      - max-age=31536000; includeSubDomains
+    status:
+      code: 200
+      message: OK
+- request:
+    body: null
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate, br, zstd
+      Authorization:
+      - Basic ZWZkcmVhZGVyOjlXa29zajJtMWQrTmVxYU5UeVBOQkE9PQ==
+      Connection:
+      - keep-alive
+      User-Agent:
+      - python-requests/2.32.3
+    method: GET
+    uri: https://usdf-rsp.slac.stanford.edu/influxdb-enterprise-data//ping?wait_for_leader=5s
+  response:
+    body:
+      string: ''
+    headers:
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Wed, 07 May 2025 03:01:33 GMT
+      Request-Id:
+      - da94eb946c1e7a21d790075001e8c055
+      Strict-Transport-Security:
+      - max-age=16070400
+      X-Influxdb-Build:
+      - ENT
+      X-Influxdb-Version:
+      - v1.11.8
+      X-Request-Id:
+      - da94eb946c1e7a21d790075001e8c055
+    status:
+      code: 204
+      message: No Content
+version: 1
