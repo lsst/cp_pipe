@@ -43,7 +43,7 @@ def getVcr():
     dirname = os.path.dirname(__file__)
     cassette_library_dir = os.path.join(dirname, "data", "cassettes")
     safe_vcr = vcr.VCR(
-        record_mode="all",
+        record_mode="none",
         cassette_library_dir=cassette_library_dir,
         path_transformer=vcr.VCR.ensure_suffix(".yaml"),
         match_on=["method", "scheme", "host", "port", "path", "query", "body"],
