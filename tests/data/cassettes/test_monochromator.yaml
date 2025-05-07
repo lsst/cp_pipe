@@ -1,0 +1,160 @@
+interactions:
+- request:
+    body: null
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate, br, zstd
+      Connection:
+      - keep-alive
+      User-Agent:
+      - python-requests/2.32.3
+    method: GET
+    uri: https://sdfproxy.sdf.slac.stanford.edu:3128/segwarides/creds/usdf_efd
+  response:
+    body:
+      string: '{"host": "usdf-rsp.slac.stanford.edu", "username": "efdreader", "password":
+        "9Wkosj2m1d+NeqaNTyPNBA==", "schema_registry": "http://sasquatch-schema-registry.sasquatch:8081",
+        "port": "443", "path": "/influxdb-enterprise-data/"}'
+    headers:
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '226'
+      Content-Type:
+      - application/json; charset=utf-8
+      Date:
+      - Wed, 07 May 2025 03:01:41 GMT
+      Strict-Transport-Security:
+      - max-age=31536000; includeSubDomains
+    status:
+      code: 200
+      message: OK
+- request:
+    body: null
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate, br, zstd
+      Authorization:
+      - Basic ZWZkcmVhZGVyOjlXa29zajJtMWQrTmVxYU5UeVBOQkE9PQ==
+      Connection:
+      - keep-alive
+      User-Agent:
+      - python-requests/2.32.3
+    method: GET
+    uri: https://usdf-rsp.slac.stanford.edu/influxdb-enterprise-data//ping?wait_for_leader=5s
+  response:
+    body:
+      string: ''
+    headers:
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Wed, 07 May 2025 03:01:41 GMT
+      Request-Id:
+      - 74261ce4887b565ace0e15b88457e047
+      Strict-Transport-Security:
+      - max-age=16070400
+      X-Influxdb-Build:
+      - ENT
+      X-Influxdb-Version:
+      - v1.11.8
+      X-Request-Id:
+      - 74261ce4887b565ace0e15b88457e047
+    status:
+      code: 204
+      message: No Content
+- request:
+    body: null
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate, br, zstd
+      Authorization:
+      - Basic ZWZkcmVhZGVyOjlXa29zajJtMWQrTmVxYU5UeVBOQkE9PQ==
+      Connection:
+      - keep-alive
+      User-Agent:
+      - python-requests/2.32.3
+    method: GET
+    uri: https://usdf-rsp.slac.stanford.edu/influxdb-enterprise-data//query?db=efd&q=SELECT+wavelength%2Cprivate_sndStamp+FROM+%22lsst.sal.ATMonochromator.logevent_wavelength%22+WHERE+time+%3E%3D+%272023-12-18T23%3A59%3A23.000Z%27+AND+time+%3C%3D+%272023-12-19T23%3A59%3A22.000Z%27
+  response:
+    body:
+      string: '{"results":[{"statement_id":0,"series":[{"name":"lsst.sal.ATMonochromator.logevent_wavelength","columns":["time","wavelength","private_sndStamp"],"values":[["2023-12-19T12:58:18.580753Z",10.86359977722168,1702990735.580753],["2023-12-19T12:59:25.017939Z",0,1702990802.0179396],["2023-12-19T13:01:26.60483Z",550,1702990923.6048307],["2023-12-19T13:27:56.754161Z",0,1702992513.7541618],["2023-12-19T13:28:10.164752Z",0,1702992527.164752],["2023-12-19T13:28:21.268464Z",0,1702992538.2684643],["2023-12-19T13:28:28.881813Z",0,1702992545.881813],["2023-12-19T13:31:10.955514Z",550,1702992707.9555147],["2023-12-19T14:03:14.507727Z",500.0000915527344,1702994631.507727],["2023-12-19T14:03:15.75331Z",500.0000915527344,1702994632.7533102],["2023-12-19T14:05:33.319055Z",505.0007019042969,1702994770.3190553],["2023-12-19T14:13:55.129952Z",500.0000915527344,1702995272.1299524],["2023-12-19T14:13:56.390418Z",500.0000915527344,1702995273.390418],["2023-12-19T14:16:10.208438Z",505.0007019042969,1702995407.2084389],["2023-12-19T14:18:27.187527Z",510.00030517578125,1702995544.1875272],["2023-12-19T14:20:43.691043Z",514.9990234375,1702995680.6910434],["2023-12-19T14:22:59.715233Z",520.0007934570312,1702995816.7152333],["2023-12-19T14:25:16.05285Z",524.9993286132812,1702995953.0528505],["2023-12-19T14:27:33.513955Z",530.0009155273438,1702996090.5139558],["2023-12-19T14:29:49.488951Z",534.9990844726562,1702996226.4889514],["2023-12-19T14:32:07.001934Z",540.0001831054688,1702996364.0019348],["2023-12-19T14:34:23.636123Z",544.9998168945312,1702996500.6361237],["2023-12-19T14:36:40.798849Z",550,1702996637.7988498],["2023-12-19T14:38:57.051372Z",555.0009155273438,1702996774.0513728],["2023-12-19T14:41:13.63318Z",560.0001220703125,1702996910.6331809],["2023-12-19T14:43:31.093278Z",564.9996948242188,1702997048.0932784],["2023-12-19T14:45:48.379979Z",569.99951171875,1702997185.3799796],["2023-12-19T14:48:04.579026Z",574.9996948242188,1702997321.5790265],["2023-12-19T14:50:20.684945Z",580,1702997457.684945],["2023-12-19T14:52:37.195001Z",585.0004272460938,1702997594.1950011],["2023-12-19T14:54:54.975692Z",590.0007934570312,1702997731.9756927],["2023-12-19T14:57:11.885785Z",594.9993286132812,1702997868.8857858],["2023-12-19T14:59:28.704096Z",599.9993286132812,1702998005.7040963],["2023-12-19T15:01:44.734636Z",604.99951171875,1702998141.7346368],["2023-12-19T15:04:01.717202Z",609.9993286132812,1702998278.717202],["2023-12-19T15:06:18.360468Z",615.0006103515625,1702998415.3604684],["2023-12-19T15:08:35.40618Z",619.9995727539062,1702998552.40618],["2023-12-19T15:10:52.007362Z",625.0001220703125,1702998689.0073621],["2023-12-19T15:13:08.982276Z",629.9998779296875,1702998825.9822762],["2023-12-19T15:15:25.798522Z",634.9990844726562,1702998962.7985227],["2023-12-19T15:17:43.370911Z",639.9995727539062,1702999100.3709114],["2023-12-19T15:20:00.163262Z",644.9993286132812,1702999237.1632628],["2023-12-19T15:22:17.638568Z",649.9998779296875,1702999374.638568],["2023-12-19T15:24:35.863233Z",654.9995727539062,1702999512.863233],["2023-12-19T15:26:53.897473Z",660.0001831054688,1702999650.8974736],["2023-12-19T15:29:10.16042Z",664.9995727539062,1702999787.1604202],["2023-12-19T15:31:26.868076Z",669.9998779296875,1702999923.868076],["2023-12-19T15:33:43.739857Z",675.0006713867188,1703000060.7398572],["2023-12-19T15:36:00.57488Z",680.0001220703125,1703000197.5748806],["2023-12-19T15:38:18.678261Z",685,1703000335.6782615],["2023-12-19T15:40:35.933152Z",690.0004272460938,1703000472.9331522],["2023-12-19T15:42:52.969938Z",695.0009155273438,1703000609.969938],["2023-12-19T15:45:09.536341Z",699.9995727539062,1703000746.5363412],["2023-12-19T15:47:26.721599Z",705.00048828125,1703000883.721599],["2023-12-19T15:49:43.804772Z",709.99951171875,1703001020.8047724],["2023-12-19T15:52:00.114976Z",715.0001831054688,1703001157.1149766],["2023-12-19T15:54:17.298299Z",720.0009155273438,1703001294.298299],["2023-12-19T15:56:35.124146Z",724.9993286132812,1703001432.1241462],["2023-12-19T15:58:52.743746Z",729.9993286132812,1703001569.743746],["2023-12-19T16:01:09.699106Z",735.0009155273438,1703001706.699106],["2023-12-19T16:03:25.707702Z",739.9998168945312,1703001842.7077026],["2023-12-19T16:05:42.838883Z",745.0001220703125,1703001979.838883],["2023-12-19T16:08:00.609052Z",749.9995727539062,1703002117.6090524],["2023-12-19T17:33:27.202113Z",0,1703007244.2021134]]}]}]}
+
+        '
+    headers:
+      Connection:
+      - keep-alive
+      Content-Encoding:
+      - gzip
+      Content-Type:
+      - application/json
+      Date:
+      - Wed, 07 May 2025 03:01:41 GMT
+      Request-Id:
+      - 0ddfdab6d7554ed617caaff5fa59f9a0
+      Strict-Transport-Security:
+      - max-age=16070400
+      Transfer-Encoding:
+      - chunked
+      X-Influxdb-Build:
+      - ENT
+      X-Influxdb-Version:
+      - v1.11.8
+      X-Request-Id:
+      - 0ddfdab6d7554ed617caaff5fa59f9a0
+    status:
+      code: 200
+      message: OK
+- request:
+    body: null
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate, br, zstd
+      Authorization:
+      - Basic ZWZkcmVhZGVyOjlXa29zajJtMWQrTmVxYU5UeVBOQkE9PQ==
+      Connection:
+      - keep-alive
+      User-Agent:
+      - python-requests/2.32.3
+    method: GET
+    uri: https://usdf-rsp.slac.stanford.edu/influxdb-enterprise-data//query?db=efd&q=SHOW+FIELD+KEYS+FROM+%22lsst.sal.ATMonochromator.logevent_wavelength%22
+  response:
+    body:
+      string: '{"results":[{"statement_id":0,"series":[{"name":"lsst.sal.ATMonochromator.logevent_wavelength","columns":["fieldKey","fieldType"],"values":[["private_efdStamp","float"],["private_identity","string"],["private_kafkaStamp","float"],["private_origin","integer"],["private_rcvStamp","float"],["private_revCode","string"],["private_seqNum","integer"],["private_sndStamp","float"],["timestamp","float"],["wavelength","float"]]}]}]}
+
+        '
+    headers:
+      Connection:
+      - keep-alive
+      Content-Encoding:
+      - gzip
+      Content-Type:
+      - application/json
+      Date:
+      - Wed, 07 May 2025 03:01:41 GMT
+      Request-Id:
+      - 3b0526f47145be3b443df8bd867720b8
+      Strict-Transport-Security:
+      - max-age=16070400
+      Transfer-Encoding:
+      - chunked
+      X-Influxdb-Build:
+      - ENT
+      X-Influxdb-Version:
+      - v1.11.8
+      X-Request-Id:
+      - 3b0526f47145be3b443df8bd867720b8
+    status:
+      code: 200
+      message: OK
+version: 1

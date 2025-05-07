@@ -1,0 +1,206 @@
+interactions:
+- request:
+    body: null
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate, br, zstd
+      Connection:
+      - keep-alive
+      User-Agent:
+      - python-requests/2.32.3
+    method: GET
+    uri: https://sdfproxy.sdf.slac.stanford.edu:3128/segwarides/creds/usdf_efd
+  response:
+    body:
+      string: '{"host": "usdf-rsp.slac.stanford.edu", "username": "efdreader", "password":
+        "9Wkosj2m1d+NeqaNTyPNBA==", "schema_registry": "http://sasquatch-schema-registry.sasquatch:8081",
+        "port": "443", "path": "/influxdb-enterprise-data/"}'
+    headers:
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '226'
+      Content-Type:
+      - application/json; charset=utf-8
+      Date:
+      - Wed, 07 May 2025 03:01:38 GMT
+      Strict-Transport-Security:
+      - max-age=31536000; includeSubDomains
+    status:
+      code: 200
+      message: OK
+- request:
+    body: null
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate, br, zstd
+      Authorization:
+      - Basic ZWZkcmVhZGVyOjlXa29zajJtMWQrTmVxYU5UeVBOQkE9PQ==
+      Connection:
+      - keep-alive
+      User-Agent:
+      - python-requests/2.32.3
+    method: GET
+    uri: https://usdf-rsp.slac.stanford.edu/influxdb-enterprise-data//ping?wait_for_leader=5s
+  response:
+    body:
+      string: ''
+    headers:
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Wed, 07 May 2025 03:01:38 GMT
+      Request-Id:
+      - 3b0a15e84b5794822c00af470f04c37d
+      Strict-Transport-Security:
+      - max-age=16070400
+      X-Influxdb-Build:
+      - ENT
+      X-Influxdb-Version:
+      - v1.11.8
+      X-Request-Id:
+      - 3b0a15e84b5794822c00af470f04c37d
+    status:
+      code: 204
+      message: No Content
+- request:
+    body: null
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate, br, zstd
+      Authorization:
+      - Basic ZWZkcmVhZGVyOjlXa29zajJtMWQrTmVxYU5UeVBOQkE9PQ==
+      Connection:
+      - keep-alive
+      User-Agent:
+      - python-requests/2.32.3
+    method: GET
+    uri: https://usdf-rsp.slac.stanford.edu/influxdb-enterprise-data//query?db=efd&q=SELECT+%2A+FROM+%22lsst.sal.Electrometer.logevent_logMessage%22+WHERE+time+%3E%3D+%272024-07-26T16%3A29%3A23.000Z%27+AND+time+%3C%3D+%272024-07-26T16%3A44%3A23.000Z%27
+  response:
+    body:
+      string: '{"results":[{"statement_id":0,"series":[{"name":"lsst.sal.Electrometer.logevent_logMessage","columns":["time","filePath","functionName","level","lineNumber","message","name","private_efdStamp","private_identity","private_kafkaStamp","private_origin","private_rcvStamp","private_revCode","private_seqNum","private_sndStamp","process","salIndex","timestamp","traceback"],"values":[["2024-07-26T16:37:32.677679Z","/opt/lsst/software/stack/miniconda/lib/python3.11/site-packages/lsst/ts/electrometer/csc.py","do_performZeroCalib",20,228,"Zero
+        Calibration Completed","Electrometer",1722011852.6776798,"Electrometer:201",1722011889.6793993,1017314,1722011889.6778204,"09477ba5",7,1722011889.6776798,1017314,201,0,""],["2024-07-26T16:37:32.714343Z","/opt/lsst/software/stack/miniconda/lib/python3.11/site-packages/lsst/ts/electrometer/csc.py","do_setDigitalFilter",20,261,"setDigitalFilter
+        Completed","Electrometer",1722011852.714343,"Electrometer:201",1722011889.7150528,1017314,1722011889.7144938,"09477ba5",8,1722011889.714343,1017314,201,0,""],["2024-07-26T16:37:55.227696Z","/opt/lsst/software/stack/miniconda/lib/python3.11/site-packages/lsst/ts/electrometer/controller.py","write_fits_file",20,740,"Electrometer
+        Scan data file written: EM201_O_20240726_000002.fits\nScan Summary of Signal
+        [Mean, median, std] is: [-2.24234e-07, -2.24329e-07, 6.68010e-10]\nScan Summary
+        of Time [Mean, median] is: [2.15000e+01, 2.15000e+01]","Electrometer.KeithleyElectrometerController",1722011875.2276967,"Electrometer:201",1722011913.291986,1017314,1722011912.2278585,"09477ba5",9,1722011912.2276967,1017314,201,0,""],["2024-07-26T16:37:55.300334Z","/opt/lsst/software/stack/miniconda/lib/python3.11/site-packages/lsst/ts/electrometer/csc.py","do_startScanDt",20,376,"startScanDt
+        Completed","Electrometer",1722011875.3003345,"Electrometer:201",1722011913.2944138,1017314,1722011912.3004677,"09477ba5",10,1722011912.3003345,1017314,201,0,""],["2024-07-26T16:38:17.580672Z","/opt/lsst/software/stack/miniconda/lib/python3.11/site-packages/lsst/ts/electrometer/controller.py","write_fits_file",20,740,"Electrometer
+        Scan data file written: EM201_O_20240726_000003.fits\nScan Summary of Signal
+        [Mean, median, std] is: [-2.24388e-07, -2.24487e-07, 7.45162e-10]\nScan Summary
+        of Time [Mean, median] is: [2.25000e+01, 2.25000e+01]","Electrometer.KeithleyElectrometerController",1722011897.5806723,"Electrometer:201",1722011934.5814202,1017314,1722011934.5808353,"09477ba5",11,1722011934.5806723,1017314,201,0,""],["2024-07-26T16:38:17.595996Z","/opt/lsst/software/stack/miniconda/lib/python3.11/site-packages/lsst/ts/electrometer/csc.py","do_startScanDt",20,376,"startScanDt
+        Completed","Electrometer",1722011897.5959964,"Electrometer:201",1722011934.597257,1017314,1722011934.5961702,"09477ba5",12,1722011934.5959964,1017314,201,0,""],["2024-07-26T16:40:19.578897Z","/opt/lsst/software/stack/miniconda/lib/python3.11/site-packages/lsst/ts/electrometer/controller.py","write_fits_file",20,740,"Electrometer
+        Scan data file written: EM201_O_20240726_000004.fits\nScan Summary of Signal
+        [Mean, median, std] is: [-2.24105e-07, -2.24108e-07, 8.08652e-10]\nScan Summary
+        of Time [Mean, median] is: [1.82000e+02, 1.82000e+02]","Electrometer.KeithleyElectrometerController",1722012019.578897,"Electrometer:201",1722012056.5796785,1017314,1722012056.5791008,"09477ba5",13,1722012056.578897,1017314,201,0,""],["2024-07-26T16:40:19.638855Z","/opt/lsst/software/stack/miniconda/lib/python3.11/site-packages/lsst/ts/electrometer/csc.py","do_startScanDt",20,376,"startScanDt
+        Completed","Electrometer",1722012019.638855,"Electrometer:201",1722012056.6402872,1017314,1722012056.6389687,"09477ba5",14,1722012056.638855,1017314,201,0,""],["2024-07-26T16:42:21.552744Z","/opt/lsst/software/stack/miniconda/lib/python3.11/site-packages/lsst/ts/electrometer/controller.py","write_fits_file",20,740,"Electrometer
+        Scan data file written: EM201_O_20240726_000005.fits\nScan Summary of Signal
+        [Mean, median, std] is: [-2.23784e-07, -2.23802e-07, 8.22585e-10]\nScan Summary
+        of Time [Mean, median] is: [1.82000e+02, 1.82000e+02]","Electrometer.KeithleyElectrometerController",1722012141.5527442,"Electrometer:201",1722012178.5534284,1017314,1722012178.55291,"09477ba5",15,1722012178.5527442,1017314,201,0,""],["2024-07-26T16:42:21.600337Z","/opt/lsst/software/stack/miniconda/lib/python3.11/site-packages/lsst/ts/electrometer/csc.py","do_startScanDt",20,376,"startScanDt
+        Completed","Electrometer",1722012141.600337,"Electrometer:201",1722012178.601451,1017314,1722012178.6004326,"09477ba5",16,1722012178.600337,1017314,201,0,""],["2024-07-26T16:42:42.072314Z","/opt/lsst/software/stack/miniconda/lib/python3.11/site-packages/lsst/ts/electrometer/controller.py","write_fits_file",20,740,"Electrometer
+        Scan data file written: EM201_O_20240726_000006.fits\nScan Summary of Signal
+        [Mean, median, std] is: [-2.23801e-07, -2.23735e-07, 8.44889e-10]\nScan Summary
+        of Time [Mean, median] is: [1.95000e+01, 1.95000e+01]","Electrometer.KeithleyElectrometerController",1722012162.0723143,"Electrometer:201",1722012199.0730739,1017314,1722012199.0724351,"09477ba5",17,1722012199.0723143,1017314,201,0,""],["2024-07-26T16:42:42.089903Z","/opt/lsst/software/stack/miniconda/lib/python3.11/site-packages/lsst/ts/electrometer/csc.py","do_startScanDt",20,376,"startScanDt
+        Completed","Electrometer",1722012162.0899036,"Electrometer:201",1722012199.0914605,1017314,1722012199.0899851,"09477ba5",18,1722012199.0899036,1017314,201,0,""],["2024-07-26T16:43:02.531405Z","/opt/lsst/software/stack/miniconda/lib/python3.11/site-packages/lsst/ts/electrometer/controller.py","write_fits_file",20,740,"Electrometer
+        Scan data file written: EM201_O_20240726_000007.fits\nScan Summary of Signal
+        [Mean, median, std] is: [-2.23710e-07, -2.23700e-07, 8.70130e-10]\nScan Summary
+        of Time [Mean, median] is: [1.95000e+01, 1.95000e+01]","Electrometer.KeithleyElectrometerController",1722012182.531405,"Electrometer:201",1722012219.5320923,1017314,1722012219.531677,"09477ba5",19,1722012219.531405,1017314,201,0,""],["2024-07-26T16:43:02.545974Z","/opt/lsst/software/stack/miniconda/lib/python3.11/site-packages/lsst/ts/electrometer/csc.py","do_startScanDt",20,376,"startScanDt
+        Completed","Electrometer",1722012182.5459745,"Electrometer:201",1722012219.5488317,1017314,1722012219.546097,"09477ba5",20,1722012219.5459745,1017314,201,0,""],["2024-07-26T16:43:29.304597Z","/opt/lsst/software/stack/miniconda/lib/python3.11/site-packages/lsst/ts/electrometer/controller.py","write_fits_file",20,740,"Electrometer
+        Scan data file written: EM201_O_20240726_000008.fits\nScan Summary of Signal
+        [Mean, median, std] is: [-2.23417e-07, -2.23422e-07, 8.83942e-10]\nScan Summary
+        of Time [Mean, median] is: [2.90000e+01, 2.90000e+01]","Electrometer.KeithleyElectrometerController",1722012209.3045979,"Electrometer:201",1722012246.305429,1017314,1722012246.304874,"09477ba5",21,1722012246.3045979,1017314,201,0,""],["2024-07-26T16:43:29.322414Z","/opt/lsst/software/stack/miniconda/lib/python3.11/site-packages/lsst/ts/electrometer/csc.py","do_startScanDt",20,376,"startScanDt
+        Completed","Electrometer",1722012209.3224144,"Electrometer:201",1722012246.3242102,1017314,1722012246.322549,"09477ba5",22,1722012246.3224144,1017314,201,0,""],["2024-07-26T16:43:55.897233Z","/opt/lsst/software/stack/miniconda/lib/python3.11/site-packages/lsst/ts/electrometer/controller.py","write_fits_file",20,740,"Electrometer
+        Scan data file written: EM201_O_20240726_000009.fits\nScan Summary of Signal
+        [Mean, median, std] is: [-2.23493e-07, -2.23443e-07, 8.37136e-10]\nScan Summary
+        of Time [Mean, median] is: [2.95000e+01, 2.95000e+01]","Electrometer.KeithleyElectrometerController",1722012235.897233,"Electrometer:201",1722012272.8978493,1017314,1722012272.8974295,"09477ba5",23,1722012272.897233,1017314,201,0,""],["2024-07-26T16:43:55.914171Z","/opt/lsst/software/stack/miniconda/lib/python3.11/site-packages/lsst/ts/electrometer/csc.py","do_startScanDt",20,376,"startScanDt
+        Completed","Electrometer",1722012235.9141712,"Electrometer:201",1722012272.9158242,1017314,1722012272.9142995,"09477ba5",24,1722012272.9141712,1017314,201,0,""],["2024-07-26T16:44:05.236076Z","/opt/lsst/software/stack/miniconda/lib/python3.11/site-packages/lsst/ts/electrometer/controller.py","write_fits_file",20,740,"Electrometer
+        Scan data file written: EM201_O_20240726_000010.fits\nScan Summary of Signal
+        [Mean, median, std] is: [-2.23358e-07, -2.23602e-07, 5.61094e-10]\nScan Summary
+        of Time [Mean, median] is: [1.50000e+00, 1.50000e+00]","Electrometer.KeithleyElectrometerController",1722012245.2360768,"Electrometer:201",1722012282.2365558,1017314,1722012282.2362092,"09477ba5",25,1722012282.2360768,1017314,201,0,""],["2024-07-26T16:44:05.251571Z","/opt/lsst/software/stack/miniconda/lib/python3.11/site-packages/lsst/ts/electrometer/csc.py","do_startScanDt",20,376,"startScanDt
+        Completed","Electrometer",1722012245.251571,"Electrometer:201",1722012282.2524295,1017314,1722012282.2516775,"09477ba5",26,1722012282.251571,1017314,201,0,""],["2024-07-26T16:44:14.561891Z","/opt/lsst/software/stack/miniconda/lib/python3.11/site-packages/lsst/ts/electrometer/controller.py","write_fits_file",20,740,"Electrometer
+        Scan data file written: EM201_O_20240726_000011.fits\nScan Summary of Signal
+        [Mean, median, std] is: [-2.23029e-07, -2.22901e-07, 7.40472e-10]\nScan Summary
+        of Time [Mean, median] is: [1.50000e+00, 1.50000e+00]","Electrometer.KeithleyElectrometerController",1722012254.5618913,"Electrometer:201",1722012291.6000566,1017314,1722012291.5620637,"09477ba5",27,1722012291.5618913,1017314,201,0,""],["2024-07-26T16:44:14.57647Z","/opt/lsst/software/stack/miniconda/lib/python3.11/site-packages/lsst/ts/electrometer/csc.py","do_startScanDt",20,376,"startScanDt
+        Completed","Electrometer",1722012254.5764706,"Electrometer:201",1722012291.6034493,1017314,1722012291.5765426,"09477ba5",28,1722012291.5764706,1017314,201,0,""],["2024-07-26T16:44:22.302699Z","/opt/lsst/software/stack/miniconda/lib/python3.11/site-packages/lsst/ts/electrometer/controller.py","write_fits_file",20,740,"Electrometer
+        Scan data file written: EM201_O_20240726_000012.fits\nScan Summary of Signal
+        [Mean, median, std] is: [nan, nan, nan]\nScan Summary of Time [Mean, median]
+        is: [nan, nan]","Electrometer.KeithleyElectrometerController",1722012262.3026996,"Electrometer:201",1722012300.8540342,1017314,1722012299.3028889,"09477ba5",29,1722012299.3026996,1017314,201,0,""],["2024-07-26T16:44:22.318058Z","/opt/lsst/software/stack/miniconda/lib/python3.11/site-packages/lsst/ts/electrometer/csc.py","do_startScanDt",20,376,"startScanDt
+        Completed","Electrometer",1722012262.3180585,"Electrometer:201",1722012300.856924,1017314,1722012299.31818,"09477ba5",30,1722012299.3180585,1017314,201,0,""]]}]}]}
+
+        '
+    headers:
+      Connection:
+      - keep-alive
+      Content-Encoding:
+      - gzip
+      Content-Type:
+      - application/json
+      Date:
+      - Wed, 07 May 2025 03:01:38 GMT
+      Request-Id:
+      - 6f467b173bc3103cea0dacac0e4f1e70
+      Strict-Transport-Security:
+      - max-age=16070400
+      Transfer-Encoding:
+      - chunked
+      X-Influxdb-Build:
+      - ENT
+      X-Influxdb-Version:
+      - v1.11.8
+      X-Request-Id:
+      - 6f467b173bc3103cea0dacac0e4f1e70
+    status:
+      code: 200
+      message: OK
+- request:
+    body: null
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate, br, zstd
+      Authorization:
+      - Basic ZWZkcmVhZGVyOjlXa29zajJtMWQrTmVxYU5UeVBOQkE9PQ==
+      Connection:
+      - keep-alive
+      User-Agent:
+      - python-requests/2.32.3
+    method: GET
+    uri: https://usdf-rsp.slac.stanford.edu/influxdb-enterprise-data//query?db=efd&q=SHOW+FIELD+KEYS+FROM+%22lsst.sal.Electrometer.logevent_logMessage%22
+  response:
+    body:
+      string: '{"results":[{"statement_id":0,"series":[{"name":"lsst.sal.Electrometer.logevent_logMessage","columns":["fieldKey","fieldType"],"values":[["ElectrometerID","integer"],["filePath","string"],["functionName","string"],["level","integer"],["lineNumber","integer"],["message","string"],["name","string"],["priority","integer"],["private_efdStamp","float"],["private_identity","string"],["private_kafkaStamp","float"],["private_origin","integer"],["private_rcvStamp","float"],["private_revCode","string"],["private_seqNum","integer"],["private_sndStamp","float"],["process","integer"],["salIndex","integer"],["timestamp","float"],["traceback","string"]]}]}]}
+
+        '
+    headers:
+      Connection:
+      - keep-alive
+      Content-Encoding:
+      - gzip
+      Content-Type:
+      - application/json
+      Date:
+      - Wed, 07 May 2025 03:01:38 GMT
+      Request-Id:
+      - f3d03732e28499f0e0e853605e23df60
+      Strict-Transport-Security:
+      - max-age=16070400
+      Transfer-Encoding:
+      - chunked
+      X-Influxdb-Build:
+      - ENT
+      X-Influxdb-Version:
+      - v1.11.8
+      X-Request-Id:
+      - f3d03732e28499f0e0e853605e23df60
+    status:
+      code: 200
+      message: OK
+version: 1
