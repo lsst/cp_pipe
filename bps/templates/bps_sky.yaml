@@ -1,0 +1,28 @@
+pipelineYaml: "${CP_PIPE_DIR}/pipelines/${INSTRUMENT}/cpSky.yaml"
+
+project: "${TICKET}"
+campaign: "${TICKET}"
+submitPath: "${SCRATCH}/submit/{outputRun}"
+
+includeConfigs:
+  - ${CP_PIPE_DIR}/bps/caching/cp_caching.yaml
+
+clusterAlgorithm: lsst.ctrl.bps.quantum_clustering_funcs.dimension_clustering
+cluster:
+  cpSkyIsrCpSkyImageByDetector:
+    pipetasks: cpSkyIsr,cpSkyImage
+    dimensions: detector
+    partitionDimensions: exposure
+    partitionMaxClusters: 3000
+  cpSkySubtractBackgroundByDetector:
+    pipetasks: cpSkySubtractBackground
+    dimensions: detector
+    partitionDimensions: exposure
+    partitionMaxClusters: 3000
+
+payload:
+  payloadName: "${INSTRUMENT}_${TICKET}_sky"
+  output: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET}/${TAG}/skyGen.${RERUN}"
+  butlerConfig: "${REPO}"
+  inCollection: "${RAW_COLLECTION},${CALIB_COLLECTIONS}"
+  dataQuery: "${SELECTION_SKY}"
