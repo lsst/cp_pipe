@@ -29,6 +29,8 @@ from astropy.stats import sigma_clipped_stats
 from astropy.table import Table
 from scipy.optimize import curve_fit
 
+from lsst.geom import Point2I
+
 __all__ = ["QuadNotchExtractConfig", "QuadNotchExtractTask",
            "QuadNotchMergeConfig", "QuadNotchMergeTask"]
 
@@ -36,13 +38,21 @@ __all__ = ["QuadNotchExtractConfig", "QuadNotchExtractTask",
 class QuadNotchExtractConnections(pipeBase.PipelineTaskConnections,
                                   dimensions=("instrument", "exposure", "detector")):
     inputExp = cT.Input(
-        name="qnIsrExp",
+        name="post_isr_quadnotch",
         doc="Input ISR-processed exposures to combine.",
         storageClass="Exposure",
         dimensions=("instrument", "exposure", "detector"),
         multiple=False,
         deferLoad=False,
     )
+    camera = cT.PrerequisiteInput(
+        name="camera",
+        storageClass="Camera",
+        doc="Input camera to construct complete exposures.",
+        dimensions=["instrument"],
+        isCalibration=True,
+    )
+
     outputData = cT.Output(
         name="quadNotchSingle",
         doc="Output quad-notch analysis.",
@@ -61,33 +71,33 @@ class QuadNotchExtractConfig(pipeBase.PipelineTaskConfig,
     )
     nPixMin = pexConfig.Field(
         dtype=int,
-        default=0,
+        default=5,
         doc="Minimum area for a detected object.",
     )
     grow = pexConfig.Field(
         dtype=int,
         default=0,
-        doc="",
+        doc="CZW",
     )
     xWindow = pexConfig.Field(
         dtype=int,
         default=0,
-        doc="",
+        doc="CZW",
     )
     yWindow = pexConfig.Field(
         dtype=int,
         default=50,
-        doc="",
+        doc="CZW",
     )
     xGauge = pexConfig.Field(
         dtype=float,
         default=1.75,
-        doc="",
+        doc="CZW",
     )
     threshold = pexConfig.Field(
         dtype=float,
         default=1.2e5,
-        doc="",
+        doc="CZW",
     )
     targetReplacements = pexConfig.DictField(
         keytype=str,
@@ -144,7 +154,9 @@ class QuadNotchExtractTask(pipeBase.PipelineTask):
         row['airmass'] = inputExp.visitInfo.boresightAirmass
         row['azimuth'] = inputExp.visitInfo.boresightAzAlt[0].asDegrees()
         row['altitude'] = inputExp.visitInfo.boresightAzAlt[1].asDegrees()
-        row['date'] = inputExp.visitInfo.date.toPython()
+        # Cast to isoformat so we don't try to persist an object
+        # in the output table.
+        row['date'] = inputExp.visitInfo.date.toPython().isoformat()
         row['hourangle'] = inputExp.visitInfo.boresightHourAngle.asDegrees()
         row['expTime'] = inputExp.visitInfo.exposureTime
         row['target'] = inputExp.visitInfo.object
@@ -187,10 +199,9 @@ class QuadNotchExtractTask(pipeBase.PipelineTask):
 
         fpSet = self.findObjects(inputExp)
         if len(fpSet.getFootprints()) == 0:
-            row['flags'] = self.FLAG_NO_FOOTPRINT_FOUND
-            outputTable = Table([row])
+            rowAddendum = self._returnFailure(self.FLAG_NO_FOOTPRINT_FOUND)
         else:
-            starCentroid, centerX = self.getCutout(inputExp, fpSet, row)
+            starCentroid, centerX = self.getCutoutLocation(inputExp, fpSet)
 
             # If we failed to find a center earlier, find one now.
             # This does not handle the case where the commanded offset
@@ -211,8 +222,11 @@ class QuadNotchExtractTask(pipeBase.PipelineTask):
 
             # Ignoring debug plots.
             rowAddendum = self.getAdvancedFluxes(cutout)
-            row.update(rowAddendum)
+
+        # Combine base row with updates
+        row.update(rowAddendum)
         outputTable = Table([row])
+
         return pipeBase.Struct(
             outputData=outputTable,
         )
@@ -225,7 +239,80 @@ class QuadNotchExtractTask(pipeBase.PipelineTask):
         row['centroids'] = []
         row['background'] = []
         row['flags'] = flag
+        # This doesn't return everything it should
         return row
+
+    def findObjects(self, exposure):
+        """Quick detection method.
+
+        Parameters
+        ----------
+        exposure : `lsst.afw.image.Exposure`
+            The exposure to detect objects in.
+
+        Returns
+        -------
+        footprints : `lsst.afw.detection.FootprintSet`
+            Footprints of detections
+
+        Notes
+        -----
+        This comes from summit_utils/utils.py/detectObjectsInExp.
+        """
+        exposureCopy = exposure.clone()
+        median = np.nanmedian(exposureCopy.image.array)
+        exposureCopy.image -= median
+
+        threshold = afwDetect.Threshold(self.config.nSigma, afwDetect.Threshold.STDEV)
+        footPrintSet = afwDetect.FootprintSet(exposureCopy.getMaskedImage(),
+                                              threshold,
+                                              "DETECTED",
+                                              self.config.nPixMin)
+        if self.config.grow > 0:
+            isotropic = True
+            footPrintSet = afwDetect.FootprintSet(footPrintSet, self.config.grow, isotropic)
+
+        return footPrintSet
+
+    def getCutoutLocation(self, inputExp, fpSet):
+        """TBD
+        Parameters
+        ----------
+        inputExp : `lsst.afw.image.Exposure`
+            Exposure to study.
+        fpSet : `lsst.afw.detection.FootprintSet`
+            List of detected footprints.
+
+        Returns
+        -------
+        centroid : `tuple`?
+        centerX : float?
+        """
+        median = np.nanmedian(inputExp.image.array)
+        centerOfMass_numerator = 0
+        centerOfMass_denominator = 0
+
+        fluxes = []
+        centroids = []
+        for fp in fpSet.getFootprints():
+            if fp.getArea() < self.config.nPixMin:
+                continue
+            centroid = fp.getCentroid()
+            height = fp.getBBox().height
+            flux = fp.getSpans().flatten(inputExp.image.array - median).sum()
+            centerOfMass_numerator += centroid[0]*flux*height
+            centerOfMass_denominator += flux*height
+
+            fluxes.append(flux)
+            centroids.append(centroid)
+
+        # Take the largest flux centroid as the central star.  This
+        # should probably have shape checks.
+        starCentroidIndex = np.array(fluxes).argmax()
+        starCentroid = centroids[starCentroidIndex]
+        centerX = centerOfMass_numerator / centerOfMass_denominator
+
+        return starCentroid, centerX
 
     def getAdvancedFluxes(self, exp):
         """TBD
@@ -255,7 +342,7 @@ class QuadNotchExtractTask(pipeBase.PipelineTask):
             centroid = fp.getCentroid()
             ampBBox = exp.getBBox()
             cautiousBox = ampBBox.erodedBy(100)   # CZW: This should be configurable
-            if cautiousBox.contains(centroid):
+            if cautiousBox.contains(Point2I(centroid)):
                 centroids.append(centroid)
                 bboxes.append(fp.getBBox())
         if len(bboxes) < 4:
@@ -286,25 +373,18 @@ class QuadNotchExtractTask(pipeBase.PipelineTask):
         for idx in range(4):
             mid_y = int((bin_edges[idx + 1] - bin_edges[idx])/2. + bin_edges[idx])
             # CZW: this should be configurable:
-            x_data = np.median(exp[mid_y - 5:mid_y + 5, :], axis=0)
-            # x_data_alt = np.sum(exp[bin_edges[idx]:bin_edges[idx + 1]], axis=0)  # noqa W505
-            # Do we not need a :?
-            # This isn't used, except for x_norm_alt, which is only for plots.
+            x_data = np.median(exp.image.array[mid_y - 5:mid_y + 5, :], axis=0)
             alt_x_vals = np.arange(len(x_data))
 
             x_norm = (x_data - x_data.min())/(x_data.max() - x_data.min())
-            # x_norm_alt = (x_data_alt - x_data.min())/(x_data_alt.max() - x_data_alt.min())  # noqa W505
-            # typo?
-            # This isn't used, except for plots.
-
             theta, covariance = curve_fit(self._d_gaussian,
                                           alt_x_vals,
                                           x_norm,
                                           p0=[0.5, center_guess_x[idx], 3, 20],
                                           bounds=(0, [1, 400, 25, 100]),
-                                          m_nfev=10_000)
+                                          max_nfev=10_000)
             fit_parameters.append(theta)
-            x_centers[idx] = int[theta[1]]
+            x_centers[idx] = int(theta[1])
             alt_centroids.append([x_centers[idx], mid_y])
             if self.config.xWindow == 0:
                 scale = 2*np.sqrt(2*np.log(2))
@@ -345,16 +425,16 @@ class QuadNotchExtractTask(pipeBase.PipelineTask):
         for idx in range(4):
             # Background first:
             # CZW: These should be configurable.
-            left = exp[bin_edges[idx]:bin_edges[idx + 1],
-                       x_min[idx] - 10:x_min[idx]]
-            right = exp[bin_edges[idx]:bin_edges[idx + 1],
-                        x_max[idx]: x_max[idx] + 10]
+            left = exp.image.array[bin_edges[idx]:bin_edges[idx + 1],
+                                   x_min[idx] - 10:x_min[idx]]
+            right = exp.image.array[bin_edges[idx]:bin_edges[idx + 1],
+                                    x_max[idx]: x_max[idx] + 10]
             background_box = np.concatenate((left, right), axis=1)
             _, background_vec, _ = sigma_clipped_stats(background_box, axis=1)
 
             # Define aperture box:
-            signal_box = exp[bin_edges[idx]:bin_edges[idx + 1],
-                             x_min[idx]:x_max[idx]]
+            signal_box = exp.image.array[bin_edges[idx]:bin_edges[idx + 1],
+                                         x_min[idx]:x_max[idx]]
             corrected = signal_box - background_vec[:, np.newaxis]
 
             background.append(np.mean(background_vec))
@@ -385,76 +465,6 @@ class QuadNotchExtractTask(pipeBase.PipelineTask):
         """
         return a*np.exp(-(x-mean)**2/(2*sigma_1**2)) + (1-a)*np.exp(-(x-mean)**2/(2*sigma_2**2))
 
-    def getCutoutLocation(self, inputExp, fpSet):
-        """TBD
-        Parameters
-        ----------
-        inputExp : `lsst.afw.image.Exposure`
-            Exposure to study.
-        fpSet : `lsst.afw.detection.FootprintSet`
-            List of detected footprints.
-
-        Returns
-        -------
-        centroid : `tuple`?
-        centerX : float?
-        """
-        median = np.nanmedian(inputExp.image.array)
-        centerOfMass_numerator = 0
-        centerOfMass_denominator = 0
-
-        fluxes = []
-        centroids = []
-        for fp in fpSet.getFootprints():
-            centroid = fp.getCentroid()
-            height = fp.getBBox().height
-            flux = fp.getSpans().flatten(inputExp.image.array - median).sum()
-            centerOfMass_numerator += centroid[0]*flux*height
-            centerOfMass_denominator += flux*height
-
-            fluxes.append(flux)
-            centroids.append(centroid)
-
-        # Take the largest flux centroid as the central star.  This
-        # should probably have shape checks.
-        starCentroidIndex = np.array(fluxes).argmax()
-        starCentroid = centroids[starCentroidIndex]
-        centerX = centerOfMass_numerator / centerOfMass_denominator
-
-        return starCentroid, centerX
-
-    def findObjects(self, exposure):
-        """Quick detection method.
-
-        Parameters
-        ----------
-        exposure : `lsst.afw.image.Exposure`
-            The exposure to detect objects in.
-
-        Returns
-        -------
-        footprints : `lsst.afw.detection.FootprintSet`
-            Footprints of detections
-
-        Notes
-        -----
-        This comes from summit_utils/utils.py/detectObjectsInExp.
-        """
-        exposureCopy = exposure.clone()
-        median = np.nanmedian(exposureCopy.image.array)
-        exposureCopy.image -= median
-
-        threshold = afwDetect.Threshold(self.config.nSigma, afwDetect.Threshold.STDEV)
-        footPrintSet = afwDetect.FootprintSet(exposureCopy.getMaskedImage(),
-                                              threshold,
-                                              "DETECTED",
-                                              self.config.nPixMin)
-        if self.config.grow > 0:
-            isotropic = True
-            footPrintSet = afwDetect.FootprintSet(footPrintSet, self.config.grow, isotropic)
-
-        return footPrintSet
-
 
 class QuadNotchMergeConnections(pipeBase.PipelineTaskConnections,
                                 dimensions=("instrument", "detector")):
@@ -467,7 +477,7 @@ class QuadNotchMergeConnections(pipeBase.PipelineTaskConnections,
         deferLoad=False,
     )
     outputData = cT.Output(
-        name="quadNotch",
+        name="quadNotchCombined",
         doc="Output combined quad-notch analysis.",
         storageClass="ArrowAstropy",
         dimensions=("instrument", "detector"),
@@ -480,37 +490,7 @@ class QuadNotchMergeConfig(pipeBase.PipelineTaskConfig,
     nSigma = pexConfig.Field(
         dtype=float,
         default=2.0,
-        doc="",
-    )
-    nPixMin = pexConfig.Field(
-        dtype=int,
-        default=0,
-        doc="",
-    )
-    grow = pexConfig.Field(
-        dtype=int,
-        default=0,
-        doc="",
-    )
-    xWindow = pexConfig.Field(
-        dtype=int,
-        default=0,
-        doc="",
-    )
-    yWindow = pexConfig.Field(
-        dtype=int,
-        default=50,
-        doc="",
-    )
-    xGauge = pexConfig.Field(
-        dtype=float,
-        default=1.75,
-        doc="",
-    )
-    threshold = pexConfig.Field(
-        dtype=float,
-        default=1.2e5,
-        doc="",
+        doc="This is a dummy parameter that isn't used, but I didn't want no config here.",
     )
 
 
