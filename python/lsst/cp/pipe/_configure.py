@@ -35,6 +35,7 @@ def configureIsrTaskLSSTForCalibrations(config):
     config.doBias = False
     config.doDark = False
     config.doDefect = False
+    config.badAmps = []
     config.doNanMasking = True
     config.doWidenSaturationTrails = False
     config.doBrighterFatter = False
