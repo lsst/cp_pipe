@@ -264,7 +264,10 @@ class PhotonTransferCurveExtractConfigBase(
         doc="Match input exposures by time, flux, or expId",
         default='TIME',
         allowed={
-            "TIME": "Match exposures by exposure time.",
+            "TIME": "Match exposures by reported exposure time. Entries "
+                    "that are within 1e-3 seconds. For matching requested "
+                    "exposure time use ``FLUX`` option and use the "
+                    "``EXPTIME`` keyword.",
             "FLUX": "Match exposures by target flux. Use header keyword"
                 " in matchExposuresByFluxKeyword to find the flux.",
             "EXPID": "Match exposures by exposure ID."
