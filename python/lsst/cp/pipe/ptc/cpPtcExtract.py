@@ -192,7 +192,7 @@ class PhotonTransferCurveExtractPairConnections(
             previousExposureTime = -1.0
             nInPair = 1
             for i, exposure in enumerate(quantumIdDict.keys()):
-                if exposureTimes[i] == previousExposureTime:
+                if np.isclose(exposureTimes[i], previousExposureTime, atol=1e-3):
                     # This is a match.
                     if nInPair == 2:
                         # We already have a pair!
