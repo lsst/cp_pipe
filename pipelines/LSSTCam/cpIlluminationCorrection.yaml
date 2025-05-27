@@ -1,0 +1,10 @@
+description: cp_pipe LSSTComCam illumination correction calibration construction.
+instrument: lsst.obs.lsst.LsstCam
+imports:
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpIlluminationCorrectionLSST.yaml
+tasks:
+  cpIlluminationCorrectionFgcmOutputIlluminationCorrection:
+    class: lsst.fgcmcal.fgcmOutputIlluminationCorrection.FgcmOutputIlluminationCorrectionTask
+    config:
+      epoch_time: "2025-05-23"
+      physical_filters: ["u_26", "g_6", "r_57", "i_39", "z_20", "y_10"]
