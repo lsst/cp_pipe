@@ -192,7 +192,7 @@ class PhotonTransferCurveExtractPairConnections(
             previousExposureTime = -1.0
             nInPair = 1
             for i, exposure in enumerate(quantumIdDict.keys()):
-                if exposureTimes[i] == previousExposureTime:
+                if np.isclose(exposureTimes[i], previousExposureTime, atol=1e-3):
                     # This is a match.
                     if nInPair == 2:
                         # We already have a pair!
@@ -264,7 +264,10 @@ class PhotonTransferCurveExtractConfigBase(
         doc="Match input exposures by time, flux, or expId",
         default='TIME',
         allowed={
-            "TIME": "Match exposures by exposure time.",
+            "TIME": "Match exposures by reported exposure time. Entries "
+                    "that are within 1e-3 seconds. For matching requested "
+                    "exposure time use ``FLUX`` option and use the "
+                    "``EXPTIME`` keyword.",
             "FLUX": "Match exposures by target flux. Use header keyword"
                 " in matchExposuresByFluxKeyword to find the flux.",
             "EXPID": "Match exposures by exposure ID."
