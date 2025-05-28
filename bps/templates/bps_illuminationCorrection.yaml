@@ -18,6 +18,8 @@ payload:
   inCollection: "${RAW_COLLECTION},${CALIB_COLLECTIONS}"
   dataQuery: "${SELECTION_ILLUMINATION_CORRECTION}"
 
+extraRunQuantumOptions: "--no-raise-on-partial-outputs"
+
 pipetask:
   cpIlluminationCorrectionFgcmBuildFromIsolatedStars:
     requestMemory: 8192
