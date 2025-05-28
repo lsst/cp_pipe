@@ -19,17 +19,46 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+import os
 import unittest
+import vcr
 
 import lsst.utils.tests
 
 from lsst.cp.pipe.utilsEfd import CpEfdClient
 
 
+def getVcr():
+    """Get a VCR object for use in tests.
+
+    Adapted from https://github.com/lsst-sitcom/summit_utils/
+                         blob/main/tests/utils.py
+
+    Use record_mode="none" to run tests for normal operation. To update files
+    or generate new ones, make sure you have a working connection to the EFD at
+    all the relevant sites, and temporarily run with mode="all" via *both*
+    python/pytest *and* with scons, as these generate slightly different HTTP
+    requests for some reason.
+    """
+    dirname = os.path.dirname(__file__)
+    cassette_library_dir = os.path.join(dirname, "data", "cassettes")
+    safe_vcr = vcr.VCR(
+        record_mode="none",
+        cassette_library_dir=cassette_library_dir,
+        path_transformer=vcr.VCR.ensure_suffix(".yaml"),
+        match_on=["method", "scheme", "host", "port", "path", "query", "body"],
+    )
+    return safe_vcr
+
+
+safe_vcr = getVcr()
+
+
 class UtilsEfdTestCase(lsst.utils.tests.TestCase):
     """Unit test for EFD access code."""
 
     @classmethod
+    @safe_vcr.use_cassette()
     def setUpClass(cls):
         # Initialize a client.
         try:
@@ -38,6 +67,7 @@ class UtilsEfdTestCase(lsst.utils.tests.TestCase):
             cls.client = None
             raise unittest.SkipTest(f"Could not initialize EFD client: {e}")
 
+    @safe_vcr.use_cassette()
     def test_monochromator(self):
         data = self.client.getEfdMonochromatorData(
             dateMin="2023-12-19T00:00:00",
@@ -51,6 +81,7 @@ class UtilsEfdTestCase(lsst.utils.tests.TestCase):
         self.assertEqual(wavelength, 550.0)
         self.assertEqual(indexDate, "2023-12-19T14:37:17.799")
 
+    @safe_vcr.use_cassette()
     def test_electrometer(self):
         data = self.client.getEfdElectrometerData(
             dateMin="2024-05-30T00:00:00",
@@ -102,6 +133,7 @@ class UtilsEfdTestCase(lsst.utils.tests.TestCase):
         )
         self.assertFloatsAlmostEqual(intensityReference, -1.532977e-07, atol=1e-10)
 
+    @safe_vcr.use_cassette()
     def test_electrometer_alternate(self):
         # This should raise if no dates are passed:
         with self.assertRaises(RuntimeError):
@@ -110,8 +142,8 @@ class UtilsEfdTestCase(lsst.utils.tests.TestCase):
 
         data = self.client.getEfdElectrometerData(
             dataSeries='lsst.sal.Electrometer.logevent_logMessage',
-            dateMin='2024-07-26T16:00:00',
-            dateMax='2024-07-26T20:00:00')
+            dateMin='2024-07-26T16:30:00',
+            dateMax='2024-07-26T16:45:00')
 
         # Test single lookups.  These should not be integrated.
         for iDate, iVal in zip(["2024-07-26T16:38:32.228",
