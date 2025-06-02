@@ -7,9 +7,13 @@ submitPath: "${SCRATCH}/submit/{outputRun}"
 # Necessary to cluster by exposure if there are many input exposures
 clusterAlgorithm: lsst.ctrl.bps.quantum_clustering_funcs.dimension_clustering
 cluster:
-  cpIlluminationCorrectionIsrByExposure:
-    pipetasks: cpIlluminationCorrectionIsr
-    dimensions: exposure
+  cpIlluminationCorrectionByDetector:
+    pipetasks: cpIlluminationCorrectionIsr,cpIlluminationCorrectionCalibrateImage,cpIlluminationCorrectionTransformPreSourceTable
+    dimensions: detector
+    equalDimensions: visit:exposure
+  cpIlluminationCorrectionByVisit:
+    pipetasks: cpIlluminationCorrectionConsolidatePreSourceTable,cpIlluminationCorrectionConsolidateVisitSummary
+    dimensions: visit
 
 payload:
   payloadName: "${INSTRUMENT}_${TICKET}_illuminationCorrection"
@@ -22,8 +26,8 @@ extraRunQuantumOptions: "--no-raise-on-partial-outputs"
 
 pipetask:
   cpIlluminationCorrectionFgcmBuildFromIsolatedStars:
-    requestMemory: 8192
+    requestMemory: 16384
   cpIlluminationCorrectionFgcmFitCycle:
-    requestMemory: 32000
-    requestCpus: 8
-    extraRunQuantumOptions: "-j 1 -n 8"
+    requestMemory: 131072
+    requestCpus: 32
+    extraRunQuantumOptions: "-j 1 -n 32"
