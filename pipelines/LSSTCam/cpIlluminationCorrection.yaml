@@ -3,6 +3,14 @@ instrument: lsst.obs.lsst.LsstCam
 imports:
   - location: $CP_PIPE_DIR/pipelines/_ingredients/cpIlluminationCorrectionLSST.yaml
 tasks:
+  cpIlluminationCorrectionFgcmFitCycle:
+    class: lsst.fgcmcal.fgcmFitCycle.FgcmFitCycleTask
+    config:
+      aperCorrFitNBins: 0
+      maxIterBeforeFinalCycle: 50
+      precomputeSuperStarInitialCycle: true
+      aperCorrPerCcd: true
+      nStarPerRun: 10000
   cpIlluminationCorrectionFgcmOutputIlluminationCorrection:
     class: lsst.fgcmcal.fgcmOutputIlluminationCorrection.FgcmOutputIlluminationCorrectionTask
     config:
