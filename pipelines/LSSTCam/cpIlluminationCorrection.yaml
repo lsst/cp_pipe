@@ -6,6 +6,7 @@ tasks:
   cpIlluminationCorrectionFgcmFitCycle:
     class: lsst.fgcmcal.fgcmFitCycle.FgcmFitCycleTask
     config:
+      multipleCyclesFinalCycleNumber: 7
       aperCorrFitNBins: 0
       maxIterBeforeFinalCycle: 50
       precomputeSuperStarInitialCycle: true
@@ -14,5 +15,6 @@ tasks:
   cpIlluminationCorrectionFgcmOutputIlluminationCorrection:
     class: lsst.fgcmcal.fgcmOutputIlluminationCorrection.FgcmOutputIlluminationCorrectionTask
     config:
+      connections.cycleNumber: 7
       epoch_time: "2025-05-23"
       physical_filters: ["u_26", "g_6", "r_57", "i_39", "z_20", "y_10"]
