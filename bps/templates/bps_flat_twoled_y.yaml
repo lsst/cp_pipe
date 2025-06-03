@@ -1,0 +1,21 @@
+pipelineYaml: "${CP_PIPE_DIR}/pipelines/${INSTRUMENT}/cpFlatTwoLed.yaml"
+
+project: "${TICKET}"
+campaign: "${TICKET}"
+submitPath: "${SCRATCH}/submit/{outputRun}"
+
+# Necessary to cluster by exposure if there are many input exposures
+clusterAlgorithm: lsst.ctrl.bps.quantum_clustering_funcs.dimension_clustering
+cluster:
+  cpFlatIsrByExposure:
+    pipetasks: cpFlatIsr
+    dimensions: exposure
+
+payload:
+  payloadName: "${INSTRUMENT}_${TICKET}_flat_y"
+  output: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET}/${TAG}/flatGen-y.${RERUN}"
+  butlerConfig: "${REPO}"
+  inCollection: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET},${RAW_COLLECTION},${CALIB_COLLECTIONS}"
+  dataQuery: "${SELECTION_FLAT_y} and band='y'"
+
+extraQgraphOptions: "--config cpFlatBlueNormalize:downSelectionValue=single_led_flat_m940l3 --config cpFlatRedNormalize:downSelectionValue=single_led_flat_m970l4"
