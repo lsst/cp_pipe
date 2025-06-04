@@ -12,6 +12,9 @@ tasks:
       precomputeSuperStarInitialCycle: true
       aperCorrPerCcd: true
       nStarPerRun: 10000
+      sigFgcmMaxErr: 0.005
+      python: |
+        config.refStarColorCuts = ["g, i, 0.4, 1.0",]
   cpIlluminationCorrectionFgcmOutputIlluminationCorrection:
     class: lsst.fgcmcal.fgcmOutputIlluminationCorrection.FgcmOutputIlluminationCorrectionTask
     config:
