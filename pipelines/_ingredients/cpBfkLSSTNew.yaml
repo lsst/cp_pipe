@@ -1,0 +1,76 @@
+description: cp_pipe brighter-fatter kernel calibration construction.
+tasks:
+  cpBfkIsr5000:
+    class: lsst.ip.isr.IsrTaskLSST
+    config:
+      connections.ccdExposure: "raw"
+      connections.bfKernel: "bfk5000"
+      connections.outputExposure: "cpBfkIsrExp5000"
+      python: |
+        from lsst.cp.pipe import configureIsrTaskLSSTForCalibrations
+
+        configureIsrTaskLSSTForCalibrations(config)
+
+        config.doApplyGains = True
+        config.doCrosstalk = True
+        config.crosstalk.doQuadraticCrosstalkCorrection = False
+        config.doLinearize = True
+        config.doBrighterFatter = True
+        config.doDeferredCharge = True
+        config.doDefect = True
+  cpBfkPtcExtractPair:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractPairTask
+    config:
+      connections.inputExp: "cpBfkIsrExp5000"
+      connections.outputCovariance: "cpBfkPtcPartial5000"
+      maximumRangeCovariancesAstier: 15
+      numEdgeSuspect: 20
+      edgeMaskLevel: "AMP"
+      useEfdPhotodiodeData: true
+      auxiliaryHeaderKeys: ["TEMP6"]
+  cpBfkPtcSolve:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
+    config:
+      connections.inputCovariances: "cpBfkPtcPartial"
+      connections.outputPtcDataset: "bfkPtc"
+      ptcFitType: "FULLCOVARIANCE"
+      maximumRangeCovariancesAstier: 15
+      maximumRangeCovariancesAstierFullCovFit: 3
+  # TODO DM-46439: This can be renamed back to cpBfkSolve when repos
+  # are cleaned up for the previous dimensionality error.
+  cpBfkSolve5k:
+    class: lsst.cp.pipe.BrighterFatterKernelSolveTask
+    config:
+      connections.inputPtc: "ptc"
+      useCovModelSample: true
+      level: 5000.0
+      connections.outputBFK: bfk5000
+  cpBfkSolve10k:
+    class: lsst.cp.pipe.BrighterFatterKernelSolveTask
+    config:
+      connections.inputPtc: "ptc"
+      useCovModelSample: true
+      level: 10000.0
+      connections.outputBFK: bfk10000
+  cpBfkSolve20k:
+    class: lsst.cp.pipe.BrighterFatterKernelSolveTask
+    config:
+      connections.inputPtc: "ptc"
+      useCovModelSample: true
+      level: 20000.0
+      connections.outputBFK: bfk15000
+  cpBfkSolve30k:
+    class: lsst.cp.pipe.BrighterFatterKernelSolveTask
+    config:
+      connections.inputPtc: "ptc"
+      useCovModelSample: true
+      level: 30000.0
+      connections.outputBFK: bfk30000
+
+contracts:
+  - cpBfkIsr.doBootstrap == True
+  - cpBfkPtcExtractPair.connections.inputExp == cpBfkIsr.connections.outputExposure
+  - cpBfkPtcSolve.binSize == cpBfkPtcExtractPair.binSize
+  - cpBfkPtcSolve.maximumRangeCovariancesAstier == cpBfkPtcExtractPair.maximumRangeCovariancesAstier
+  - cpBfkPtcSolve.connections.inputCovariances == cpBfkPtcExtractPair.connections.outputCovariance
+  - cpBfkSolveX.connections.inputPtc == cpBfkPtcSolve.connections.outputPtcDataset
