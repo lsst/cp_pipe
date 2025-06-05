@@ -275,7 +275,31 @@ class CalibCombineTask(pipeBase.PipelineTask):
     def runQuantum(self, butlerQC, inputRefs, outputRefs):
         inputs = butlerQC.get(inputRefs)
 
-        dimensions = [dict(expHandle.dataId.required) for expHandle in inputRefs.inputExpHandles]
+        # Down-select exposures based on InputList scaling if necessary.
+        if self.config.exposureScaling == "InputList":
+            inputScales = inputs["inputScales"]
+
+            if (detectorId := butlerQC.quantum.dataId["detector"]) not in inputScales["expScale"]:
+                raise pipeBase.NoWorkFound(f"No input scaling for detector {detectorId}")
+
+            # Use any amp for this check.
+            ampName = list(inputScales["expScale"][detectorId].keys())[0]
+            scaledExposures = list(inputScales["expScale"][detectorId][ampName].keys())
+
+            inputExpHandles = [
+                handle for handle in inputs["inputExpHandles"]
+                if handle.dataId["exposure"] in scaledExposures
+            ]
+            inputs["inputExpHandles"] = inputExpHandles
+
+            expHandleRefs = [
+                ref for ref in inputRefs.inputExpHandles
+                if ref.dataId["exposure"] in scaledExposures
+            ]
+        else:
+            expHandleRefs = inputRefs.inputExpHandles
+
+        dimensions = [dict(expHandle.dataId.required) for expHandle in expHandleRefs]
         inputs["inputDims"] = dimensions
 
         outputs = self.run(**inputs)
