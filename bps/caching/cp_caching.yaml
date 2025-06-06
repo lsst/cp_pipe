@@ -1,0 +1,17 @@
+# There are recommended configs for caching data read from the S3
+# datastore used by the embargo rack at USDF.
+#
+# Use it by adding
+#
+#  includeConfigs:
+#    - ${CP_PIPE_DIR}/bps/caching/cp_caching.yaml
+#
+# (with no outer indentation) to your BPS config file.
+
+environment:
+  # Default caching config
+  # Each pipetask creates its own local cache folder,
+  # $TMPDIR/butler-cache-dir-*
+  DAF_BUTLER_CONFIG_PATH: ${CP_PIPE_DIR}/bps/caching/config:${DAF_BUTLER_CONFIG_PATH}
+  DAF_BUTLER_CACHE_EXPIRATION_MODE: datasets=5000
+  LSST_S3_USE_THREADS: False
