@@ -74,7 +74,7 @@ contracts:
   - cpFlatCombine.connections.inputScales == cpFlatNormalize.connections.outputScales
   - cpFlatBin8.binning == cpFlatMosaic8.binning
   - cpFlatBin64.binning == cpFlatMosaic64.binning
-  - cpFlatBin8.connections.inputExp == cpFlatCombine.calibrationType
-  - cpFlatBin64.connections.inputExp == cpFlatCombine.calibrationType
+  - cpFlatBin8.connections.inputExp == cpFlatCombine.connections.outputData
+  - cpFlatBin64.connections.inputExp == cpFlatCombine.connections.outputData
   - cpFlatMosaic8.connections.inputExps == cpFlatBin8.connections.outputExp
   - cpFlatMosaic64.connections.inputExps == cpFlatBin64.connections.outputExp
