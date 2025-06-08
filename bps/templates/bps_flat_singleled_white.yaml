@@ -1,0 +1,21 @@
+pipelineYaml: "${CP_PIPE_DIR}/pipelines/${INSTRUMENT}/cpFlat.yaml"
+
+project: "${TICKET}"
+campaign: "${TICKET}"
+submitPath: "${SCRATCH}/submit/{outputRun}"
+
+# Necessary to cluster by exposure if there are many input exposures
+clusterAlgorithm: lsst.ctrl.bps.quantum_clustering_funcs.dimension_clustering
+cluster:
+  cpFlatIsrByExposure:
+    pipetasks: cpFlatIsr
+    dimensions: exposure
+
+payload:
+  payloadName: "${INSTRUMENT}_${TICKET}_flat_white_${LED_NAME}"
+  output: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET}/${TAG}/flatGen-white.${RERUN}"
+  butlerConfig: "${REPO}"
+  inCollection: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET},${RAW_COLLECTION},${CALIB_COLLECTIONS}"
+  dataQuery: "${SELECTION_FLAT_white} and band='white' and exposure.observation_reason='single_led_flat_${LED_NAME}'"
+
+extraQgraphOptions: "--config cpFlatCombine:connections.outputData=flat_${LED_NAME} --config cpFlatBin8:connections.inputExp=flat_${LED_NAME} --config cpFlatBin64:connections.inputExp=flat_${LED_NAME} --config cpFlatBin8:connections.outputExp=flat_${LED_NAME}_bin8 --config cpFlatBin64:connections.outputExp=flat_${LED_NAME}_bin64 --config cpFlatMosaic8:connections.inputExps=flat_${LED_NAME}_bin8 --config cpFlatMosaic8:connections.outputData=flat_${LED_NAME}_mosaic8 --config cpFlatMosaic64:connections.outputData=flat_${LED_NAME}_mosaic64"
