@@ -1030,7 +1030,8 @@ class CalibCombineTwoFlatsByFilterTask(CalibCombineTask):
         )
 
         filterLabel = inputExpHandles[0].get(component="filter")
-        self.setFilter(combinedExp, filterLabel)
+        if filterLabel:
+            combinedExp.setFilter(filterLabel)
 
         self.setFlatSource(combinedExp)
 
