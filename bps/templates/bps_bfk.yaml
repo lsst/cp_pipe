@@ -3,11 +3,29 @@ pipelineYaml: "${CP_PIPE_DIR}/pipelines/${INSTRUMENT}/cpBfk.yaml"
 # Necessary to cluster by exposure if there are many input exposures
 clusterAlgorithm: lsst.ctrl.bps.quantum_clustering_funcs.dimension_clustering
 cluster:
-  cpBfkIsrByExposure:
-    pipetasks: cpBfkIsr
+  cpBfkIsr20000ByExposure:
+    pipetasks: cpBfkIsr20000
     dimensions: exposure
-  cpBfkPtcExtractPairByExposure:
-    pipetasks: cpBfkPtcExtractPair
+  cpBfkPtcExtractPair20kByExposure:
+    pipetasks: cpBfkPtcExtractPair20000
+    dimensions: exposure
+  cpBfkIsr40000ByExposure:
+    pipetasks: cpBfkIsr40000
+    dimensions: exposure
+  cpBfkPtcExtractPair40kByExposure:
+    pipetasks: cpBfkPtcExtractPair40000
+    dimensions: exposure
+  cpBfkIsr60000ByExposure:
+    pipetasks: cpBfkIsr60000
+    dimensions: exposure
+  cpBfkPtcExtractPair60kByExposure:
+    pipetasks: cpBfkPtcExtractPair60000
+    dimensions: exposure
+  cpBfkIsr80000ByExposure:
+    pipetasks: cpBfkIsr80000
+    dimensions: exposure
+  cpBfkPtcExtractPair80kByExposure:
+    pipetasks: cpBfkPtcExtractPair80000
     dimensions: exposure
 
 project: "${TICKET}"
@@ -18,5 +36,5 @@ payload:
   payloadName: "${INSTRUMENT}_${TICKET}_bfk"
   output: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET}/${TAG}/bfkGen.${RERUN}"
   butlerConfig: "${REPO}"
-  inCollection: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET},${RAW_COLLECTION},${CALIB_COLLECTIONS}"
+  inCollection: "${RAW_COLLECTION},${CALIB_COLLECTIONS}"  # ${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET}
   dataQuery: "${SELECTION_PTC_BFK}"

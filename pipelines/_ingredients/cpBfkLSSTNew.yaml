@@ -1,76 +1,223 @@
 description: cp_pipe brighter-fatter kernel calibration construction.
 tasks:
-  cpBfkIsr5000:
+  cpBfkSolve20k:
+    class: lsst.cp.pipe.BrighterFatterKernelSolveTask
+    config:
+      connections.inputPtc: "ptc"
+      connections.outputBFK: testBfk20000
+      python: |
+        config.useCovModelSample = True
+        config.covModelFluxSample = {'ALL_AMPS': 20000.0}
+  cpBfkSolve40k:
+    class: lsst.cp.pipe.BrighterFatterKernelSolveTask
+    config:
+      connections.inputPtc: "ptc"
+      connections.outputBFK: testBfk40000
+      python: |
+        config.useCovModelSample = True
+        config.covModelFluxSample = {'ALL_AMPS': 40000.0}
+  cpBfkSolve60k:
+    class: lsst.cp.pipe.BrighterFatterKernelSolveTask
+    config:
+      connections.inputPtc: "ptc"
+      connections.outputBFK: testBfk60000
+      python: |
+        config.useCovModelSample = True
+        config.covModelFluxSample = {'ALL_AMPS': 60000.0}
+  cpBfkSolve80k:
+    class: lsst.cp.pipe.BrighterFatterKernelSolveTask
+    config:
+      connections.inputPtc: "ptc"
+      connections.outputBFK: testBfk80000
+      python: |
+        config.useCovModelSample = True
+        config.covModelFluxSample = {'ALL_AMPS': 80000.0}
+  cpBfkIsr20000:
     class: lsst.ip.isr.IsrTaskLSST
     config:
       connections.ccdExposure: "raw"
-      connections.bfKernel: "bfk5000"
-      connections.outputExposure: "cpBfkIsrExp5000"
+      connections.testBfKernel: "testBfk20000"
+      connections.outputExposure: "cpBfkIsrExp20000"
       python: |
         from lsst.cp.pipe import configureIsrTaskLSSTForCalibrations
 
         configureIsrTaskLSSTForCalibrations(config)
 
+        config.doCalculateStatistics = False
+        config.doStandardStatistics = False
         config.doApplyGains = True
         config.doCrosstalk = True
         config.crosstalk.doQuadraticCrosstalkCorrection = False
         config.doLinearize = True
-        config.doBrighterFatter = True
+        config.doBrighterFatter = False
+        config.doTestBrighterFatter = True
         config.doDeferredCharge = True
         config.doDefect = True
-  cpBfkPtcExtractPair:
+        config.doAmpOffset = True
+        config.ampOffset.ampEdgeMaxOffset = 100000.0
+        config.ampOffset.ampEdgeInset = 10
+        config.ampOffset.doBackground = False
+        config.ampOffset.doDetection = False
+        config.ampOffset.doApplyAmpOffset = False
+  cpBfkPtcExtractPair20000:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractPairTask
     config:
-      connections.inputExp: "cpBfkIsrExp5000"
-      connections.outputCovariance: "cpBfkPtcPartial5000"
+      connections.inputExp: "cpBfkIsrExp20000"
+      connections.outputCovariance: "cpBfkPtcPartial20000"
       maximumRangeCovariancesAstier: 15
       numEdgeSuspect: 20
       edgeMaskLevel: "AMP"
       useEfdPhotodiodeData: true
       auxiliaryHeaderKeys: ["TEMP6"]
-  cpBfkPtcSolve:
+  cpBfkPtcSolve20000:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
     config:
-      connections.inputCovariances: "cpBfkPtcPartial"
-      connections.outputPtcDataset: "bfkPtc"
+      connections.inputCovariances: "cpBfkPtcPartial20000"
+      connections.outputPtcDataset: "bfkPtc20000"
       ptcFitType: "FULLCOVARIANCE"
       maximumRangeCovariancesAstier: 15
       maximumRangeCovariancesAstierFullCovFit: 3
-  # TODO DM-46439: This can be renamed back to cpBfkSolve when repos
-  # are cleaned up for the previous dimensionality error.
-  cpBfkSolve5k:
-    class: lsst.cp.pipe.BrighterFatterKernelSolveTask
+      doAmpOffsetGainRatioFixup: true
+  cpBfkIsr40000:
+    class: lsst.ip.isr.IsrTaskLSST
     config:
-      connections.inputPtc: "ptc"
-      useCovModelSample: true
-      level: 5000.0
-      connections.outputBFK: bfk5000
-  cpBfkSolve10k:
-    class: lsst.cp.pipe.BrighterFatterKernelSolveTask
-    config:
-      connections.inputPtc: "ptc"
-      useCovModelSample: true
-      level: 10000.0
-      connections.outputBFK: bfk10000
-  cpBfkSolve20k:
-    class: lsst.cp.pipe.BrighterFatterKernelSolveTask
-    config:
-      connections.inputPtc: "ptc"
-      useCovModelSample: true
-      level: 20000.0
-      connections.outputBFK: bfk15000
-  cpBfkSolve30k:
-    class: lsst.cp.pipe.BrighterFatterKernelSolveTask
-    config:
-      connections.inputPtc: "ptc"
-      useCovModelSample: true
-      level: 30000.0
-      connections.outputBFK: bfk30000
+      connections.ccdExposure: "raw"
+      connections.testBfKernel: "testBfk40000"
+      connections.outputExposure: "cpBfkIsrExp40000"
+      python: |
+        from lsst.cp.pipe import configureIsrTaskLSSTForCalibrations
 
+        configureIsrTaskLSSTForCalibrations(config)
+
+        config.doCalculateStatistics = False
+        config.doStandardStatistics = False
+        config.doApplyGains = True
+        config.doCrosstalk = True
+        config.crosstalk.doQuadraticCrosstalkCorrection = False
+        config.doLinearize = True
+        config.doBrighterFatter = False
+        config.doTestBrighterFatter = True
+        config.doDeferredCharge = True
+        config.doDefect = True
+        config.doAmpOffset = True
+        config.ampOffset.ampEdgeMaxOffset = 100000.0
+        config.ampOffset.ampEdgeInset = 10
+        config.ampOffset.doBackground = False
+        config.ampOffset.doDetection = False
+        config.ampOffset.doApplyAmpOffset = False
+  cpBfkPtcExtractPair40000:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractPairTask
+    config:
+      connections.inputExp: "cpBfkIsrExp40000"
+      connections.outputCovariance: "cpBfkPtcPartial40000"
+      maximumRangeCovariancesAstier: 15
+      numEdgeSuspect: 20
+      edgeMaskLevel: "AMP"
+      useEfdPhotodiodeData: true
+      auxiliaryHeaderKeys: ["TEMP6"]
+  cpBfkPtcSolve40000:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
+    config:
+      connections.inputCovariances: "cpBfkPtcPartial40000"
+      connections.outputPtcDataset: "bfkPtc40000"
+      ptcFitType: "FULLCOVARIANCE"
+      maximumRangeCovariancesAstier: 15
+      maximumRangeCovariancesAstierFullCovFit: 3
+      doAmpOffsetGainRatioFixup: true
+  cpBfkIsr60000:
+    class: lsst.ip.isr.IsrTaskLSST
+    config:
+      connections.ccdExposure: "raw"
+      connections.testBfKernel: "testBfk60000"
+      connections.outputExposure: "cpBfkIsrExp60000"
+      python: |
+        from lsst.cp.pipe import configureIsrTaskLSSTForCalibrations
+
+        configureIsrTaskLSSTForCalibrations(config)
+
+        config.doCalculateStatistics = False
+        config.doStandardStatistics = False
+        config.doApplyGains = True
+        config.doCrosstalk = True
+        config.crosstalk.doQuadraticCrosstalkCorrection = False
+        config.doLinearize = True
+        config.doBrighterFatter = False
+        config.doTestBrighterFatter = True
+        config.doDeferredCharge = True
+        config.doDefect = True
+        config.doAmpOffset = True
+        config.ampOffset.ampEdgeMaxOffset = 100000.0
+        config.ampOffset.ampEdgeInset = 10
+        config.ampOffset.doBackground = False
+        config.ampOffset.doDetection = False
+        config.ampOffset.doApplyAmpOffset = False
+  cpBfkPtcExtractPair60000:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractPairTask
+    config:
+      connections.inputExp: "cpBfkIsrExp60000"
+      connections.outputCovariance: "cpBfkPtcPartial60000"
+      maximumRangeCovariancesAstier: 15
+      numEdgeSuspect: 20
+      edgeMaskLevel: "AMP"
+      useEfdPhotodiodeData: true
+      auxiliaryHeaderKeys: ["TEMP6"]
+  cpBfkPtcSolve60000:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
+    config:
+      connections.inputCovariances: "cpBfkPtcPartial60000"
+      connections.outputPtcDataset: "bfkPtc60000"
+      ptcFitType: "FULLCOVARIANCE"
+      maximumRangeCovariancesAstier: 15
+      maximumRangeCovariancesAstierFullCovFit: 3
+      doAmpOffsetGainRatioFixup: true
+  cpBfkIsr80000:
+    class: lsst.ip.isr.IsrTaskLSST
+    config:
+      connections.ccdExposure: "raw"
+      connections.testBfKernel: "testBfk80000"
+      connections.outputExposure: "cpBfkIsrExp80000"
+      python: |
+        from lsst.cp.pipe import configureIsrTaskLSSTForCalibrations
+
+        configureIsrTaskLSSTForCalibrations(config)
+
+        config.doCalculateStatistics = False
+        config.doStandardStatistics = False
+        config.doApplyGains = True
+        config.doCrosstalk = True
+        config.crosstalk.doQuadraticCrosstalkCorrection = False
+        config.doLinearize = True
+        config.doBrighterFatter = False
+        config.doTestBrighterFatter = True
+        config.doDeferredCharge = True
+        config.doDefect = True
+        config.doAmpOffset = True
+        config.ampOffset.ampEdgeMaxOffset = 100000.0
+        config.ampOffset.ampEdgeInset = 10
+        config.ampOffset.doBackground = False
+        config.ampOffset.doDetection = False
+        config.ampOffset.doApplyAmpOffset = False
+  cpBfkPtcExtractPair80000:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractPairTask
+    config:
+      connections.inputExp: "cpBfkIsrExp80000"
+      connections.outputCovariance: "cpBfkPtcPartial80000"
+      maximumRangeCovariancesAstier: 15
+      numEdgeSuspect: 20
+      edgeMaskLevel: "AMP"
+      useEfdPhotodiodeData: true
+      auxiliaryHeaderKeys: ["TEMP6"]
+  cpBfkPtcSolve80000:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
+    config:
+      connections.inputCovariances: "cpBfkPtcPartial80000"
+      connections.outputPtcDataset: "bfkPtc80000"
+      ptcFitType: "FULLCOVARIANCE"
+      maximumRangeCovariancesAstier: 15
+      maximumRangeCovariancesAstierFullCovFit: 3
+      doAmpOffsetGainRatioFixup: true
 contracts:
-  - cpBfkIsr.doBootstrap == True
-  - cpBfkPtcExtractPair.connections.inputExp == cpBfkIsr.connections.outputExposure
-  - cpBfkPtcSolve.binSize == cpBfkPtcExtractPair.binSize
-  - cpBfkPtcSolve.maximumRangeCovariancesAstier == cpBfkPtcExtractPair.maximumRangeCovariancesAstier
-  - cpBfkPtcSolve.connections.inputCovariances == cpBfkPtcExtractPair.connections.outputCovariance
-  - cpBfkSolveX.connections.inputPtc == cpBfkPtcSolve.connections.outputPtcDataset
+  - cpBfkIsr20000.connections.testBfKernel == cpBfkSolve20k.connections.outputBFK
+  - cpBfkIsr40000.connections.testBfKernel == cpBfkSolve40k.connections.outputBFK
+  - cpBfkIsr60000.connections.testBfKernel == cpBfkSolve60k.connections.outputBFK
+  - cpBfkIsr80000.connections.testBfKernel == cpBfkSolve80k.connections.outputBFK
