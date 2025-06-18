@@ -19,6 +19,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
+import esutil
 import numpy as np
 from astropy.table import Table
 
@@ -35,11 +36,20 @@ class PhotonTransferCurveNormalizeConnnections(
     pipeBase.PipelineTaskConnections,
     dimensions=("instrument",),
 ):
-    inputCovarianceHandles = pipeBase.connectionTypes.Input(
-        name="cpLinearizerPtcPartial",
-        doc="Input covariance pairs.",
+    # inputCovarianceHandles = pipeBase.connectionTypes.Input(
+    #     name="cpLinearizerPtcPartial",
+    #     doc="Input covariance pairs.",
+    #     storageClass="PhotonTransferCurveDataset",
+    #     dimensions=("instrument", "exposure", "detector"),
+    #     isCalibration=True,
+    #     multiple=True,
+    #     deferLoad=True,
+    # )
+    inputPtcHandles = pipeBase.connectionTypes.Input(
+        name="linearizerPtc",
+        doc="Input covariances.",
         storageClass="PhotonTransferCurveDataset",
-        dimensions=("instrument", "exposure", "detector"),
+        dimensions=("instrument", "detector"),
         isCalibration=True,
         multiple=True,
         deferLoad=True,
@@ -62,14 +72,21 @@ class PhotonTransferCurveNormalizeConnnections(
     )
 
     def adjustQuantum(self, inputs, outputs, label, dataId):
-        covRefs = []
-        for ref in inputs["inputCovarianceHandles"][1]:
+        ptcRefs = []
+        foundRefDetector = False
+        for ref in inputs["inputPtcHandles"][1]:
             if ref.dataId["detector"] in self.config.normalizeDetectors:
-                covRefs.append(ref)
+                ptcRefs.append(ref)
+            if ref.dataId["detector"] == self.config.referenceDetector:
+                foundRefDetector = True
 
-        if len(covRefs) == 0:
-            raise pipeBase.NoWorkFound("No input covariance pairs match the normalization detectors.")
-        inputs["inputCovarianceHandles"] = (inputs["inputCovarianceHandles"][0], tuple(covRefs))
+        if len(ptcRefs) == 0:
+            raise pipeBase.NoWorkFound("No input PTCs match the normalization detectors.")
+        if not foundRefDetector:
+            raise pipeBase.NoWorkFound(
+                "PhotonTransferCurveNormalize reference detector not in list of inputs.",
+            )
+        inputs["inputPtcHandles"] = (inputs["inputPtcHandles"][0], tuple(ptcRefs))
 
         return inputs, outputs
 
@@ -111,16 +128,15 @@ class PhotonTransferCurveNormalizeTask(pipeBase.PipelineTask):
     ConfigClass = PhotonTransferCurveNormalizeConfig
     _DefaultName = "cpPtcNormalize"
 
-    def run(self, *, camera, inputCovarianceHandles):
+    def run(self, *, camera, inputPtcHandles):
         """Compute the focal-plane normalization.
 
         Parameters
         ----------
         camera : `lsst.afw.cameraGeom.Camera`
             Input camera.
-        inputCovarianceHandles : `list`
-            [`lsst.daf.butler.DeferredDatasetHandle`]
-            Handles for input covariances to do normalization.
+        inputPtcHandles : `list` [`lsst.daf.butler.DeferredDatasetHandle`]
+            Handles for input PTCs to do normalization.
 
         Returns
         -------
@@ -134,23 +150,38 @@ class PhotonTransferCurveNormalizeTask(pipeBase.PipelineTask):
         refDetector = camera[self.config.referenceDetector]
         nAmp = len(refDetector)
 
-        # Count inputs.
-        exposures = []
-        for handle in inputCovarianceHandles:
+        referenceHandle = None
+        for handle in inputPtcHandles:
             if handle.dataId["detector"] == self.config.referenceDetector:
-                exposures.append(handle.dataId["exposure"])
+                referenceHandle = handle
+                break
+
+        if referenceHandle is None:
+            raise RuntimeError("Reference detector not in list of input PTCs.")
+
+        referencePtc = referenceHandle.get()
+
+        exposures = np.asarray(referencePtc.inputExpIdPairs[referencePtc.ampNames[0]])[:, 0]
 
         rawMeans = np.zeros((len(self.config.normalizeDetectors), len(exposures), nAmp))
         rawMeans[:, :, :] = np.nan
 
-        for handle in inputCovarianceHandles:
-            detectorIndex = self.config.normalizeDetectors.index(handle.dataId["detector"])
-            exposureIndex = exposures.index(handle.dataId["exposure"])
+        for i, handle in enumerate(inputPtcHandles):
+            ptc = handle.get()
 
-            partialPtc = handle.get()
+            ptcExposures = np.asarray(ptc.inputExpIdPairs[ptc.ampNames[0]])[:, 0]
 
-            for i, ampName in enumerate(partialPtc.ampNames):
-                rawMeans[detectorIndex, exposureIndex, i] = partialPtc.rawMeans[ampName]
+            if len(ptcExposures) != len(exposures):
+                self.log.warning(
+                    "PTC for detector %d has %d pairs, fewer than expected %d.",
+                    ptc.dataId["detector"],
+                    len(ptcExposures),
+                    len(exposures),
+                )
+
+            a, b = esutil.numpy_util.match(exposures, ptcExposures)
+            for j, ampName in enumerate(ptc.ampNames):
+                rawMeans[i, a, j] = ptc.rawMeans[ampName][b]
 
         # Compute the median level over the normalization detectors
         # to find the exposure with counts closest to the target
