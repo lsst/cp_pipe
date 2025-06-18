@@ -36,15 +36,6 @@ class PhotonTransferCurveNormalizeConnnections(
     pipeBase.PipelineTaskConnections,
     dimensions=("instrument",),
 ):
-    # inputCovarianceHandles = pipeBase.connectionTypes.Input(
-    #     name="cpLinearizerPtcPartial",
-    #     doc="Input covariance pairs.",
-    #     storageClass="PhotonTransferCurveDataset",
-    #     dimensions=("instrument", "exposure", "detector"),
-    #     isCalibration=True,
-    #     multiple=True,
-    #     deferLoad=True,
-    # )
     inputPtcHandles = pipeBase.connectionTypes.Input(
         name="linearizerPtc",
         doc="Input covariances.",
