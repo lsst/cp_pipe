@@ -153,6 +153,7 @@ class PhotonTransferCurveNormalizeTask(pipeBase.PipelineTask):
         referencePtc = referenceHandle.get()
 
         exposures = np.asarray(referencePtc.inputExpIdPairs[referencePtc.ampNames[0]])[:, 0]
+        exptimes = np.asarray(referencePtc.rawExpTimes[referencePtc.ampNames[0]])
 
         rawMeans = np.zeros((len(self.config.normalizeDetectors), len(exposures), nAmp))
         rawMeans[:, :, :] = np.nan
@@ -192,7 +193,8 @@ class PhotonTransferCurveNormalizeTask(pipeBase.PipelineTask):
         # These are the per-exposure normalization values.
         table = Table(
             {
-                "exposure": np.asarray(exposures),
+                "exposure": exposures,
+                "exptime": exptimes,
                 "normalization": medianRatios,
             },
         )
