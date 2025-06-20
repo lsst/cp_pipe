@@ -1,0 +1,21 @@
+description: cp_pipe LSSTCam brighter-fatter kernel calibration construction.
+instrument: lsst.obs.lsst.LsstCam
+imports:
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpBfkLSST.yaml
+tasks:
+  cpBfkPtcExtractPair:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractPairTask
+    config:
+      useEfdPhotodiodeData: false
+      doExtractPhotodiodeData: true
+      photodiodeIntegrationMethod: MEAN
+      auxiliaryHeaderKeys: ["TEMPAVG"]
+      matchExposuresType: FLUX
+      matchExposuresByFluxKeyword: EXPTIME
+  cpBfkPtcSolve:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
+    config:
+      sigmaCutPtcOutliers: 3.0
+      maxDeltaInitialPtcOutlierFit: 1_000
+      maxSignalInitialPtcOutlierFit: 30_000
+      scaleMaxSignalInitialPtcOutlierFit: False

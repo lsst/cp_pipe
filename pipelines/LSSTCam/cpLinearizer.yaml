@@ -1,0 +1,33 @@
+description: cp_pipe LSSTCam linearity calibration construction.
+instrument: lsst.obs.lsst.LsstCam
+imports:
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpLinearizerLSST.yaml
+tasks:
+  cpLinearizerPtcExtractPair:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractPairTask
+    config:
+      useEfdPhotodiodeData: false
+      doExtractPhotodiodeData: true
+      photodiodeIntegrationMethod: MEAN
+      auxiliaryHeaderKeys: ["TEMPAVG"]
+      matchExposuresType: FLUX
+      matchExposuresByFluxKeyword: EXPTIME
+  cpLinearizerPtcSolve:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
+    config:
+      sigmaCutPtcOutliers: 3.0
+      maxDeltaInitialPtcOutlierFit: 1_000
+      maxSignalInitialPtcOutlierFit: 30_000
+      scaleMaxSignalInitialPtcOutlierFit: False
+  cpLinearizerSolve:
+    class: lsst.cp.pipe.LinearitySolveTask
+    config:
+      linearityType: Spline
+      usePhotodiode: true
+      splineFitTemperatureColumn: TEMPAVG
+      doSplineFitWeights: false
+      doSplineFitTemperature: false
+      minPhotodiodeCurrent: 3e-10
+      doSplineFitOffset: true
+      splineFitMaxIter: 40
+      splineKnots: 15
