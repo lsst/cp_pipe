@@ -10,8 +10,7 @@ tasks:
       doExtractPhotodiodeData: true
       photodiodeIntegrationMethod: MEAN
       auxiliaryHeaderKeys: ["TEMPAVG"]
-      matchExposuresType: FLUX
-      matchExposuresByFluxKeyword: EXPTIME
+      matchExposuresType: TIME
   cpBfkPtcSolve:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
     config:
