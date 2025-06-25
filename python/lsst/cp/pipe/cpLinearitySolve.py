@@ -681,9 +681,15 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 if self.config.doSplineFitTemperature:
                     inputOrdinate *= (1.0
                                       + pars[fitter.par_indices["temperature_coeff"]]*temperatureValuesScaled)
-                # Divide by the relative scaling of the different groups.
+                # We have to adjust the abscissa for the different groups.
+                # This is because we need a corrected abscissa to get a
+                # reasonable linear fit to look for residuals, particularly in
+                # the case of significantly different signal-vs-photodiode or
+                # signal-vs-exptime scalings for different groups. This then
+                # becomes a multiplication by the relative scaling of the
+                # different groups.
                 for j, group_index in enumerate(fitter.group_indices):
-                    inputOrdinate[group_index] /= (pars[fitter.par_indices["groups"][j]] / linearFit[1])
+                    inputAbscissa[group_index] *= (pars[fitter.par_indices["groups"][j]] / linearFit[1])
                 # And remove the offset term.
                 if self.config.doSplineFitOffset:
                     inputOrdinate -= pars[fitter.par_indices["offset"]]
