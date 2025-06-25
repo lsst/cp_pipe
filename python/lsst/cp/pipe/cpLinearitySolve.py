@@ -227,7 +227,10 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
     )
     doAutoGrouping = pexConfig.Field(
         dtype=bool,
-        doc="Do automatic group detection? Cannot be True if splineGroupingColumn is also set.",
+        doc="Do automatic group detection? Cannot be True if splineGroupingColumn is also set. "
+            "The automatic group detection will use the ratio of signal to exposure time (if "
+            "autoGroupingUseExptime is True) or photodiode (if False) to determine which "
+            "flat pairs were taken with different illumination settings.",
         default=False,
     )
     autoGroupingUseExptime = pexConfig.Field(
@@ -244,14 +247,15 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
         dtype=float,
         doc="Only do auto-grouping when the signal is this fraction of the maximum signal. "
             "All exposures with signal higher than this threshold will be put into the "
-            "largest signal group.",
+            "largest signal group. This config is needed if the input PTC goes beyond "
+            "the linearity turnoff.",
         default=0.9,
     )
     splineGroupingColumn = pexConfig.Field(
         dtype=str,
         doc="Column to use for grouping together points for Spline mode, to allow "
-            "for different proportionality constants. If not set, no grouping "
-            "will be done.",
+            "for different proportionality constants. If None, then grouping will "
+            "only be done if doAutoGrouping is True.",
         default=None,
         optional=True,
     )
@@ -850,6 +854,16 @@ class LinearitySolveTask(pipeBase.PipelineTask):
     def _determineInputGroups(self, ptc):
         """Determine input groups for linearity fit.
 
+        If ``config.splineGroupingColumn`` is set, then grouping will be done
+        based on this. Otherwise, if ``config.doAutoGrouping`` is False, then
+        no grouping will be done. Finally, grouping will be done by measuring
+        the ratio of signal to exposure time (if
+        ``config.autoGroupingUseExptime`` is set; recommended) or photocharge.
+        These are then clustered with a simple algorithm to split into groups.
+        If the data was taking by varying exposure time at different
+        illumination levels, this grouping is very robust as the clusters are
+        very well separated.
+
         Parameters
         ----------
         ptc : `lsst.ip.isr.PhotonTransferCurveDataset`
@@ -896,6 +910,9 @@ class LinearitySolveTask(pipeBase.PipelineTask):
             maxIndex = np.argmax(detMeans[~above])
             ratio[above] = ratio[maxIndex]
 
+            # The clustering of ratios into groups is performed with a simple
+            # algorithm based on sorting and looking for the largest gaps.
+            # See https://stackoverflow.com/a/18385795
             st = np.argsort(ratio)
             stratio = ratio[st]
             delta = stratio[1:] - stratio[0: -1]
