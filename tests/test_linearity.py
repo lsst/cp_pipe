@@ -27,6 +27,7 @@
 import logging
 import unittest
 import numpy as np
+import copy
 
 import lsst.utils
 import lsst.utils.tests
@@ -748,6 +749,89 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
         grouping_values_truth_mod = grouping_values_truth.copy()
         grouping_values_truth_mod[0] = -1
         _compare_grouping_values(grouping_values, grouping_values_truth_mod)
+
+    def test_linearity_fit_lsstcam(self):
+        """
+        Check that fitting the linearity works reasonably well for
+        both the photodiode and exposure time.
+        """
+        exp_times, photo_charges, raw_means, ptc_mask = self._lsstcam_raw_linearity_data()
+
+        # Cut off the fake data at the start and end.
+        exp_times = exp_times[1: -2]
+        photo_charges = photo_charges[1: -2]
+        raw_means = raw_means[1: -2]
+        ptc_mask = ptc_mask[1: -2]
+
+        ptc = PhotonTransferCurveDataset()
+        ptc.ampNames = self.amp_names
+        for amp_name in ptc.ampNames:
+            ptc.inputExpIdPairs[amp_name] = np.zeros((len(exp_times), 2), dtype=np.int64).tolist()
+            ptc.rawExpTimes[amp_name] = exp_times
+            ptc.photoCharges[amp_name] = photo_charges
+            ptc.rawMeans[amp_name] = raw_means
+            ptc.expIdMask[amp_name] = ptc_mask
+            ptc.gain[amp_name] = 1.0
+            ptc.ptcTurnoff[amp_name] = 75565.8
+
+        # Use the photodiode to solve for linearity.
+        config = LinearitySolveTask.ConfigClass()
+        config.usePhotodiode = True
+        config.doAutoGrouping = True
+        config.splineKnots = 5
+        config.trimmedState = False
+        config.linearityType = "Spline"
+        config.doSplineFitWeights = False
+        config.doSplineFitTemperature = False
+        config.doSplineFitOffset = True
+        config.splineFitMaxIter = 40
+        config.splineGroupingMinPoints = 50
+        task = LinearitySolveTask(config=config)
+
+        linearizer_pd = task.run(ptc, [self.dummy_exposure], self.camera, self.input_dims).outputLinearizer
+
+        # Use the exposure time to solve for linearity.
+        config = LinearitySolveTask.ConfigClass()
+        config.usePhotodiode = False
+        config.doAutoGrouping = True
+        config.splineKnots = 5
+        config.trimmedState = False
+        config.linearityType = "Spline"
+        config.doSplineFitWeights = False
+        config.doSplineFitTemperature = False
+        config.doSplineFitOffset = True
+        config.splineFitMaxIter = 40
+        config.splineGroupingMinPoints = 50
+        task = LinearitySolveTask(config=config)
+
+        ptc2 = copy.deepcopy(ptc)
+        for amp_name in self.amp_names:
+            ptc2.photoCharges[amp_name][:] = 0.0
+
+        linearizer_et = task.run(ptc2, [self.dummy_exposure], self.camera, self.input_dims).outputLinearizer
+
+        # Check that the linearizer with the photodiode seems reasonable.
+        amp_name = self.amp_names[0]
+        nodes_pd, values_pd = np.split(linearizer_pd.linearityCoeffs[amp_name], 2)
+        np.testing.assert_array_less(np.abs(values_pd), 100.0)
+        in_range_pd = np.isfinite(linearizer_pd.fitResiduals[amp_name])
+        np.testing.assert_array_less(
+            np.abs(linearizer_pd.fitResiduals[amp_name][in_range_pd] / ptc.rawMeans[amp_name][in_range_pd]),
+            0.004,
+        )
+
+        # Check that the linearizer with the exposure time seems reasonable.
+        nodes_et, values_et = np.split(linearizer_et.linearityCoeffs[amp_name], 2)
+        np.testing.assert_array_less(np.abs(values_et), 100.0)
+        in_range_et = np.isfinite(linearizer_et.fitResiduals[amp_name])
+        np.testing.assert_array_less(
+            np.abs(linearizer_et.fitResiduals[amp_name][in_range_et] / ptc.rawMeans[amp_name][in_range_et]),
+            0.004,
+        )
+
+        # Check consistency. This is very rough
+        self.assertTrue(np.allclose(nodes_et, nodes_pd))
+        self.assertTrue(np.allclose(values_et[1:] / nodes_et[1:], values_pd[1:] / nodes_pd[1:], atol=5e-4))
 
     def _comcam_raw_linearity_data(self):
         # These are LSSTComCam measurements taken from a calibration
