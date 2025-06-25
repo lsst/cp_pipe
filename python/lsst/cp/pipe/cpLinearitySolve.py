@@ -1015,7 +1015,9 @@ class LinearitySolveTask(pipeBase.PipelineTask):
         # Fit the maximum signal.
         if turnoffIndex == (len(residuals) - 1):
             # This is the last point; we can't do a fit.
-            self.log.warning(
+            # This is not a warning because we do not actually need this
+            # value in practice.
+            self.log.info(
                 "No linearity turnoff detected for amplifier %s; try to increase the signal range.",
                 ampName,
             )

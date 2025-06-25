@@ -668,7 +668,7 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
         # Try again after cutting it off, make sure it warns.
         cutoff = (ordinate < turnoff)
 
-        with self.assertLogs(level=logging.WARNING) as cm:
+        with self.assertLogs(level=logging.INFO) as cm:
             turnoff_index2, turnoff2, max_signal2 = task._computeTurnoffAndMax(
                 abscissa[cutoff],
                 ordinate[cutoff],
