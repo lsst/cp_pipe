@@ -516,6 +516,7 @@ class LinearitySolveTask(pipeBase.PipelineTask):
             # Compute linearityTurnoff and linearitySignalMax.
             turnoffMask = inputPtc.expIdMask[ampName].copy()
             turnoffMask &= mask
+
             turnoffIndex, turnoff, maxSignal = self._computeTurnoffAndMax(
                 inputAbscissa,
                 inputPtc.rawMeans[ampName],
@@ -523,6 +524,13 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 groupingValues,
                 ampName=ampName,
             )
+            if np.isnan(turnoff):
+                # This is a bad amp, with no linearizer.
+                linearizer = self.fillBadAmp(linearizer, fitOrder, inputPtc, amp)
+                self.log.warning("Amp %s in detector %s has no usable linearizer information. Skipping!",
+                                 ampName, detector.getName())
+                continue
+
             linearizer.linearityTurnoff[ampName] = turnoff
             linearizer.linearityMaxSignal[ampName] = maxSignal
 
@@ -1024,6 +1032,9 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 "amplifier %s; may need finer sampling of input data?",
                 ampName,
             )
+            if np.all(~fitMask):
+                return -1, np.nan, np.nan
+
             turnoff = np.max(ordinate[fitMask])
             turnoffIndex = np.where(np.isclose(ordinate, turnoff))[0][0]
 
