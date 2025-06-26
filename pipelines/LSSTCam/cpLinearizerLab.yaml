@@ -8,9 +8,8 @@ tasks:
     config:
       useEfdPhotodiodeData: false
       doExtractPhotodiodeData: true
-      photodiodeIntegrationMethod: MEAN
-      auxiliaryHeaderKeys: ["TEMPAVG"]
-      matchExposuresType: TIME
+      auxiliaryHeaderKeys: ["CCOBCURR", "CCOBFLUX", "TEMP6"]
+      matchExposuresType: FLUX
   cpLinearizerPtcSolve:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
     config:
@@ -23,10 +22,12 @@ tasks:
     config:
       linearityType: Spline
       usePhotodiode: true
-      doAutoGrouping: true
-      splineFitTemperatureColumn: TEMPAVG
+      splineGroupingColumn: CCOBCURR
+      splineFitTemperatureColumn: TEMP6
+      splineFitWeightParsStart: [7.2e-5, 1e-4]
       doSplineFitWeights: false
       doSplineFitTemperature: false
+      minPhotodiodeCurrent: 3e-10
       doSplineFitOffset: true
       splineFitMaxIter: 40
       splineKnots: 15

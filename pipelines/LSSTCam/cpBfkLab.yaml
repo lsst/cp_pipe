@@ -8,9 +8,8 @@ tasks:
     config:
       useEfdPhotodiodeData: false
       doExtractPhotodiodeData: true
-      photodiodeIntegrationMethod: MEAN
-      auxiliaryHeaderKeys: ["TEMPAVG"]
-      matchExposuresType: TIME
+      auxiliaryHeaderKeys: ["CCOBCURR", "CCOBFLUX", "TEMP6"]
+      matchExposuresType: FLUX
   cpBfkPtcSolve:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
     config:

@@ -225,11 +225,37 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
         doc="Minimum value to trust photodiode signals.",
         default=0.0,
     )
+    doAutoGrouping = pexConfig.Field(
+        dtype=bool,
+        doc="Do automatic group detection? Cannot be True if splineGroupingColumn is also set. "
+            "The automatic group detection will use the ratio of signal to exposure time (if "
+            "autoGroupingUseExptime is True) or photodiode (if False) to determine which "
+            "flat pairs were taken with different illumination settings.",
+        default=False,
+    )
+    autoGroupingUseExptime = pexConfig.Field(
+        dtype=bool,
+        doc="Use exposure time to determine automatic grouping. Used if doAutoGrouping=True.",
+        default=True,
+    )
+    autoGroupingThreshold = pexConfig.Field(
+        dtype=float,
+        doc="Minimum relative jump from sorted conversion values to determine a group.",
+        default=0.1,
+    )
+    autoGroupingMaxSignalFraction = pexConfig.Field(
+        dtype=float,
+        doc="Only do auto-grouping when the signal is this fraction of the maximum signal. "
+            "All exposures with signal higher than this threshold will be put into the "
+            "largest signal group. This config is needed if the input PTC goes beyond "
+            "the linearity turnoff.",
+        default=0.9,
+    )
     splineGroupingColumn = pexConfig.Field(
         dtype=str,
         doc="Column to use for grouping together points for Spline mode, to allow "
-            "for different proportionality constants. If not set, no grouping "
-            "will be done.",
+            "for different proportionality constants. If None, then grouping will "
+            "only be done if doAutoGrouping is True.",
         default=None,
         optional=True,
     )
@@ -298,6 +324,13 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
 
         if self.doSplineFitTemperature and self.splineFitTemperatureColumn is None:
             raise ValueError("Must set splineFitTemperatureColumn if doSplineFitTemperature is True.")
+
+        if self.doAutoGrouping and self.splineGroupingColumn is not None:
+            raise ValueError("Must not set doAutoGrouping and also splineGroupingColumn")
+        if self.doAutoGrouping:
+            if not self.autoGroupingUseExptime and not self.usePhotodiode:
+                raise ValueError("If doAutoGrouping is True and autoGroupingUseExptime is False, then "
+                                 "usePhotodiode must be True.")
 
 
 class LinearitySolveTask(pipeBase.PipelineTask):
@@ -416,15 +449,9 @@ class LinearitySolveTask(pipeBase.PipelineTask):
         if self.config.usePhotodiode and self.config.applyPhotodiodeCorrection:
             abscissaCorrections = inputPhotodiodeCorrection.abscissaCorrections
 
-        if self.config.linearityType == 'Spline':
-            if self.config.splineGroupingColumn is not None:
-                if self.config.splineGroupingColumn not in inputPtc.auxValues:
-                    raise ValueError(f"Config requests grouping by {self.config.splineGroupingColumn}, "
-                                     "but this column is not available in inputPtc.auxValues.")
-                groupingValues = inputPtc.auxValues[self.config.splineGroupingColumn]
-            else:
-                groupingValues = np.ones(len(inputPtc.rawMeans[inputPtc.ampNames[0]]), dtype=int)
+        groupingValues = self._determineInputGroups(inputPtc)
 
+        if self.config.linearityType == 'Spline':
             if self.config.doSplineFitTemperature:
                 if self.config.splineFitTemperatureColumn not in inputPtc.auxValues:
                     raise ValueError("Config requests fitting temperature coefficient for "
@@ -493,6 +520,7 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 inputAbscissa,
                 inputPtc.rawMeans[ampName],
                 turnoffMask,
+                groupingValues,
                 ampName=ampName,
             )
             linearizer.linearityTurnoff[ampName] = turnoff
@@ -657,9 +685,15 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 if self.config.doSplineFitTemperature:
                     inputOrdinate *= (1.0
                                       + pars[fitter.par_indices["temperature_coeff"]]*temperatureValuesScaled)
-                # Divide by the relative scaling of the different groups.
+                # We have to adjust the abscissa for the different groups.
+                # This is because we need a corrected abscissa to get a
+                # reasonable linear fit to look for residuals, particularly in
+                # the case of significantly different signal-vs-photodiode or
+                # signal-vs-exptime scalings for different groups. This then
+                # becomes a multiplication by the relative scaling of the
+                # different groups.
                 for j, group_index in enumerate(fitter.group_indices):
-                    inputOrdinate[group_index] /= (pars[fitter.par_indices["groups"][j]] / linearFit[1])
+                    inputAbscissa[group_index] *= (pars[fitter.par_indices["groups"][j]] / linearFit[1])
                 # And remove the offset term.
                 if self.config.doSplineFitOffset:
                     inputOrdinate -= pars[fitter.par_indices["offset"]]
@@ -817,7 +851,94 @@ class LinearitySolveTask(pipeBase.PipelineTask):
             elif len(linearizer.fitParams[ampName]) != fitParamsMaxLen:
                 raise RuntimeError("Linearity has mismatched fitParams; check code/data.")
 
-    def _computeTurnoffAndMax(self, abscissa, ordinate, initialMask, ampName="UNKNOWN"):
+    def _determineInputGroups(self, ptc):
+        """Determine input groups for linearity fit.
+
+        If ``config.splineGroupingColumn`` is set, then grouping will be done
+        based on this. Otherwise, if ``config.doAutoGrouping`` is False, then
+        no grouping will be done. Finally, grouping will be done by measuring
+        the ratio of signal to exposure time (if
+        ``config.autoGroupingUseExptime`` is set; recommended) or photocharge.
+        These are then clustered with a simple algorithm to split into groups.
+        If the data was taking by varying exposure time at different
+        illumination levels, this grouping is very robust as the clusters are
+        very well separated.
+
+        Parameters
+        ----------
+        ptc : `lsst.ip.isr.PhotonTransferCurveDataset`
+
+        Returns
+        -------
+        groupingValues : `np.ndarray`
+            Array of values that are unique for a given group.
+        """
+        nPair = np.asarray(ptc.inputExpIdPairs[ptc.ampNames[0]]).shape[0]
+        groupingValues = np.zeros(nPair, dtype=np.int64)
+
+        if not self.config.doAutoGrouping:
+            if self.config.splineGroupingColumn is not None:
+                if self.config.splineGroupingColumn not in ptc.auxValues:
+                    raise ValueError(f"Config requests grouping by {self.config.splineGroupingColumn}, "
+                                     "but this column is not available in ptc.auxValues.")
+
+                uGroupValues = np.unique(ptc.auxValues[self.config.splineGroupingColumn])
+                for i, uGroupValue in enumerate(uGroupValues):
+                    groupingValues[ptc.auxValues[self.config.splineGroupingColumn] == uGroupValue] = i
+        else:
+            means = np.zeros((nPair, len(ptc.ampNames)))
+            exptimes = np.zeros_like(means)
+            for i, ampName in enumerate(ptc.ampNames):
+                means[:, i] = ptc.rawMeans[ampName] * ptc.gain[ampName]
+                exptimes[:, i] = ptc.rawExpTimes[ampName]
+            detMeans = np.nanmean(means, axis=1)
+            detExptimes = np.nanmean(exptimes, axis=1)
+
+            if self.config.autoGroupingUseExptime:
+                abscissa = detExptimes
+            else:
+                abscissa = ptc.photoCharges[ptc.ampNames[0]].copy()
+                # Set illegal photocharges to NaN.
+                abscissa[abscissa < self.config.minPhotodiodeCurrent] = np.nan
+
+            ratio = detMeans / abscissa
+            ratio /= np.nanmedian(ratio)
+
+            # Adjust those that are above threshold so they fall into the
+            # largest group.
+            above = (detMeans > self.config.autoGroupingMaxSignalFraction*np.nanmax(detMeans))
+            maxIndex = np.argmax(detMeans[~above])
+            ratio[above] = ratio[maxIndex]
+
+            # The clustering of ratios into groups is performed with a simple
+            # algorithm based on sorting and looking for the largest gaps.
+            # See https://stackoverflow.com/a/18385795
+            st = np.argsort(ratio)
+            stratio = ratio[st]
+            delta = stratio[1:] - stratio[0: -1]
+
+            transitions, = np.where(delta > self.config.autoGroupingThreshold)
+            if len(transitions) > 0:
+                ratioCuts = stratio[transitions] + self.config.autoGroupingThreshold/2.
+
+                for i in range(len(transitions) + 1):
+                    if i == 0:
+                        inGroup, = np.where(ratio < ratioCuts[i])
+                    elif i == len(transitions):
+                        inGroup, = np.where(ratio > ratioCuts[i - 1])
+                    else:
+                        inGroup, = np.where((ratio > ratioCuts[i - 1]) & (ratio < ratioCuts[i]))
+                    groupingValues[inGroup] = i
+
+            # Ensure out-of-range photoCharges/exptimes are in their own group.
+            # These are masked later on.
+            groupingValues[~np.isfinite(abscissa)] = -1
+            # And put the high ones in the max group.
+            groupingValues[above] = groupingValues[maxIndex]
+
+        return groupingValues
+
+    def _computeTurnoffAndMax(self, abscissa, ordinate, initialMask, groupingValues, ampName="UNKNOWN"):
         """Compute the turnoff and max signal.
 
         Parameters
@@ -830,6 +951,8 @@ class LinearitySolveTask(pipeBase.PipelineTask):
             These should be cleaned of any non-finite values.
         initialMask : `np.ndarray`
             Mask to use for initial fit (usually from PTC).
+        groupingValues : `np.ndarray`
+            Array of values that are used to group different fits.
         ampName : `str`, optional
             Amplifier name (used for logging).
 
@@ -855,12 +978,30 @@ class LinearitySolveTask(pipeBase.PipelineTask):
         fitMask = initialMask.copy()
         fitMask[ordinate < self.config.minSignalFitLinearityTurnoff] = False
 
+        gValues = np.unique(groupingValues)
+        groupIndicesList = []
+        for gValue in gValues:
+            use, = np.where(groupingValues == gValue)
+            groupIndicesList.append(use)
+
         found = False
         while (fitMask.sum() >= 4) and not found:
-            aa = sum(abscissa[fitMask])/sum(abscissa[fitMask]**2/ordinate[fitMask])
+            residuals = np.zeros_like(ordinate)
+
+            abscissaMasked = abscissa.copy()
+            abscissaMasked[~fitMask] = np.nan
+            ordinateMasked = ordinate.copy()
+            ordinateMasked[~fitMask] = np.nan
+
+            for groupIndices in groupIndicesList:
+                num = np.nansum(abscissaMasked[groupIndices])
+                denom = np.nansum(abscissaMasked[groupIndices]**2./ordinateMasked[groupIndices])
+                aa = num / denom
+
+                residuals[groupIndices] = (ordinate[groupIndices] - aa*abscissa[groupIndices]) / \
+                    ordinate[groupIndices]
 
             # Use the residuals to compute the turnoff.
-            residuals = (ordinate - aa*abscissa)/ordinate
             residuals -= np.nanmedian(residuals)
 
             goodPoints = np.abs(residuals) < self.config.maxFracLinearityDeviation
@@ -891,7 +1032,9 @@ class LinearitySolveTask(pipeBase.PipelineTask):
         # Fit the maximum signal.
         if turnoffIndex == (len(residuals) - 1):
             # This is the last point; we can't do a fit.
-            self.log.warning(
+            # This is not a warning because we do not actually need this
+            # value in practice.
+            self.log.info(
                 "No linearity turnoff detected for amplifier %s; try to increase the signal range.",
                 ampName,
             )

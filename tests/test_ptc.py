@@ -55,7 +55,7 @@ class PretendRef:
 
     def get(self, component=None):
         if component == "visitInfo":
-            return self.exp.getVisitInfo()
+            return self.exp.info.getVisitInfo()
         elif component == "detector":
             return self.exp.getDetector()
         elif component == "metadata":

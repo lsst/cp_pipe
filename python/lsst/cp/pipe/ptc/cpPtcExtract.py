@@ -192,7 +192,7 @@ class PhotonTransferCurveExtractPairConnections(
             previousExposureTime = -1.0
             nInPair = 1
             for i, exposure in enumerate(quantumIdDict.keys()):
-                if np.isclose(exposureTimes[i], previousExposureTime, atol=1e-3):
+                if np.isclose(exposureTimes[i], previousExposureTime, atol=5e-3):
                     # This is a match.
                     if nInPair == 2:
                         # We already have a pair!
@@ -265,9 +265,7 @@ class PhotonTransferCurveExtractConfigBase(
         default='TIME',
         allowed={
             "TIME": "Match exposures by reported exposure time. Entries "
-                    "that are within 1e-3 seconds. For matching requested "
-                    "exposure time use ``FLUX`` option and use the "
-                    "``EXPTIME`` keyword.",
+                    "that are within 5e-3 seconds.",
             "FLUX": "Match exposures by target flux. Use header keyword"
                 " in matchExposuresByFluxKeyword to find the flux.",
             "EXPID": "Match exposures by exposure ID."
@@ -414,12 +412,14 @@ class PhotonTransferCurveExtractConfigBase(
             "CHARGE_SUM": ("Treat the current values as integrated charge "
                            "over the sampling interval and simply sum "
                            "the values, after subtracting a baseline level."),
+            "MEAN": {"Take the average of the photodiode measurements and "
+                     "multiply by the exposure time."},
         },
     )
     photodiodeCurrentScale = pexConfig.Field(
         dtype=float,
         doc="Scale factor to apply to photodiode current values for the "
-            "``CHARGE_SUM`` and ``TRIMMED_SUM`` integration methods.",
+            "``CHARGE_SUM``, ``TRIMMED_SUM``, and ``MEAN`` integration methods.",
         default=-1.0,
     )
 
@@ -515,12 +515,14 @@ class PhotonTransferCurveExtractTaskBase(pipeBase.PipelineTask):
         photoChargeDict = {}
         if self.config.doExtractPhotodiodeData:
             # Compute the photodiode integrals once, at the start.
-            for handle in inputPhotodiodeData:
-                expId = handle.dataId['exposure']
-                pdCalib = handle.get()
+            for pdHandle, expHandle in zip(inputPhotodiodeData, inputExp):
+                expId = pdHandle.dataId['exposure']
+                pdCalib = pdHandle.get()
                 pdCalib.integrationMethod = self.config.photodiodeIntegrationMethod
                 pdCalib.currentScale = self.config.photodiodeCurrentScale
-                photoChargeDict[expId] = pdCalib.integrate()
+                visitInfo = expHandle.get(component="visitInfo")
+                exposureTime = visitInfo.getExposureTime()
+                photoChargeDict[expId] = pdCalib.integrate(exposureTime=exposureTime)
         elif self.config.useEfdPhotodiodeData:
             client = CpEfdClient()
             obsDates = {}

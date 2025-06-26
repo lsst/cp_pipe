@@ -1097,10 +1097,14 @@ class AstierSplineLinearityFitter:
                + len(self.par_indices["temperature_coeff"]))
         p0 = np.zeros(npt)
 
-        # Do a simple linear fit and set all the constants to this.
-        to_fit = (self._mu[self.mask] < self._max_signal_nearly_linear)
-        linfit = np.polyfit(self._pd[self.mask][to_fit], self._mu[self.mask][to_fit], 1)
-        p0[self.par_indices["groups"]] = linfit[0]
+        # Do a simple linear fit for each group.
+        for i, indices in enumerate(self.group_indices):
+            mask = self.mask[indices]
+            mu = self._mu[indices][mask]
+            pd = self._pd[indices][mask]
+            to_fit = (mu < self._max_signal_nearly_linear)
+            linfit = np.polyfit(pd[to_fit], mu[to_fit], 1)
+            p0[self.par_indices["groups"][i]] = linfit[0]
 
         # Look at the residuals...
         ratio_model = self.compute_ratio_model(
