@@ -588,6 +588,29 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             if len(maskAtAmp) == 0:
                 maskAtAmp = np.repeat(True, len(muAtAmp))
 
+            if np.sum(maskAtAmp) < matrixSide:
+                self.log.warning("Not enough good points to fit PTC for amp %s.", ampName)
+
+                dataset.badAmps.append(ampName)
+                nanMatrixFit = np.full((matrixSideFit, matrixSideFit), np.nan)
+                listNanMatrix = np.full((lenInputTimes, matrixSide, matrixSide), np.nan)
+                listNanMatrixFit = np.full((lenInputTimes, matrixSideFit, matrixSideFit), np.nan)
+                dataset.covariancesModel[ampName] = listNanMatrixFit
+                dataset.covariancesSqrtWeights[ampName] = listNanMatrix
+                dataset.aMatrix[ampName] = nanMatrixFit
+                dataset.bMatrix[ampName] = nanMatrixFit
+                dataset.noiseMatrix[ampName] = nanMatrixFit
+
+                dataset.expIdMask[ampName] = np.repeat(False, lenInputTimes)
+                dataset.gain[ampName] = np.nan
+                dataset.gainErr[ampName] = np.nan
+                dataset.noise[ampName] = np.nan
+                dataset.noiseErr[ampName] = np.nan
+                dataset.finalVars[ampName] = np.repeat(np.nan, lenInputTimes)
+                dataset.finalModelVars[ampName] = np.repeat(np.nan, lenInputTimes)
+                dataset.finalMeans[ampName] = np.repeat(np.nan, lenInputTimes)
+                continue
+
             muAtAmpMasked = muAtAmp[maskAtAmp]
             covAtAmp = dataset.covariances[ampName]
             covAtAmpMasked = np.nan_to_num(covAtAmp)[maskAtAmp]
