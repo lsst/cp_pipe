@@ -167,6 +167,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         inputGain = self.gain
 
         muStandard, varStandard = {}, {}
+        nPixelCovarianceStandard = {}
         expHandles = []
         expIds = []
         pdHandles = []
@@ -196,6 +197,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             expHandles.extend((mockExpRef1, mockExpRef2))
             expIds.append(idCounter)
             expIds.append(idCounter + 1)
+            maskValue = mockExp1.mask.getPlaneBitMask(extractPairTask.config.maskNameList)
             for ampNumber, ampName in enumerate(self.ampNames):
                 # cov has (i, j, var, cov, npix)
                 (
@@ -205,6 +207,8 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                     mu1,
                     mu2,
                 ) = extractPairTask.getImageAreasMasksStats(mockExp1, mockExp2)
+                nPixelCovariance = ((im1Area.mask.array & maskValue) == 0).sum()
+                nPixelCovarianceStandard.setdefault(ampName, []).append(nPixelCovariance)
                 muDiff, varDiff, covAstier, rowMeanVariance = extractPairTask.measureMeanVarCov(
                     im1Area, im2Area, imStatsCtrl, mu1, mu2
                 )
@@ -305,6 +309,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                     1.0,
                     rtol=1e-4,
                 )
+                np.testing.assert_array_equal(ptc.nPixelCovariances[amp], nPixelCovarianceStandard[amp][0])
 
                 # Check that the PTC turnoff is correctly computed.
                 # This will be different for the C:0,0 amp.

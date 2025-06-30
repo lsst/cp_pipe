@@ -644,6 +644,10 @@ class PhotonTransferCurveExtractTaskBase(pipeBase.PipelineTask):
             ampNames, 'PARTIAL',
             covMatrixSide=self.config.maximumRangeCovariancesAstier)
 
+        # These should be identical, but we can use them both.
+        maskValue1 = exp1.mask.getPlaneBitMask(self.config.maskNameList)
+        maskValue2 = exp2.mask.getPlaneBitMask(self.config.maskNameList)
+
         # Get the following statistics for each amp
         for ampNumber, amp in enumerate(detector):
             ampName = amp.getName()
@@ -657,6 +661,12 @@ class PhotonTransferCurveExtractTaskBase(pipeBase.PipelineTask):
             # `measureMeanVarCov` and `getGainFromFlatPair`.
             im1Area, im2Area, imStatsCtrl, mu1, mu2 = self.getImageAreasMasksStats(exp1, exp2,
                                                                                    region=region)
+
+            nPixelCovariance1 = ((im1Area.mask.array & maskValue1) == 0).sum()
+            nPixelCovariance2 = ((im2Area.mask.array & maskValue2) == 0).sum()
+
+            if nPixelCovariance1 != nPixelCovariance2:
+                raise RuntimeError("Inconsistent selections in pair of exposures.")
 
             readNoise1 = getReadNoise(exp1, ampName)
             readNoise2 = getReadNoise(exp2, ampName)
@@ -691,6 +701,7 @@ class PhotonTransferCurveExtractTaskBase(pipeBase.PipelineTask):
                     inputExpIdPair=(expId1, expId2),
                     rawExpTime=expTime,
                     expIdMask=False,
+                    nPixelCovariance=nPixelCovariance1,
                 )
                 continue
 
@@ -814,6 +825,7 @@ class PhotonTransferCurveExtractTaskBase(pipeBase.PipelineTask):
                 photoCharge=photoCharge,
                 ampOffset=ampOffset,
                 expIdMask=expIdMask,
+                nPixelCovariance=nPixelCovariance1,
                 covariance=covArray[0, :, :],
                 covSqrtWeights=covSqrtWeights[0, :, :],
                 gain=gain,
