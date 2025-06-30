@@ -120,8 +120,8 @@ class PhotonTransferCurveExtractPairConnections(
                 _LOG.warning("Exposure %d %s; dropping.", exposure, msg)
 
             # Remove all quanta associated with this exposure.
-            for element in quantumIdDict[exposure]:
-                adjuster.remove_quantum(element[1])
+            for key, element in quantumIdDict[exposure].items():
+                adjuster.remove_quantum(element)
             if pop:
                 # Pop it completely from the dict.
                 quantumIdDict.pop(exposure)
