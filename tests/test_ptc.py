@@ -1015,6 +1015,47 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             ampOffsetGainRatioFixup(ptc, 1000.0, 20000.0)
         self.assertIn("Cannot apply ampOffsetGainRatioFixup", cm.output[0])
 
+    def test_maskVignetteFunctionRegion(self):
+        # The function coefficients are chosen to trigger on some amps.
+        # The amps with no masked pixels are C:1,0 and C:1,3 due to the
+        # curvature.
+        extractConfig = self.defaultConfigExtract
+        extractConfig.doVignetteFunctionRegionSelection = True
+        extractConfig.vignetteFunctionPolynomialCoeffs = [-100.0, -18.0, 1.0]
+        extractConfig.vignetteFunctionRegionSelectionMinimumPixels = 2_000
+
+        task = cpPipe.ptc.PhotonTransferCurveExtractPairTask(config=extractConfig)
+        exposures = [self.flatExp1, self.flatExp2]
+        with self.assertNoLogs(level=logging.WARNING):
+            task._maskVignetteFunctionRegion(exposures)
+
+        bitmask = self.flatExp1.mask.getPlaneBitMask("SUSPECT")
+        for amp in self.flatExp1.getDetector():
+            bbox = amp.getBBox()
+            nMasked = ((self.flatExp1.mask[bbox].array & bitmask) > 0).sum()
+            if amp.getName() not in ["C:1,0", "C:1,3"]:
+                self.assertGreater(nMasked, 0, msg=f"Missing masked pixels in {amp.getName()}")
+            else:
+                self.assertEqual(nMasked, 0, msg=f"Unexpected masked pixels in {amp.getName()}")
+
+        # Check what happens if we ask for too many pixels.
+        extractConfig = self.defaultConfigExtract
+        extractConfig.doVignetteFunctionRegionSelection = True
+        extractConfig.vignetteFunctionPolynomialCoeffs = [-100.0, -18.0, 1.0]
+        extractConfig.vignetteFunctionRegionSelectionMinimumPixels = 10_000
+
+        self.flatExp1.mask.array[:, :] = 0
+        self.flatExp2.mask.array[:, :] = 0
+        task = cpPipe.ptc.PhotonTransferCurveExtractPairTask(config=extractConfig)
+        exposures = [self.flatExp1, self.flatExp2]
+        with self.assertLogs(level=logging.WARNING):
+            task._maskVignetteFunctionRegion(exposures)
+
+        # This should not have any masked pixels because we essentially
+        # insisted that the full amp be selected.
+        for amp in self.flatExp1.getDetector():
+            self.assertEqual(nMasked, 0, msg=f"Unexpected masked pixels in {amp.getName()}")
+
     def _getSampleMeanAndVar(self, dense=False, mode="normal"):
         """Get sample mean/var vectors and ptcTurnoff from LSSTCam data.
 

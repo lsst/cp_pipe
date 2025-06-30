@@ -27,6 +27,7 @@ import scipy.stats
 import warnings
 
 import lsst.afw.math as afwMath
+import lsst.afw.cameraGeom
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 from lsst.geom import (Box2I, Point2I, Extent2I)
@@ -423,12 +424,45 @@ class PhotonTransferCurveExtractConfigBase(
         default=-1.0,
     )
 
+    doVignetteFunctionRegionSelection = pexConfig.Field(
+        dtype=bool,
+        doc="Use vignette function to select PTC region?",
+        default=False,
+    )
+    vignetteFunctionPolynomialCoeffs = pexConfig.ListField(
+        dtype=float,
+        doc="Polynomial terms for radial vignetting function. This is used with "
+            "vig = np.polyval(coeffs, radius), where radius is in meters. This must be "
+            "set if doVignetteFunctionRegionSelection is True.",
+        default=None,
+        optional=True,
+    )
+    vignetteFunctionRegionSelectionMinimumPixels = pexConfig.Field(
+        dtype=int,
+        doc="Minumum number of pixels to select for vignette function region selection.",
+        default=250_000,
+    )
+    vignetteFunctionRegionSelectionPercent = pexConfig.Field(
+        dtype=float,
+        doc="Vignetting function variation over the focal plane that is determined to be "
+            "satisfactory. If this does not yield vignetteFunctionRegionSelectionMinimumPixels "
+            "then this will be increased until vignetteFunctionRegionSelectionMinimumPixels is "
+            "reached.",
+        default=2.0,
+    )
+
     def validate(self):
         super().validate()
         if self.doExtractPhotodiodeData and self.useEfdPhotodiodeData:
             # These get information from different places, so let's
             # disallow both being true.
             raise ValueError("doExtractPhotodiodeData and useEfdPhotodiodeData are mutually exclusive.")
+
+        if self.doVignetteFunctionRegionSelection and self.vignetteFunctionPolynomialCoeffs is None:
+            raise ValueError(
+                "vignetteFunctionPolynomialTerms must be set if "
+                "doVignetteFunctionRegionSelection is True.",
+            )
 
 
 class PhotonTransferCurveExtractConfig(
@@ -616,6 +650,10 @@ class PhotonTransferCurveExtractTaskBase(pipeBase.PipelineTask):
                                    maskPlane="SUSPECT", level=self.config.edgeMaskLevel)
             self.isrTask.maskEdges(exp2, numEdgePixels=self.config.numEdgeSuspect,
                                    maskPlane="SUSPECT", level=self.config.edgeMaskLevel)
+
+        # Mask "vignetted" subregions.
+        if self.config.doVignetteFunctionRegionSelection:
+            self._maskVignetteFunctionRegion([exp1, exp2])
 
         # Extract any metadata keys from the headers.
         auxDict = {}
@@ -840,6 +878,64 @@ class PhotonTransferCurveExtractTaskBase(pipeBase.PipelineTask):
         partialPtcDataset.setAuxValuesPartialDataset(auxDict)
 
         return partialPtcDataset, nAmpsNan
+
+    def _maskVignetteFunctionRegion(self, exposures, maskPlane="SUSPECT"):
+        """Mask regions with strong vignetting.
+
+        Parameters
+        ----------
+        exposures : `list` [`lsst.afw.image.Exposure`]
+            Exposure to mask.
+        maskPlane : `str`, optional
+            Mask plane to set.
+        """
+        detector = exposures[0].getDetector()
+        coeffs = np.asarray(self.config.vignetteFunctionPolynomialCoeffs)
+
+        transform = detector.getTransform(
+            fromSys=lsst.afw.cameraGeom.PIXELS,
+            toSys=lsst.afw.cameraGeom.FOCAL_PLANE,
+        )
+        nx = detector.getBBox().getWidth()
+        ny = detector.getBBox().getHeight()
+
+        x = np.repeat(np.arange(nx, dtype=np.float64), ny)
+        y = np.tile(np.arange(ny, dtype=np.float64), nx)
+        xy = np.vstack((x, y))
+        x2, y2 = np.vsplit(transform.getMapping().applyForward(xy), 2)
+        # Convert from mm to meters for the coefficients.
+        fpRad = np.sqrt((x2.ravel()/1000.)**2. + (y2.ravel()/1000.)**2.)
+
+        vigImage = lsst.afw.image.ImageF(detector.getBBox())
+        vigImage.array[:, :] = np.polyval(coeffs, fpRad).reshape(nx, ny).T
+
+        bitmask = exposures[0].mask.getPlaneBitMask(maskPlane)
+
+        for amp in detector:
+            vigSubImage = vigImage[amp.getBBox()].array.copy()
+
+            nSelected = 0
+            subMax = vigSubImage.max()
+            sel = self.config.vignetteFunctionRegionSelectionPercent
+            while (nSelected < self.config.vignetteFunctionRegionSelectionMinimumPixels) and sel < 100.0:
+                threshold = subMax * (1.0 - sel / 100.0)
+                high = (vigSubImage > threshold)
+                nSelected = high.sum()
+
+                # Raise by a percent at a time.
+                sel += 1.0
+
+            if sel > (self.config.vignetteFunctionRegionSelectionPercent + 1.0):
+                self.log.warning(
+                    "Amplifier %s_%s required %.1f%% threshold to reach %d pixel threshold.",
+                    detector.getName(),
+                    amp.getName(),
+                    sel - 1.0,
+                    self.config.vignetteFunctionRegionSelectionMinimumPixels,
+                )
+
+            for exposure in exposures:
+                exposure[amp.getBBox()].mask.array[~high] |= bitmask
 
     def makeCovArray(self, inputTuple, maxRangeFromTuple):
         """Make covariances array from tuple.
