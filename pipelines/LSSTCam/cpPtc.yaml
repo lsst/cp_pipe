@@ -11,6 +11,26 @@ tasks:
       photodiodeIntegrationMethod: MEAN
       auxiliaryHeaderKeys: ["TEMPAVG"]
       matchExposuresType: TIME
+      doVignetteFunctionRegionSelection: true
+      python: |
+         config.vignetteFunctionPolynomialCoeffs = [
+             -2.04748298e+12,
+             4.62036195e+12,
+             -4.55318392e+12,
+             2.55519946e+12,
+             -8.86592878e+11,
+             1.89254514e+11,
+             -2.11087631e+10,
+             -2.68228152e+08,
+             4.87993883e+08,
+             -8.03764403e+07,
+             6.99808127e+06,
+             -3.58577957e+05,
+             1.05491604e+04,
+             -1.60565953e+02,
+             9.96009337e-01,
+             9.98941038e-01,
+         ]
   cpPtcSolve:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
     config:
