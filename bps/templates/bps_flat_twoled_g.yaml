@@ -1,4 +1,4 @@
-pipelineYaml: "${CP_PIPE_DIR}/pipelines/${INSTRUMENT}/cpFlat.yaml"
+pipelineYaml: "${CP_PIPE_DIR}/pipelines/${INSTRUMENT}/cpFlatTwoLed.yaml"
 
 project: "${TICKET}"
 campaign: "${TICKET}"
@@ -12,8 +12,10 @@ cluster:
     dimensions: exposure
 
 payload:
-  payloadName: "${INSTRUMENT}_${TICKET}_flat_z"
-  output: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET}/${TAG}/flatGen-z.${RERUN}"
+  payloadName: "${INSTRUMENT}_${TICKET}_flat_g"
+  output: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET}/${TAG}/flatTwoLedGen-g.${RERUN}"
   butlerConfig: "${REPO}"
   inCollection: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET},${RAW_COLLECTION},${CALIB_COLLECTIONS}"
-  dataQuery: "${SELECTION_FLAT_z} and band='z'"
+  dataQuery: "${SELECTION_FLAT_g} and band='g'"
+
+extraQgraphOptions: "--config cpFlatBlueNormalize:downSelectionValue=single_led_flat_m455l4 --config cpFlatRedNormalize:downSelectionValue=single_led_flat_m505l4 --config cpFlatRedBlueCombine:weightOne=0.630"

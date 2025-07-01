@@ -161,6 +161,20 @@ class CpFlatNormalizationConnections(pipeBase.PipelineTaskConnections,
         dimensions=("instrument", "physical_filter"),
     )
 
+    def adjustQuantum(self, inputs, outputs, label, dataId):
+        if self.config.doDownSelection:
+            mdRefs = []
+            for ref in inputs["inputMDs"][1]:
+                value = getattr(ref.dataId.exposure, self.config.downSelectionField).lower()
+                if value == self.config.downSelectionValue.lower():
+                    mdRefs.append(ref)
+
+            if len(mdRefs) == 0:
+                raise pipeBase.NoWorkFound("No input exposures match the required down selection value.")
+            inputs["inputMDs"] = (inputs["inputMDs"][0], tuple(mdRefs))
+
+        return inputs, outputs
+
 
 class CpFlatNormalizationTaskConfig(pipeBase.PipelineTaskConfig,
                                     pipelineConnections=CpFlatNormalizationConnections):
@@ -178,6 +192,43 @@ class CpFlatNormalizationTaskConfig(pipeBase.PipelineTaskConfig,
         doc="Max number of iterations to use in scale solver.",
         default=10,
     )
+    doDownSelection = pexConfig.Field(
+        dtype=bool,
+        doc="Down-select inputs based on a header keyword?",
+        default=False,
+    )
+    downSelectionField = pexConfig.ChoiceField(
+        dtype=str,
+        doc="Which exposure record field to use for down-selection. Only used "
+            "if ``doDownSelection`` is True.",
+        default="observation_reason",
+        allowed={
+            "observation_reason": "Select on exposure.observation_reason.",
+            "observation_type": "Select on exposure.observation_type.",
+            "science_program": "Select on exposure.science_program.",
+            "group": "Select on exposure.group",
+        },
+    )
+    downSelectionValue = pexConfig.Field(
+        dtype=str,
+        doc="Exposure record value (corresponding to ``downSelectionField``) to match "
+            "for down-selection. Only used if ``doDownSelection`` is True, "
+            "in which case this must be set.",
+        optional=True,
+        default=None,
+    )
+
+    def validate(self):
+        super().validate()
+
+        if self.doDownSelection:
+            if self.downSelectionValue is None or self.downSelectionValue == "":
+                msg = "downSelectionValue must be overridden if doDownSelection is True."
+                raise pexConfig.FieldValidationError(
+                    CpFlatNormalizationTaskConfig.downSelectionValue,
+                    self,
+                    msg,
+                )
 
 
 class CpFlatNormalizationTask(pipeBase.PipelineTask):
@@ -192,7 +243,7 @@ class CpFlatNormalizationTask(pipeBase.PipelineTask):
 
         # Use the dimensions of the inputs for generating
         # output scales.
-        dimensions = [dict(exp.dataId.required) for exp in inputRefs.inputMDs]
+        dimensions = [dict(ref.dataId.required) for ref in inputRefs.inputMDs]
         inputs['inputDims'] = dimensions
 
         outputs = self.run(**inputs)

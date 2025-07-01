@@ -8,7 +8,7 @@ submitPath: "${SCRATCH}/submit/{outputRun}"
 clusterAlgorithm: lsst.ctrl.bps.quantum_clustering_funcs.dimension_clustering
 cluster:
   cpFlatIsrByExposure:
-    pipetasks: cpFlatIsr
+    pipetasks: cpFlatIsr,cpFlatMeasure
     dimensions: exposure
 
 payload:

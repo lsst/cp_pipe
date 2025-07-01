@@ -41,7 +41,8 @@ from lsst.obs.base.utils import strip_provenance_from_fits_header
 
 __all__ = ["CalibStatsConfig", "CalibStatsTask",
            "CalibCombineConfig", "CalibCombineConnections", "CalibCombineTask",
-           "CalibCombineByFilterConfig", "CalibCombineByFilterConnections", "CalibCombineByFilterTask"]
+           "CalibCombineByFilterConfig", "CalibCombineByFilterConnections", "CalibCombineByFilterTask",
+           "CalibCombineTwoFlatsByFilterConfig", "CalibCombineTwoFlatsByFilterTask"]
 
 
 # CalibStatsConfig/CalibStatsTask from pipe_base/constructCalibs.py
@@ -268,14 +269,40 @@ class CalibCombineTask(pipeBase.PipelineTask):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.makeSubtask("stats")
-        if self.config.doVignetteMask:
-            self.makeSubtask("vignette")
+        if "TwoFlats" not in type(self).__name__:
+            # Skip the additional initialization for TwoFlats task.
+            self.makeSubtask("stats")
+            if self.config.doVignetteMask:
+                self.makeSubtask("vignette")
 
     def runQuantum(self, butlerQC, inputRefs, outputRefs):
         inputs = butlerQC.get(inputRefs)
 
-        dimensions = [dict(expHandle.dataId.required) for expHandle in inputRefs.inputExpHandles]
+        # Down-select exposures based on InputList scaling if necessary.
+        if self.config.exposureScaling == "InputList":
+            inputScales = inputs["inputScales"]
+
+            if (detectorId := butlerQC.quantum.dataId["detector"]) not in inputScales["expScale"]:
+                raise pipeBase.NoWorkFound(f"No input scaling for detector {detectorId}")
+
+            # Use any amp for this check.
+            ampName = list(inputScales["expScale"][detectorId].keys())[0]
+            scaledExposures = list(inputScales["expScale"][detectorId][ampName].keys())
+
+            inputExpHandles = [
+                handle for handle in inputs["inputExpHandles"]
+                if handle.dataId["exposure"] in scaledExposures
+            ]
+            inputs["inputExpHandles"] = inputExpHandles
+
+            expHandleRefs = [
+                ref for ref in inputRefs.inputExpHandles
+                if ref.dataId["exposure"] in scaledExposures
+            ]
+        else:
+            expHandleRefs = inputRefs.inputExpHandles
+
+        dimensions = [dict(expHandle.dataId.required) for expHandle in expHandleRefs]
         inputs["inputDims"] = dimensions
 
         outputs = self.run(**inputs)
@@ -860,3 +887,158 @@ class CalibCombineByFilterTask(CalibCombineTask):
             return
 
         exp.metadata["FLATSRC"] = self.config.flatSource
+
+
+class CalibCombineTwoFlatsByFilterConnections(
+    pipeBase.PipelineTaskConnections,
+    dimensions=("instrument", "detector", "physical_filter"),
+):
+    inputFlatOneHandle = cT.Input(
+        name="flat_blue",
+        doc="Input first processed flat to combine.",
+        storageClass="Exposure",
+        dimensions=("instrument", "detector", "physical_filter"),
+        multiple=False,
+        deferLoad=True,
+        isCalibration=True,
+    )
+    inputFlatTwoHandle = cT.Input(
+        name="flat_red",
+        doc="Input second processed flat to combine.",
+        storageClass="Exposure",
+        dimensions=("instrument", "detector", "physical_filter"),
+        multiple=False,
+        deferLoad=True,
+        isCalibration=True,
+    )
+    outputData = cT.Output(
+        name="flat",
+        doc="Output combined flat.",
+        storageClass="ExposureF",
+        dimensions=("instrument", "detector", "physical_filter"),
+        isCalibration=True,
+    )
+
+
+class CalibCombineTwoFlatsByFilterConfig(
+    pipeBase.PipelineTaskConfig,
+    pipelineConnections=CalibCombineTwoFlatsByFilterConnections,
+):
+    calibrationType = pexConfig.Field(
+        dtype=str,
+        default="flat",
+        doc="Name of calibration to be generated.",
+    )
+    weightOne = pexConfig.Field(
+        dtype=float,
+        default=0.5,
+        doc="Weight for first flat (second weight will be 1.0 - weightOne).",
+    )
+    noGoodPixelsMask = pexConfig.Field(
+        dtype=str,
+        default="BAD",
+        doc="Mask bit to set when there are no good input pixels.  See code comments for details.",
+    )
+    combine = pexConfig.Field(
+        dtype=str,
+        default="MEAN",
+        doc="Statistic name to use for combination (from `~lsst.afw.math.Property`)",
+    )
+    subregionSize = pexConfig.ListField(
+        dtype=int,
+        doc="Width, height of subregion size.",
+        length=2,
+        # This is 200 rows for all detectors smaller than 10k in width.
+        default=(10000, 200),
+    )
+    distributionPercentiles = pexConfig.ListField(
+        dtype=float,
+        default=[0, 5, 16, 50, 84, 95, 100],
+        doc="Percentile levels to measure on the final combined calibration.",
+    )
+
+
+class CalibCombineTwoFlatsByFilterTask(CalibCombineTask):
+    """Task to combine two flats (weighted)."""
+
+    ConfigClass = CalibCombineTwoFlatsByFilterConfig
+    _DefaultName = "cpCombineTwoFlatsByFilter"
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def runQuantum(self, butlerQC, inputRefs, outputRefs):
+        inputs = butlerQC.get(inputRefs)
+
+        outputs = self.run(**inputs)
+        butlerQC.put(outputs, outputRefs)
+
+    def run(self, *, inputFlatOneHandle, inputFlatTwoHandle):
+        """Combine two flats (blue/red) into one flat.
+
+        Parameters
+        ----------
+        inputFlatOneHandle : `lsst.daf.butler.DeferredDatasetHandle`
+            The first flat handle.
+        inputFlatTwoHandle : `lsst.daf.butler.DeferredDatasetHandle`
+            The second flat handle.
+
+        Returns
+        -------
+        results : `lsst.pipe.base.Struct`
+            The results struct containing:
+
+        ``outputData``
+            Final combined exposure generated from the inputs.
+            (`lsst.afw.image.ExposureF`).
+        """
+        inputExpHandles = [inputFlatOneHandle, inputFlatTwoHandle]
+
+        width, height = self.getDimensions(inputExpHandles)
+
+        stats = afwMath.StatisticsControl()
+        stats.setCalcErrorFromInputVariance(True)
+
+        # See comment in CalibCombineTask.run().
+        stats.setNoGoodPixelsMask(afwImage.Mask.getPlaneBitMask(self.config.noGoodPixelsMask))
+
+        inputDetector = inputExpHandles[0].get(component="detector")
+
+        combined = afwImage.MaskedImageF(width, height)
+        combinedExp = afwImage.makeExposure(combined)
+
+        # We need an extra factor of 2 because of the way the scaling works.
+        expScales = [0.5/self.config.weightOne, 0.5/(1.0 - self.config.weightOne)]
+
+        self.combine(combinedExp, inputExpHandles, expScales, stats)
+
+        # Set the detector
+        combinedExp.setDetector(inputDetector)
+
+        # Set the validPolygon
+        # Note that NO_DATA regions (due to vignetting) are propogated
+        # in the combine task above.
+        polygon = inputExpHandles[0].get(component="validPolygon")
+        if polygon is not None:
+            combinedExp.info.setValidPolygon(polygon)
+
+        self.combineHeaders(
+            inputExpHandles,
+            combinedExp,
+            calibType=self.config.calibrationType,
+            scales=expScales,
+        )
+
+        filterLabel = inputExpHandles[0].get(component="filter")
+        if filterLabel:
+            combinedExp.setFilter(filterLabel)
+
+        self.setFlatSource(combinedExp)
+
+        # Set QA headers
+        self.calibStats(combinedExp, self.config.calibrationType)
+
+        # Return
+        return pipeBase.Struct(
+            outputData=combinedExp,
+        )
