@@ -7,6 +7,15 @@ tasks:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractPairTask
     config:
       efdSalIndex: 101
+  cpLinearizerUnnormalizedSolve:
+    class: lsst.cp.pipe.LinearitySolveTask
+    config:
+      maxLinearAdu: 120000
+  cpLinearizerPtcNormalize:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveNormalizeTask
+    config:
+      normalizeDetectors: [0, 1, 2, 3, 4, 5, 6, 7, 8]
+      referenceDetector: 4
   cpLinearizerSolve:
     class: lsst.cp.pipe.LinearitySolveTask
     config:

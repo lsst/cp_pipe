@@ -33,10 +33,27 @@ tasks:
       ptcFitType: "EXPAPPROXIMATION"
       maximumRangeCovariancesAstier: 1
       maximumRangeCovariancesAstierFullCovFit: 1
+  cpLinearizerUnnormalizedSolve:
+    class: lsst.cp.pipe.LinearitySolveTask
+    config:
+      useLinearizerPtc: true
+      useFocalPlaneNormalization: false
+      connections.inputLinearizerPtc: "linearizerPtc"
+      connections.outputLinearizer: "linearizerUnnormalized"
+      linearityType: "Spline"
+      splineKnots: 10
+      trimmedState: false
+      usePhotodiode: true
+  cpLinearizerPtcNormalize:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveNormalizeTask
+    config:
+      connections.inputPtcHandles: "linearizerPtc"
+      connections.inputLinearizerHandles: "linearizerUnnormalized"
   cpLinearizerSolve:
     class: lsst.cp.pipe.LinearitySolveTask
     config:
       useLinearizerPtc: true
+      useFocalPlaneNormalization: true
       connections.inputLinearizerPtc: "linearizerPtc"
       connections.outputLinearizer: "linearizer"
       linearityType: "Spline"
