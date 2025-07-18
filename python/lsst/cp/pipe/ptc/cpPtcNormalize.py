@@ -46,6 +46,16 @@ class PhotonTransferCurveNormalizeConnnections(
         deferLoad=True,
     )
 
+    inputLinearizerHandles = pipeBase.connectionTypes.Input(
+        name="linearizerUnnormalized",
+        doc="Unnormalized linearizers.",
+        storageClass="Linearizer",
+        dimensions=("instrument", "detector"),
+        isCalibration=True,
+        multiple=True,
+        deferLoad=True,
+    )
+
     camera = pipeBase.connectionTypes.PrerequisiteInput(
         name="camera",
         doc="Camera the input data comes from.",
@@ -75,9 +85,26 @@ class PhotonTransferCurveNormalizeConnnections(
             raise pipeBase.NoWorkFound("No input PTCs match the normalization detectors.")
         if not foundRefDetector:
             raise pipeBase.NoWorkFound(
-                "PhotonTransferCurveNormalize reference detector not in list of inputs.",
+                "PhotonTransferCurveNormalize reference detector not in list of PTC inputs.",
             )
+
+        linearizerRefs = []
+        foundRefDetector = False
+        for ref in inputs["inputLinearizerHandles"][1]:
+            if ref.dataId["detector"] in self.config.normalizeDetectors:
+                linearizerRefs.append(ref)
+            if ref.dataId["detector"] == self.config.referenceDetector:
+                foundRefDetector = True
+
+        if len(linearizerRefs) == 0:
+            raise pipeBase.NoWorkFound("No input linearizers match the normalization detectors.")
+        if not foundRefDetector:
+            raise pipeBase.NoWorkFound(
+                "PhotonTransferCurveNormalize reference detector not in list of linearizer inputs.",
+            )
+
         inputs["inputPtcHandles"] = (inputs["inputPtcHandles"][0], tuple(ptcRefs))
+        inputs["linearizerHandles"] = (inputs["linearizerHandles"][0], tuple(linearizerRefs))
 
         return inputs, outputs
 
@@ -119,7 +146,7 @@ class PhotonTransferCurveNormalizeTask(pipeBase.PipelineTask):
     ConfigClass = PhotonTransferCurveNormalizeConfig
     _DefaultName = "cpPtcNormalize"
 
-    def run(self, *, camera, inputPtcHandles):
+    def run(self, *, camera, inputPtcHandles, inputLinearizerHandles):
         """Compute the focal-plane normalization.
 
         Parameters
@@ -128,6 +155,9 @@ class PhotonTransferCurveNormalizeTask(pipeBase.PipelineTask):
             Input camera.
         inputPtcHandles : `list` [`lsst.daf.butler.DeferredDatasetHandle`]
             Handles for input PTCs to do normalization.
+        inputLinearizerHandles :
+            `list` [`lsst.daf.butler.DeferredDatasetHandle`]
+            handles for input linearizers to do normalization.
 
         Returns
         -------
@@ -195,6 +225,7 @@ class PhotonTransferCurveNormalizeTask(pipeBase.PipelineTask):
             {
                 "exposure": exposures,
                 "exptime": exptimes,
+                "mean": medianRawMeans,
                 "normalization": medianRatios,
             },
         )
