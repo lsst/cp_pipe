@@ -566,6 +566,7 @@ class LinearitySolveTask(pipeBase.PipelineTask):
 
             linearizer.inputAbscissa[ampName] = inputAbscissa.copy()
             linearizer.inputOrdinate[ampName] = inputOrdinate.copy()
+            linearizer.inputGroupingIndex[ampName] = groupingValues.copy()
 
             if self.config.linearityType != 'Spline':
                 mask &= (inputOrdinate < self.config.maxLinearAdu)
