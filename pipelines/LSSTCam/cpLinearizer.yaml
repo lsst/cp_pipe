@@ -43,12 +43,10 @@ tasks:
     config:
       linearityType: Spline
       usePhotodiode: true
-      splineGroupingColumn: CCOBCURR
-      splineFitTemperatureColumn: TEMP6
-      splineFitWeightParsStart: [7.2e-5, 1e-4]
+      doAutoGrouping: true
+      splineFitTemperatureColumn: TEMPAVG
       doSplineFitWeights: false
       doSplineFitTemperature: false
-      minPhotodiodeCurrent: 3e-10
       doSplineFitOffset: true
       splineFitMaxIter: 40
       splineKnots: 15
