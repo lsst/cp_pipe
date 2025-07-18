@@ -318,6 +318,9 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                 else:
                     self.assertAlmostEqual(ptc.ptcTurnoff[amp], ptc.rawMeans[amp][-1])
 
+                import IPython
+                IPython.embed()
+
                 # Test that all the quantities are correctly ordered and
                 # have not accidentally been masked.
                 for i, extractPtc in enumerate(outputCovariances):
@@ -332,6 +335,15 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                     self.assertFloatsAlmostEqual(
                         extractPtc.rawVars[ampName][0],
                         ptc.rawVars[ampName][i],
+                    )
+                    self.assertFloatsAlmostEqual(
+                        extractPtc.rawDeltas[ampName][0],
+                        ptc.rawDeltas[ampName][i],
+                    )
+                    # Ensure these are set to a non-zero value.
+                    self.assertFloatsNotEqual(
+                        extractPtc.rawDeltas[ampName][0],
+                        0.0,
                     )
                     self.assertFloatsAlmostEqual(
                         extractPtc.photoCharges[ampName][0],

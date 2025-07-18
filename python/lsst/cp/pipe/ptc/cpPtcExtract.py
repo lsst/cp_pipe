@@ -860,6 +860,7 @@ class PhotonTransferCurveExtractTaskBase(pipeBase.PipelineTask):
                 rawExpTime=expTime,
                 rawMean=muDiff,
                 rawVar=varDiff,
+                rawDelta=mu2 - mu1,
                 photoCharge=photoCharge,
                 ampOffset=ampOffset,
                 expIdMask=expIdMask,
