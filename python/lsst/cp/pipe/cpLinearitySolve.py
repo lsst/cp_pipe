@@ -23,6 +23,7 @@
 __all__ = ["LinearitySolveTask", "LinearitySolveConfig"]
 
 import numpy as np
+import esutil
 from scipy.stats import median_abs_deviation
 
 import lsst.afw.image as afwImage
@@ -120,6 +121,14 @@ class LinearitySolveConnections(pipeBase.PipelineTaskConnections,
         isCalibration=True,
     )
 
+    inputNormalization = cT.Input(
+        name="cpLinearizerPtcNormalization",
+        doc="Focal-plane normalization table.",
+        storageClass="ArrowAstropy",
+        dimensions=("instrument",),
+        isCalibration=True,
+    )
+
     outputLinearizer = cT.Output(
         name="linearity",
         doc="Output linearity measurements.",
@@ -129,6 +138,8 @@ class LinearitySolveConnections(pipeBase.PipelineTaskConnections,
     )
 
     def __init__(self, *, config=None):
+        super().__init__(config=config)
+
         if not config.applyPhotodiodeCorrection:
             del self.inputPhotodiodeCorrection
 
@@ -136,6 +147,9 @@ class LinearitySolveConnections(pipeBase.PipelineTaskConnections,
             del self.inputPtc
         else:
             del self.inputLinearizerPtc
+
+        if not config.useFocalPlaneNormalization:
+            del self.inputNormalization
 
 
 class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
@@ -313,9 +327,20 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
         default=None,
         optional=True,
     )
+    doSplineFitTemporal = pexConfig.Field(
+        dtype=bool,
+        doc="Fit a linear temporal parameter coefficient in spline fit?",
+        default=False,
+    )
     useLinearizerPtc = pexConfig.Field(
         dtype=bool,
         doc="Use a linearizer ptc in a single pipeline?",
+        default=False,
+    )
+    useFocalPlaneNormalization = pexConfig.Field(
+        dtype=bool,
+        doc="Use focal-plane normalization in addition to/instead of photodiode? "
+            "(Only used with spline fitting).",
         default=False,
     )
 
@@ -388,7 +413,7 @@ class LinearitySolveTask(pipeBase.PipelineTask):
         butlerQC.put(outputs, outputRefs)
 
     def run(self, inputPtc, dummy, camera, inputDims,
-            inputPhotodiodeCorrection=None):
+            inputPhotodiodeCorrection=None, inputNormalization=None):
         """Fit non-linearity to PTC data, returning the correct Linearizer
         object.
 
@@ -400,13 +425,17 @@ class LinearitySolveTask(pipeBase.PipelineTask):
             The exposure used to select the appropriate PTC dataset.
             In almost all circumstances, one of the input exposures
             used to generate the PTC dataset is the best option.
-        inputPhotodiodeCorrection : `lsst.ip.isr.PhotodiodeCorrection`
-            Pre-measured photodiode correction used in the case when
-            applyPhotodiodeCorrection=True.
         camera : `lsst.afw.cameraGeom.Camera`
             Camera geometry.
         inputDims : `lsst.daf.butler.DataCoordinate` or `dict`
             DataIds to use to populate the output calibration.
+        inputPhotodiodeCorrection :
+            `lsst.ip.isr.PhotodiodeCorrection`, optional
+            Pre-measured photodiode correction used in the case when
+            applyPhotodiodeCorrection=True.
+        inputNormalization : `astropy.table.Table`, optional
+            Focal plane normalization table to use if
+            useFocalPlaneNormalization is True.
 
         Returns
         -------
@@ -513,6 +542,14 @@ class LinearitySolveTask(pipeBase.PipelineTask):
             else:
                 inputAbscissa = inputPtc.rawExpTimes[ampName].copy()
 
+            # Normalize if configured.
+            inputNorm = np.ones_like(inputAbscissa)
+            if self.config.useFocalPlaneNormalization:
+                exposures = np.asarray(inputPtc.inputExpIdPairs[ampName])[:, 0]
+                a, b = esutil.numpy_util.match(exposures, inputNormalization["exposure"])
+                inputNorm[a] = inputNormalization["normalization"][b]
+                inputAbscissa *= inputNorm
+
             # Compute linearityTurnoff and linearitySignalMax.
             turnoffMask = inputPtc.expIdMask[ampName].copy()
             turnoffMask &= mask
@@ -536,6 +573,11 @@ class LinearitySolveTask(pipeBase.PipelineTask):
 
             inputOrdinate = inputPtc.rawMeans[ampName].copy()
 
+            linearizer.inputAbscissa[ampName] = inputAbscissa.copy()
+            linearizer.inputOrdinate[ampName] = inputOrdinate.copy()
+            linearizer.inputGroupingIndex[ampName] = groupingValues.copy()
+            linearizer.inputNormalization[ampName] = inputNorm.copy()
+
             if self.config.linearityType != 'Spline':
                 mask &= (inputOrdinate < self.config.maxLinearAdu)
             else:
@@ -546,6 +588,9 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 mask &= extraMask
 
             mask &= (inputOrdinate > self.config.minLinearAdu)
+
+            # Initial value for the mask.
+            linearizer.inputMask[ampName] = mask.copy()
 
             if mask.sum() < 2:
                 linearizer = self.fillBadAmp(linearizer, fitOrder, inputPtc, amp)
@@ -564,6 +609,8 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 threshold = self.config.nSigmaClipLinear * np.sqrt(abs(inputOrdinate))
 
                 mask[np.abs(inputOrdinate - linearOrdinate) >= threshold] = False
+
+                linearizer.inputMask[ampName] = mask.copy()
 
                 if mask.sum() < 2:
                     linearizer = self.fillBadAmp(linearizer, fitOrder, inputPtc, amp)
@@ -633,6 +680,10 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 # the fit will adjust mu such that
                 # mu = mu_input*(1 + alpha*(T - T_ref))
                 # and T_ref is taken as the median temperature of the run.
+                # Finally, if config.doSplineFitTemporal is True then the
+                # fit will further adjust mu such that
+                # mu = mu_input*(1 + beta*(mjd - mjd_ref))
+                # and mjd_ref is taken as the median mjd of the run.
 
                 # The fit has additional constraints to ensure that the spline
                 # goes through the (0, 0) point, as well as a normalization
@@ -650,6 +701,12 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 else:
                     temperatureValuesScaled = None
 
+                if self.config.doSplineFitTemporal:
+                    inputMjdScaled = inputPtc.inputExpPairMjdStartList[ampName].copy()
+                    inputMjdScaled -= np.nanmedian(inputMjdScaled)
+                else:
+                    inputMjdScaled = None
+
                 fitter = AstierSplineLinearityFitter(
                     nodes,
                     groupingValues,
@@ -663,6 +720,8 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                     fit_temperature=self.config.doSplineFitTemperature,
                     temperature_scaled=temperatureValuesScaled,
                     max_signal_nearly_linear=inputPtc.ptcTurnoff[ampName],
+                    fit_temporal=self.config.doSplineFitTemporal,
+                    mjd_scaled=inputMjdScaled,
                 )
                 p0 = fitter.estimate_p0()
                 pars = fitter.fit(
@@ -689,10 +748,13 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 # nuisance terms in the linearity fit for the residual
                 # computation code to work properly.
                 # The true mu (inputOrdinate) is given by
-                #  mu = mu_in * (1 + alpha*t_scale)
+                #  mu = mu_in * (1 + alpha*t_scale) * (1 + beta*mjd_scale)
                 if self.config.doSplineFitTemperature:
                     inputOrdinate *= (1.0
                                       + pars[fitter.par_indices["temperature_coeff"]]*temperatureValuesScaled)
+                if self.config.doSplineFitTemporal:
+                    inputOrdinate *= (1.0
+                                      + pars[fitter.par_indices["temporal_coeff"]]*inputMjdScaled)
                 # We have to adjust the abscissa for the different groups.
                 # This is because we need a corrected abscissa to get a
                 # reasonable linear fit to look for residuals, particularly in
@@ -717,12 +779,15 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                     pars[fitter.par_indices["offset"]],
                     pars[fitter.par_indices["weight_pars"]],
                     pars[fitter.par_indices["temperature_coeff"]],
+                    pars[fitter.par_indices["temporal_coeff"]],
                 ))
                 polyFitErr = np.zeros_like(polyFit)
                 chiSq = linearityChisq
 
                 # Update mask based on what the fitter rejected.
                 mask = fitter.mask
+
+                linearizer.inputMask[ampName] = mask.copy()
             else:
                 polyFit = np.zeros(1)
                 polyFitErr = np.zeros(1)
@@ -757,6 +822,7 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 self.log.warning("Amp %s in detector %s has not enough points in linear ordinate "
                                  "for residuals. Skipping!", ampName, detector.getName())
                 residuals = np.full_like(linearizeModel, np.nan)
+                residualsUnmasked = residuals.copy()
             else:
                 postLinearFit, _, _, _ = irlsFit(
                     linearFit,
@@ -769,10 +835,13 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 # itself depends on a possibly unknown zero in the abscissa
                 # (often photodiode) which may have an arbitrary value.
                 residuals = linearizeModel - (postLinearFit[1] * inputAbscissa)
+                residualsUnmasked = residuals.copy()
                 # We set masked residuals to nan.
                 residuals[~mask] = np.nan
 
+            linearizer.fitResidualsUnmasked[ampName] = residualsUnmasked
             linearizer.fitResiduals[ampName] = residuals
+            linearizer.fitResidualsModel[ampName] = linearizeModel.copy()
 
             finite = np.isfinite(residuals)
             if finite.sum() == 0:
@@ -823,6 +892,8 @@ class LinearitySolveTask(pipeBase.PipelineTask):
             nEntries = 2
             pEntries = fitOrder + 1
 
+        nPair = len(inputPtc.inputExpIdPairs[ampName])
+
         linearizer.linearityType[ampName] = "None"
         linearizer.linearityCoeffs[ampName] = np.zeros(nEntries)
         if self.config.trimmedState:
@@ -832,11 +903,19 @@ class LinearitySolveTask(pipeBase.PipelineTask):
         linearizer.fitParams[ampName] = np.zeros(pEntries)
         linearizer.fitParamsErr[ampName] = np.zeros(pEntries)
         linearizer.fitChiSq[ampName] = np.nan
-        linearizer.fitResiduals[ampName] = np.zeros(len(inputPtc.expIdMask[ampName]))
+        linearizer.fitResiduals[ampName] = np.zeros(nPair)
         linearizer.fitResidualsSigmaMad[ampName] = np.nan
+        linearizer.fitResidualsUnmasked[ampName] = np.zeros(nPair)
+        linearizer.fitResidualsModel[ampName] = np.zeros(nPair)
         linearizer.linearFit[ampName] = np.zeros(2)
         linearizer.linearityTurnoff[ampName] = np.nan
         linearizer.linearityMaxSignal[ampName] = np.nan
+        linearizer.inputMask[ampName] = np.zeros(nPair, dtype=np.bool_)
+        linearizer.inputAbscissa[ampName] = np.zeros(nPair)
+        linearizer.inputOrdinate[ampName] = np.zeros(nPair)
+        linearizer.inputGroupingIndex[ampName] = np.zeros(nPair, dtype=np.int64)
+        linearizer.inputNormalization[ampName] = np.ones(nPair)
+
         return linearizer
 
     def fixupBadAmps(self, linearizer):
