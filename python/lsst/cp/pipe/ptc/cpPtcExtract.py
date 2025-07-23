@@ -833,6 +833,7 @@ class PhotonTransferCurveExtractTaskBase(pipeBase.PipelineTask):
                     # pass downstream.
                     kspValue = 1.0
 
+            photoChargeDelta = np.nan
             if self.config.doExtractPhotodiodeData or self.config.useEfdPhotodiodeData:
                 nExps = 0
                 photoCharge = 0.0
@@ -844,6 +845,8 @@ class PhotonTransferCurveExtractTaskBase(pipeBase.PipelineTask):
                     photoCharge /= nExps
                 else:
                     photoCharge = np.nan
+                if nExps == 2:
+                    photoChargeDelta = photoChargeDict[expId1] - photoChargeDict[expId2]
             else:
                 photoCharge = np.nan
 
@@ -860,7 +863,9 @@ class PhotonTransferCurveExtractTaskBase(pipeBase.PipelineTask):
                 rawExpTime=expTime,
                 rawMean=muDiff,
                 rawVar=varDiff,
+                rawDelta=mu2 - mu1,
                 photoCharge=photoCharge,
+                photoChargeDelta=photoChargeDelta,
                 ampOffset=ampOffset,
                 expIdMask=expIdMask,
                 nPixelCovariance=nPixelCovariance1,
