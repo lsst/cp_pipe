@@ -7,9 +7,9 @@ tasks:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractPairTask
     config:
       useEfdPhotodiodeData: false
-      doExtractPhotodiodeData: true
+      doExtractPhotodiodeData: false
       photodiodeIntegrationMethod: MEAN
-      auxiliaryHeaderKeys: ["TEMPAVG"]
+      auxiliaryHeaderKeys: ["TEMPAVG", "BSSVBS"]
       matchExposuresType: TIME
       doVignetteFunctionRegionSelection: true
       python: |
