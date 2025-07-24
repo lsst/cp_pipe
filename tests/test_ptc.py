@@ -217,22 +217,28 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
             # Make a photodiode dataset to integrate.
             timeSamples = np.linspace(0, 20.0, 100)
-            currentSamples = np.zeros(100)
-            currentSamples[50] = -1.0*self.photoCharges[i]
+            currentSamples1 = np.zeros(100)
+            currentSamples1[50] = -1.0*self.photoCharges[i]
+            currentSamples2 = np.zeros(100)
+            currentSamples2[50] = -1.0*(self.photoCharges[i] + 1e-12)
 
-            pdCalib = PhotodiodeCalib(timeSamples=timeSamples, currentSamples=currentSamples)
-            pdCalib.currentScale = -1.0
-            pdCalib.integrationMethod = "CHARGE_SUM"
+            pdCalib1 = PhotodiodeCalib(timeSamples=timeSamples, currentSamples=currentSamples1)
+            pdCalib1.currentScale = -1.0
+            pdCalib1.integrationMethod = "CHARGE_SUM"
+
+            pdCalib2 = PhotodiodeCalib(timeSamples=timeSamples, currentSamples=currentSamples2)
+            pdCalib2.currentScale = -1.0
+            pdCalib2.integrationMethod = "CHARGE_SUM"
 
             pdHandles.append(
                 InMemoryDatasetHandle(
-                    pdCalib,
+                    pdCalib1,
                     dataId={"exposure": idCounter},
                 )
             )
             pdHandles.append(
                 InMemoryDatasetHandle(
-                    pdCalib,
+                    pdCalib2,
                     dataId={"exposure": idCounter + 1},
                 )
             )
@@ -334,8 +340,26 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                         ptc.rawVars[ampName][i],
                     )
                     self.assertFloatsAlmostEqual(
+                        extractPtc.rawDeltas[ampName][0],
+                        ptc.rawDeltas[ampName][i],
+                    )
+                    # Ensure these are set to a non-zero value.
+                    self.assertFloatsNotEqual(
+                        extractPtc.rawDeltas[ampName][0],
+                        0.0,
+                    )
+                    self.assertFloatsAlmostEqual(
                         extractPtc.photoCharges[ampName][0],
                         ptc.photoCharges[ampName][i],
+                    )
+                    self.assertFloatsAlmostEqual(
+                        extractPtc.photoChargeDeltas[ampName][0],
+                        ptc.photoChargeDeltas[ampName][i],
+                    )
+                    # Ensure these are set to a non-zero value.
+                    self.assertFloatsNotEqual(
+                        extractPtc.photoChargeDeltas[ampName][0],
+                        0.0,
                     )
                     self.assertFloatsAlmostEqual(
                         extractPtc.histVars[ampName][0],
