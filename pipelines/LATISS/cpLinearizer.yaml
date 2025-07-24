@@ -10,6 +10,7 @@ tasks:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractPairTask
     config:
       efdSalIndex: 201
+  # Leave the normalizer in to exercise the code and have a record.
   cpLinearizerUnnormalizedSolve1:
     class: lsst.cp.pipe.LinearitySolveTask
     config:
@@ -20,9 +21,12 @@ tasks:
     config:
       normalizeDetectors: [0]
       referenceDetector: 0
+  # But turn off the normalization because one detector
+  # is not enough to run it reliably.
   cpLinearizerSolve:
     class: lsst.cp.pipe.LinearitySolveTask
     config:
       connections.inputNormalization: "cpLinearizerNormalization1"
       maxLinearAdu: 120000
       usePhotodiode: false
+      useFocalPlaneNormalization: false
