@@ -54,7 +54,32 @@ tasks:
   cpLinearizerNormalize1:
     class: lsst.cp.pipe.LinearityNormalizeTask
     config:
-      normalizeDetectors: [90, 91, 92, 93, 94, 95, 95, 97, 98]
+      normalizeDetectors:
+        - 44
+        - 51
+        - 52
+        - 53
+        - 60
+        - 83
+        - 90
+        - 91
+        - 92
+        - 99
+        - 86
+        - 93
+        - 94
+        - 95
+        - 102
+        - 89
+        - 96
+        - 97
+        - 98
+        - 105
+        - 128
+        - 135
+        - 136
+        - 137
+        - 144
       referenceDetector: 94
   cpLinearizerUnnormalizedSolve2:
     class: lsst.cp.pipe.LinearitySolveTask
@@ -72,7 +97,32 @@ tasks:
   cpLinearizerNormalize2:
     class: lsst.cp.pipe.LinearityNormalizeTask
     config:
-      normalizeDetectors: [90, 91, 92, 93, 94, 95, 95, 97, 98]
+      normalizeDetectors:
+        - 44
+        - 51
+        - 52
+        - 53
+        - 60
+        - 83
+        - 90
+        - 91
+        - 92
+        - 99
+        - 86
+        - 93
+        - 94
+        - 95
+        - 102
+        - 89
+        - 96
+        - 97
+        - 98
+        - 105
+        - 128
+        - 135
+        - 136
+        - 137
+        - 144
       referenceDetector: 94
   cpLinearizerSolve:
     class: lsst.cp.pipe.LinearitySolveTask
