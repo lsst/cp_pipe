@@ -122,8 +122,8 @@ class LinearityNormalizeConfig(
     )
     referenceDetector = pexConfig.Field(
         dtype=int,
-        doc="Detector to use as overall reference. Must be in list of "
-            "normalizeDetectors.",
+        doc="Detector to use as an overall reference for sorting/labeling "
+            "exposures. Must be in list of normalizeDetectors.",
         default=None,
         optional=False,
     )
