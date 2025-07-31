@@ -77,27 +77,28 @@ class QuadNotchExtractConfig(pipeBase.PipelineTaskConfig,
     grow = pexConfig.Field(
         dtype=int,
         default=0,
-        doc="CZW",
+        doc="If non-zero, grow footprints by this amount.",
     )
     xWindow = pexConfig.Field(
         dtype=int,
         default=0,
-        doc="CZW",
+        doc="Window around the central object detected that we will "
+        "look for the quad fluxes in.",
     )
     yWindow = pexConfig.Field(
         dtype=int,
         default=50,
-        doc="CZW",
+        doc="Additional widening along the y-axis."
     )
     xGauge = pexConfig.Field(
         dtype=float,
         default=1.75,
-        doc="CZW",
+        doc="Scale multiplier of the FWHM in the x-direction for each band.",
     )
     threshold = pexConfig.Field(
         dtype=float,
         default=1.2e5,
-        doc="CZW",
+        doc="Threshold above which fluxes are measured.",
     )
     targetReplacements = pexConfig.DictField(
         keytype=str,
@@ -144,7 +145,7 @@ class QuadNotchExtractTask(pipeBase.PipelineTask):
 
         Returns
         -------
-        outputData : tbd
+        outputData : `astropy.table.Table`
             Extracted data for this exposure.
         """
         row = {}
@@ -341,8 +342,8 @@ class QuadNotchExtractTask(pipeBase.PipelineTask):
         for fp in fpSet.getFootprints():
             centroid = fp.getCentroid()
             ampBBox = exp.getBBox()
-            cautiousBox = ampBBox.erodedBy(100)   # CZW: This should be configurable
-            if cautiousBox.contains(Point2I(centroid)):
+            # CZW: This should be configurable
+            if centroid[1] < ampBBox.getMaxY() - 100:
                 centroids.append(centroid)
                 bboxes.append(fp.getBBox())
         if len(bboxes) < 4:
