@@ -33,16 +33,54 @@ tasks:
       ptcFitType: "EXPAPPROXIMATION"
       maximumRangeCovariancesAstier: 1
       maximumRangeCovariancesAstierFullCovFit: 1
-  cpLinearizerSolve:
+  cpLinearizerUnnormalizedSolve1:
     class: lsst.cp.pipe.LinearitySolveTask
     config:
       useLinearizerPtc: true
+      useFocalPlaneNormalization: false
       connections.inputLinearizerPtc: "linearizerPtc"
-      connections.outputLinearizer: "linearizer"
+      connections.outputLinearizer: "linearizerUnnormalized1"
       linearityType: "Spline"
       splineKnots: 10
       trimmedState: false
       usePhotodiode: true
+  cpLinearizerNormalize1:
+    class: lsst.cp.pipe.LinearityNormalizeTask
+    config:
+      connections.inputPtcHandles: "linearizerPtc"
+      connections.inputLinearizerHandles: "linearizerUnnormalized1"
+      connections.outputNormalization: "cpLinearizerNormalization1"
+  cpLinearizerUnnormalizedSolve2:
+    class: lsst.cp.pipe.LinearitySolveTask
+    config:
+      useLinearizerPtc: true
+      useFocalPlaneNormalization: true
+      connections.inputLinearizerPtc: "linearizerPtc"
+      connections.outputLinearizer: "linearizerUnnormalized2"
+      connections.inputNormalization: "cpLinearizerNormalization1"
+      linearityType: "Spline"
+      splineKnots: 10
+      trimmedState: false
+      usePhotodiode: true
+  cpLinearizerNormalize2:
+    class: lsst.cp.pipe.LinearityNormalizeTask
+    config:
+      connections.inputPtcHandles: "linearizerPtc"
+      connections.inputLinearizerHandles: "linearizerUnnormalized2"
+      connections.outputNormalization: "cpLinearizerNormalization2"
+  cpLinearizerSolve:
+    class: lsst.cp.pipe.LinearitySolveTask
+    config:
+      useLinearizerPtc: true
+      useFocalPlaneNormalization: true
+      connections.inputLinearizerPtc: "linearizerPtc"
+      connections.outputLinearizer: "linearizer"
+      connections.inputNormalization: "cpLinearizerNormalization2"
+      linearityType: "Spline"
+      splineKnots: 10
+      trimmedState: false
+      usePhotodiode: true
+
 subsets:
   cpLinearizerPtc:
     subset:
