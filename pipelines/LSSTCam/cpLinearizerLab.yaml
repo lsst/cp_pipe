@@ -30,7 +30,7 @@ tasks:
       minPhotodiodeCurrent: 3e-10
       doSplineFitOffset: true
       splineFitMaxIter: 40
-      splineKnots: 15
+      splineKnots: 10
   cpLinearizerNormalize1:
     class: lsst.cp.pipe.LinearityNormalizeTask
     config:
@@ -74,7 +74,7 @@ tasks:
       minPhotodiodeCurrent: 3e-10
       doSplineFitOffset: true
       splineFitMaxIter: 40
-      splineKnots: 15
+      splineKnots: 20
   cpLinearizerNormalize2:
     class: lsst.cp.pipe.LinearityNormalizeTask
     config:
@@ -118,5 +118,5 @@ tasks:
       minPhotodiodeCurrent: 3e-10
       doSplineFitOffset: true
       splineFitMaxIter: 40
-      splineKnots: 15
+      splineKnots: 20
 
