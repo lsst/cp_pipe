@@ -36,10 +36,11 @@ from lsst.ip.isr import PhotonTransferCurveDataset
 
 import lsst.afw.image
 import lsst.afw.math
-from lsst.cp.pipe import LinearitySolveTask
+from lsst.cp.pipe import LinearitySolveTask, LinearityNormalizeTask
 from lsst.cp.pipe.ptc import PhotonTransferCurveSolveTask
 from lsst.cp.pipe.utils import funcPolynomial
 from lsst.ip.isr.isrMock import FlatMock, IsrMock
+from lsst.pipe.base import InMemoryDatasetHandle
 
 
 class FakeCamera(list):
@@ -773,6 +774,7 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
             ptc.expIdMask[amp_name] = ptc_mask
             ptc.gain[amp_name] = 1.0
             ptc.ptcTurnoff[amp_name] = 75565.8
+            ptc.inputExpPairMjdStartList[amp_name] = np.cumsum(exp_times)
 
         # Use the photodiode to solve for linearity.
         config = LinearitySolveTask.ConfigClass()
@@ -832,6 +834,89 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
         # Check consistency. This is very rough
         self.assertTrue(np.allclose(nodes_et, nodes_pd))
         self.assertTrue(np.allclose(values_et[1:] / nodes_et[1:], values_pd[1:] / nodes_pd[1:], atol=5e-4))
+
+    def test_linearity_renormalization_lsstcam(self):
+        # In this test we take the sample data, and set a bunch
+        # of amps with the same values. After renormalization and
+        # refitting there should be no residuals. (This is not a
+        # recommended way of using the renormalization code).
+        exp_times, photo_charges, raw_means, ptc_mask = self._lsstcam_raw_linearity_data()
+
+        # Cut off the fake data at the start and end.
+        exp_times = exp_times[1: -2]
+        photo_charges = photo_charges[1: -2]
+        raw_means = raw_means[1: -2]
+        ptc_mask = ptc_mask[1: -2]
+
+        ptc = PhotonTransferCurveDataset()
+        ptc.ampNames = self.amp_names
+        exp_ids = np.arange(len(exp_times)*2).reshape((len(exp_times), 2))
+        for amp_name in ptc.ampNames:
+            ptc.inputExpIdPairs[amp_name] = exp_ids.tolist()
+            ptc.rawExpTimes[amp_name] = exp_times
+            ptc.photoCharges[amp_name] = photo_charges
+            ptc.rawMeans[amp_name] = raw_means
+            ptc.expIdMask[amp_name] = ptc_mask
+            ptc.gain[amp_name] = 1.0
+            ptc.ptcTurnoff[amp_name] = 75565.8
+            ptc.inputExpPairMjdStartList[amp_name] = np.cumsum(exp_times)
+
+        # Use the exposure time to solve for linearity.
+        config = LinearitySolveTask.ConfigClass()
+        config.usePhotodiode = False
+        config.doAutoGrouping = True
+        config.splineKnots = 5
+        config.trimmedState = False
+        config.linearityType = "Spline"
+        config.doSplineFitWeights = False
+        config.doSplineFitTemperature = False
+        config.doSplineFitOffset = True
+        config.splineFitMaxIter = 40
+        config.splineGroupingMinPoints = 50
+        task = LinearitySolveTask(config=config)
+
+        linearizer = task.run(ptc, [self.dummy_exposure], self.camera, self.input_dims).outputLinearizer
+
+        # Now run the normalization task.
+        nconfig = LinearityNormalizeTask.ConfigClass()
+        nconfig.normalizeDetectors = [0]
+        nconfig.referenceDetector = 0
+        ntask = LinearityNormalizeTask(config=nconfig)
+
+        ptc_handles = [
+            InMemoryDatasetHandle(
+                ptc,
+                dataId={"detector": 0},
+            ),
+        ]
+        linearizer_handles = [
+            InMemoryDatasetHandle(
+                linearizer,
+                dataId={"detector": 0},
+            ),
+        ]
+
+        normalization = ntask.run(
+            camera=self.camera,
+            inputPtcHandles=ptc_handles,
+            inputLinearizerHandles=linearizer_handles,
+        ).outputNormalization
+
+        # And re-solve the linearity.
+        config.useFocalPlaneNormalization = True
+        task2 = LinearitySolveTask(config=config)
+
+        linearizer2 = task2.run(
+            ptc,
+            [self.dummy_exposure],
+            self.camera,
+            self.input_dims,
+            inputNormalization=normalization,
+        ).outputLinearizer
+
+        # Check for zero residuals.
+        resids = linearizer2.fitResiduals[self.amp_names[0]]/linearizer2.fitResidualsModel[self.amp_names[0]]
+        self.assertFloatsAlmostEqual(np.nan_to_num(resids), 0.0, atol=5e-6)
 
     def _comcam_raw_linearity_data(self):
         # These are LSSTComCam measurements taken from a calibration

@@ -7,9 +7,9 @@ tasks:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractPairTask
     config:
       useEfdPhotodiodeData: false
-      doExtractPhotodiodeData: true
+      doExtractPhotodiodeData: false
       photodiodeIntegrationMethod: MEAN
-      auxiliaryHeaderKeys: ["TEMPAVG"]
+      auxiliaryHeaderKeys: ["TEMPAVG", "BSSVBS"]
       matchExposuresType: TIME
       doVignetteFunctionRegionSelection: true
       python: |
@@ -38,15 +38,103 @@ tasks:
       maxDeltaInitialPtcOutlierFit: 1_000
       maxSignalInitialPtcOutlierFit: 30_000
       scaleMaxSignalInitialPtcOutlierFit: False
-  cpLinearizerSolve:
+  cpLinearizerUnnormalizedSolve1:
     class: lsst.cp.pipe.LinearitySolveTask
     config:
       linearityType: Spline
-      usePhotodiode: true
+      usePhotodiode: false
       doAutoGrouping: true
       splineFitTemperatureColumn: TEMPAVG
       doSplineFitWeights: false
       doSplineFitTemperature: false
+      doSplineFitTemporal: true
       doSplineFitOffset: true
       splineFitMaxIter: 40
-      splineKnots: 15
+      splineKnots: 10
+      nSigmaClipLinear: 20
+  cpLinearizerNormalize1:
+    class: lsst.cp.pipe.LinearityNormalizeTask
+    config:
+      normalizeDetectors:
+        - 44
+        - 51
+        - 52
+        - 53
+        - 60
+        - 83
+        - 90
+        - 91
+        - 92
+        - 99
+        - 86
+        - 93
+        - 94
+        - 95
+        - 102
+        - 89
+        - 96
+        - 97
+        - 98
+        - 105
+        - 128
+        - 135
+        - 136
+        - 137
+        - 144
+      referenceDetector: 94
+  cpLinearizerUnnormalizedSolve2:
+    class: lsst.cp.pipe.LinearitySolveTask
+    config:
+      linearityType: Spline
+      usePhotodiode: false
+      doAutoGrouping: true
+      splineFitTemperatureColumn: TEMPAVG
+      doSplineFitWeights: false
+      doSplineFitTemperature: false
+      doSplineFitTemporal: true
+      doSplineFitOffset: true
+      splineFitMaxIter: 40
+      splineKnots: 20
+  cpLinearizerNormalize2:
+    class: lsst.cp.pipe.LinearityNormalizeTask
+    config:
+      normalizeDetectors:
+        - 44
+        - 51
+        - 52
+        - 53
+        - 60
+        - 83
+        - 90
+        - 91
+        - 92
+        - 99
+        - 86
+        - 93
+        - 94
+        - 95
+        - 102
+        - 89
+        - 96
+        - 97
+        - 98
+        - 105
+        - 128
+        - 135
+        - 136
+        - 137
+        - 144
+      referenceDetector: 94
+  cpLinearizerSolve:
+    class: lsst.cp.pipe.LinearitySolveTask
+    config:
+      linearityType: Spline
+      usePhotodiode: false
+      doAutoGrouping: true
+      splineFitTemperatureColumn: TEMPAVG
+      doSplineFitWeights: false
+      doSplineFitTemperature: false
+      doSplineFitTemporal: true
+      doSplineFitOffset: true
+      splineFitMaxIter: 40
+      splineKnots: 20
