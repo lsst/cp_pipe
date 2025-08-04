@@ -684,6 +684,9 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 # fit will further adjust mu such that
                 # mu = mu_input*(1 + beta*(mjd - mjd_ref))
                 # and mjd_ref is taken as the median mjd of the run.
+                # Note that this fit is only valid if the input data
+                # was taken with a randomly shuffled order of exposure
+                # levels.
 
                 # The fit has additional constraints to ensure that the spline
                 # goes through the (0, 0) point, as well as a normalization
