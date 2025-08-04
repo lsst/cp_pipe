@@ -185,6 +185,7 @@ class LinearityNormalizeTask(pipeBase.PipelineTask):
 
         # Get the exposure numbers and exposure times from the reference PTC.
         # These will be matched for all amps.
+        # Note that all amps in a ptc must have the same input exposures.
         exposures = np.asarray(referencePtc.inputExpIdPairs[referencePtc.ampNames[0]])[:, 0]
         exptimes = referencePtc.rawExpTimes[referencePtc.ampNames[0]]
 
@@ -224,6 +225,13 @@ class LinearityNormalizeTask(pipeBase.PipelineTask):
                 )
 
             a, b = esutil.numpy_util.match(exposures, ptcExposures)
+            if len(a) == 0:
+                self.log.warning(
+                    "PTC for detector %d has no exposure matches to the reference!",
+                    ptc.dataId["detector"],
+                )
+                continue
+
             for j, ampName in enumerate(ptc.ampNames):
                 rawMeans[i, a, j] = ptc.rawMeans[ampName][b]
                 models[i, a, j] = lin.fitResidualsModel[ampName][b]
