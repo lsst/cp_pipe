@@ -29,7 +29,6 @@ from astropy.stats import sigma_clipped_stats
 from astropy.table import Table
 from scipy.optimize import curve_fit
 
-from lsst.geom import Point2I
 
 __all__ = ["QuadNotchExtractConfig", "QuadNotchExtractTask",
            "QuadNotchMergeConfig", "QuadNotchMergeTask"]
