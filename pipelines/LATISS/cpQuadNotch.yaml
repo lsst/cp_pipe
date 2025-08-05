@@ -1,0 +1,11 @@
+description: LATISS quad-notch spectrum reduction
+instrument: lsst.obs.lsst.Latiss
+imports:
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpQuadNotch.yaml
+tasks:
+  quadNotchIsr:
+    class: lsst.ip.isr.IsrTaskLSST
+    config:
+      doE2VEdgeBleedMask: false
+      doITLEdgeBleedMask: false
+      crosstalk.doQuadraticCrosstalkCorrection: false
