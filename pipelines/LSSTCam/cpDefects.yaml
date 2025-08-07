@@ -29,3 +29,5 @@ tasks:
       connections.inputManualDefects: "manual_defects"
       edgesAsDefects: true
       doManualDefects: true
+      nPixBorderUpDown: 6
+      nPixBorderLeftRight: 6
