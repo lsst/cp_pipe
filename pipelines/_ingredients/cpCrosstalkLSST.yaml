@@ -7,7 +7,7 @@ tasks:
       connections.outputExposure: "cpCrosstalkIsrExp"
       python: |
         from lsst.cp.pipe import configureIsrTaskLSSTForCalibrations
-        configIsrTaskLSSTForCalibrations(config)
+        configureIsrTaskLSSTForCalibrations(config)
 
         config.doCrosstalk = False
         config.doApplyGains = True
