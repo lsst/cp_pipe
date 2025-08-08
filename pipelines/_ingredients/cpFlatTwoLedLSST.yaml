@@ -42,7 +42,7 @@ tasks:
     config:
       connections.inputExpHandles: "cpFlatIsrExp"
       connections.inputScales: "cpFlatBlueNormalizeScales"
-      connections.outputData: "flat_blue"
+      connections.outputData: "flat_blue_uncorrected"
       calibrationType: "flat"
       exposureScaling: "InputList"
       scalingLevel: "DETECTOR"
@@ -51,10 +51,44 @@ tasks:
     config:
       connections.inputExpHandles: "cpFlatIsrExp"
       connections.inputScales: "cpFlatRedNormalizeScales"
-      connections.outputData: "flat_red"
+      connections.outputData: "flat_red_uncorrected"
       calibrationType: "flat"
       exposureScaling: "InputList"
       scalingLevel: "DETECTOR"
+  cpFlatBlueFitGradients:
+    class: lsst.cp.pipe.CpFlatFitGradientsTask
+    config:
+      connections.input_flats: flat_blue_uncorrected
+      connections.output_gradient: flat_blue_gradient
+      connections.model_residual_plot: gradient_model_residual_blue_plot
+      connections.radial_model_plot: gradient_radial_model_blue_plot
+      do_reference_gradient: false
+      do_fit_gradient: true
+      do_fit_outer_gradient: true
+      do_fit_centroid: true
+  cpFlatRedFitGradients:
+    class: lsst.cp.pipe.CpFlatFitGradientsTask
+    config:
+      connections.input_flats: flat_red_uncorrected
+      connections.output_gradient: flat_red_gradient
+      connections.model_residual_plot: gradient_model_residual_red_plot
+      connections.radial_model_plot: gradient_radial_model_red_plot
+      do_reference_gradient: false
+      do_fit_gradient: true
+      do_fit_outer_gradient: true
+      do_fit_centroid: true
+  cpFlatBlueApplyGradients:
+    class: lsst.cp.pipe.CpFlatApplyGradientsTask
+    config:
+      connections.gradient: flat_blue_gradient
+      connections.input_flat: flat_blue_uncorrected
+      connections.output_flat: flat_blue
+  cpFlatRedApplyGradients:
+    class: lsst.cp.pipe.CpFlatApplyGradientsTask
+    config:
+      connections.gradient: flat_red_gradient
+      connections.input_flat: flat_red_uncorrected
+      connections.output_flat: flat_red
   cpFlatRedBlueCombine:
     class: lsst.cp.pipe.CalibCombineTwoFlatsByFilterTask
   cpFlatBlueBin8:
@@ -146,19 +180,25 @@ contracts:
   - cpFlatBlueNormalize.doDownSelection == True
   - cpFlatRedNormalize.doDownSelection == True
   - (cpFlatBlueNormalize.downSelectionField != cpFlatRedNormalize.downSelectionField) or (cpFlatBlueNormalize.downSelectionValue != cpFlatRedNormalize.downSelectionValue)
-  - cpFlatRedBlueCombine.connections.inputFlatOneHandle == cpFlatBlueCombine.connections.outputData
-  - cpFlatRedBlueCombine.connections.inputFlatTwoHandle == cpFlatRedCombine.connections.outputData
+  - cpFlatBlueFitGradients.connections.input_flats == cpFlatBlueCombine.connections.outputData
+  - cpFlatBlueApplyGradients.connections.gradient == cpFlatBlueFitGradients.connections.output_gradient
+  - cpFlatBlueApplyGradients.connections.input_flat == cpFlatBlueCombine.connections.outputData
+  - cpFlatRedFitGradients.connections.input_flats == cpFlatRedCombine.connections.outputData
+  - cpFlatRedApplyGradients.connections.gradient == cpFlatRedFitGradients.connections.output_gradient
+  - cpFlatRedApplyGradients.connections.input_flat == cpFlatRedCombine.connections.outputData
+  - cpFlatRedBlueCombine.connections.inputFlatOneHandle == cpFlatBlueApplyGradients.connections.output_flat
+  - cpFlatRedBlueCombine.connections.inputFlatTwoHandle == cpFlatRedApplyGradients.connections.output_flat
   - cpFlatRedBlueCombine.calibrationType == "flat"
   - cpFlatBlueBin8.binning == cpFlatBlueMosaic8.binning
   - cpFlatBlueBin64.binning == cpFlatBlueMosaic64.binning
-  - cpFlatBlueBin8.connections.inputExp == cpFlatBlueCombine.connections.outputData
-  - cpFlatBlueBin64.connections.inputExp == cpFlatBlueCombine.connections.outputData
+  - cpFlatBlueBin8.connections.inputExp == cpFlatBlueApplyGradients.connections.output_flat
+  - cpFlatBlueBin64.connections.inputExp == cpFlatBlueApplyGradients.connections.output_flat
   - cpFlatBlueMosaic8.connections.inputExps == cpFlatBlueBin8.connections.outputExp
   - cpFlatBlueMosaic64.connections.inputExps == cpFlatBlueBin64.connections.outputExp
   - cpFlatRedBin8.binning == cpFlatRedMosaic8.binning
   - cpFlatRedBin64.binning == cpFlatRedMosaic64.binning
-  - cpFlatRedBin8.connections.inputExp == cpFlatRedCombine.connections.outputData
-  - cpFlatRedBin64.connections.inputExp == cpFlatRedCombine.connections.outputData
+  - cpFlatRedBin8.connections.inputExp == cpFlatRedApplyGradients.connections.output_flat
+  - cpFlatRedBin64.connections.inputExp == cpFlatRedApplyGradients.connections.output_flat
   - cpFlatRedMosaic8.connections.inputExps == cpFlatRedBin8.connections.outputExp
   - cpFlatRedMosaic64.connections.inputExps == cpFlatRedBin64.connections.outputExp
   - cpFlatBin8.binning == cpFlatMosaic8.binning

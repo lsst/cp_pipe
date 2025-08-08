@@ -1,0 +1,9 @@
+description: cp_pipe LSSTCam flat calibration construction, u band specialization.
+instrument: lsst.obs.lsst.LsstCam
+imports:
+  - location: $CP_PIPE_DIR/pipelines/LSSTCam/cpFlat.yaml
+tasks:
+  cpFlatFitGradients:
+    class: lsst.cp.pipe.CpFlatFitGradientsTask
+    config:
+      radial_spline_nodes: [0., 200., 250., 300., 320., 330., 340., 350., 360., 368.]

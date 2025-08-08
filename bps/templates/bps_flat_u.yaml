@@ -1,4 +1,4 @@
-pipelineYaml: "${CP_PIPE_DIR}/pipelines/${INSTRUMENT}/cpFlat.yaml"
+pipelineYaml: "${CP_PIPE_DIR}/pipelines/${INSTRUMENT}/cpFlat_u.yaml"
 
 project: "${TICKET}"
 campaign: "${TICKET}"
