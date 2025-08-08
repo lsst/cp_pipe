@@ -30,7 +30,7 @@ import itertools
 import numpy.polynomial.polynomial as poly
 
 from scipy.interpolate import Akima1DInterpolator
-from scipy.optimize import leastsq
+from scipy.optimize import leastsq, minimize
 from scipy.stats import median_abs_deviation, norm
 
 from lsst.ip.isr import isrMock
@@ -1536,3 +1536,272 @@ def ampOffsetGainRatioFixup(ptc, minAdu, maxAdu, log=None):
             ptc.gain[ampName] = newGain
     else:
         log.warning("Cannot apply ampOffsetGainRatioFixup with fewer than 2 good amplifiers.")
+
+
+class FlatGradientFitter:
+    """Class to fit various large-scale flat-field gradients.
+
+    This fitter will take arrays of x/y/value and (by default) fit a radial
+    gradient, using a spline function at the specified nodes. The fitter
+    will also fit out a nuisance parameter for the ratio of the ITL/E2V
+    throughput (though in general this could work for any such focal plane).
+    The focal plane origin is set by fp_centroid_x and fp_centroid_y which
+    is the center of the radial gradient, though it may be modified if
+    fit_centroid is True. In addition, the fitter may fit a linear gradient
+    in x/y if fit_gradient is True. The "pivot" of the gradient is at
+    fp_centroid_x/fp_centroid_y. Finally, the fitter may fit an additional
+    gradient in the outer region where the focal plane radius is greater
+    than outer_gradient_cut. This is controlled by fit_outer_gradient.
+    This outer gradient is applied "on top of" the primary gradient.
+
+    Parameters
+    ----------
+    nodes : `np.ndarray`
+        Array of spline nodes for radial spline.
+    x : `np.ndarray`
+        Array of x values for points to fit (mm).
+    y : `np.ndarray`
+        Array of y values for points to fit (mm).
+    value : `np.ndarray`
+        Array of values describing the flat field to fit the gradient.
+    itl_indices : `np.ndarray`
+        Array of indices corresponding to the ITL detectors.
+    constrain_zero : `bool`, optional
+        Constrain the outermost radial spline value to 0?
+    fit_centroid : `bool`, optional
+        Fit an additional centroid offset?
+    fit_gradient : `bool`, optional
+        Fit an additional plane gradient?
+    fit_outer_gradient : `bool`, optional
+        Fit an additional plane gradient at large focal plane radii?
+    outer_gradient_radius : `float`, optional
+        Radius (mm) at which the outer gradient is valid.
+    fp_centroid_x : `float`, optional
+        Focal plane centroid x (mm).
+    fp_centroid_y : `float`, optional
+        Focal plane centroid y (mm).
+    """
+    def __init__(
+        self,
+        nodes,
+        x,
+        y,
+        value,
+        itl_indices,
+        constrain_zero=True,
+        fit_centroid=False,
+        fit_gradient=False,
+        fit_outer_gradient=False,
+        outer_gradient_radius=325.0,
+        fp_centroid_x=0.0,
+        fp_centroid_y=0.0
+    ):
+        self._nodes = nodes
+        self._x = x
+        self._y = y
+        self._value = value
+        self._itl_indices = itl_indices
+        self._fp_centroid_x = fp_centroid_x
+        self._fp_centroid_y = fp_centroid_y
+        self._outer_gradient_radius = outer_gradient_radius
+
+        self._constrain_zero = constrain_zero
+
+        self._fit_centroid = fit_centroid
+        self._fit_gradient = fit_gradient
+        self._fit_outer_gradient = fit_outer_gradient
+
+        self.indices = {"spline": np.arange(len(nodes))}
+        npar = len(nodes)
+
+        self._fit_itl_ratio = False
+        if len(itl_indices) > 0:
+            self._fit_itl_ratio = True
+            self.indices["itl_ratio"] = npar
+            npar += 1
+
+        radius = np.sqrt((self._x - self._fp_centroid_x)**2. + (self._y - self._fp_centroid_y)**2.)
+
+        if fit_centroid:
+            self.indices["centroid_delta"] = np.arange(2) + npar
+            npar += 2
+        else:
+            self._radius = radius
+
+        if fit_gradient:
+            self.indices["gradient"] = np.arange(2) + npar
+            npar += 2
+
+        if fit_outer_gradient:
+            self.indices["outer_gradient"] = np.arange(2) + npar
+            npar += 2
+
+        self._npar = npar
+
+        self._bounds = [(None, None)]*npar
+
+        if self._constrain_zero:
+            self._bounds[self.indices["spline"][-1]] = (0.0, 0.0)
+
+    def compute_p0(self):
+        """Compute initial guess for fit parameters.
+
+        Returns
+        -------
+        pars : `np.ndarray`
+            Array of first guess fit parameters.
+        """
+        pars = np.zeros(self._npar)
+
+        # Initial spline values
+        radius = np.sqrt((self._x - self._fp_centroid_x)**2. + (self._y - self._fp_centroid_y)**2.)
+        for i, index in enumerate(self.indices["spline"]):
+            if i == 0:
+                low = self._nodes[i]
+            else:
+                low = (self._nodes[i - 1] + self._nodes[i])/2.
+            if i == (len(self._nodes) - 1):
+                high = self._nodes[i]
+            else:
+                high = (self._nodes[i] + self._nodes[i + 1])/2.
+            u = ((radius > low) & (radius < high))
+            if u.sum() == 0:
+                pars[index] = 0.0
+            else:
+                pars[index] = np.median(self._value[u])
+
+        if self._constrain_zero:
+            pars[self.indices["spline"][-1]] = 0.0
+
+        spl = Akima1DInterpolator(self._nodes, pars[self.indices["spline"]], method="akima")
+        model = spl(radius)
+        resid_ratio = self._value / model
+
+        if self._fit_itl_ratio:
+            e2v_indices = np.delete(np.arange(len(self._value)), self._itl_indices)
+
+            itl_inner = radius[self._itl_indices] < 0.8*np.max(radius)
+            e2v_inner = radius[e2v_indices] < 0.8*np.max(radius)
+
+            itl_median = np.nanmedian(resid_ratio[self._itl_indices][itl_inner])
+            e2v_median = np.nanmedian(resid_ratio[e2v_indices][e2v_inner])
+
+            pars[self.indices["itl_ratio"]] = itl_median / e2v_median
+
+        if self._fit_centroid:
+            pars[self.indices["centroid_delta"]] = [0.0, 0.0]
+
+        if self._fit_gradient:
+            resid_ratio = self._value / model
+
+            ok = (np.isfinite(resid_ratio) & (model > 0.5))
+
+            fit = np.polyfit(self._x[ok], resid_ratio[ok], 1)
+            pars[self.indices["gradient"][0]] = fit[0]
+
+            fit = np.polyfit(self._y[ok], resid_ratio[ok], 1)
+            pars[self.indices["gradient"][1]] = fit[0]
+
+        if self._fit_outer_gradient:
+            pars[self.indices["outer_gradient"]] = [0.0, 0.0]
+
+        return pars
+
+    def fit(self, p0, fit_eps=1e-8, fit_gtol=1e-10):
+        """Do a non-linear minimization to fit the parameters.
+
+        Parameters
+        ----------
+        p0 : `np.ndarray`
+            Array of initial parameter estimates.
+        fit_eps : `float`, optional
+            Value of ``eps`` to send to the scipy minimizer.
+        fit_gtol : `float`, optional
+            Value of ``gtol`` to send to the scipy minimizer.
+
+        Returns
+        -------
+        pars : `np.ndarray`
+            Array of parameters. Use ``fitter.indices`` for the
+            dictionary to map parameters to subsets.
+        """
+        res = minimize(
+            self,
+            p0,
+            method="L-BFGS-B",
+            jac=False,
+            bounds=self._bounds,
+            options={
+                "maxfun": 10000,
+                "maxiter": 10000,
+                "maxcor": 20,
+                "eps": fit_eps,
+                "gtol": fit_gtol,
+            },
+            callback=None,
+        )
+        pars = res.x
+
+        return pars
+
+    def compute_model(self, pars):
+        """Compute the model given a set of parameters.
+
+        Parameters
+        ----------
+        pars : `np.ndarray`
+            Parameter array to compute model.
+
+        Returns
+        -------
+        model_array : `np.ndarray`
+            Array of model parameters at the input x/y.
+        """
+        spl = Akima1DInterpolator(self._nodes, pars[self.indices["spline"]], method="akima")
+        if self._fit_centroid:
+            centroid_delta = pars[self.indices["centroid_delta"]]
+            centroid_x = self._fp_centroid_x + centroid_delta[0]
+            centroid_y = self._fp_centroid_y + centroid_delta[1]
+            radius = np.sqrt((self._x - centroid_x)**2. + (self._y - centroid_y)**2.)
+        else:
+            radius = self._radius
+
+        model = spl(np.clip(radius, self._nodes[0], self._nodes[-1]))
+        if self._fit_itl_ratio:
+            model[self._itl_indices] *= pars[self.indices["itl_ratio"]]
+
+        if self._fit_gradient:
+            a, b = pars[self.indices["gradient"]]
+            gradient = 1 + a*(self._x - self._fp_centroid_x) + b*(self._y - self._fp_centroid_y)
+            model /= gradient
+
+        if self._fit_outer_gradient:
+            # The outer gradient is applied to the outer regions
+            # in addition to the primary gradient.
+            ao, bo = pars[self.indices["outer_gradient"]]
+            gradiento = 1 + ao*(self._x - self._fp_centroid_x) + bo*(self._y - self._fp_centroid_y)
+            outer = radius > self._outer_gradient_radius
+            model[outer] /= gradiento[outer]
+
+        return model
+
+    def __call__(self, pars):
+        """Compute the cost function for a set of parameters.
+
+        Parameters
+        ----------
+        pars : `np.ndarray`
+            Parameter array to compute model.
+
+        Returns
+        -------
+        cost : `float`
+            Cost value computed from the absolute deviation.
+        """
+
+        model = self.compute_model(pars)
+
+        absdev = np.abs(self._value - model)
+        t = np.sum(absdev.astype(np.float64))
+
+        return t

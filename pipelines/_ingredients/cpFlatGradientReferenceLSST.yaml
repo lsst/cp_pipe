@@ -1,0 +1,12 @@
+description: cp_pipe flat gradient reference calibration construction.
+imports:
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpFlatLSST.yaml
+tasks:
+  cpFlatFitGradientsReference:
+    class: lsst.cp.pipe.CpFlatFitGradientsTask
+    config:
+      connections.input_flats: "flat"
+      do_reference_gradient: true
+      do_fit_gradient: true
+contracts:
+  - cpFlatFitGradientsReference.connections.input_flats == cpFlatCombine.connections.outputData
