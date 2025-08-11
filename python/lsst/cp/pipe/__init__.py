@@ -29,6 +29,7 @@ from .cpDark import *
 from .cpDefects import *
 from .cpFilterScan import *
 from .cpFlatMeasure import *
+from .cpFlatGradients import *
 from .cpFringe import *
 from .cpLinearitySolve import *
 from .cpLinearityNormalize import *

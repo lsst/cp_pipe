@@ -1,4 +1,4 @@
-pipelineYaml: "${CP_PIPE_DIR}/pipelines/${INSTRUMENT}/cpFlat_u.yaml"
+pipelineYaml: "${CP_PIPE_DIR}/pipelines/${INSTRUMENT}/cpFlatGradientReference.yaml"
 
 project: "${TICKET}"
 campaign: "${TICKET}"
@@ -12,8 +12,8 @@ cluster:
     dimensions: exposure
 
 payload:
-  payloadName: "${INSTRUMENT}_${TICKET}_flat_u"
-  output: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET}/${TAG}/flatGen-u.${RERUN}"
+  payloadName: "${INSTRUMENT}_${TICKET}_flat_gradient_reference_y"
+  output: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET}/${TAG}/flatGradientReferenceGen-y.${RERUN}"
   butlerConfig: "${REPO}"
-  inCollection: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET},${RAW_COLLECTION},${CALIB_COLLECTIONS}"
-  dataQuery: "${SELECTION_FLAT_u} and band='u'"
+  inCollection: "${RAW_COLLECTION},${CALIB_COLLECTIONS}"
+  dataQuery: "${SELECTION_FLAT_y} and band='y'"
