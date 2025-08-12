@@ -322,8 +322,14 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
             for exposureEntry in inputMeasurements:
                 exposureDict = exposureEntry['CTI']
                 if exposureDict[ampName]['IMAGE_MEAN'] < self.config.maxImageMean:
-                    signal.append(exposureDict[ampName]['IMAGE_MEAN'])
-                    data.append(exposureDict[ampName]['SERIAL_OVERSCAN_VALUES'][start:stop+1])
+                    imMean = exposureDict[ampName]['IMAGE_MEAN']
+                    sOverscan = exposureDict[ampName]['SERIAL_OVERSCAN_VALUES'][start: stop + 1]
+                    if not np.all(np.isfinite(imMean)) or not np.all(np.isfinite(sOverscan)):
+                        self.log.warning("NaN detected in an entry for amplifier %s.", ampName)
+                        nSkipped += 1
+                    else:
+                        signal.append(imMean)
+                        data.append(sOverscan)
                 else:
                     nSkipped += 1
             self.log.info("Skipped %d exposures brighter than %f.",
@@ -453,8 +459,14 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
             for exposureEntry in inputMeasurements:
                 exposureDict = exposureEntry['CTI']
                 if exposureDict[ampName]['IMAGE_MEAN'] < self.config.maxSignalForCti:
-                    signal.append(exposureDict[ampName]['IMAGE_MEAN'])
-                    data.append(exposureDict[ampName]['SERIAL_OVERSCAN_VALUES'][start:stop+1])
+                    imMean = exposureDict[ampName]['IMAGE_MEAN']
+                    sOverscan = exposureDict[ampName]['SERIAL_OVERSCAN_VALUES'][start: stop + 1]
+                    if not np.all(np.isfinite(imMean)) or not np.all(np.isfinite(sOverscan)):
+                        self.log.warning("NaN detected in an entry for amplifier %s.", ampName)
+                        nSkipped += 1
+                    else:
+                        signal.append(imMean)
+                        data.append(sOverscan)
                 else:
                     nSkipped += 1
             self.log.info(f"Skipped {nSkipped} exposures brighter than {self.config.maxSignalForCti}.")
@@ -723,9 +735,17 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
             for exposureEntry in inputMeasurements:
                 exposureDict = exposureEntry['CTI']
                 if exposureDict[ampName]['IMAGE_MEAN'] < self.config.maxImageMean:
-                    signal.append(exposureDict[ampName]['IMAGE_MEAN'])
-                    data.append(exposureDict[ampName]['SERIAL_OVERSCAN_VALUES'][start:stop+1])
-                    new_signal.append(exposureDict[ampName]['LAST_COLUMN_MEAN'])
+                    imMean = exposureDict[ampName]['IMAGE_MEAN']
+                    sOverscan = exposureDict[ampName]['SERIAL_OVERSCAN_VALUES'][start: stop + 1]
+                    lastColumnMean = exposureDict[ampName]['LAST_COLUMN_MEAN']
+                    if not np.all(np.isfinite(imMean)) or not np.all(np.isfinite(sOverscan)) \
+                       or not np.all(np.isfinite(lastColumnMean)):
+                        self.log.warning("NaN detected in an entry for amplifier %s.", ampName)
+                        nSkipped += 1
+                    else:
+                        signal.append(imMean)
+                        data.append(sOverscan)
+                        new_signal.append(lastColumnMean)
                 else:
                     nSkipped += 1
             self.log.info("Skipped %d exposures brighter than %f.",
