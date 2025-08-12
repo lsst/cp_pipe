@@ -57,7 +57,7 @@ class CpFlatFitGradientsConnections(
         deferLoad=True,
         isCalibration=True,
     )
-    input_defects = pipeBase.connectionTypes.Input(
+    input_defects = pipeBase.connectionTypes.PrerequisiteInput(
         name="defects",
         doc="Input defect tables.",
         storageClass="Defects",
