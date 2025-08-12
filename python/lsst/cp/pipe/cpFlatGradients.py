@@ -573,7 +573,7 @@ class CpFlatApplyGradientsConnections(
         dimensions=("instrument", "detector", "physical_filter"),
         isCalibration=True,
     )
-    reference_gradient = pipeBase.connectionTypes.Input(
+    reference_gradient = pipeBase.connectionTypes.PrerequisiteInput(
         name="flat_gradient_reference",
         doc="Reference flat gradient.",
         storageClass="IsrCalib",
