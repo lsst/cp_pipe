@@ -57,7 +57,7 @@ class CpFlatFitGradientsConnections(
         deferLoad=True,
         isCalibration=True,
     )
-    input_defects = pipeBase.connectionTypes.Input(
+    input_defects = pipeBase.connectionTypes.PrerequisiteInput(
         name="defects",
         doc="Input defect tables.",
         storageClass="Defects",
@@ -573,7 +573,7 @@ class CpFlatApplyGradientsConnections(
         dimensions=("instrument", "detector", "physical_filter"),
         isCalibration=True,
     )
-    reference_gradient = pipeBase.connectionTypes.Input(
+    reference_gradient = pipeBase.connectionTypes.PrerequisiteInput(
         name="flat_gradient_reference",
         doc="Reference flat gradient.",
         storageClass="IsrCalib",
