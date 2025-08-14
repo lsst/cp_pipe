@@ -26,6 +26,8 @@ tasks:
     config:
       connections.inputExp: "cpCrosstalkIsrExp"
       connections.outputRatios: "cpCrosstalkRatio"
+      background.useApprox: false
+      background.ignoredPixelMask: ["BAD", "EDGE", "DETECTED", "DETECTED_NEGATIVE", "NO_DATA", "CT_TEMP"]
   cpCrosstalkSolve:
     class: lsst.cp.pipe.CrosstalkSolveTask
     config:
