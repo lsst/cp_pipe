@@ -22,11 +22,13 @@ import itertools
 import numpy as np
 
 from collections import defaultdict
+from copy import copy
 
 import lsst.pipe.base as pipeBase
 import lsst.pipe.base.connectionTypes as cT
 
 from lsstDebug import getDebugFrame
+from lsst.afw.cameraGeom import ReadoutCorner
 from lsst.afw.detection import FootprintSet, Threshold
 from lsst.afw.display import getDisplay
 from lsst.pex.config import ConfigurableField, Field, ListField
@@ -113,6 +115,12 @@ class CrosstalkExtractConfig(pipeBase.PipelineTaskConfig,
         doc="Background estimation task.",
     )
 
+    def setDefaults(self):
+        super().setDefaults()
+        # is this really the best way to do this??
+        self.background.useApprox = False
+        self.background.ignoredPixelMask.append("CT_TEMP")
+
     def validate(self):
         super().validate()
 
@@ -190,15 +198,45 @@ class CrosstalkExtractTask(pipeBase.PipelineTask):
 
         self.log.info("Measuring full detector background for target: %s", targetChip)
         targetIm = inputExp.getMaskedImage()
+
         FootprintSet(targetIm, Threshold(threshold), "DETECTED")
         detected = targetIm.getMask().getPlaneBitMask("DETECTED")
+        targetIm.getMask().addMaskPlane("CT_TEMP")
+        maskBit = targetIm.getMask().getPlaneBitMask("CT_TEMP")
         bg = CrosstalkCalib.calculateBackground(targetIm, badPixels + ["DETECTED"])
+
+        # Carry over over-threshold masked pixels to other amplifiers.
+        for amp in targetDetector:
+            ampIm = inputExp[amp.getBBox()]
+            ampName = amp.getName()
+
+            mask = ampIm.mask.array & detected
+            if np.sum(mask) == 0:
+                continue
+
+            newMask = np.where(np.bitwise_and(mask, detected), maskBit, 0)
+            for ampToMask in targetDetector:
+                if ampName == ampToMask.getName():
+                    # The amp we're considering already
+                    continue
+
+                extractedAmp = inputExp[ampToMask.getBBox()]
+                # The mask needs to be flipped to match the target
+                flippedMask = self._flipMask(newMask, amp, ampToMask)
+
+                extractedAmp.mask.array[:, :] |= flippedMask
+
+        # We've now masked the source pixels, and any potential CT
+        # pixels, so this should be just the
+        # background/reflections/etc.
         backgroundModel = self.background.fitBackground(inputExp.maskedImage)
         backgroundIm = backgroundModel.getImageF()
-
         self.debugView('extract', inputExp)
 
+        # Begin search for bright pixels, and their associated crosstalk
+        # signals.
         for sourceExp in sourceExtractExps:
+            # This loop exists to support future inter-chip searches.
             sourceDetector = sourceExp.getDetector()
             sourceChip = sourceDetector.getName()
             sourceIm = sourceExp.getMaskedImage()
@@ -211,7 +249,7 @@ class CrosstalkExtractTask(pipeBase.PipelineTask):
 
             # The dictionary of amp-to-amp ratios for this pair of
             # source->target detectors.
-            ratioDict = defaultdict(lambda: defaultdict(list))
+            ratioDict = defaultdict(lambda: defaultdict(np.array))
             extractedCount = 0
 
             for sourceAmp in sourceDetector:
@@ -267,7 +305,58 @@ class CrosstalkExtractTask(pipeBase.PipelineTask):
             outputFluxes=ddict2dict(outputFluxes)
         )
 
+    def _flipMask(self, maskArray, sourceAmp, targetAmp):
+        """Flip an array from a sourceAmp to match the readout order of
+        targetAmp.
+
+        Parameters
+        ----------
+        maskArray : `np.ndarray`
+            Mask data to flip.
+        sourceAmp : `lsst.afw.cameraGeom.Amplifier`
+            Amplifier corresponding to the maskArray.
+        targetAmp : `lsst.afw.cameraGeom.Amplifier`
+            Amplifier corresponding to the output mask.
+
+        Returns
+        -------
+        maskFlipped : `np.ndarray`
+            The flipped mask.
+
+        See Also
+        -----
+        lsst.ip.isr.CrosstalkCalib.extractAmp()
+        """
+        maskFlipped = copy(maskArray)
+        if sourceAmp.getReadoutCorner() == targetAmp.getReadoutCorner():
+            return maskFlipped
+
+        X_FLIP = {ReadoutCorner.LL: False,
+                  ReadoutCorner.LR: True,
+                  ReadoutCorner.UL: False,
+                  ReadoutCorner.UR: True}
+        Y_FLIP = {ReadoutCorner.LL: False,
+                  ReadoutCorner.LR: False,
+                  ReadoutCorner.UL: True,
+                  ReadoutCorner.UR: True}
+
+        sourceAmpCorner = sourceAmp.getReadoutCorner()
+        targetAmpCorner = targetAmp.getReadoutCorner()
+
+        # Flipping is necessary only if the desired configuration doesn't match
+        # what we currently have.
+        xFlip = X_FLIP[targetAmpCorner] ^ X_FLIP[sourceAmpCorner]
+        yFlip = Y_FLIP[targetAmpCorner] ^ Y_FLIP[sourceAmpCorner]
+
+        if xFlip:
+            maskFlipped = np.fliplr(maskFlipped)
+        if yFlip:
+            maskFlipped = np.flipud(maskFlipped)
+
+        return maskFlipped
+
     def debugView(self, stepname, exposure):
+
         """Utility function to examine the image being processed.
 
         Parameters
@@ -335,6 +424,7 @@ class CrosstalkSolveConnections(pipeBase.PipelineTaskConnections,
         storageClass="StructuredDataDict",
         dimensions=("instrument", "exposure", "detector"),
         multiple=True,
+        deferLoad=True,
     )
     inputFluxes = cT.Input(
         name="crosstalkFluxes",
@@ -342,6 +432,7 @@ class CrosstalkSolveConnections(pipeBase.PipelineTaskConnections,
         storageClass="StructuredDataDict",
         dimensions=("instrument", "exposure", "detector"),
         multiple=True,
+        deferLoad=True,
     )
     camera = cT.PrerequisiteInput(
         name="camera",
@@ -363,8 +454,8 @@ class CrosstalkSolveConnections(pipeBase.PipelineTaskConnections,
     def __init__(self, *, config=None):
         super().__init__(config=config)
 
-        if config.fluxOrder == 0:
-            self.inputs.discard("inputFluxes")
+        # if config.fluxOrder == 0 and False:
+        #    self.inputs.discard("inputFluxes")
 
 
 class CrosstalkSolveConfig(pipeBase.PipelineTaskConfig,
@@ -385,12 +476,12 @@ class CrosstalkSolveConfig(pipeBase.PipelineTaskConfig,
     fluxOrder = Field(
         dtype=int,
         default=0,
-        doc="Polynomial order in source flux to fit crosstalk.",
+        doc="Order of source flux fit to crosstalk. 0=simple linear; 1=first order non-linear.",
     )
 
     rejectNegativeSolutions = Field(
         dtype=bool,
-        default=True,
+        default=False,
         doc="Should solutions with negative coefficients (which add flux to the target) be excluded?",
     )
 
@@ -494,11 +585,18 @@ class CrosstalkSolveTask(pipeBase.PipelineTask):
 
         if inputFluxes is None:
             inputFluxes = [None for exp in inputRatios]
+        if inputDims is None:
+            inputDims = [{} for exp in inputRatios]
 
         combinedRatios = defaultdict(lambda: defaultdict(list))
         combinedFluxes = defaultdict(lambda: defaultdict(list))
 
-        for ratioDict, fluxDict in zip(inputRatios, inputFluxes):
+        for ratioRef, fluxRef, dimensions in zip(inputRatios, inputFluxes, inputDims):
+            ratioDict = ratioRef.get()
+            if fluxRef is not None:
+                fluxDict = fluxRef.get()
+            else:
+                fluxDict = None
             for targetChip in ratioDict:
                 if calibChip and targetChip != calibChip and targetChip != calibDetector.getName():
                     raise RuntimeError(f"Target chip: {targetChip} does not match calibration dimension: "
@@ -510,9 +608,23 @@ class CrosstalkSolveTask(pipeBase.PipelineTask):
 
                     for targetAmp in ratios:
                         for sourceAmp in ratios[targetAmp]:
-                            combinedRatios[targetAmp][sourceAmp].extend(ratios[targetAmp][sourceAmp])
                             if fluxDict:
+                                if len(ratios[targetAmp][sourceAmp]) != len(fluxDict[sourceChip][sourceAmp]):
+                                    if targetAmp != sourceAmp:
+                                        # This usually triggers when
+                                        # targetAmp == sourceAmp.  The
+                                        # sourceAmp has flux entries,
+                                        # but by definition cannot
+                                        # have ratios for itself. Only
+                                        # warn when this isn't the
+                                        # case.
+                                        self.log.warning(f"Length mismatch for ratios {len(ratios[targetAmp][sourceAmp])} "  # noqa E501
+                                                         f"and fluxes {len(fluxDict[sourceChip][sourceAmp])} for "  # noqa E501
+                                                         f"Source {sourceAmp} and target {targetAmp} "
+                                                         f"Rejecting this {dimensions}")
+                                    continue
                                 combinedFluxes[targetAmp][sourceAmp].extend(fluxDict[sourceChip][sourceAmp])
+                            combinedRatios[targetAmp][sourceAmp].extend(ratios[targetAmp][sourceAmp])
                 # TODO: DM-21904
                 # Iterating over all other entries in
                 # ratioDict[targetChip] will yield inter-chip terms.
@@ -525,13 +637,14 @@ class CrosstalkSolveTask(pipeBase.PipelineTask):
                 if len(combinedRatios[targetAmp][sourceAmp]) > 1:
                     self.debugRatios('reduce', combinedRatios, targetAmp, sourceAmp)
 
-        if self.config.fluxOrder == 0:
-            self.log.info("Fitting crosstalk coefficients.")
+        if self.config.fluxOrder < 2:
+            self.log.info("Fitting crosstalk coefficients with order {self.config.fluxOrder}")
 
             calib = self.measureCrosstalkCoefficients(combinedRatios, ordering,
+                                                      combinedFluxes,
                                                       self.config.rejIter, self.config.rejSigma)
         else:
-            raise NotImplementedError("Non-linear crosstalk terms are not yet supported.")
+            raise NotImplementedError("Higher order non-linear crosstalk terms are not yet supported.")
 
         self.log.info("Number of valid coefficients: %d", np.sum(calib.coeffValid))
 
@@ -561,7 +674,7 @@ class CrosstalkSolveTask(pipeBase.PipelineTask):
             outputProvenance=provenance,
         )
 
-    def measureCrosstalkCoefficients(self, ratios, ordering, rejIter, rejSigma):
+    def measureCrosstalkCoefficients(self, ratios, ordering, fluxes, rejIter, rejSigma):
         """Measure crosstalk coefficients from the ratios.
 
         Given a list of ratios for each target/source amp combination,
@@ -573,13 +686,15 @@ class CrosstalkSolveTask(pipeBase.PipelineTask):
         Parameters
         ----------
         ratios : `dict` [`dict` [`numpy.ndarray`]]
-           Catalog of arrays of ratios.  The ratio arrays are one-dimensional
+           Catalog of arrays of ratios.  The ratio arrays are one-dimensional.
         ordering : `list` [`str`] or None
            List to use as a mapping between amplifier names (the
            elements of the list) and their position in the output
            calibration (the matching index of the list).  If no
            ordering is supplied, the order of the keys in the ratio
            catalog is used.
+        fluxes : `dict` [`dict` [`numpy.ndarray`]]
+           Catalog of arrays of fluxes.  The flux arrays are one-dimensional.
         rejIter : `int`
            Number of rejection iterations.
         rejSigma : `float`
@@ -598,12 +713,18 @@ class CrosstalkSolveTask(pipeBase.PipelineTask):
         # Calibration stores coefficients as a numpy ndarray.
         for ss, tt in itertools.product(range(calib.nAmp), range(calib.nAmp)):
             if ss == tt:
-                values = [0.0]
+                values = []
+                myfluxes = []
             else:
                 # ratios is ratios[Target][Source]
                 # use tt for Target, use ss for Source, to match ip_isr.
                 values = np.array(ratios[ordering[tt]][ordering[ss]])
-                values = values[np.abs(values) < 1.0]  # Discard unreasonable values
+                good_values = np.abs(values) < 1.0  # Discard unreasonable values
+                values = values[good_values]
+                myfluxes = np.array(fluxes[ordering[tt]][ordering[ss]])
+                myfluxes = myfluxes[good_values]
+                if len(values) != len(myfluxes):
+                    self.log.warning(f"Flux and ratio length disagree after first filter: {len(values)} {len(myfluxes)}")  # noqa E501
 
             # Sigma clip using the inter-quartile distance and a
             # normal distribution.
@@ -617,6 +738,9 @@ class CrosstalkSolveTask(pipeBase.PipelineTask):
                     if good.sum() == len(good) or good.sum() == 0:
                         break
                     values = values[good]
+                    myfluxes = myfluxes[good]
+                if len(values) != len(myfluxes):
+                    self.log.warning(f"Flux and ratio length disagree after second filter: {len(values)} {len(myfluxes)}")  # noqa E501
 
             # Crosstalk calib is property[Source][Target].
             calib.coeffNum[ss][tt] = len(values)
@@ -626,13 +750,22 @@ class CrosstalkSolveTask(pipeBase.PipelineTask):
                 calib.coeffs[ss][tt] = np.nan
                 calib.coeffErr[ss][tt] = np.nan
                 calib.coeffValid[ss][tt] = False
+                polyfit = [0.0, 0.0]
             else:
                 calib.coeffs[ss][tt] = np.mean(values)
+                polyfit = np.polyfit(myfluxes, values, 1)
+
+                if self.config.fluxOrder == 1:
+                    # substitute polyfit solution.
+                    calib.coeffs[ss][tt] = polyfit[1]
+                    calib.coeffsSqr[ss][tt] = polyfit[0]
+
                 if self.config.rejectNegativeSolutions and calib.coeffs[ss][tt] < 0.0:
                     calib.coeffs[ss][tt] = 0.0
 
-                if calib.coeffNum[ss][tt] == 1:
+                if calib.coeffNum[ss][tt] <= 1:
                     calib.coeffErr[ss][tt] = np.nan
+                    calib.coeffSqr[ss][tt] = np.nan
                     calib.coeffValid[ss][tt] = False
                 else:
                     correctionFactor = sigmaClipCorrection(rejSigma)
@@ -646,9 +779,10 @@ class CrosstalkSolveTask(pipeBase.PipelineTask):
                     calib.coeffValid[ss][tt] = np.abs(calib.coeffs[ss][tt]) > significanceThreshold
                     self.debugRatios('measure', ratios, ordering[ss], ordering[tt],
                                      calib.coeffs[ss][tt], calib.coeffValid[ss][tt])
-            self.log.info("Measured %s -> %s Coeff: %e Err: %e N: %d Valid: %s Limit: %e",
+            self.log.info("Measured %s -> %s Coeff: %e Err: %e N: %d Valid: %s Limit: %e Quadratic: %s",
                           ordering[ss], ordering[tt], calib.coeffs[ss][tt], calib.coeffErr[ss][tt],
-                          calib.coeffNum[ss][tt], calib.coeffValid[ss][tt], significanceThreshold)
+                          calib.coeffNum[ss][tt], calib.coeffValid[ss][tt], significanceThreshold,
+                          polyfit)
 
         return calib
 
