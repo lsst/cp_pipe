@@ -21,6 +21,7 @@ tasks:
     config:
       connections.inputRatios: "cpCrosstalkRatio"
       connections.outputCrosstalk: "crosstalk"
+      rejectNegativeSolutions: false
 subsets:
   cpCrosstalk:
     subset:
