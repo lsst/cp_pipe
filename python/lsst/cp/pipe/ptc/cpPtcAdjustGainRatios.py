@@ -226,7 +226,7 @@ class PhotonTransferCurveAdjustGainRatiosTask(lsst.pipe.base.PipelineTask):
 
         for i, amp_name in enumerate(output_ptc.ampNames):
             correction = corrections[i] / med_correction
-            new_gain = output_ptc.gain[amp_name] / correction
+            new_gain = output_ptc.gainUnadjusted[amp_name] / correction
             self.log.info(
                 "Adjusting gain from amplifier %s by factor of %.5f (from %.5f to %.5f)",
                 amp_name,
@@ -234,7 +234,6 @@ class PhotonTransferCurveAdjustGainRatiosTask(lsst.pipe.base.PipelineTask):
                 output_ptc.gain[amp_name],
                 new_gain,
             )
-            output_ptc.gainUnadjusted[amp_name] = output_ptc.gainUnadjusted[amp_name]
             output_ptc.gain[amp_name] = new_gain
 
         return lsst.pipe.base.Struct(output_ptc=output_ptc, gain_adjust_summary=summary)
@@ -269,7 +268,7 @@ class PhotonTransferCurveAdjustGainRatiosTask(lsst.pipe.base.PipelineTask):
                 exposure[detector[amp_name].getBBox()].image.array[:, :] = np.nan
                 continue
 
-            exposure[detector[amp_name].getBBox()].image.array[:, :] *= ptc.gain[amp_name]
+            exposure[detector[amp_name].getBBox()].image.array[:, :] *= ptc.gainUnadjusted[amp_name]
 
         # Next we bin the detector, avoiding amp edges.
         xd_arrays = []
