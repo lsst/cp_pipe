@@ -19,8 +19,11 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
+import copy
+import esutil
 import numpy as np
 import warnings
+from astropy.table import Table
 
 import lsst.pipe.base
 import lsst.pex.config
@@ -60,6 +63,12 @@ class PhotonTransferCurveAdjustGainRatiosConnections(
         storageClass="PhotonTransferCurveDataset",
         dimensions=("instrument", "detector"),
         isCalibration=True,
+    )
+    output_adjust_summary = lsst.pipe.base.connectionTypes.Output(
+        name="ptc_adjustment_summary",
+        doc="Summary of gain adjustments.",
+        storageClass="ArrowAstropy",
+        dimensions=("instrument", "detector"),
     )
 
 
@@ -188,6 +197,47 @@ class PhotonTransferCurveAdjustGainRatiosTask(lsst.pipe.base.PipelineTask):
 
             self.log.info("Fitting gain ratios on exposure %d.", exp_id)
             gain_ratio_array[i, :] = self._compute_gain_ratios(input_ptc, exposure, fixed_amp_num)
+
+        output_ptc = copy.copy(input_ptc)
+
+        # Compute the summary table.
+        summary = Table()
+        summary.meta["fixed_amp_num"] = fixed_amp_num
+        summary.meta["fixed_amp_name"] = input_ptc.ampNames[fixed_amp_num]
+
+        summary["exp_id"] = exp_ids
+
+        summary["mean_adu"] = np.zeros(len(exp_ids))
+
+        a, b = esutil.numpy_util.match(exp_ids_first, exp_ids)
+        summary["mean_adu"][b] = avg[a]
+
+        corrections = np.zeros(len(input_ptc.ampNames))
+        for i, amp_name in enumerate(input_ptc.ampNames):
+            summary[f"{amp_name}_gain_ratio"] = gain_ratio_array[:, i]
+
+            corrections[i] = np.median(gain_ratio_array[:, i])
+
+        # Adjust the median correction to 1.0 so we do not change the
+        # gain of the detector on average.
+        # This is needed in case the reference amplifier is skewed in
+        # terms of offsets even though it has the median gain.
+        med_correction = np.median(corrections)
+
+        for i, amp_name in enumerate(output_ptc.ampNames):
+            correction = corrections[i] / med_correction
+            new_gain = output_ptc.gain[amp_name] / correction
+            self.log.info(
+                "Adjusting gain from amplifier %s by factor of %.5f (from %.5f to %.5f)",
+                amp_name,
+                correction,
+                output_ptc.gain[amp_name],
+                new_gain,
+            )
+            output_ptc.gainUnadjusted[amp_name] = output_ptc.gainUnadjusted[amp_name]
+            output_ptc.gain[amp_name] = new_gain
+
+        return lsst.pipe.base.Struct(output_ptc=output_ptc, gain_adjust_summary=summary)
 
     def _compute_gain_ratios(self, ptc, exposure, fixed_amp_num):
         """Compute the gain ratios from a given non-gain-corrected exposure.
