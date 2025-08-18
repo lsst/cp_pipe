@@ -1805,3 +1805,150 @@ class FlatGradientFitter:
         t = np.sum(absdev.astype(np.float64))
 
         return t
+
+
+class FlatGainRatioFitter:
+    """Class to fit amplifier gain ratios, removing a simple gradient.
+
+    This fitter will take arrays of x/y/amp_num/value and fit amplifier
+    gain ratios, using one amplifier as the fixed point. The fitter
+    uses a low-order chebyshev polynomial to fit out the gradient, with
+    amp ratios on top of this.
+
+    Parameters
+    ----------
+    bbox : `lsst.geom.Box2I`
+        Bounding box for Chebyshev polynomial gradient.
+    order : `int`
+        Order of Chebyshev polynomial.
+    x : `np.ndarray`
+        Array of x values for points to fit (detector pixels).
+    y : `np.ndarray`
+        Array of y values for points to fit (detector pixels).
+    amp_num : `np.ndarray`
+        Array of amp numbers associated with each x/y pair.
+    value : `np.ndarray`
+        Flat value at each x/y pair.
+    fixed_amp_num : `int`
+        Amplifier number to keep fixed.
+    """
+    def __init__(self, bbox, order, x, y, amp_num, value, fixed_amp_num):
+        self._bbox = bbox
+        self._order = order
+        self._x = x.astype(np.float64)
+        self._y = y.astype(np.float64)
+        self._amp_num = amp_num
+        self._value = value.astype(np.float64)
+        self._fixed_amp_num = fixed_amp_num
+
+        self.indices = {"chebyshev": np.arange((order + 1) * (order + 1))}
+        npar = len(self.indices["chebyshev"])
+
+        self._amps = np.unique(amp_num)
+        self._n_amp = len(self._amps)
+
+        self.indices["amp_pars"] = np.arange(self._n_amp) + npar
+        npar += self._n_amp
+
+        self._npar = npar
+
+        self._amp_indices = {}
+        for i in range(self._n_amp):
+            amp_num = self._amps[i]
+            self._amp_indices[amp_num] = (self._amp_num == amp_num)
+
+    def fit(self, n_iter=10):
+        """Fit the amp ratio parameters.
+
+        This uses an iterative fit, where it fits a Chebyshev gradient,
+        computes amp ratios, and re-fits the gradient.
+
+        Returns
+        -------
+        pars : `np.ndarray`
+            Chebyshev parameters and amp offset parameters.
+        """
+        value = self._value.copy()
+
+        control = lsst.afw.math.ChebyshevBoundedFieldControl()
+        control.orderX = self._order
+        control.orderY = self._order
+        control.triangular = False
+
+        pars = np.zeros(self._npar)
+
+        pars[self.indices["amp_pars"]] = 1.0
+
+        for i in range(n_iter):
+            field = lsst.afw.math.ChebyshevBoundedField.fit(
+                self._bbox,
+                self._x,
+                self._y,
+                value,
+                control,
+            )
+
+            pars[self.indices["chebyshev"][:]] = field.getCoefficients().ravel()
+
+            ratio = self._value / field.evaluate(self._x, self._y)
+
+            fixed_med = np.median(ratio[self._amp_indices[self._fixed_amp_num]])
+            ratio /= fixed_med
+
+            pars[self.indices["amp_pars"][self._fixed_amp_num]] = 1.0
+
+            value = self._value.copy()
+
+            for j in range(self._n_amp):
+                amp_num = self._amps[j]
+
+                pars[self.indices["amp_pars"][j]] = np.median(ratio[self._amp_indices[amp_num]])
+                value[self._amp_indices[amp_num]] *= pars[self.indices["amp_pars"][j]]
+
+        return pars
+
+    def compute_model(self, pars):
+        """Compute the gradient/amp ratio model for a given set of parameters.
+
+        Parameters
+        ----------
+        pars : `np.ndarray`
+            Chebyshev parameters and amp offset parameters.
+
+        Returns
+        -------
+        model : `np.ndarray`
+            The model at each x/y pair.
+        """
+        field = lsst.afw.math.ChebyshevBoundedField(
+            self._bbox,
+            pars[self.indices["chebyshev"]].reshape(self._order + 1, self._order + 1),
+        )
+        model = field.evaluate(self._x, self._y)
+
+        for i in range(self._n_amp):
+            amp_num = self._amps[i]
+
+            model[self._amp_indices[amp_num]] *= pars[self.indices["amp_pars"][i]]
+
+        return model
+
+    def __call__(self, pars):
+        """Compute the cost function for a set of parameters.
+
+        Parameters
+        ----------
+        pars : `np.ndarray`
+            Chebyshev parameters and amp offset parameters.
+
+        Returns
+        -------
+        cost : `float`
+            Cost value computed from the absolute deviation.
+        """
+        model = self.compute_model(pars)
+
+        absdev = np.abs(self._value - model)
+        t = np.sum(absdev.astype(np.float64))
+
+        return t
