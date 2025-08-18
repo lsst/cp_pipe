@@ -7,3 +7,4 @@ tasks:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractPairTask
     config:
       efdSalIndex: 201
+      useEfdPhotodiodeData: false
