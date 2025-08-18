@@ -314,7 +314,11 @@ class PhotonTransferCurveAdjustGainRatiosTask(lsst.pipe.base.PipelineTask):
         amp_num = np.concatenate(amp_arrays)
 
         # Clip out non-finite and extreme values.
-        lo, hi = np.nanpercentile(value, [0.1, 99.9])
+        # We need to be careful about unmasked defects, so we take
+        # a tighter percentile and expand.
+        lo, hi = np.nanpercentile(value, [5.0, 95.0])
+        lo *= 0.8
+        hi *= 1.2
         use = (np.isfinite(value) & (value >= lo) & (value <= hi))
         xd = xd[use]
         yd = yd[use]
