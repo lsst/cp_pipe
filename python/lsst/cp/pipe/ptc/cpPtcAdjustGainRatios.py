@@ -20,11 +20,13 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 import numpy as np
+import warnings
 
 import lsst.pipe.base
 import lsst.pex.config
+import lsst.afw.cameraGeom
 
-from ..utils import FlatGradientFitter
+from ..utils import FlatGradientFitter, FlatGainRatioFitter
 
 
 __all__ = [
@@ -100,6 +102,16 @@ class PhotonTransferCurveAdjustGainRatiosConfig(
         doc="Random seed to use for down-sampling input flats.",
         default=12345,
     )
+    bin_factor = lsst.pex.config.Field(
+        dtype=int,
+        doc="Binning factor to compute gradients/gain ratios (pixels).",
+        default=8,
+    )
+    amp_boundary = lsst.pex.config.Field(
+        dtype=int,
+        doc="Amplifier boundary to ignore when computing gradients/gain ratios (pixels).",
+        default=20,
+    )
 
 
 class PhotonTransferCurveAdjustGainRatiosTask(lsst.pipe.base.PipelineTask):
@@ -126,4 +138,185 @@ class PhotonTransferCurveAdjustGainRatiosTask(lsst.pipe.base.PipelineTask):
             ``output_ptc``
                 The output modified PTC.
         """
-        pass
+        # Choose the exposures that will be used.
+        # For simplicity, we always use the first of a PTC pair.
+        rng = np.random.RandomState(seed=self.config.random_seed)
+
+        exp_ids_first = np.asarray(input_ptc.inputExpIdPairs[input_ptc.ampNames[0]])[:, 0]
+
+        avg = np.zeros(len(exp_ids_first))
+        n_amp = 0
+        for amp_name in input_ptc.ampNames:
+            if amp_name in input_ptc.badAmps:
+                continue
+
+            avg[:] += input_ptc.finalMeans[amp_name]
+            n_amp += 1
+
+        avg /= n_amp
+
+        exp_ids = exp_ids_first[((avg > self.config.min_adu) & (avg < self.config.max_adu))]
+        if len(exp_ids) > self.config.n_flat:
+            exp_ids = rng.choice(exp_ids, size=self.config.n_flat, replace=False)
+        exp_ids = np.sort(exp_ids)
+
+        # Figure out the reference amplifier.
+        gain_array = np.zeros(len(input_ptc.ampNames))
+        for i, amp_name in enumerate(input_ptc.ampNames):
+            gain_array[i] = input_ptc.gain[amp_name]
+        good, = np.where(np.isfinite(gain_array))
+
+        if len(good) <= 1:
+            self.log.warning("Insufficient good amplifiers for PTC gain adjustment.")
+            return lsst.pipe.base.Struct(output_ptc=input_ptc)
+
+        st = np.argsort(gain_array[good])
+        fixed_amp_num = good[st[int(0.5*len(good))]]
+        self.log.info(
+            "Using amplifier %d (%s) as fixed reference amplifier.",
+            fixed_amp_num,
+            input_ptc.ampNames[fixed_amp_num],
+        )
+
+        gain_ratio_array = np.zeros((len(exp_ids), len(input_ptc.ampNames)))
+
+        for i, exp_id in enumerate(exp_ids):
+            for handle in exposures:
+                if exp_id == handle.dataId["exposure"]:
+                    exposure = handle.get()
+                    break
+
+            self.log.info("Fitting gain ratios on exposure %d.", exp_id)
+            gain_ratio_array[i, :] = self._compute_gain_ratios(input_ptc, exposure, fixed_amp_num)
+
+    def _compute_gain_ratios(self, ptc, exposure, fixed_amp_num):
+        """Compute the gain ratios from a given non-gain-corrected exposure.
+
+        Parameters
+        ----------
+        ptc : `lsst.ip.isr.PhotonTransferCurveDataset`
+            PTC to correct exposure.
+        exposure : `lsst.afw.image.Exposure`
+            Exposure to measure gain ratios.
+        fixed_amp_num : `int`
+            Use this amp number as the fixed point (gain ratio == 1.0).
+
+        Returns
+        -------
+        amp_gain_ratios : `np.ndarray`
+            Amp gain ratios, relative to fixed amp.
+        """
+        if not exposure.metadata.get("LSST ISR BOOTSTRAP", True):
+            raise RuntimeError(
+                "PhotonTransferCurveAdjustGainRatiosTask can only be run on bootstrap exposures.",
+            )
+
+        # Gain-correct the exposure.
+        detector = exposure.getDetector()
+
+        for amp_name in ptc.ampNames:
+            if amp_name in ptc.badAmps:
+                exposure[detector[amp_name].getBBox()].image.array[:, :] = np.nan
+                continue
+
+            exposure[detector[amp_name].getBBox()].image.array[:, :] *= ptc.gain[amp_name]
+
+        # Next we bin the detector, avoiding amp edges.
+        xd_arrays = []
+        yd_arrays = []
+        value_arrays = []
+        amp_arrays = []
+
+        amp_boundary = self.config.amp_boundary
+        bin_factor = self.config.bin_factor
+
+        for i, amp in enumerate(detector):
+            arr = exposure[amp.getBBox()].image.array
+
+            n_step_y = (arr.shape[0] - (2 * amp_boundary)) // bin_factor
+            y_min = amp_boundary
+            y_max = bin_factor * n_step_y + y_min
+            n_step_x = (arr.shape[1] - (2 * amp_boundary)) // bin_factor
+            x_min = amp_boundary
+            x_max = bin_factor * n_step_x + x_min
+
+            arr = arr[y_min: y_max, x_min: x_max]
+            binned = arr.reshape((n_step_y, bin_factor, n_step_x, bin_factor))
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", r"Mean of empty")
+                binned = np.nanmean(binned, axis=1)
+                binned = np.nanmean(binned, axis=2)
+
+            xx = np.arange(binned.shape[1]) * bin_factor + bin_factor / 2. + x_min
+            yy = np.arange(binned.shape[0]) * bin_factor + bin_factor / 2. + y_min
+            x, y = np.meshgrid(xx, yy)
+            x = x.ravel() + amp.getBBox().getBeginX()
+            y = y.ravel() + amp.getBBox().getBeginY()
+            value = binned.ravel()
+
+            xd_arrays.append(x)
+            yd_arrays.append(y)
+            value_arrays.append(value)
+            amp_arrays.append(np.full(len(x), i))
+
+        xd = np.concatenate(xd_arrays)
+        yd = np.concatenate(yd_arrays)
+        value = np.concatenate(value_arrays)
+        amp_num = np.concatenate(amp_arrays)
+
+        # Clip out non-finite and extreme values.
+        lo, hi = np.nanpercentile(value, [0.1, 99.9])
+        use = (np.isfinite(value) & (value >= lo) & (value <= hi))
+        xd = xd[use]
+        yd = yd[use]
+        value = value[use]
+        amp_num = amp_num[use]
+
+        # If configured, fit the radial gradient.
+        if self.config.do_remove_radial_gradient:
+            transform = detector.getTransform(
+                lsst.afw.cameraGeom.PIXELS,
+                lsst.afw.cameraGeom.FOCAL_PLANE,
+            )
+            xy = np.vstack((xd, yd))
+            xf, yf = np.vsplit(transform.getMapping().applyForward(xy), 2)
+            xf = xf.ravel()
+            yf = yf.ravel()
+            radius = np.sqrt(xf**2. + yf**2.)
+
+            nodes = np.linspace(np.min(radius), np.max(radius), self.config.radial_gradient_n_spline_nodes)
+
+            # Put in a normalization for fitting.
+            norm = np.nanpercentile(value, 95.0)
+
+            fitter = FlatGradientFitter(
+                nodes,
+                xf,
+                yf,
+                value/norm,
+                np.array([]),
+                constrain_zero=False,
+                fit_centroid=False,
+                fit_gradient=False,
+                fit_outer_gradient=False,
+                fp_centroid_x=0.0,
+                fp_centroid_y=0.0,
+            )
+            p0 = fitter.compute_p0()
+            pars = fitter.fit(p0)
+
+            value /= fitter.compute_model(pars)
+
+        # Fit gain ratios.
+        fitter = FlatGainRatioFitter(
+            exposure.getBBox(),
+            self.config.chebyshev_gradient_order,
+            xd,
+            yd,
+            amp_num,
+            value,
+            fixed_amp_num,
+        )
+        pars = fitter.fit()
+
+        return pars[fitter.indices["amp_pars"]]
