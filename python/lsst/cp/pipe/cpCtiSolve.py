@@ -88,12 +88,6 @@ class CpCtiSolveConfig(pipeBase.PipelineTaskConfig,
         doc="First and last overscan column to use for local offset effect.",
     )
 
-    useGains = pexConfig.Field(
-        dtype=bool,
-        default=True,
-        doc="Use gains in calculation.",
-        deprecated="This field is no longer used. Will be removed after v28.",
-    )
     maxSignalForCti = pexConfig.Field(
         dtype=float,
         default=10000.0,
@@ -197,6 +191,9 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
                 List of overscan row indicies (`list` [`int`]).
             ``"PARALLEL_OVERSCAN_VALUES"``
                 List of overscan row means (`list` [`float`).
+            ``"INPUT_GAIN"``
+                The gains used to convert the image to electrons
+                before calculating CTI statistics. (`float`).
         camera : `lsst.afw.cameraGeom.Camera`
             Camera geometry to use to find detectors.
         inputDims : `list` [`dict`]
@@ -226,6 +223,16 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
 
         # Initialize with detector.
         calib = DeferredChargeCalib(camera=camera, detector=detector)
+
+        # Get the input gains used to measure CTI statistics
+        # All the input measurements (from individual exposures)
+        # will have the same gains, since they are processed
+        # together.
+        firstExposureEntry = inputMeasurements[0]
+        exposureDict = firstExposureEntry['CTI']
+        for amp in detector.getAmplifiers():
+            ampName = amp.getName()
+            calib.inputGains[ampName] = exposureDict[ampName]['INPUT_GAIN']
 
         eperCalib = self.solveEper(inputMeasurements, calib, detector)
 
@@ -498,7 +505,7 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
             self.debugView(ampName, signal, test)
 
             params = Parameters()
-            params.add('ctiexp', value=-6, min=-7, max=-5, vary=True)
+            params.add('ctiexp', value=-6, min=-8, max=-5, vary=True)
             params.add('trapsize', value=5.0 if testResult else 0.0, min=0.0, max=30.,
                        vary=True if testResult else False)
             params.add('scaling', value=0.08, min=0.0, max=1.0,
@@ -514,8 +521,22 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
                                fcn_kws={'start': start, 'stop': stop, 'trap_type': 'linear'})
             result = minner.minimize()
 
+            # Warn if the global CTI has hit the upper bound of the fit range.
+            if np.isclose(10**result.params['ctiexp'].value, 10**(-5), rtol=.01):
+                self.log.warning(f"Global CTI for detector {detector.getId()} ({amp.getName()}) is "
+                                 "has hit the fitter's upper bound (10^-5).")
+
             # Only the global CTI term is retained from this fit.
-            calib.globalCti[ampName] = 10**result.params['ctiexp'].value
+            # If the CTI is within 1% of the lower bound, just set
+            # the CTI to zero and don't perform a global CTI
+            # correction.
+            if np.isclose(10**result.params['ctiexp'].value, 1e-8, rtol=0.01):
+                self.log.info(f"Global CTI for detector {detector.getId()} ({amp.getName()}) has "
+                              "hit the fitter's lower bound; setting globalCti to 0.")
+                calib.globalCti[ampName] = 0.0
+            else:
+                calib.globalCti[ampName] = 10**result.params['ctiexp'].value
+
             self.log.info("CTI Global Cti %s: cti: %g decayTime: %g driftScale %g",
                           ampName, calib.globalCti[ampName], calib.decayTime[ampName],
                           calib.driftScale[ampName])
