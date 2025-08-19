@@ -230,16 +230,19 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
         dtype=bool,
         doc="Do gain ratio fixup based on amp offsets?",
         default=False,
+        deprecated="This option has been deprecated and will be removed after v31.",
     )
     ampOffsetGainRatioMinAdu = pexConfig.Field(
         dtype=float,
         doc="Minimum number of adu to use for amp offset gain ratio fixup.",
         default=1000.0,
+        deprecated="This option has been deprecated and will be removed after v31.",
     )
     ampOffsetGainRatioMaxAdu = pexConfig.Field(
         dtype=float,
         doc="Maximum number of adu to use for amp offset gain ratio fixup.",
         default=20000.0,
+        deprecated="This option has been deprecated and will be removed after v31.",
     )
 
     def validate(self):
