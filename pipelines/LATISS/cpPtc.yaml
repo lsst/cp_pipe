@@ -7,3 +7,8 @@ tasks:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractPairTask
     config:
       efdSalIndex: 201
+  cpPtcAdjustGainRatios:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveAdjustGainRatiosTask
+    config:
+      do_remove_radial_gradient: false
+      chebyshev_gradient_order: 2
