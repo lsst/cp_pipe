@@ -224,6 +224,8 @@ class PhotonTransferCurveAdjustGainRatiosTask(lsst.pipe.base.PipelineTask):
         # terms of offsets even though it has the median gain.
         med_correction = np.median(corrections)
 
+        summary.meta["median_correction"] = med_correction
+
         for i, amp_name in enumerate(output_ptc.ampNames):
             correction = corrections[i] / med_correction
             new_gain = output_ptc.gainUnadjusted[amp_name] / correction
