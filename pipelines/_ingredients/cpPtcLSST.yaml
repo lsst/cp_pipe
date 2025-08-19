@@ -39,7 +39,6 @@ tasks:
       ptcFitType: "FULLCOVARIANCE"
       maximumRangeCovariancesAstier: 8
       maximumRangeCovariancesAstierFullCovFit: 8
-      doAmpOffsetGainRatioFixup: true
   cpPtcAdjustGainRatios:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveAdjustGainRatiosTask
 subsets:
