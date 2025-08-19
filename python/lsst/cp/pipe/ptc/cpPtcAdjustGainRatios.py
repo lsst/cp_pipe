@@ -180,11 +180,11 @@ class PhotonTransferCurveAdjustGainRatiosTask(lsst.pipe.base.PipelineTask):
             return lsst.pipe.base.Struct(output_ptc=input_ptc)
 
         st = np.argsort(gain_array[good])
-        fixed_amp_num = good[st[int(0.5*len(good))]]
+        fixed_amp_index = good[st[int(0.5*len(good))]]
         self.log.info(
             "Using amplifier %d (%s) as fixed reference amplifier.",
-            fixed_amp_num,
-            input_ptc.ampNames[fixed_amp_num],
+            fixed_amp_index,
+            input_ptc.ampNames[fixed_amp_index],
         )
 
         gain_ratio_array = np.zeros((len(exp_ids), len(input_ptc.ampNames)))
@@ -196,14 +196,14 @@ class PhotonTransferCurveAdjustGainRatiosTask(lsst.pipe.base.PipelineTask):
                     break
 
             self.log.info("Fitting gain ratios on exposure %d.", exp_id)
-            gain_ratio_array[i, :] = self._compute_gain_ratios(input_ptc, exposure, fixed_amp_num)
+            gain_ratio_array[i, :] = self._compute_gain_ratios(input_ptc, exposure, fixed_amp_index)
 
         output_ptc = copy.copy(input_ptc)
 
         # Compute the summary table.
         summary = Table()
-        summary.meta["fixed_amp_num"] = fixed_amp_num
-        summary.meta["fixed_amp_name"] = input_ptc.ampNames[fixed_amp_num]
+        summary.meta["fixed_amp_index"] = fixed_amp_index
+        summary.meta["fixed_amp_name"] = input_ptc.ampNames[fixed_amp_index]
 
         summary["exp_id"] = exp_ids
 
@@ -238,7 +238,7 @@ class PhotonTransferCurveAdjustGainRatiosTask(lsst.pipe.base.PipelineTask):
 
         return lsst.pipe.base.Struct(output_ptc=output_ptc, gain_adjust_summary=summary)
 
-    def _compute_gain_ratios(self, ptc, exposure, fixed_amp_num):
+    def _compute_gain_ratios(self, ptc, exposure, fixed_amp_index):
         """Compute the gain ratios from a given non-gain-corrected exposure.
 
         Parameters
@@ -247,8 +247,8 @@ class PhotonTransferCurveAdjustGainRatiosTask(lsst.pipe.base.PipelineTask):
             PTC to correct exposure.
         exposure : `lsst.afw.image.Exposure`
             Exposure to measure gain ratios.
-        fixed_amp_num : `int`
-            Use this amp number as the fixed point (gain ratio == 1.0).
+        fixed_amp_index : `int`
+            Use this amp index as the fixed point (gain ratio == 1.0).
 
         Returns
         -------
@@ -264,11 +264,12 @@ class PhotonTransferCurveAdjustGainRatiosTask(lsst.pipe.base.PipelineTask):
         detector = exposure.getDetector()
 
         for amp_name in ptc.ampNames:
+            bbox = detector[amp_name].getBBox()
             if amp_name in ptc.badAmps:
-                exposure[detector[amp_name].getBBox()].image.array[:, :] = np.nan
+                exposure[bbox].image.array[:, :] = np.nan
                 continue
 
-            exposure[detector[amp_name].getBBox()].image.array[:, :] *= ptc.gainUnadjusted[amp_name]
+            exposure[bbox].image.array[:, :] *= ptc.gainUnadjusted[amp_name]
 
         # Next we bin the detector, avoiding amp edges.
         xd_arrays = []
@@ -311,7 +312,7 @@ class PhotonTransferCurveAdjustGainRatiosTask(lsst.pipe.base.PipelineTask):
         xd = np.concatenate(xd_arrays)
         yd = np.concatenate(yd_arrays)
         value = np.concatenate(value_arrays)
-        amp_num = np.concatenate(amp_arrays)
+        amp_index = np.concatenate(amp_arrays)
 
         # Clip out non-finite and extreme values.
         # We need to be careful about unmasked defects, so we take
@@ -323,7 +324,7 @@ class PhotonTransferCurveAdjustGainRatiosTask(lsst.pipe.base.PipelineTask):
         xd = xd[use]
         yd = yd[use]
         value = value[use]
-        amp_num = amp_num[use]
+        amp_index = amp_index[use]
 
         # If configured, fit the radial gradient.
         if self.config.do_remove_radial_gradient:
@@ -366,9 +367,10 @@ class PhotonTransferCurveAdjustGainRatiosTask(lsst.pipe.base.PipelineTask):
             self.config.chebyshev_gradient_order,
             xd,
             yd,
-            amp_num,
+            amp_index,
             value,
-            fixed_amp_num,
+            np.arange(len(ptc.ampNames)),
+            fixed_amp_index,
         )
         pars = fitter.fit()
 

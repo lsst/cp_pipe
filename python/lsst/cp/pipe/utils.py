@@ -1825,26 +1825,30 @@ class FlatGainRatioFitter:
         Array of x values for points to fit (detector pixels).
     y : `np.ndarray`
         Array of y values for points to fit (detector pixels).
-    amp_num : `np.ndarray`
+    amp_index : `np.ndarray`
         Array of amp numbers associated with each x/y pair.
     value : `np.ndarray`
         Flat value at each x/y pair.
-    fixed_amp_num : `int`
+    amps : `np.ndarray`
+        Array of unique amplifier numbers that will be parameterized.
+        Any of these amps that does not have any data with the same
+        amp_index will be set to 1.0.
+    fixed_amp_index : `int`
         Amplifier number to keep fixed.
     """
-    def __init__(self, bbox, order, x, y, amp_num, value, fixed_amp_num):
+    def __init__(self, bbox, order, x, y, amp_index, value, amps, fixed_amp_index):
         self._bbox = bbox
         self._order = order
         self._x = x.astype(np.float64)
         self._y = y.astype(np.float64)
-        self._amp_num = amp_num
+        self._amp_index = amp_index
         self._value = value.astype(np.float64)
-        self._fixed_amp_num = fixed_amp_num
+        self._fixed_amp_index = fixed_amp_index
 
         self.indices = {"chebyshev": np.arange((order + 1) * (order + 1))}
         npar = len(self.indices["chebyshev"])
 
-        self._amps = np.unique(amp_num)
+        self._amps = amps
         self._n_amp = len(self._amps)
 
         self.indices["amp_pars"] = np.arange(self._n_amp) + npar
@@ -1854,8 +1858,8 @@ class FlatGainRatioFitter:
 
         self._amp_indices = {}
         for i in range(self._n_amp):
-            amp_num = self._amps[i]
-            self._amp_indices[amp_num] = (self._amp_num == amp_num)
+            amp_index = self._amps[i]
+            self._amp_indices[amp_index] = (self._amp_index == amp_index)
 
     def fit(self, n_iter=10):
         """Fit the amp ratio parameters.
@@ -1892,18 +1896,21 @@ class FlatGainRatioFitter:
 
             ratio = self._value / field.evaluate(self._x, self._y)
 
-            fixed_med = np.median(ratio[self._amp_indices[self._fixed_amp_num]])
+            fixed_med = np.median(ratio[self._amp_indices[self._fixed_amp_index]])
             ratio /= fixed_med
 
-            pars[self.indices["amp_pars"][self._fixed_amp_num]] = 1.0
+            pars[self.indices["amp_pars"][self._fixed_amp_index]] = 1.0
 
             value = self._value.copy()
 
             for j in range(self._n_amp):
-                amp_num = self._amps[j]
+                amp_index = self._amps[j]
 
-                pars[self.indices["amp_pars"][j]] = np.median(ratio[self._amp_indices[amp_num]])
-                value[self._amp_indices[amp_num]] *= pars[self.indices["amp_pars"][j]]
+                if np.sum(self._amp_indices[amp_index]) == 0:
+                    continue
+
+                pars[self.indices["amp_pars"][j]] = np.median(ratio[self._amp_indices[amp_index]])
+                value[self._amp_indices[amp_index]] *= pars[self.indices["amp_pars"][j]]
 
         return pars
 
@@ -1927,9 +1934,9 @@ class FlatGainRatioFitter:
         model = field.evaluate(self._x, self._y)
 
         for i in range(self._n_amp):
-            amp_num = self._amps[i]
+            amp_index = self._amps[i]
 
-            model[self._amp_indices[amp_num]] *= pars[self.indices["amp_pars"][i]]
+            model[self._amp_indices[amp_index]] *= pars[self.indices["amp_pars"][i]]
 
         return model
 
