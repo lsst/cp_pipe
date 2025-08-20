@@ -24,11 +24,11 @@ tasks:
     class: lsst.cp.pipe.CpMonochromaticFlatBinTask
     config:
       connections.input_exposure_handles: "cpMonochromaticQEScanIsrExp"
-      connections.output_binned: "cpMonochromaticQEScanBinned"
+      connections.output_binned: "cpMonochromaticFlatBinned"
   cpMonochromaticQEScanFit:
-    class: lsst.cp.pipe.CpMonochromaticFlatFitTask
+    class: lsst.cp.pipe.CpMonochromaticQEScanFitTask
     config:
-      connections.input_binned_handles: "cpMonochromaticQEScanBinned"
+      connections.input_binned_handles: "cpMonochromaticFlatBinned"
 contracts:
   - cpMonochromaticQEScanBin.connections.input_exposure_handles == cpMonochromaticQEScanIsr.connections.outputExposure
   - cpMonochromaticQEScanFit.connections.input_binned_handles == cpMonochromaticQEScanBin.connections.output_binned

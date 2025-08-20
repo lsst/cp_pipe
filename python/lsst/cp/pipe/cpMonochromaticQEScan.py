@@ -29,14 +29,14 @@ import lsst.pex.config as pexConfig
 from .utilsEfd import CpEfdClient
 
 __all__ = [
-    "CpMonochromaticQEScanBinTask",
-    "CpMonochromaticQEScanBinConfig",
+    "CpMonochromaticFlatBinTask",
+    "CpMonochromaticFlatBinConfig",
     "CpMonochromaticQEScanFitTask",
     "CpMonochromaticQEScanFitConfig",
 ]
 
 
-class CpMonochromaticQEScanBinConnections(
+class CpMonochromaticFlatBinConnections(
     pipeBase.PipelineTaskConnections,
     dimensions=("instrument", "exposure"),
 ):
@@ -48,7 +48,7 @@ class CpMonochromaticQEScanBinConnections(
         isCalibration=True,
     )
     input_exposure_handles = pipeBase.connectionTypes.Input(
-        name="cpMonochromaticQEScanIsrExp",
+        name="cpMonochromaticFlatIsrExp",
         doc="Input monochromatic no-filter exposures.",
         storageClass="Exposure",
         dimensions=("instrument", "exposure", "detector"),
@@ -64,7 +64,7 @@ class CpMonochromaticQEScanBinConnections(
         deferLoad=True,
     )
     output_binned = pipeBase.connectionTypes.Output(
-        name="cpMonochromaticQEScanBinned",
+        name="cpMonochromaticFlatBinned",
         doc="Binned table with full focal-plane data.",
         storageClass="ArrowAstropy",
         dimensions=("instrument", "exposure"),
@@ -82,11 +82,13 @@ class CpMonochromaticQEScanBinConnections(
             quantum_id_dict[exposure][quantum_id["detector"]] = quantum_id
 
         # Retrieve the wavelength for each exposure.
+        import IPython
+        IPython.embed()
 
 
-class CpMonochromaticQEScanBinConfig(
+class CpMonochromaticFlatBinConfig(
     pipeBase.PipelineTaskConfig,
-    pipelineConnections=CpMonochromaticQEScanBinConnections,
+    pipelineConnections=CpMonochromaticFlatBinConnections,
 ):
     bin_factor = pexConfig.Field(
         dtype=int,
@@ -100,14 +102,14 @@ class CpMonochromaticQEScanBinConfig(
     )
 
 
-class CpMonochromaticQEScanBinTask(pipeBase.PipelineTask):
+class CpMonochromaticFlatBinTask(pipeBase.PipelineTask):
     """Task to stack + bin monochromatic flats."""
 
-    ConfigClass = CpMonochromaticQEScanBinConfig
-    _DefaultName = "cpMonochromaticQEScanBin"
+    ConfigClass = CpMonochromaticFlatBinConfig
+    _DefaultName = "cpMonochromaticFlatBin"
 
     def run(self, *, camera, input_exposure_handles):
-        """Run CpMonochromaticQEScanBinTask.
+        """Run CpMonochromaticFlatBinTask.
 
         """
         pass
