@@ -24,7 +24,7 @@
 import lsst.pipe.base as pipeBase
 import lsst.pex.config as pexConfig
 
-from . import CpEfdClient
+from .utilsEfd import CpEfdClient
 
 __all__ = [
     "CpMonochromaticQEScanBinTask",
@@ -96,7 +96,6 @@ class CpMonochromaticQEScanBinConfig(
         doc="Use EFD to get monochromatic laser wavelengths?",
         default=True,
     )
-    
 
 
 class CpMonochromaticQEScanBinTask(pipeBase.PipelineTask):
@@ -114,7 +113,7 @@ class CpMonochromaticQEScanBinTask(pipeBase.PipelineTask):
 
 class CpMonochromaticQEScanFitConnections(
     pipeBase.PipelineTaskConnections,
-    dimensions=("instrument"),
+    dimensions=("instrument",),
 ):
     camera = pipeBase.connectionTypes.PrerequisiteInput(
         name="camera",
