@@ -160,6 +160,12 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
             "EXPONENTIAL fit if ptcFitType=FULLCOVARIANCE.",
         default=False,
     )
+    extensionAboveSaturationThreshold = pexConfig.Field(
+        dtype=float,
+        doc="Percentage above initial computed PTC turnoff to fit the saturation model. "
+            "Only used if modelSaturation=True. Default: 5.0 (percent).",
+        default=5.0,
+    )
     doLegacyTurnoffSelection = pexConfig.Field(
         dtype=bool,
         doc="Use 'legacy' computation for PTC turnoff selection. If set "
@@ -431,8 +437,11 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             if self.config.modelSaturation:
                 preTurnoff = tempDatasetPtc.ptcTurnoff[ampName]
                 newMask = (tempDatasetPtc.rawMeans[ampName] >= preTurnoff) * \
-                          (tempDatasetPtc.rawMeans[ampName] <= preTurnoff * self.config.extensionAboveSaturationThreshold)
+                          (tempDatasetPtc.rawMeans[ampName] <= preTurnoff * (1 + self.config.extensionAboveSaturationThreshold))
                 newMask = np.logical_or(tempDatasetPtc.expIdMask[ampName], newMask)
+                if np.count_nonzero(newMax) == tempDatasetPtc.expIdMask[ampName]:
+                    self.log.warning("Expanding fit to include saturation, but no points detected above "
+                                     "initial computed PTC turnoff for amp %s" % (ampName))
                 tempDatasetPtc.expIdMask[ampName] = newMask
 
                 tempDatasetPtc = self.fitMeasurementsToModel(tempDatasetPtc, modelSaturation=True)
@@ -453,6 +462,15 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             datasetPtc = self.fitMeasurementsToModel(tempDatasetPtc)
 
             if self.config.modelSaturation and self.config.ptcFitType=="EXPAPPROXIMATION":
+                preTurnoff = tempDatasetPtc.ptcTurnoff[ampName]
+                newMask = (tempDatasetPtc.rawMeans[ampName] >= preTurnoff) * \
+                          (tempDatasetPtc.rawMeans[ampName] <= preTurnoff * (1 + self.config.extensionAboveSaturationThreshold))
+                newMask = np.logical_or(tempDatasetPtc.expIdMask[ampName], newMask)
+                if np.count_nonzero(newMax) == tempDatasetPtc.expIdMask[ampName]:
+                    self.log.warning("Expanding fit to include saturation, but no points detected above "
+                                     "initial computed PTC turnoff for amp %s" % (ampName))
+                tempDatasetPtc.expIdMask[ampName] = newMask
+
                 datasetPtc = self.fitMeasurementsToModel(tempDatasetPtc, modelSaturation=True)
 
             return datasetPtc
@@ -1233,7 +1251,14 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                     muMax = np.max(meanVecSorted[initialExpIdMask])
 
                     estimateMu0 = dataset.ptcTurnoff[ampName]
-                    estimateTau = -(muMax - estimateMu0) / np.log(modelMinusData)
+                    if modelMinusData == 0:
+                        estimateTau = -np.inf
+                    elif modelMinusData < 0:
+                        estimateTau = -np.inf
+                        self.log.warning("No turnoff detected within extended roll-off PTC range for fitting amp %s" % (ampName))
+                    else:
+                        estimateTau = -(muMax - estimateMu0) / np.log(modelMinusData)
+                    self.log.info("Setting estimates of roll off model parameters to (mu_0, tau) = (%f, %f) for amp %s" % (estimateMu0, estimateTau, ampName))
                     parsIniPtc.extend([estimateMu0, estimateTau]) # Estimate of mu_0 and tau
             if ptcFitType == 'POLYNOMIAL':
                 ptcFunc = funcPolynomial

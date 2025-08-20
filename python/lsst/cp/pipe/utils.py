@@ -492,7 +492,7 @@ def saturationModel(muTurnoff, tau, mu):
     y : `numpy.array`, (N,)
         Difference in variance in ADU^2.
     """
-    return np.where(mu < muTurnoff, 0, np.exp(-(mu - muTurnoff) / tau))
+    return np.where(mu < muTurnoff, 0, np.exp(-(mu - muTurnoff) / tau) - 1)
 
 def funcAstierWithSaturation(pars, x):
     """Single brighter-fatter parameter model for PTC; Equation 16 of
@@ -505,7 +505,7 @@ def funcAstierWithSaturation(pars, x):
 
     Model:
 
-    C_{00}(\mu) = funcAstier - np.where(x < muTurnoff, 0, np.exp(-(x - muTurnoff) / tau))
+    C_{00}(\mu) = funcAstier - np.where(x < muTurnoff, 0, np.exp(-(x - muTurnoff) / tau) - 1)
 
     Parameters
     ----------
