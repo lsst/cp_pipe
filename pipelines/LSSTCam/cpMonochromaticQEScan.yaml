@@ -1,0 +1,9 @@
+description: cp_pipe per-detector QE from monochromatic flats.
+instrument: lsst.obs.lsst.LsstCam
+imports:
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpMonochromaticQEScanLSST.yaml
+tasks:
+  cpMonochromaticQEScanIsr:
+    class: lsst.ip.isr.IsrTaskLSST
+    config:
+      crosstalk.doQuadraticCrosstalkCorrection: true

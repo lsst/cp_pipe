@@ -1,0 +1,34 @@
+description: cp_pipe pipeline to measure per-detector QE from monochromatic flats.
+tasks:
+  cpMonochromaticQEScanIsr:
+    class: lsst.ip.isr.IsrTaskLSST
+    config:
+      connections.ccdExposure: "raw"
+      connections.outputExposure: "cpMonochromaticQEScanIsrExp"
+      python: |
+        from lsst.cp.pipe import configureIsrTaskLSSTForCalibrations
+
+        configureIsrTaskLSSTForCalibrations(config)
+
+        config.doCrosstalk = True
+        config.crosstalk.doQuadraticCrosstalkCorrection = False
+        config.doApplyGains = True
+        config.doLinearize = True
+        config.doDeferredCharge = True
+        config.doBias = True
+        config.doDark = True
+        config.doDefect = True
+        config.doFlat = False
+        config.doInterpolate = True
+  cpMonochromaticQEScanBin:
+    class: lsst.cp.pipe.CpMonochromaticFlatBinTask
+    config:
+      connections.input_exposure_handles: "cpMonochromaticQEScanIsrExp"
+      connections.output_binned: "cpMonochromaticQEScanBinned"
+  cpMonochromaticQEScanFit:
+    class: lsst.cp.pipe.CpMonochromaticFlatFitTask
+    config:
+      connections.input_binned_handles: "cpMonochromaticQEScanBinned"
+contracts:
+  - cpMonochromaticQEScanBin.connections.input_exposure_handles == cpMonochromaticQEScanIsr.connections.outputExposure
+  - cpMonochromaticQEScanFit.connections.input_binned_handles == cpMonochromaticQEScanBin.connections.output_binned
