@@ -24,6 +24,8 @@
 import lsst.pipe.base as pipeBase
 import lsst.pex.config as pexConfig
 
+from . import CpEfdClient
+
 __all__ = [
     "CpMonochromaticQEScanBinTask",
     "CpMonochromaticQEScanBinConfig",
@@ -66,6 +68,19 @@ class CpMonochromaticQEScanBinConnections(
         dimensions=("instrument", "exposure"),
     )
 
+    def adjust_all_quanta(self, adjuster):
+        _LOG = logging.getLogger(__name__)
+
+        # Build a dict keyed by exposure.
+        # Each entry is a dict of {detector: quantumId}
+        # And everything will be sorted by exposure and detector.
+        quantum_id_dict = defaultdict(dict)
+        for quantum_id in sorted(adjuster.iter_data_ids(), key=lambda d: (d["exposure"], d["detector"])):
+            exposure = quantum_id["exposure"]
+            quantum_id_dict[exposure][quantum_id["detector"]] = quantum_id
+
+        # Retrieve the wavelength for each exposure.
+
 
 class CpMonochromaticQEScanBinConfig(
     pipeBase.PipelineTaskConfig,
@@ -76,6 +91,12 @@ class CpMonochromaticQEScanBinConfig(
         doc="Binning factor for flats going into the focal plane.",
         default=128,
     )
+    use_efd_wavelength = pexConfig.Field(
+        dtype=bool,
+        doc="Use EFD to get monochromatic laser wavelengths?",
+        default=True,
+    )
+    
 
 
 class CpMonochromaticQEScanBinTask(pipeBase.PipelineTask):
