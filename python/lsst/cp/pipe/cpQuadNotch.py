@@ -220,7 +220,6 @@ class QuadNotchExtractTask(pipeBase.PipelineTask):
 
             cutout = inputExp[bbox]
 
-            # Ignoring debug plots.
             rowAddendum = self.getAdvancedFluxes(cutout)
 
         # Combine base row with updates
@@ -275,7 +274,8 @@ class QuadNotchExtractTask(pipeBase.PipelineTask):
         return footPrintSet
 
     def getCutoutLocation(self, inputExp, fpSet):
-        """TBD
+        """Search footprint list for the brightest object.
+
         Parameters
         ----------
         inputExp : `lsst.afw.image.Exposure`
@@ -285,8 +285,10 @@ class QuadNotchExtractTask(pipeBase.PipelineTask):
 
         Returns
         -------
-        centroid : `tuple`?
-        centerX : float?
+        centroid : `lsst.geom.Point2D`
+            The centroid of the brightest object.
+        centerX : `float`
+            X-axis coordinate of the center of the object.
         """
         median = np.nanmedian(inputExp.image.array)
         centerOfMass_numerator = 0
@@ -315,7 +317,8 @@ class QuadNotchExtractTask(pipeBase.PipelineTask):
         return starCentroid, centerX
 
     def getAdvancedFluxes(self, exp):
-        """TBD
+        """Measure the fluxes within the expected four spectral bandpasses.
+
         Parameters
         ----------
         exp : `lsst.afw.image.Exposure`
@@ -326,7 +329,7 @@ class QuadNotchExtractTask(pipeBase.PipelineTask):
         row : `dict`
             Addendum to the output row.
         """
-        # CZW: No plotting, unless we add debug mode hooks.
+        # This method removes the plots that were in the original.
         row = {}
 
         fpSet = self.findObjects(exp)
@@ -341,7 +344,7 @@ class QuadNotchExtractTask(pipeBase.PipelineTask):
         for fp in fpSet.getFootprints():
             centroid = fp.getCentroid()
             ampBBox = exp.getBBox()
-            # CZW: This should be configurable
+            # TODO: DM-52259 This should be configurable
             if centroid[1] < ampBBox.getMaxY() - 100:
                 centroids.append(centroid)
                 bboxes.append(fp.getBBox())
@@ -372,7 +375,7 @@ class QuadNotchExtractTask(pipeBase.PipelineTask):
 
         for idx in range(4):
             mid_y = int((bin_edges[idx + 1] - bin_edges[idx])/2. + bin_edges[idx])
-            # CZW: this should be configurable:
+            # TODO: DM-52259 This should be configurable
             x_data = np.median(exp.image.array[mid_y - 5:mid_y + 5, :], axis=0)
             alt_x_vals = np.arange(len(x_data))
 
@@ -401,19 +404,6 @@ class QuadNotchExtractTask(pipeBase.PipelineTask):
         x_min = (x_centers - int(max_width/2))
         x_max = (x_centers + int(max_width/2))
 
-        # CZW: Then we do it again?  Just for the plots?
-        # for idx in range(4):
-        #     mid_y = int((bin_edges[idx + 1] - bin_edges[idx])/2. + bin_edges[idx])  # noqa W505
-        #     # CZW: this should be configurable:
-        #     x_data = np.median(exp[mid_y - 5:mid_y + 5, :], axis=0)
-        #     x_data_alt = np.sum(exp[bin_edges[idx]:bin_edges[idx + 1]], axis=0) # noqa W505
-        # Do we not need a :?
-        #     alt_x_vals = np.arange(len(x_data))
-
-        #     x_norm = (x_data - x_data.min())/(x_data.max() - x_data.min())
-        #     x_norm_alt = (x_data_alt - x_data.min())/(x_data_alt.max() - x_data_alt.min())  # noqa W505
-        # typo?
-
         # Use center to get both data and background boxes:
         flag = self.FLAG_SUCCESS
         flux = []
@@ -424,7 +414,7 @@ class QuadNotchExtractTask(pipeBase.PipelineTask):
 
         for idx in range(4):
             # Background first:
-            # CZW: These should be configurable.
+            # TODO: DM-52259 This should be configurable
             left = exp.image.array[bin_edges[idx]:bin_edges[idx + 1],
                                    x_min[idx] - 10:x_min[idx]]
             right = exp.image.array[bin_edges[idx]:bin_edges[idx + 1],
@@ -461,7 +451,23 @@ class QuadNotchExtractTask(pipeBase.PipelineTask):
     def _d_gaussian(x, a, mean, sigma_1, sigma_2):
         """Double Gaussian function.
 
-        CZW: docstring
+        Parameters
+        ----------
+        x : `float` or `np.array`
+            Position to evalueate the double Gaussian.
+        a : `float`
+            Amplitude of the first component.  The second component is 1-a.
+        mean : `mean`
+            Mean for both components of the double Gaussian.
+        sigma_1 : `float`
+            Standard deviation for the first component.
+        sigma_2 : `float`
+            Standard deviation for the second component.
+
+        Returns
+        -------
+        value : `float` or `np.array`
+            The double Gaussian value.
         """
         return a*np.exp(-(x-mean)**2/(2*sigma_1**2)) + (1-a)*np.exp(-(x-mean)**2/(2*sigma_2**2))
 
