@@ -33,6 +33,7 @@ from .cpFlatGradients import *
 from .cpFringe import *
 from .cpLinearitySolve import *
 from .cpLinearityNormalize import *
+from .cpMonochromaticQEScan import *
 from .cpPhotodiodeCorrection import *
 from .cpSky import *
 from .cpSpectroFlat import *
