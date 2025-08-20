@@ -26,7 +26,8 @@ import warnings
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 from lsst.cp.pipe.utils import (fitLeastSq, fitBootstrap, funcPolynomial,
-                                funcAstier, symmetrize, Pol2D, ampOffsetGainRatioFixup)
+                                funcAstier, funcAstierWithSaturation,
+                                symmetrize, Pol2D, ampOffsetGainRatioFixup)
 
 from scipy.signal import fftconvolve
 from scipy.optimize import least_squares
@@ -151,6 +152,13 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
         dtype=int,
         doc="Degree of polynomial to fit the PTC, when 'ptcFitType'=POLYNOMIAL.",
         default=3,
+    )
+    modelSaturation = pexConfig.Field(
+        dtype=bool,
+        doc="Model the roll-off in the PTC turnoff as a exponential decay cause by pixel "
+            "saturation. Only performed for for the EXPONENTIAL fit and the initial "
+            "EXPONENTIAL fit if ptcFitType=FULLCOVARIANCE.",
+        default=False,
     )
     doLegacyTurnoffSelection = pexConfig.Field(
         dtype=bool,
@@ -420,6 +428,15 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             tempDatasetPtc.ptcFitType = "EXPAPPROXIMATION"
             tempDatasetPtc = self.fitMeasurementsToModel(tempDatasetPtc)
 
+            if self.config.modelSaturation:
+                preTurnoff = tempDatasetPtc.ptcTurnoff[ampName]
+                newMask = (tempDatasetPtc.rawMeans[ampName] >= preTurnoff) * \
+                          (tempDatasetPtc.rawMeans[ampName] <= preTurnoff * self.config.extensionAboveSaturationThreshold)
+                newMask = np.logical_or(tempDatasetPtc.expIdMask[ampName], newMask)
+                tempDatasetPtc.expIdMask[ampName] = newMask
+
+                tempDatasetPtc = self.fitMeasurementsToModel(tempDatasetPtc, modelSaturation=True)
+
             # "FULLCOVARIANCE", using the mask obtained from the
             # previous fit.
             for ampName in datasetPtc.ampNames:
@@ -432,7 +449,15 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             # Fit the PTC to a polynomial or to Astier+19 exponential
             # approximation (Eq. 16).  Fill up
             # PhotonTransferCurveDataset object.
-            datasetPtc = self.fitMeasurementsToModel(datasetPtc)
+            tempDatasetPtc = copy.copy(datasetPtc)
+            datasetPtc = self.fitMeasurementsToModel(tempDatasetPtc)
+
+            if self.config.modelSaturation and self.config.ptcFitType=="EXPAPPROXIMATION":
+                datasetPtc = self.fitMeasurementsToModel(tempDatasetPtc, modelSaturation=True)
+
+            return datasetPtc
+
+
 
         # Initial validation of PTC fit.
         for ampName in ampNames:
@@ -479,16 +504,24 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             outputPtcDataset=datasetPtc,
         )
 
-    def fitMeasurementsToModel(self, dataset):
+    def fitMeasurementsToModel(self, dataset, modelSaturation=False):
         """Fit the measured covariances vs mean signal to a
         polynomial or one of the models in Astier+19
         (Eq. 16 or Eq.20).
+
+        If `modelSaturation` is True, a roll-off model will be added
+        to the initial fit of the PTC to try and capture saturation
+        effects. This will only be applied if
+        `ptcFitType=EXPAPPROXIMATION`.
 
         Parameters
         ----------
         dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
             The dataset containing information such as the means,
             (co)variances, and exposure times.
+        modelSaturation : `bool`, default: False
+            Add a roll-off model to the initial fit of the PTC
+            to try and capture saturation (default: False).
 
         Returns
         -------
@@ -506,7 +539,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             dataset = self.fitDataFullCovariance(dataset)
         elif fitType in ["POLYNOMIAL", "EXPAPPROXIMATION"]:
             # The PTC is technically defined as variance vs signal
-            dataset = self.fitPtc(dataset)
+            dataset = self.fitPtc(dataset, modelSaturation=modelSaturation)
         else:
             raise RuntimeError(
                 f"Fitting option {fitType} not one of "
@@ -1077,7 +1110,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
 
         return array
 
-    def fitPtc(self, dataset):
+    def fitPtc(self, dataset, modelSaturation):
         """Fit the photon transfer curve to a polynomial or to the
         Astier+19 approximation (Eq. 16).
 
@@ -1096,11 +1129,19 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         initial fit to fail, meaning the sigma cannot be calculated
         to perform the sigma-clipping.
 
+        If `modelSaturation` is True, a roll-off model will be added
+        to the initial fit of the PTC to try and capture saturation
+        effects. This will only be applied if
+        `ptcFitType=EXPAPPROXIMATION`.
+
         Parameters
         ----------
         dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
             The dataset containing the means, variances and
             exposure times.
+        modelSaturation : `bool`, default: False
+            Add a roll-off model to the initial fit of the PTC
+            to try and capture saturation (default: False).
 
         Returns
         -------
@@ -1185,6 +1226,15 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 else:
                     bounds = self._boundsForAstier(parsIniPtc, lowers=[-1e-4, 0.1, -2000],
                                                    uppers=[1e-4, 10.0, 2000])
+
+                if modelSaturation:
+                    ptcFunc = funcAstierWithSaturation
+                    modelMinusData = dataset.evalPtcModel([muMax])[ampName] - varVecSorted[initialExpIdMask]
+                    muMax = np.max(meanVecSorted[initialExpIdMask])
+
+                    estimateMu0 = dataset.ptcTurnoff[ampName]
+                    estimateTau = -(muMax - estimateMu0) / np.log(modelMinusData)
+                    parsIniPtc.extend([estimateMu0, estimateTau]) # Estimate of mu_0 and tau
             if ptcFitType == 'POLYNOMIAL':
                 ptcFunc = funcPolynomial
                 parsIniPtc = self._initialParsForPolynomial(self.config.polynomialFitDegree + 1)
