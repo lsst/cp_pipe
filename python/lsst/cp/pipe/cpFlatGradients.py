@@ -19,7 +19,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import numpy as np
-import warnings
 
 import lsst.afw.cameraGeom
 import lsst.pipe.base as pipeBase
@@ -27,7 +26,7 @@ from lsst.ip.isr import FlatGradient
 import lsst.pex.config as pexConfig
 from lsst.utils.plotting import make_figure
 
-from .utils import FlatGradientFitter
+from .utils import FlatGradientFitter, bin_focal_plane
 
 __all__ = [
     "CpFlatFitGradientsTask",
@@ -253,7 +252,13 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
         """
         # Load in and rebin the data.
         self.log.info("Loading and rebinning %d flats.", len(input_flat_handle_dict))
-        rebinned = self._rebin_flats(input_flat_handle_dict, input_defect_handle_dict)
+        rebinned = bin_focal_plane(
+            input_flat_handle_dict,
+            self.config.detector_boundary,
+            self.config.bin_factor,
+            defect_handle_dict=input_defect_handle_dict,
+            include_itl_flag=True,
+        )
 
         # Renormalize and filter out bad data.
         fp_radius = np.sqrt(
@@ -361,109 +366,6 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
             struct.output_gradient = gradient
 
         return struct
-
-    def _rebin_flats(self, input_flat_handle_dict, input_defect_handle_dict):
-        """Rebin the input flats.
-
-        Parameters
-        ----------
-        input_flat_handle_dict : `dict` [`int`,
-                                         `lsst.daf.butler.DeferredDatasetHandle`]
-            Dictionary of input flat handles, keyed by detector.
-        input_defect_handle_dict : `dict` [`int`,
-                                           `lsst.daf.butler.DeferredDatasetHandle`]
-            Dictionary of input defect handles, keyed by detector.
-
-        Returns
-        -------
-        rebinned : `np.ndarray`
-            Array with focal plane positions (``xf``, ``yf``); flat values
-            (``value``) and whether or not the observation was itl (``itl``).
-        """
-        xf_arrays = []
-        yf_arrays = []
-        value_arrays = []
-        itl_arrays = []
-
-        for det in input_flat_handle_dict.keys():
-            flat = input_flat_handle_dict[det].get()
-            defect_handle = input_defect_handle_dict.get(det, None)
-            if defect_handle is not None:
-                defects = defect_handle.get()
-            else:
-                defects = None
-
-            detector = flat.getDetector()
-
-            # Mask out defects if we have them.
-            if defects is not None:
-                for defect in defects:
-                    flat.image[defect.getBBox()].array[:, :] = np.nan
-
-            # Bin the image, avoiding the boundary and the masked pixels.
-            # We also make sure we are using an integral number of
-            # steps to avoid partially covered binned pixels.
-
-            arr = flat.image.array
-
-            n_step_y = (arr.shape[0] - (2 * self.config.detector_boundary)) // self.config.bin_factor
-            y_min = self.config.detector_boundary
-            y_max = self.config.bin_factor * n_step_y + y_min
-            n_step_x = (arr.shape[1] - (2 * self.config.detector_boundary)) // self.config.bin_factor
-            x_min = self.config.detector_boundary
-            x_max = self.config.bin_factor * n_step_x + x_min
-
-            arr = arr[y_min: y_max, x_min: x_max]
-            binned = arr.reshape((n_step_y, self.config.bin_factor, n_step_x, self.config.bin_factor))
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", r"Mean of empty")
-                binned = np.nanmean(binned, axis=1)
-                binned = np.nanmean(binned, axis=2)
-
-            xx = np.arange(binned.shape[1]) * self.config.bin_factor + self.config.bin_factor / 2. + x_min
-            yy = np.arange(binned.shape[0]) * self.config.bin_factor + self.config.bin_factor / 2. + y_min
-            x, y = np.meshgrid(xx, yy)
-            x = x.ravel()
-            y = y.ravel()
-            value = binned.ravel()
-
-            # Transform to focal plane coordinates.
-            transform = detector.getTransform(lsst.afw.cameraGeom.PIXELS, lsst.afw.cameraGeom.FOCAL_PLANE)
-            xy = np.vstack((x, y))
-            xf, yf = np.vsplit(transform.getMapping().applyForward(xy), 2)
-            xf = xf.ravel()
-            yf = yf.ravel()
-
-            is_itl = np.zeros(len(value), dtype=np.bool_)
-            # We use this check so that ITL matches ITL science detectors,
-            # ITL_WF wavefront detectors, and pseudoITL test detectors.
-            is_itl[:] = ("ITL" in detector.getPhysicalType())
-
-            xf_arrays.append(xf)
-            yf_arrays.append(yf)
-            value_arrays.append(value)
-            itl_arrays.append(is_itl)
-
-        xf = np.concatenate(xf_arrays)
-        yf = np.concatenate(yf_arrays)
-        value = np.concatenate(value_arrays)
-        itl = np.concatenate(itl_arrays)
-
-        rebinned = np.zeros(
-            len(xf),
-            dtype=[
-                ("xf", "f8"),
-                ("yf", "f8"),
-                ("value", "f8"),
-                ("itl", "?"),
-            ],
-        )
-        rebinned["xf"] = xf
-        rebinned["yf"] = yf
-        rebinned["value"] = value
-        rebinned["itl"] = itl
-
-        return rebinned
 
     def _make_qa_plots(self, rebinned, gradient, filter_label):
         """Make QA plots for the rebinned data.
