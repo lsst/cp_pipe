@@ -23,6 +23,7 @@ from collections import defaultdict
 import esutil
 import logging
 import numpy as np
+import warnings
 
 import lsst.pipe.base
 import lsst.pex.config
@@ -299,7 +300,11 @@ class CpMonochromaticFlatBinTask(lsst.pipe.base.PipelineTask):
             Output structure with:
                 ``output_binned```: `astropy.table.Table`
         """
-        self.log.info("Loading and binning %d flats.", len(input_exposure_handle_dict))
+        self.log.info(
+            "Loading and binning %d flats from %d exposures.",
+            len(input_exposure_handle_dict),
+            len(input_exposure_handle_dict[self.config.ref_detector]),
+        )
         binned = bin_focal_plane(
             input_exposure_handle_dict,
             self.config.detector_boundary,
@@ -322,7 +327,9 @@ class CpMonochromaticFlatBinTask(lsst.pipe.base.PipelineTask):
             photo_charges[i] = pd_calib.integrate(exposureTime=exposure_time)
 
         # We record the average here.
-        photo_charge = np.nanmean(photo_charges)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", r"Mean of empty")
+            photo_charge = np.nanmean(photo_charges)
         binned.meta["photo_charge"] = photo_charge
 
         # Get the wavelength (again, sigh).
