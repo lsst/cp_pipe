@@ -260,7 +260,7 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
             Camera object.
         input_flat_handle_dict : `dict`
             Dict keyed by detector (`int`), each element is a list
-           of `lsst.daf.butler.DeferredDatasetHandle` that may be averaged.
+            of `lsst.daf.butler.DeferredDatasetHandle` that may be averaged.
         input_defect_handle_dict : `dict` [`int`,
                                            `lsst.daf.butler.DeferredDatasetHandle`]
             Dictionary of input defect handles, keyed by detector.
