@@ -19,114 +19,29 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 # import numpy as np
-from collections import defaultdict
-import logging
 
-# import lsst.afw.cameraGeom
-import lsst.pipe.base as pipeBase
-import lsst.pex.config as pexConfig
+import lsst.pipe.base
+# import lsst.pex.config
 
-from .utilsEfd import CpEfdClient
 
 __all__ = [
-    "CpMonochromaticFlatBinTask",
-    "CpMonochromaticFlatBinConfig",
     "CpMonochromaticQEScanFitTask",
     "CpMonochromaticQEScanFitConfig",
 ]
 
 
-class CpMonochromaticFlatBinConnections(
-    pipeBase.PipelineTaskConnections,
-    dimensions=("instrument", "exposure"),
-):
-    camera = pipeBase.connectionTypes.PrerequisiteInput(
-        name="camera",
-        doc="Camera Geometry definition.",
-        storageClass="Camera",
-        dimensions=("instrument", ),
-        isCalibration=True,
-    )
-    input_exposure_handles = pipeBase.connectionTypes.Input(
-        name="cpMonochromaticFlatIsrExp",
-        doc="Input monochromatic no-filter exposures.",
-        storageClass="Exposure",
-        dimensions=("instrument", "exposure", "detector"),
-        multiple=True,
-        deferLoad=True,
-    )
-    input_photodiode_data = pipeBase.connectionTypes.Input(
-        name="photodiode",
-        doc="Photodiode readings data.",
-        storageClass="IsrCalib",
-        dimensions=("instrument", "exposure"),
-        multiple=True,
-        deferLoad=True,
-    )
-    output_binned = pipeBase.connectionTypes.Output(
-        name="cpMonochromaticFlatBinned",
-        doc="Binned table with full focal-plane data.",
-        storageClass="ArrowAstropy",
-        dimensions=("instrument", "exposure"),
-    )
-
-    def adjust_all_quanta(self, adjuster):
-        _LOG = logging.getLogger(__name__)
-
-        # Build a dict keyed by exposure.
-        # Each entry is a dict of {detector: quantumId}
-        # And everything will be sorted by exposure and detector.
-        quantum_id_dict = defaultdict(dict)
-        for quantum_id in sorted(adjuster.iter_data_ids(), key=lambda d: (d["exposure"], d["detector"])):
-            exposure = quantum_id["exposure"]
-            quantum_id_dict[exposure][quantum_id["detector"]] = quantum_id
-
-        # Retrieve the wavelength for each exposure.
-        import IPython
-        IPython.embed()
-
-
-class CpMonochromaticFlatBinConfig(
-    pipeBase.PipelineTaskConfig,
-    pipelineConnections=CpMonochromaticFlatBinConnections,
-):
-    bin_factor = pexConfig.Field(
-        dtype=int,
-        doc="Binning factor for flats going into the focal plane.",
-        default=128,
-    )
-    use_efd_wavelength = pexConfig.Field(
-        dtype=bool,
-        doc="Use EFD to get monochromatic laser wavelengths?",
-        default=True,
-    )
-
-
-class CpMonochromaticFlatBinTask(pipeBase.PipelineTask):
-    """Task to stack + bin monochromatic flats."""
-
-    ConfigClass = CpMonochromaticFlatBinConfig
-    _DefaultName = "cpMonochromaticFlatBin"
-
-    def run(self, *, camera, input_exposure_handles):
-        """Run CpMonochromaticFlatBinTask.
-
-        """
-        pass
-
-
 class CpMonochromaticQEScanFitConnections(
-    pipeBase.PipelineTaskConnections,
+    lsst.pipe.base.PipelineTaskConnections,
     dimensions=("instrument",),
 ):
-    camera = pipeBase.connectionTypes.PrerequisiteInput(
+    camera = lsst.pipe.base.connectionTypes.PrerequisiteInput(
         name="camera",
         doc="Camera Geometry definition.",
         storageClass="Camera",
         dimensions=("instrument", ),
         isCalibration=True,
     )
-    input_binned_handles = pipeBase.connectionTypes.Input(
+    input_binned_handles = lsst.pipe.base.connectionTypes.Input(
         name="cpMonochromaticQEScanBinned",
         doc="Binned tables with full focal-plane data.",
         storageClass="ArrowAstropy",
@@ -138,14 +53,14 @@ class CpMonochromaticQEScanFitConnections(
 
 
 class CpMonochromaticQEScanFitConfig(
-    pipeBase.PipelineTaskConfig,
+    lsst.pipe.base.PipelineTaskConfig,
     pipelineConnections=CpMonochromaticQEScanFitConnections,
 ):
     # This will require the flat gradient fitter code.
     pass
 
 
-class CpMonochromaticQEScanFitTask(pipeBase.PipelineTask):
+class CpMonochromaticQEScanFitTask(lsst.pipe.base.PipelineTask):
     """Task to fit QE from monochromatic flats."""
 
     ConfigClass = CpMonochromaticQEScanFitConfig
