@@ -99,7 +99,7 @@ class FlatFitGradientTestCase(lsst.utils.tests.TestCase):
                 "detector": detector.getId(),
                 "physical_filter": None,
             }
-            flat_handle_dict[detector.getId()] = InMemoryDatasetHandle(flat, dataId=data_id)
+            flat_handle_dict[detector.getId()] = [InMemoryDatasetHandle(flat, dataId=data_id)]
 
         return flat_handle_dict
 
@@ -315,14 +315,16 @@ class FlatFitGradientTestCase(lsst.utils.tests.TestCase):
         task = CpFlatApplyGradientsTask(config=config)
 
         corrected_dome_flat_handles = {}
-        for key, handle in dome_flat_handles.items():
+        for key, handles in dome_flat_handles.items():
             struct = task.run(
                 camera=self.camera,
-                input_flat=handle.get(),
+                input_flat=handles[0].get(),
                 reference_gradient=sky_gradient,
                 gradient=dome_gradient,
             )
-            corrected_dome_flat_handles[key] = InMemoryDatasetHandle(struct.output_flat, dataId=handle.dataId)
+            corrected_dome_flat_handles[key] = [
+                InMemoryDatasetHandle(struct.output_flat, dataId=handles[0].dataId)
+            ]
 
         # Now if we fit the corrected handles they should have the
         # same radial structure as the target, with no centroid or
