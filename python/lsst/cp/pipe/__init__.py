@@ -35,6 +35,7 @@ from .cpFringe import *
 from .cpGainCorrection import *
 from .cpLinearitySolve import *
 from .cpLinearityNormalize import *
+from .cpMonochromaticFlat import *
 from .cpMonochromaticQEScan import *
 from .cpPhotodiodeCorrection import *
 from .cpSky import *
