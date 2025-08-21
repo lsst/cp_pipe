@@ -19,6 +19,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 from astropy.time import TimeDelta
+from collections import defaultdict
 import esutil
 import logging
 import numpy as np
@@ -228,6 +229,14 @@ class CpMonochromaticFlatBinTask(lsst.pipe.base.PipelineTask):
         input_exposure_handles = inputs["input_exposure_handles"]
         input_photodiode_handles = inputs["input_photodiode_handles"]
 
+        input_exposure_handle_dict = defaultdict(list)
+        for handle in input_exposure_handles:
+            input_exposure_handle_dict[handle.dataId["detector"]].append(handle)
+
+        input_photodiode_handle_dict = {
+            handle.dataId["exposure"]: handle for handle in input_photodiode_handles
+        }
+
         struct = self.run(
             camera=inputs["camera"],
             input_exposure_handle_dict=input_exposure_handle_dict,
@@ -239,5 +248,21 @@ class CpMonochromaticFlatBinTask(lsst.pipe.base.PipelineTask):
     def run(self, *, camera, input_exposure_handle_dict, input_photodiode_handle_dict):
         """Run CpMonochromaticFlatBinTask.
 
+        Parameters
+        ----------
+        camera : `lsst.afw.cameraGeom.Camera`
+            Camera object.
+        input_exposure_handle_dict : `dict`
+            Dict keyed by detector (`int`), each element is a list
+            of `lsst.daf.butler.DeferredDatasetHandle` that will be averaged.
+        input_photodiode_handle_dict : `dict` [`int`,
+                                               `lsst.daf.butler.DeferredDatasetHandle`]
+            Dictionary of photodiode handles, keyed by exposure.
+
+        Returns
+        -------
+        struct : `lsst.pipe.base.Struct`
+            Output structure with:
+                ``output_binned```: `astropy.table.Table`
         """
         pass
