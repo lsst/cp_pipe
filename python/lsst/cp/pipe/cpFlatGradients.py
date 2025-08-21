@@ -230,7 +230,7 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
         input_defects = inputs["input_defects"]
 
         input_flat_handle_dict = {
-            handle.dataId["detector"]: handle for handle in input_flats
+            handle.dataId["detector"]: [handle] for handle in input_flats
         }
         input_defect_handle_dict = {
             handle.dataId["detector"]: handle for handle in input_defects
@@ -258,9 +258,9 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
         ----------
         camera : `lsst.afw.cameraGeom.Camera`
             Camera object.
-        input_flat_handle_dict : `dict` [`int`,
-                                         `lsst.daf.butler.DeferredDatasetHandle`]
-            Dictionary of input flat handles, keyed by detector.
+        input_flat_handle_dict : `dict`
+            Dict keyed by detector (`int`), each element is a list
+           of `lsst.daf.butler.DeferredDatasetHandle` that may be averaged.
         input_defect_handle_dict : `dict` [`int`,
                                            `lsst.daf.butler.DeferredDatasetHandle`]
             Dictionary of input defect handles, keyed by detector.
@@ -427,7 +427,7 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
             normalizationFactor=normalization,
         )
 
-        flat = input_flat_handle_dict[list(input_flat_handle_dict.keys())[0]].get()
+        flat = input_flat_handle_dict[list(input_flat_handle_dict.keys())[0]][0].get()
 
         self.log.info("Making QA plots.")
         plot_dict = self._make_qa_plots(binned, gradient, flat.getFilter())
