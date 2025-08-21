@@ -29,6 +29,7 @@ import lsst.pex.config
 from lsst.ts.xml.enums.TunableLaser import LaserDetailedState
 
 from .utilsEfd import CpEfdClient
+from .utils import bin_focal_plane
 
 __all__ = [
     "CpMonochromaticFlatBinTask",
@@ -210,10 +211,43 @@ class CpMonochromaticFlatBinConfig(
         doc="Binning factor for flats going into the focal plane.",
         default=128,
     )
+    detector_boundary = lsst.pex.config.Field(
+        dtype=int,
+        doc="Do not use pixels within detector_boundary of the edge for binning.",
+        default=10,
+    )
     use_efd_wavelength = lsst.pex.config.Field(
         dtype=bool,
         doc="Use EFD to get monochromatic laser wavelengths?",
         default=True,
+    )
+    ref_detector = lsst.pex.config.Field(
+        dtype=int,
+        doc="Reference detector for exposure time calculation.",
+        default=94,
+    )
+    photodiode_integration_method = lsst.pex.config.ChoiceField(
+        dtype=str,
+        doc="Integration method for photodiode monitoring data.",
+        default="MEAN",
+        allowed={
+            "DIRECT_SUM": ("Use numpy's trapezoid integrator on all photodiode "
+                           "readout entries"),
+            "TRIMMED_SUM": ("Use numpy's trapezoid integrator, clipping the "
+                            "leading and trailing entries, which are "
+                            "nominally at zero baseline level."),
+            "CHARGE_SUM": ("Treat the current values as integrated charge "
+                           "over the sampling interval and simply sum "
+                           "the values, after subtracting a baseline level."),
+            "MEAN": {"Take the average of the photodiode measurements and "
+                     "multiply by the exposure time."},
+        },
+    )
+    photodiode_current_scale = lsst.pex.config.Field(
+        dtype=float,
+        doc="Scale factor to apply to photodiode current values for the "
+            "``CHARGE_SUM``, ``TRIMMED_SUM``, and ``MEAN`` integration methods.",
+        default=-1.0,
     )
 
 
@@ -265,4 +299,67 @@ class CpMonochromaticFlatBinTask(lsst.pipe.base.PipelineTask):
             Output structure with:
                 ``output_binned```: `astropy.table.Table`
         """
-        pass
+        self.log.info("Loading and binning %d flats.", len(input_exposure_handle_dict))
+        binned = bin_focal_plane(
+            input_exposure_handle_dict,
+            self.config.detector_boundary,
+            self.config.bin_factor,
+            include_itl_flag=True,
+        )
+
+        exp_handles = {
+            ref.dataId["exposure"]: ref
+            for ref in input_exposure_handle_dict[self.config.ref_detector]
+        }
+
+        photo_charges = np.zeros(len(input_photodiode_handle_dict))
+        for i, (exp_id, pd_calib_handle) in enumerate(input_photodiode_handle_dict.items()):
+            pd_calib = pd_calib_handle.get()
+            pd_calib.integrationMethod = self.config.photodiode_integration_method
+            pd_calib.currentScale = self.config.photodiode_current_scale
+            visit_info = exp_handles[exp_id].get(component="visitInfo")
+            exposure_time = visit_info.getExposureTime()
+            photo_charges[i] = pd_calib.integrate(exposureTime=exposure_time)
+
+        # We record the average here.
+        photo_charge = np.nanmean(photo_charges)
+        binned.meta["photo_charge"] = photo_charge
+
+        # Get the wavelength (again, sigh).
+        if self.config.use_efd_wavelength:
+            client = CpEfdClient()
+
+            data_id = input_exposure_handle_dict[self.config.ref_detector][0].dataId
+            date_start = data_id.exposure.timespan.begin
+            date_end = data_id.exposure.timespan.end
+            wavelength_series = client.selectTimeSeries(
+                "lsst.sal.TunableLaser.wavelength",
+                fields=["wavelength"],
+                startDate=date_start,
+                endDate=date_end,
+            )
+            binned.meta["wavelength"] = float(wavelength_series["wavelength"][0])
+            binned.meta["laser_on"] = True
+
+            state_series = client.selectTimeSeries(
+                "lsst.sal.TunableLaser.logevent_detailedState",
+                fields=["detailedState"],
+                startDate=date_start - TimeDelta(1, format="jd"),
+                endDate=date_end,
+            )
+            use2 = (state_series["time"] < date_start)
+            last_state = state_series["detailedState"][use2][-1]
+            if last_state in (
+                LaserDetailedState.NONPROPAGATING_BURST_MODE,
+                LaserDetailedState.NONPROPAGATING_CONTINUOUS_MODE,
+            ):
+                binned.meta["wavelength"] = 0.0
+                binned.meta["laser_on"] = False
+        else:
+            raise RuntimeError("Only EFD retrieval for wavelength is supported.")
+
+        struct = lsst.pipe.base.Struct(
+            output_binned=binned,
+        )
+
+        return struct
