@@ -22,18 +22,20 @@
 
 __all__ = ['ddict2dict', 'CovFastFourierTransform', 'getReadNoise', 'ampOffsetGainRatioFixup']
 
-
+from astropy.table import Table
 import galsim
 import logging
 import numpy as np
 import itertools
 import numpy.polynomial.polynomial as poly
+import warnings
 
 from scipy.interpolate import Akima1DInterpolator
 from scipy.optimize import leastsq, minimize
 from scipy.stats import median_abs_deviation, norm
 
 from lsst.ip.isr import isrMock
+import lsst.afw.cameraGeom
 import lsst.afw.image
 import lsst.afw.math
 
@@ -1959,3 +1961,137 @@ class FlatGainRatioFitter:
         t = np.sum(absdev.astype(np.float64))
 
         return t
+
+
+def bin_focal_plane(
+    exposure_handle_dict,
+    detector_boundary,
+    bin_factor,
+    defect_handle_dict={},
+    include_itl_flag=True,
+):
+    """Bin all the detectors into the full focal plane.
+
+    This function reads in images; takes a simple average if there
+    are more than one input per detector; excludes detector edges;
+    and bins according to the bin factor. The output is a struct
+    with focal plane coordinates, detector numbers, and a flag
+    if the detector is an ITL detector.
+
+    Parameters
+    ----------
+    exposure_handle_dict : `dict`
+        Dict keyed by detector (`int`), each element is a list
+        of `lsst.daf.butler.DeferredDatasetHandle` that will be averaged.
+    detector_boundary : `int`
+        Boundary of the detector to ignore (pixels).
+    bin_factor : `int`
+        Binning factor. Detectors will be cropped (after applying the
+        ``detector_boundary``) such that there are no partially
+        covered binned pixels.
+    defect_handle_dict : `dict`, optional
+        Dict keyed by detector (`int`), each element is a
+        `lsst.daf.butler.DeferredDatasetHandle` for defects to be applied.
+    include_itl_flag : `bool`, optional
+        Include a flag for which detectors are ITL?
+
+    Returns
+    -------
+    binned : `astropy.table.Table`
+        Table with focal plane positions at the center of each bin
+        (``xf``, ``yf``); average image values (``value``); and detector
+        number (``detector``).
+    """
+    xf_arrays = []
+    yf_arrays = []
+    value_arrays = []
+    detector_arrays = []
+    itl_arrays = []
+
+    for det in exposure_handle_dict.keys():
+        flat = exposure_handle_dict[det].get()
+        defect_handle = defect_handle_dict.get(det, None)
+        if defect_handle is not None:
+            defects = defect_handle.get()
+        else:
+            defects = None
+
+        detector = flat.getDetector()
+
+        # Mask out defects if we have them.
+        if defects is not None:
+            for defect in defects:
+                flat.image[defect.getBBox()].array[:, :] = np.nan
+
+        # Bin the image, avoiding the boundary and the masked pixels.
+        # We also make sure we are using an integral number of
+        # steps to avoid partially covered binned pixels.
+
+        arr = flat.image.array
+
+        n_step_y = (arr.shape[0] - (2 * detector_boundary)) // bin_factor
+        y_min = detector_boundary
+        y_max = bin_factor * n_step_y + y_min
+        n_step_x = (arr.shape[1] - (2 * detector_boundary)) // bin_factor
+        x_min = detector_boundary
+        x_max = bin_factor * n_step_x + x_min
+
+        arr = arr[y_min: y_max, x_min: x_max]
+        binned = arr.reshape((n_step_y, bin_factor, n_step_x, bin_factor))
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", r"Mean of empty")
+            binned = np.nanmean(binned, axis=1)
+            binned = np.nanmean(binned, axis=2)
+
+        xx = np.arange(binned.shape[1]) * bin_factor + bin_factor / 2. + x_min
+        yy = np.arange(binned.shape[0]) * bin_factor + bin_factor / 2. + y_min
+        x, y = np.meshgrid(xx, yy)
+        x = x.ravel()
+        y = y.ravel()
+        value = binned.ravel()
+
+        # Transform to focal plane coordinates.
+        transform = detector.getTransform(lsst.afw.cameraGeom.PIXELS, lsst.afw.cameraGeom.FOCAL_PLANE)
+        xy = np.vstack((x, y))
+        xf, yf = np.vsplit(transform.getMapping().applyForward(xy), 2)
+        xf = xf.ravel()
+        yf = yf.ravel()
+
+        if include_itl_flag:
+            is_itl = np.zeros(len(value), dtype=np.bool_)
+            # We use this check so that ITL matches ITL science detectors,
+            # ITL_WF wavefront detectors, and pseudoITL test detectors.
+            is_itl[:] = ("ITL" in detector.getPhysicalType())
+
+        xf_arrays.append(xf)
+        yf_arrays.append(yf)
+        value_arrays.append(value)
+        detector_arrays.append(np.full_like(xf, det, dtype=np.int32))
+        if include_itl_flag:
+            itl_arrays.append(is_itl)
+
+    xf = np.concatenate(xf_arrays)
+    yf = np.concatenate(yf_arrays)
+    value = np.concatenate(value_arrays)
+    detector = np.concatenate(detector_arrays)
+
+    binned = Table(
+        np.zeros(
+            len(xf),
+            dtype=[
+                ("xf", "f8"),
+                ("yf", "f8"),
+                ("value", "f8"),
+                ("detector", "i4"),
+            ],
+        )
+    )
+    binned["xf"] = xf
+    binned["yf"] = yf
+    binned["value"] = value
+    binned["detector"] = detector
+
+    if include_itl_flag:
+        binned["itl"] = np.concatenate(itl_arrays)
+
+    return binned
