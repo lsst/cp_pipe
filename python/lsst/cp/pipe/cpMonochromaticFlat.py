@@ -25,7 +25,7 @@ import numpy as np
 
 import lsst.pipe.base
 import lsst.pex.config
-# from lsst.ts.xml.enums.TunableLaser import LaserDetailedState
+from lsst.ts.xml.enums.TunableLaser import LaserDetailedState
 
 from .utilsEfd import CpEfdClient
 
@@ -61,6 +61,7 @@ class CpMonochromaticFlatBinConnections(
         dimensions=("instrument", "exposure"),
         multiple=True,
         deferLoad=True,
+        minimum=0,
     )
     output_binned = lsst.pipe.base.connectionTypes.Output(
         name="cpMonochromaticFlatBinned",
@@ -93,11 +94,14 @@ class CpMonochromaticFlatBinConnections(
                     handle,
                 )
 
-            adjuster.add_input(
-                quantum_id_dict[target_exposure],
-                "input_photodiode_date",
-                inputs["input_photodiode_data"][0],
-            )
+            # There is the possibility that off-laser exposures may
+            # not have the photodiode.
+            if len(inputs["input_photodiode_data"]):
+                adjuster.add_input(
+                    quantum_id_dict[target_exposure],
+                    "input_photodiode_data",
+                    inputs["input_photodiode_data"][0],
+                )
 
             if remove:
                 adjuster.remove_quantum(quantum_id_dict[source_exposure])
@@ -128,10 +132,24 @@ class CpMonochromaticFlatBinConnections(
                 if (end := expanded.exposure.timespan.end) > date_end:
                     date_end = end
 
-            series = client.selectTimeSeries(
+            _LOG.info("Querying EFD for wavelength data.")
+            wavelength_series = client.selectTimeSeries(
                 "lsst.sal.TunableLaser.wavelength",
                 fields=["wavelength"],
                 startDate=date_start,
+                endDate=date_end,
+            )
+
+            # Check for laser detailed state events within the
+            # last 24 hours. If this returns nothing then these
+            # were not taken with the laser and this will crash,
+            # but the task won't work (and neither will the query
+            # above for the wavelength).
+            _LOG.info("Querying EFD for laser state.")
+            state_series = client.selectTimeSeries(
+                "lsst.sal.TunableLaser.logevent_detailedState",
+                fields=["detailedState"],
+                startDate=date_start - TimeDelta(1, format="jd"),
                 endDate=date_end,
             )
 
@@ -139,34 +157,31 @@ class CpMonochromaticFlatBinConnections(
                 expanded = adjuster.expand_quantum_data_id(quantum_id)
 
                 use = (
-                    (series["time"] >= expanded.exposure.timespan.begin)
-                    & (series["time"] <= expanded.exposure.timespan.end)
+                    (wavelength_series["time"] >= expanded.exposure.timespan.begin)
+                    & (wavelength_series["time"] <= expanded.exposure.timespan.end)
                 )
                 if use.sum() == 0:
                     # Laser must be off.
                     wavelength_dict[exposure] = 0.0
                 else:
-                    wavelength_dict[exposure] = float(series["wavelength"][use][0])
+                    wavelength_dict[exposure] = float(wavelength_series["wavelength"][use][0])
 
-            # Check for start and stop propagation events within 5 minutes
-            # of either side, and turn those off.
-            # We will assume that the laser is propagating unless the
-            # EFD says otherwise.
-            # Search from 10 minutes prior.
-            try:
-                series = client.selectTimeSeries(
-                    "lsst.sal.TunableLaser.logevent_detailedState",
-                    startDate=date_start - TimeDelta(60*10, format="sec"),
-                    endDate=date_end,
-                )
-            except RuntimeError:
-                # No results; laser is on.
-                series = None
-
-            if series is not None:
-                # Need to figure this out with real data.
-                pass
-
+                use2 = (state_series["time"] < expanded.exposure.timespan.begin)
+                last_state = state_series["detailedState"][use2][-1]
+                if last_state in (
+                    LaserDetailedState.NONPROPAGATING_BURST_MODE,
+                    LaserDetailedState.NONPROPAGATING_CONTINUOUS_MODE,
+                ):
+                    wavelength_dict[exposure] = 0.0
+                elif last_state not in (
+                    LaserDetailedState.PROPAGATING_BURST_MODE,
+                    LaserDetailedState.PROPAGATING_CONTINUOUS_MODE,
+                ):
+                    raise RuntimeError(
+                        "Unknown laser state for exposure %d: %d",
+                        exposure,
+                        last_state,
+                    )
         else:
             raise RuntimeError("Only EFD selection for wavelength is supported.")
 
