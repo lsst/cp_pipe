@@ -54,7 +54,7 @@ class CpMonochromaticFlatBinConnections(
         multiple=True,
         deferLoad=True,
     )
-    input_photodiode_data = lsst.pipe.base.connectionTypes.Input(
+    input_photodiode_handles = lsst.pipe.base.connectionTypes.Input(
         name="photodiode",
         doc="Photodiode readings data.",
         storageClass="IsrCalib",
@@ -96,11 +96,11 @@ class CpMonochromaticFlatBinConnections(
 
             # There is the possibility that off-laser exposures may
             # not have the photodiode.
-            if len(inputs["input_photodiode_data"]):
+            if len(inputs["input_photodiode_handles"]):
                 adjuster.add_input(
                     quantum_id_dict[target_exposure],
-                    "input_photodiode_data",
-                    inputs["input_photodiode_data"][0],
+                    "input_photodiode_handles",
+                    inputs["input_photodiode_handles"][0],
                 )
 
             if remove:
@@ -222,7 +222,21 @@ class CpMonochromaticFlatBinTask(lsst.pipe.base.PipelineTask):
     ConfigClass = CpMonochromaticFlatBinConfig
     _DefaultName = "cpMonochromaticFlatBin"
 
-    def run(self, *, camera, input_exposure_handles):
+    def runQuantum(self, butlerQC, inputRefs, outputRefs):
+        inputs = butlerQC.get(inputRefs)
+
+        input_exposure_handles = inputs["input_exposure_handles"]
+        input_photodiode_handles = inputs["input_photodiode_handles"]
+
+        struct = self.run(
+            camera=inputs["camera"],
+            input_exposure_handle_dict=input_exposure_handle_dict,
+            input_photodiode_handle_dict=input_photodiode_handle_dict,
+        )
+
+        butlerQC.put(struct, outputRefs)
+
+    def run(self, *, camera, input_exposure_handle_dict, input_photodiode_handle_dict):
         """Run CpMonochromaticFlatBinTask.
 
         """
