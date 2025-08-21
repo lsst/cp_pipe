@@ -28,6 +28,11 @@ subsets:
       - cpCrosstalkExtract
       - cpCrosstalkSolve
     description: Just the extract and solve.
+  cpCrosstalkProc:
+    subset:
+      - cpCrosstalkIsr
+      - cpCrosstalkExtract
+    description: Handle the per-exposure analysis
 contracts:
   - cpCrosstalkExtract.connections.inputExp == cpCrosstalkIsr.connections.outputExposure
   - cpCrosstalkSolve.connections.inputRatios == cpCrosstalkExtract.connections.outputRatios

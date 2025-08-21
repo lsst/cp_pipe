@@ -613,9 +613,12 @@ class CrosstalkSolveTask(pipeBase.PipelineTask):
                 # ratios is ratios[Target][Source]
                 # use tt for Target, use ss for Source, to match ip_isr.
                 values = np.array(ratios[ordering[tt]][ordering[ss]])
-                values = values[np.abs(values) < 1.0]  # Discard unreasonable values
+                good_values = np.abs(values) < 1.0  # Discard unreasonable values
+                values = values[good_values]
                 myfluxes = np.array(fluxes[ordering[tt]][ordering[ss]])
-                # if len(values) != len(myfluxes):
+                myfluxes = myfluxes[good_values]
+                if len(values) != len(myfluxes):
+                    self.log.warning(f"Flux and ratio length disagree after first filter: {len(values)} {len(myfluxes)}")
 
             # Sigma clip using the inter-quartile distance and a
             # normal distribution.
@@ -630,6 +633,8 @@ class CrosstalkSolveTask(pipeBase.PipelineTask):
                         break
                     values = values[good]
                     myfluxes = myfluxes[good]
+                if len(values) != len(myfluxes):
+                    self.log.warning(f"Flux and ratio length disagree after second filter: {len(values)} {len(myfluxes)}")
 
             # Crosstalk calib is property[Source][Target].
             calib.coeffNum[ss][tt] = len(values)
