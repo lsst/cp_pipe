@@ -82,6 +82,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
             "cpIlluminationCorrection.yaml",
             "cpFlatTwoLed.yaml",
             "cpFlatGradientReference.yaml",
+            "cpQuadNotch.yaml",
         }
 
         for ex in exclude:
@@ -176,6 +177,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 # Unsupported pipelines.
                 "cpCrosstalk.yaml",
                 "cpFringe.yaml",
+                "cpQuadNotch.yaml",
         ]):
             if pipeline == "cpFlatTwoLed.yaml":
                 overrides = {
@@ -204,6 +206,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 "cpIlluminationCorrection.yaml",
                 "cpFlatTwoLed.yaml",
                 "cpFlatGradientReference.yaml",
+                "cpQuadNotch.yaml",
         ]):
             self._check_pipeline(os.path.join(self.pipeline_path, "LSSTCam-imSim", pipeline))
 
@@ -221,6 +224,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 "cpFringe.yaml",
                 "cpFlatTwoLed.yaml",
                 "cpFlatGradientReference.yaml",
+                "cpQuadNotch.yaml",
                 # TODO: DM-46426
                 "cpCti.yaml",
         ]):
@@ -245,6 +249,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 "cpIlluminationCorrection.yaml",
                 "cpFlatTwoLed.yaml",
                 "cpFlatGradientReference.yaml",
+                "cpQuadNotch.yaml",
         ]):
             self._check_pipeline(os.path.join(self.pipeline_path, "LSSTComCamSim", pipeline))
 
@@ -262,6 +267,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 "cpIlluminationCorrection.yaml",
                 "cpFlatTwoLed.yaml",
                 "cpFlatGradientReference.yaml",
+                "cpQuadNotch.yaml",
         ]):
             self._check_pipeline(os.path.join(self.pipeline_path, "LSST-TS8", pipeline))
 
@@ -280,6 +286,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 "cpIlluminationCorrection.yaml",
                 "cpFlatTwoLed.yaml",
                 "cpFlatGradientReference.yaml",
+                "cpQuadNotch.yaml",
         ]):
             self._check_pipeline(os.path.join(self.pipeline_path, "DECam", pipeline))
 
@@ -298,6 +305,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 "cpIlluminationCorrection.yaml",
                 "cpFlatTwoLed.yaml",
                 "cpFlatGradientReference.yaml",
+                "cpQuadNotch.yaml",
         ]):
             self._check_pipeline(os.path.join(self.pipeline_path, "HSC", pipeline))
 
