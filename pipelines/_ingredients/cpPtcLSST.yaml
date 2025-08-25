@@ -35,11 +35,12 @@ tasks:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
     config:
       connections.inputCovariances: "cpPtcPartial"
-      connections.outputPtcDataset: "ptc"
+      connections.outputPtcDataset: "ptcUnadjusted"
       ptcFitType: "FULLCOVARIANCE"
       maximumRangeCovariancesAstier: 8
       maximumRangeCovariancesAstierFullCovFit: 8
-      doAmpOffsetGainRatioFixup: true
+  cpPtcAdjustGainRatios:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveAdjustGainRatiosTask
 subsets:
   # TODO DM-46448: This subset will no longer be necessary to run when the
   # verification task can use the assembled PTC and the gainList therein.
@@ -54,3 +55,5 @@ contracts:
   - cpPtcSolve.binSize == cpPtcExtractPair.binSize
   - cpPtcSolve.maximumRangeCovariancesAstier == cpPtcExtractPair.maximumRangeCovariancesAstier
   - cpPtcSolve.connections.inputCovariances == cpPtcExtractPair.connections.outputCovariance
+  - cpPtcAdjustGainRatios.connections.exposures == cpPtcIsr.connections.outputExposure
+  - cpPtcAdjustGainRatios.connections.input_ptc == cpPtcSolve.connections.outputPtcDataset

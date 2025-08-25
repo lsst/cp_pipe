@@ -37,11 +37,17 @@ tasks:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
     config:
       connections.inputCovariances: "cpBfkPtcPartial"
-      connections.outputPtcDataset: "bfkPtc"
+      connections.outputPtcDataset: "bfkPtcUnadjusted"
       ptcFitType: "FULLCOVARIANCE"
       maximumRangeCovariancesAstier: 15
       maximumRangeCovariancesAstierFullCovFit: 15
-      doAmpOffsetGainRatioFixup: true
+  cpBfkPtcAdjustGainRatios:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveAdjustGainRatiosTask
+    config:
+      connections.exposures: "cpBfkIsrExp"
+      connections.input_ptc: "bfkPtcUnadjusted"
+      connections.output_ptc: "bfkPtc"
+
   # TODO DM-46439: This can be renamed back to cpBfkSolve when repos
   # are cleaned up for the previous dimensionality error.
   cpBfkSolveX:
@@ -56,4 +62,6 @@ contracts:
   - cpBfkPtcSolve.binSize == cpBfkPtcExtractPair.binSize
   - cpBfkPtcSolve.maximumRangeCovariancesAstier == cpBfkPtcExtractPair.maximumRangeCovariancesAstier
   - cpBfkPtcSolve.connections.inputCovariances == cpBfkPtcExtractPair.connections.outputCovariance
-  - cpBfkSolveX.connections.inputPtc == cpBfkPtcSolve.connections.outputPtcDataset
+  - cpBfkSolveX.connections.inputPtc == cpBfkPtcAdjustGainRatios.connections.output_ptc
+  - cpBfkPtcAdjustGainRatios.connections.exposures == cpBfkIsr.connections.outputExposure
+  - cpBfkPtcAdjustGainRatios.connections.input_ptc == cpBfkPtcSolve.connections.outputPtcDataset

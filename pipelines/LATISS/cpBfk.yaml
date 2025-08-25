@@ -15,3 +15,8 @@ tasks:
     config:
       maximumRangeCovariancesAstier: 8
       maximumRangeCovariancesAstierFullCovFit: 8
+  cpBfkPtcAdjustGainRatios:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveAdjustGainRatiosTask
+    config:
+      do_remove_radial_gradient: false
+      chebyshev_gradient_order: 2
