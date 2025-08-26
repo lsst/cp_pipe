@@ -23,6 +23,7 @@
 """Test cases for cp_pipe gain adjustment code."""
 
 import copy
+import logging
 import unittest
 import numpy as np
 from scipy.interpolate import Akima1DInterpolator
@@ -58,6 +59,7 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
         planar_gradient_x,
         planar_gradient_y,
         bad_amps=[],
+        weird_amps=[],
     ):
         """Get an adjusted flat.
 
@@ -193,7 +195,8 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
         config.radial_gradient_n_spline_nodes = 3
 
         task = PhotonTransferCurveAdjustGainRatiosTask(config=config)
-        adjust_ratios = task._compute_gain_ratios(ptc, flat.clone(), fixed_amp_num)
+        with self.assertNoLogs(level=logging.WARNING):
+            adjust_ratios = task._compute_gain_ratios(ptc, flat.clone(), fixed_amp_num)
 
         # Make two flats with the old adjustment and the new adjustment.
         flat_biased, flat_debiased = self._gain_correct_flat(flat, ptc, adjust_ratios)
@@ -241,7 +244,8 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
         config.radial_gradient_n_spline_nodes = 3
 
         task = PhotonTransferCurveAdjustGainRatiosTask(config=config)
-        adjust_ratios = task._compute_gain_ratios(ptc, flat.clone(), fixed_amp_num)
+        with self.assertNoLogs(level=logging.WARNING):
+            adjust_ratios = task._compute_gain_ratios(ptc, flat.clone(), fixed_amp_num)
 
         # Make two flats with the old adjustment and the new adjustment.
         flat_biased, flat_debiased = self._gain_correct_flat(flat, ptc, adjust_ratios)
@@ -290,7 +294,63 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
         config.radial_gradient_n_spline_nodes = 3
 
         task = PhotonTransferCurveAdjustGainRatiosTask(config=config)
-        adjust_ratios = task._compute_gain_ratios(ptc, flat.clone(), fixed_amp_num)
+        with self.assertNoLogs(level=logging.WARNING):
+            adjust_ratios = task._compute_gain_ratios(ptc, flat.clone(), fixed_amp_num)
+
+        # Make two flats with the old adjustment and the new adjustment.
+        flat_biased, flat_debiased = self._gain_correct_flat(flat, ptc, adjust_ratios)
+
+        # Remove the gradients...
+        flat_biased.image.array[:, :] /= radial_gradient
+        flat_biased.image.array[:, :] /= planar_gradient
+        flat_debiased.image.array[:, :] /= radial_gradient
+        flat_debiased.image.array[:, :] /= planar_gradient
+
+        # Insist that the standard deviation decreases after
+        # removing gradients.
+        # Note that this contains nans which must be filtered.
+        self.assertLess(
+            np.nanstd(flat_debiased.image.array.ravel()),
+            np.nanstd(flat_biased.image.array.ravel()),
+        )
+
+    def test_compute_gain_ratios_weird_amp(self):
+        fixed_amp_num = 2
+
+        # The weird amps have a large offset but are not known
+        # as bad.
+        flat, radial_gradient, planar_gradient = self._get_adjusted_flat(
+            10000.0,
+            0.6,
+            -0.00005,
+            0.00001,
+            bad_amps=[self.amp_names[1]],
+        )
+
+        ptc = PhotonTransferCurveDataset()
+        ptc.ampNames = self.amp_names
+
+        gain_biased = copy.copy(self.gain_true)
+        gain_biased[self.amp_names[0]] *= 1.002
+        gain_biased[self.amp_names[4]] *= 0.998
+
+        # These are the gains recorded in the PTC.
+        for amp_name in self.amp_names:
+            ptc.gain[amp_name] = gain_biased[amp_name]
+            ptc.gainUnadjusted[amp_name] = gain_biased[amp_name]
+
+        config = PhotonTransferCurveAdjustGainRatiosTask.ConfigClass()
+        config.bin_factor = 2
+        config.n_flat = 10
+        config.amp_boundary = 0
+        config.radial_gradient_n_spline_nodes = 3
+
+        task = PhotonTransferCurveAdjustGainRatiosTask(config=config)
+        with self.assertLogs(level=logging.WARNING) as cm:
+            adjust_ratios = task._compute_gain_ratios(ptc, flat.clone(), fixed_amp_num)
+        self.assertIn("Found bad amp", cm.output[0])
+
+        np.testing.assert_array_less(np.abs(adjust_ratios - 1.0), config.max_fractional_gain_ratio)
 
         # Make two flats with the old adjustment and the new adjustment.
         flat_biased, flat_debiased = self._gain_correct_flat(flat, ptc, adjust_ratios)

@@ -121,6 +121,13 @@ class PhotonTransferCurveAdjustGainRatiosConfig(
         doc="Amplifier boundary to ignore when computing gradients/gain ratios (pixels).",
         default=20,
     )
+    max_fractional_gain_ratio = lsst.pex.config.Field(
+        dtype=float,
+        doc="Maximum fractional gain ratio to consider per-exposure. Any amps with larger "
+            "offset will be excluded from the gradient fit and will have no corrections "
+            "applied.",
+        default=0.05,
+    )
 
 
 class PhotonTransferCurveAdjustGainRatiosTask(lsst.pipe.base.PipelineTask):
@@ -328,52 +335,85 @@ class PhotonTransferCurveAdjustGainRatiosTask(lsst.pipe.base.PipelineTask):
         value = value[use]
         amp_index = amp_index[use]
 
-        # If configured, fit the radial gradient.
-        if self.config.do_remove_radial_gradient:
-            transform = detector.getTransform(
-                lsst.afw.cameraGeom.PIXELS,
-                lsst.afw.cameraGeom.FOCAL_PLANE,
+        # We iterate up to 8x to look for any bad amps (that have a gain offset
+        # fit greater than config.max_fractional_gain_ratio) and reject them
+        # from the fits.
+        bad_amps_converged = False
+        n_iter = 0
+        value_uncorrected = value.copy()
+        while not bad_amps_converged and n_iter < len(ptc.ampNames) // 2:
+            # If configured, fit the radial gradient.
+            if self.config.do_remove_radial_gradient:
+                transform = detector.getTransform(
+                    lsst.afw.cameraGeom.PIXELS,
+                    lsst.afw.cameraGeom.FOCAL_PLANE,
+                )
+                xy = np.vstack((xd, yd))
+                xf, yf = np.vsplit(transform.getMapping().applyForward(xy), 2)
+                xf = xf.ravel()
+                yf = yf.ravel()
+                radius = np.sqrt(xf**2. + yf**2.)
+
+                nodes = np.linspace(
+                    np.min(radius),
+                    np.max(radius),
+                    self.config.radial_gradient_n_spline_nodes,
+                )
+
+                # Put in a normalization for fitting.
+                norm = np.nanpercentile(value, 95.0)
+
+                fitter = FlatGradientFitter(
+                    nodes,
+                    xf,
+                    yf,
+                    value/norm,
+                    np.array([]),
+                    constrain_zero=False,
+                    fit_centroid=False,
+                    fit_gradient=False,
+                    fit_outer_gradient=False,
+                    fp_centroid_x=0.0,
+                    fp_centroid_y=0.0,
+                )
+                p0 = fitter.compute_p0()
+                pars = fitter.fit(p0)
+
+                value /= fitter.compute_model(pars)
+
+            # Fit gain ratios.
+            fitter = FlatGainRatioFitter(
+                exposure.getBBox(),
+                self.config.chebyshev_gradient_order,
+                xd,
+                yd,
+                amp_index,
+                value,
+                np.arange(len(ptc.ampNames)),
+                fixed_amp_index,
             )
-            xy = np.vstack((xd, yd))
-            xf, yf = np.vsplit(transform.getMapping().applyForward(xy), 2)
-            xf = xf.ravel()
-            yf = yf.ravel()
-            radius = np.sqrt(xf**2. + yf**2.)
+            pars = fitter.fit()
+            amp_pars = pars[fitter.indices["amp_pars"]]
 
-            nodes = np.linspace(np.min(radius), np.max(radius), self.config.radial_gradient_n_spline_nodes)
+            fractional_gain_ratio = np.abs(amp_pars - 1.0)
+            max_ratio_ind = np.argmax(fractional_gain_ratio)
 
-            # Put in a normalization for fitting.
-            norm = np.nanpercentile(value, 95.0)
+            if fractional_gain_ratio[max_ratio_ind] > self.config.max_fractional_gain_ratio:
+                self.log.warning(
+                    "Found bad amp %s with offset parameter %.2f",
+                    ptc.ampNames[max_ratio_ind],
+                    amp_pars[max_ratio_ind],
+                )
+                good = (amp_index != max_ratio_ind)
+                xd = xd[good]
+                yd = yd[good]
+                value = value_uncorrected[good]
+                amp_index = amp_index[good]
 
-            fitter = FlatGradientFitter(
-                nodes,
-                xf,
-                yf,
-                value/norm,
-                np.array([]),
-                constrain_zero=False,
-                fit_centroid=False,
-                fit_gradient=False,
-                fit_outer_gradient=False,
-                fp_centroid_x=0.0,
-                fp_centroid_y=0.0,
-            )
-            p0 = fitter.compute_p0()
-            pars = fitter.fit(p0)
+                value_uncorrected = value.copy()
+            else:
+                bad_amps_converged = True
 
-            value /= fitter.compute_model(pars)
+            n_iter += 1
 
-        # Fit gain ratios.
-        fitter = FlatGainRatioFitter(
-            exposure.getBBox(),
-            self.config.chebyshev_gradient_order,
-            xd,
-            yd,
-            amp_index,
-            value,
-            np.arange(len(ptc.ampNames)),
-            fixed_amp_index,
-        )
-        pars = fitter.fit()
-
-        return pars[fitter.indices["amp_pars"]]
+        return amp_pars
