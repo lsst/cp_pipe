@@ -195,6 +195,12 @@ class CpFlatFitGradientsConfig(
         doc="Use non-science detectors in addition to science detectors?",
         default=False,
     )
+    fixed_model_residual_plot_scale = pexConfig.Field(
+        dtype=float,
+        doc="Fixed scale for making residual plots.",
+        optional=True,
+        default=None,
+    )
 
 
 class CpFlatFitGradientsTask(pipeBase.PipelineTask):
@@ -439,7 +445,11 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
         ax3 = fig1.add_subplot(133)
 
         ratio = binned["value"] / model
-        vmin, vmax = np.nanpercentile(ratio, [1, 99])
+        if self.config.fixed_model_residual_plot_scale is not None:
+            vmin = 1.0 - self.config.fixed_model_residual_plot_scale
+            vmax = 1.0 + self.config.fixed_model_residual_plot_scale
+        else:
+            vmin, vmax = np.nanpercentile(ratio, [1, 99])
 
         im3 = ax3.hexbin(binned["xf"], binned["yf"], C=ratio, vmin=vmin, vmax=vmax)
 
