@@ -220,7 +220,7 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
 
         butlerQC.put(struct, outputRefs)
 
-    def run(self, *, camera, input_flat_handle_dict, input_defect_handle_dict, rebinned_image=None):
+    def run(self, *, camera, input_flat_handle_dict, input_defect_handle_dict, binned_image=None):
         """Run the CpFlatFitGradientsTask.
 
         This task will fit full focal-plane gradients. See
@@ -240,7 +240,7 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
         input_defect_handle_dict : `dict` [`int`,
                                            `lsst.daf.butler.DeferredDatasetHandle`]
             Dictionary of input defect handles, keyed by detector.
-        rebinned_image : `np.ndarray`, optional
+        binned_image : `np.ndarray`, optional
             Binned image from a previous run of the task. This will take
             precedence over the input handles, for easy re-use.
 
@@ -252,11 +252,12 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
                 ``output_reference_gradient``: `lsst.ip.isr.FlatGradient`
                 ``model_residual_plot``: `matplotlib.Figure`
                 ``radial_model_plot``: `matplotlib.Figure`
+                ``binned_image``: `np.ndarray`
         """
-        # Load in and rebin the data.
-        if rebinned_image is None:
-            self.log.info("Loading and rebinning %d flats.", len(input_flat_handle_dict))
-            rebinned = bin_focal_plane(
+        # Load in and bin the data.
+        if binned_image is None:
+            self.log.info("Loading and binning %d flats.", len(input_flat_handle_dict))
+            binned = bin_focal_plane(
                 input_flat_handle_dict,
                 self.config.detector_boundary,
                 self.config.bin_factor,
@@ -264,22 +265,22 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
                 include_itl_flag=True,
             )
         else:
-            self.log.info("Using provided rebinned flat image.")
-            rebinned = rebinned_image
+            self.log.info("Using provided binned flat image.")
+            binned = binned_image
 
-        rebinned_unaltered = rebinned.copy()
+        binned_unaltered = binned.copy()
 
         # Renormalize and filter out bad data.
         fp_radius = np.sqrt(
-            (rebinned["xf"] - self.config.fp_centroid_x)**2.
-            + (rebinned["yf"] - self.config.fp_centroid_y)**2.
+            (binned["xf"] - self.config.fp_centroid_x)**2.
+            + (binned["yf"] - self.config.fp_centroid_y)**2.
         )
         use = (fp_radius < self.config.normalize_center_radius)
-        central_value = np.median(rebinned["value"][use])
+        central_value = np.median(binned["value"][use])
 
         if self.config.do_normalize_center:
             normalization = central_value
-            rebinned["value"] /= normalization
+            binned["value"] /= normalization
             value_min = self.config.min_flat_value
             value_max = self.config.max_flat_value
         else:
@@ -288,23 +289,23 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
             value_max = self.config.max_flat_value * central_value
 
         good = (
-            np.isfinite(rebinned["value"])
-            & (rebinned["value"] >= value_min)
-            & (rebinned["value"] <= value_max)
+            np.isfinite(binned["value"])
+            & (binned["value"] >= value_min)
+            & (binned["value"] <= value_max)
             & (fp_radius <= self.config.radial_spline_nodes[-1])
         )
-        rebinned = rebinned[good]
+        binned = binned[good]
 
         # Do the fit.
-        self.log.info("Fitting gradient to rebinned flat data.")
+        self.log.info("Fitting gradient to binned flat data.")
         nodes = self.config.radial_spline_nodes
 
         fitter = FlatGradientFitter(
             nodes,
-            rebinned["xf"],
-            rebinned["yf"],
-            rebinned["value"],
-            np.where(rebinned["itl"])[0],
+            binned["xf"],
+            binned["yf"],
+            binned["value"],
+            np.where(binned["itl"])[0],
             constrain_zero=self.config.do_constrain_zero,
             fit_centroid=self.config.do_fit_centroid,
             fit_gradient=self.config.do_fit_gradient,
@@ -358,7 +359,7 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
         flat = input_flat_handle_dict[list(input_flat_handle_dict.keys())[0]].get()
 
         self.log.info("Making QA plots.")
-        plot_dict = self._make_qa_plots(rebinned, gradient, flat.getFilter())
+        plot_dict = self._make_qa_plots(binned, gradient, flat.getFilter())
 
         # Set the calib metadata.
         filter_label = flat.getFilter()
@@ -369,7 +370,7 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
         struct = pipeBase.Struct(
             model_residual_plot=plot_dict["model_residuals"],
             radial_model_plot=plot_dict["radial"],
-            binned_image=rebinned_unaltered,
+            binned_image=binned_unaltered,
         )
         if self.config.do_reference_gradient:
             struct.output_reference_gradient = gradient
@@ -378,13 +379,13 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
 
         return struct
 
-    def _make_qa_plots(self, rebinned, gradient, filter_label):
-        """Make QA plots for the rebinned data.
+    def _make_qa_plots(self, binned, gradient, filter_label):
+        """Make QA plots for the binned data.
 
         Parameters
         ----------
-        rebinned : `np.ndarray`
-            Array with rebinned flat data.
+        binned : `np.ndarray`
+            Array with binned flat data.
         gradient : `lsst.ip.isr.FlatGradient`
             Flat gradient parameters.
         filter_label : `lsst.afw.image.FilterLabel`
@@ -395,15 +396,15 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
         plot_dict : `dict` [`str`, `matplotlib.Figure`]
             Dictionary of plot figures, keyed by name.
         """
-        vmin, vmax = np.nanpercentile(rebinned["value"], [5, 95])
-        model = gradient.computeFullModel(rebinned["xf"], rebinned["yf"], rebinned["itl"])
+        vmin, vmax = np.nanpercentile(binned["value"], [5, 95])
+        model = gradient.computeFullModel(binned["xf"], binned["yf"], binned["itl"])
 
         # Fig1 is a 3 panel plot of data, model, and data/model.
         fig1 = make_figure(figsize=(16, 6))
 
         ax1 = fig1.add_subplot(131)
 
-        im1 = ax1.hexbin(rebinned["xf"], rebinned["yf"], C=rebinned["value"], vmin=vmin, vmax=vmax)
+        im1 = ax1.hexbin(binned["xf"], binned["yf"], C=binned["value"], vmin=vmin, vmax=vmax)
 
         ax1.set_xlabel("Focal Plane x (mm)")
         ax1.set_ylabel("Focal Plane y (mm)")
@@ -414,7 +415,7 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
 
         ax2 = fig1.add_subplot(132)
 
-        im2 = ax2.hexbin(rebinned["xf"], rebinned["yf"], C=model, vmin=vmin, vmax=vmax)
+        im2 = ax2.hexbin(binned["xf"], binned["yf"], C=model, vmin=vmin, vmax=vmax)
 
         ax2.set_xlabel("Focal Plane x (mm)")
         ax2.set_ylabel("Focal Plane y (mm)")
@@ -425,10 +426,10 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
 
         ax3 = fig1.add_subplot(133)
 
-        ratio = rebinned["value"] / model
+        ratio = binned["value"] / model
         vmin, vmax = np.nanpercentile(ratio, [1, 99])
 
-        im3 = ax3.hexbin(rebinned["xf"], rebinned["yf"], C=ratio, vmin=vmin, vmax=vmax)
+        im3 = ax3.hexbin(binned["xf"], binned["yf"], C=ratio, vmin=vmin, vmax=vmax)
 
         ax3.set_xlabel("Focal Plane x (mm)")
         ax3.set_ylabel("Focal Plane y (mm)")
@@ -446,11 +447,11 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
         centroid_x = gradient.centroidX + gradient.centroidDeltaX
         centroid_y = gradient.centroidY + gradient.centroidDeltaY
 
-        radius = np.sqrt((rebinned["xf"] - centroid_x)**2. + (rebinned["yf"] - centroid_y)**2.)
-        value_adjusted = rebinned["value"].copy()
+        radius = np.sqrt((binned["xf"] - centroid_x)**2. + (binned["yf"] - centroid_y)**2.)
+        value_adjusted = binned["value"].copy()
 
-        value_adjusted *= gradient.computeGradientModel(rebinned["xf"], rebinned["yf"])
-        value_adjusted[rebinned["itl"]] /= gradient.itlRatio
+        value_adjusted *= gradient.computeGradientModel(binned["xf"], binned["yf"])
+        value_adjusted[binned["itl"]] /= gradient.itlRatio
 
         ax.hexbin(radius, value_adjusted, bins="log")
         xvals = np.linspace(gradient.radialSplineNodes[0], gradient.radialSplineNodes[-1], 1000)
