@@ -282,6 +282,7 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
             np.isfinite(rebinned["value"])
             & (rebinned["value"] >= value_min)
             & (rebinned["value"] <= value_max)
+            & (fp_radius <= self.config.radial_spline_nodes[-1])
         )
         rebinned = rebinned[good]
 
