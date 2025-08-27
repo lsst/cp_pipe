@@ -220,7 +220,7 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
 
         butlerQC.put(struct, outputRefs)
 
-    def run(self, *, camera, input_flat_handle_dict, input_defect_handle_dict):
+    def run(self, *, camera, input_flat_handle_dict, input_defect_handle_dict, rebinned_image=None):
         """Run the CpFlatFitGradientsTask.
 
         This task will fit full focal-plane gradients. See
@@ -240,6 +240,9 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
         input_defect_handle_dict : `dict` [`int`,
                                            `lsst.daf.butler.DeferredDatasetHandle`]
             Dictionary of input defect handles, keyed by detector.
+        rebinned_image : `np.ndarray`, optional
+            Binned image from a previous run of the task. This will take
+            precedence over the input handles, for easy re-use.
 
         Returns
         -------
@@ -251,14 +254,18 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
                 ``radial_model_plot``: `matplotlib.Figure`
         """
         # Load in and rebin the data.
-        self.log.info("Loading and rebinning %d flats.", len(input_flat_handle_dict))
-        rebinned = bin_focal_plane(
-            input_flat_handle_dict,
-            self.config.detector_boundary,
-            self.config.bin_factor,
-            defect_handle_dict=input_defect_handle_dict,
-            include_itl_flag=True,
-        )
+        if rebinned_image is None:
+            self.log.info("Loading and rebinning %d flats.", len(input_flat_handle_dict))
+            rebinned = bin_focal_plane(
+                input_flat_handle_dict,
+                self.config.detector_boundary,
+                self.config.bin_factor,
+                defect_handle_dict=input_defect_handle_dict,
+                include_itl_flag=True,
+            )
+        else:
+            self.log.info("Using provided rebinned flat image.")
+            rebinned = rebinned_image
 
         rebinned_unaltered = rebinned.copy()
 
