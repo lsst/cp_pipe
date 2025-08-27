@@ -260,6 +260,8 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
             include_itl_flag=True,
         )
 
+        rebinned_unaltered = rebinned.copy()
+
         # Renormalize and filter out bad data.
         fp_radius = np.sqrt(
             (rebinned["xf"] - self.config.fp_centroid_x)**2.
@@ -360,6 +362,7 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
         struct = pipeBase.Struct(
             model_residual_plot=plot_dict["model_residuals"],
             radial_model_plot=plot_dict["radial"],
+            binned_image=rebinned_unaltered,
         )
         if self.config.do_reference_gradient:
             struct.output_reference_gradient = gradient
