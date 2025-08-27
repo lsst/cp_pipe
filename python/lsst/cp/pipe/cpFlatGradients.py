@@ -190,6 +190,11 @@ class CpFlatFitGradientsConfig(
         doc="Minimizer gtol parameter.",
         default=1e-10,
     )
+    do_use_non_science_detectors = pexConfig.Field(
+        dtype=bool,
+        doc="Use non-science detectors in addition to science detectors?",
+        default=False,
+    )
 
 
 class CpFlatFitGradientsTask(pipeBase.PipelineTask):
@@ -288,7 +293,14 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
             value_min = self.config.min_flat_value * central_value
             value_max = self.config.max_flat_value * central_value
 
-        good = (
+        good = np.ones(len(binned), dtype=np.bool_)
+        if not self.config.do_use_non_science_detectors:
+            # Remove science detectors.
+            for detector in camera:
+                if detector.getType() != lsst.afw.cameraGeom.DetectorType.SCIENCE:
+                    good[binned["detector"] == detector.getId()] = False
+
+        good &= (
             np.isfinite(binned["value"])
             & (binned["value"] >= value_min)
             & (binned["value"] <= value_max)

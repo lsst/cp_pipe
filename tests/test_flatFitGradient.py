@@ -41,6 +41,7 @@ class FlatFitGradientTestCase(lsst.utils.tests.TestCase):
         initial_camera = mock.getCamera()
         camera_builder = initial_camera.rebuild()
         for counter, detector in enumerate(camera_builder):
+            detector.setType(lsst.afw.cameraGeom.DetectorType.SCIENCE)
             if counter < 2:
                 detector.setPhysicalType("pseudoITL")
             else:
