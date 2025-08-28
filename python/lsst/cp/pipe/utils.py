@@ -1645,7 +1645,7 @@ class FlatGradientFitter:
         if self._constrain_zero:
             self._bounds[self.indices["spline"][-1]] = (0.0, 0.0)
 
-    def compute_p0(self):
+    def compute_p0(self, itl_ratio=None):
         """Compute initial guess for fit parameters.
 
         Returns
@@ -1654,6 +1654,10 @@ class FlatGradientFitter:
             Array of first guess fit parameters.
         """
         pars = np.zeros(self._npar)
+        value = self._value.copy()
+
+        if itl_ratio is not None and self._fit_itl_ratio:
+            value[self._itl_indices] /= itl_ratio
 
         # Initial spline values
         radius = np.sqrt((self._x - self._fp_centroid_x)**2. + (self._y - self._fp_centroid_y)**2.)
@@ -1670,25 +1674,28 @@ class FlatGradientFitter:
             if u.sum() == 0:
                 pars[index] = 0.0
             else:
-                pars[index] = np.median(self._value[u])
+                pars[index] = np.median(value[u])
 
         if self._constrain_zero:
             pars[self.indices["spline"][-1]] = 0.0
 
         spl = Akima1DInterpolator(self._nodes, pars[self.indices["spline"]], method="akima")
         model = spl(radius)
-        resid_ratio = self._value / model
+        resid_ratio = value / model
 
         if self._fit_itl_ratio:
-            e2v_indices = np.delete(np.arange(len(self._value)), self._itl_indices)
+            if itl_ratio is not None:
+                pars[self.indices["itl_ratio"]] = itl_ratio
+            else:
+                e2v_indices = np.delete(np.arange(len(self._value)), self._itl_indices)
 
-            itl_inner = radius[self._itl_indices] < 0.8*np.max(radius)
-            e2v_inner = radius[e2v_indices] < 0.8*np.max(radius)
+                itl_inner = radius[self._itl_indices] < 0.8*np.max(radius)
+                e2v_inner = radius[e2v_indices] < 0.8*np.max(radius)
 
-            itl_median = np.nanmedian(resid_ratio[self._itl_indices][itl_inner])
-            e2v_median = np.nanmedian(resid_ratio[e2v_indices][e2v_inner])
+                itl_median = np.nanmedian(resid_ratio[self._itl_indices][itl_inner])
+                e2v_median = np.nanmedian(resid_ratio[e2v_indices][e2v_inner])
 
-            pars[self.indices["itl_ratio"]] = itl_median / e2v_median
+                pars[self.indices["itl_ratio"]] = itl_median / e2v_median
 
         if self._fit_centroid:
             pars[self.indices["centroid_delta"]] = [0.0, 0.0]

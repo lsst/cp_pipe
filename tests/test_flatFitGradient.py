@@ -353,6 +353,7 @@ class FlatFitGradientTestCase(lsst.utils.tests.TestCase):
         config = CpFlatFitGradientsTask.ConfigClass()
         config.bin_factor = 4  # Small detectors for the test.
         config.normalize_center_radius = 1.0
+        config.initial_fit_radius = 4.0
         config.outer_gradient_radius = 4.5
         config.radial_spline_nodes = radial_nodes.tolist()
         config.detector_boundary = 5
@@ -457,6 +458,7 @@ class FlatFitGradientTestCase(lsst.utils.tests.TestCase):
         config = CpFlatFitGradientsTask.ConfigClass()
         config.bin_factor = 4  # Small detectors for the test.
         config.normalize_center_radius = 1.0
+        config.initial_fit_radius = 4.0
         config.outer_gradient_radius = 4.5
         config.radial_spline_nodes = radial_nodes_sky.tolist()
         config.detector_boundary = 5

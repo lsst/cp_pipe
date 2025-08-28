@@ -145,6 +145,12 @@ class CpFlatFitGradientsConfig(
         doc="Center normalization will be done using the average within this radius (mm).",
         default=25.0,
     )
+    initial_fit_radius = pexConfig.Field(
+        dtype=float,
+        doc=("Initial fit will be done within this radius (mm). This should be chosen to "
+             "make ITL/E2V ratio fitting more stable."),
+        default=317.0,
+    )
     fp_centroid_x = pexConfig.Field(
         dtype=float,
         doc="Focal plane centroid x (mm).",
@@ -313,11 +319,42 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
             & (fp_radius <= self.config.radial_spline_nodes[-1])
         )
         binned = binned[good]
+        fp_radius = fp_radius[good]
 
         # Do the fit.
         self.log.info("Fitting gradient to binned flat data.")
-        nodes = self.config.radial_spline_nodes
 
+        # First pass, within a smaller radius.
+        use_initial = (fp_radius < self.config.initial_fit_radius)
+        nodes_initial = np.asarray(self.config.radial_spline_nodes)
+        nodes_initial[nodes_initial <= self.config.initial_fit_radius]
+
+        fitter_initial = FlatGradientFitter(
+            nodes_initial,
+            binned["xf"][use_initial],
+            binned["yf"][use_initial],
+            binned["value"][use_initial],
+            np.where(binned["itl"][use_initial])[0],
+            constrain_zero=self.config.do_constrain_zero,
+            fit_centroid=self.config.do_fit_centroid,
+            fit_gradient=self.config.do_fit_gradient,
+            fit_outer_gradient=False,
+            fp_centroid_x=self.config.fp_centroid_x,
+            fp_centroid_y=self.config.fp_centroid_y,
+        )
+        p0_initial = fitter_initial.compute_p0()
+        pars_initial = fitter_initial.fit(
+            p0_initial,
+            fit_eps=self.config.fit_eps,
+            fit_gtol=self.config.fit_gtol,
+        )
+        if "itl_ratio" in fitter_initial.indices:
+            itl_ratio_initial = pars_initial[fitter_initial.indices["itl_ratio"]]
+        else:
+            itl_ratio_initial = 1.0
+
+        # Second pass, full range.
+        nodes = self.config.radial_spline_nodes
         fitter = FlatGradientFitter(
             nodes,
             binned["xf"],
@@ -332,7 +369,7 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
             fp_centroid_x=self.config.fp_centroid_x,
             fp_centroid_y=self.config.fp_centroid_y,
         )
-        p0 = fitter.compute_p0()
+        p0 = fitter.compute_p0(itl_ratio=itl_ratio_initial)
         pars = fitter.fit(p0, fit_eps=self.config.fit_eps, fit_gtol=self.config.fit_gtol)
 
         # Create the output FlatGradient calibration.
