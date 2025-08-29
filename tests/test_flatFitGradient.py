@@ -139,6 +139,7 @@ class FlatFitGradientTestCase(lsst.utils.tests.TestCase):
         config.outer_gradient_radius = 4.5
         config.radial_spline_nodes = radial_nodes.tolist()
         config.detector_boundary = 5
+        config.do_constrain_zero = True
         config.do_normalize_center = True
         config.do_fit_centroid = False
         config.do_fit_gradient = False
@@ -212,6 +213,7 @@ class FlatFitGradientTestCase(lsst.utils.tests.TestCase):
         config.outer_gradient_radius = 4.5
         config.radial_spline_nodes = radial_nodes.tolist()
         config.detector_boundary = 5
+        config.do_constrain_zero = True
         config.do_normalize_center = True
         config.do_fit_centroid = True
         config.do_fit_gradient = False
@@ -254,6 +256,7 @@ class FlatFitGradientTestCase(lsst.utils.tests.TestCase):
         config.outer_gradient_radius = 4.5
         config.radial_spline_nodes = radial_nodes.tolist()
         config.detector_boundary = 5
+        config.do_constrain_zero = True
         config.do_normalize_center = True
         config.do_fit_centroid = False
         config.do_fit_gradient = True
@@ -301,6 +304,7 @@ class FlatFitGradientTestCase(lsst.utils.tests.TestCase):
         config.outer_gradient_radius = 4.5
         config.radial_spline_nodes = radial_nodes.tolist()
         config.detector_boundary = 5
+        config.do_constrain_zero = True
         config.do_normalize_center = True
         config.do_fit_centroid = False
         config.do_fit_gradient = True
@@ -357,6 +361,7 @@ class FlatFitGradientTestCase(lsst.utils.tests.TestCase):
         config.outer_gradient_radius = 4.5
         config.radial_spline_nodes = radial_nodes.tolist()
         config.detector_boundary = 5
+        config.do_constrain_zero = True
         config.do_normalize_center = True
         config.do_fit_centroid = True
         config.do_fit_gradient = True
@@ -462,6 +467,7 @@ class FlatFitGradientTestCase(lsst.utils.tests.TestCase):
         config.outer_gradient_radius = 4.5
         config.radial_spline_nodes = radial_nodes_sky.tolist()
         config.detector_boundary = 5
+        config.do_constrain_zero = True
         config.do_normalize_center = True
         config.do_fit_centroid = True
         config.do_fit_gradient = True
