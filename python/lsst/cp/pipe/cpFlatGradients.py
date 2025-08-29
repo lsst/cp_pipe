@@ -118,7 +118,7 @@ class CpFlatFitGradientsConfig(
     do_constrain_zero = pexConfig.Field(
         dtype=bool,
         doc="Constrain the outermost radial spline value to zero?",
-        default=True,
+        default=False,
     )
     do_fit_centroid = pexConfig.Field(
         dtype=bool,
@@ -169,7 +169,7 @@ class CpFlatFitGradientsConfig(
     radial_spline_nodes = pexConfig.ListField(
         dtype=float,
         doc="Spline nodes to use for radial fit.",
-        default=[0., 200., 250., 300., 310., 320., 330., 340., 350., 360., 368.],
+        default=[0.0, 100.0, 200.0, 250.0, 275.0, 317.0, 325.0, 333.0, 350.0],
     )
     min_flat_value = pexConfig.Field(
         dtype=float,
