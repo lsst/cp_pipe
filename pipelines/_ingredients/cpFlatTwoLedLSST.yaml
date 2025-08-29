@@ -64,7 +64,6 @@ tasks:
       connections.radial_model_plot: gradient_radial_model_blue_plot
       do_reference_gradient: false
       do_fit_gradient: true
-      do_fit_outer_gradient: true
       do_fit_centroid: true
   cpFlatRedFitGradients:
     class: lsst.cp.pipe.CpFlatFitGradientsTask
@@ -75,7 +74,6 @@ tasks:
       connections.radial_model_plot: gradient_radial_model_red_plot
       do_reference_gradient: false
       do_fit_gradient: true
-      do_fit_outer_gradient: true
       do_fit_centroid: true
   cpFlatBlueApplyGradients:
     class: lsst.cp.pipe.CpFlatApplyGradientsTask

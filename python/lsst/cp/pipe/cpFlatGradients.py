@@ -134,6 +134,8 @@ class CpFlatFitGradientsConfig(
         dtype=bool,
         doc="Fit a separate gradient to the outer region of the focal plane?",
         default=False,
+        # TODO DM-52352: Remove this deprecated config.
+        deprecated="This option has been deprecated and will be removed after v31.",
     )
     do_normalize_center = pexConfig.Field(
         dtype=bool,
@@ -165,6 +167,8 @@ class CpFlatFitGradientsConfig(
         dtype=float,
         doc="Minimum radius (mm) for the outer gradient fit.",
         default=325.0,
+        # TODO DM-52352: Remove this deprecated config.
+        deprecated="This option has been deprecated and will be removed after v31.",
     )
     radial_spline_nodes = pexConfig.ListField(
         dtype=float,
