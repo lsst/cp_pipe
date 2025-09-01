@@ -2030,6 +2030,10 @@ def bin_focal_plane(
             for defect in defects:
                 flat.image[defect.getBBox()].array[:, :] = np.nan
 
+        # Mask NO_DATA pixels if we have them.
+        no_data = ((flat.mask.array[:, :] & flat.mask.getPlaneBitMask("NO_DATA")) > 0)
+        flat.image.array[no_data] = np.nan
+
         # Bin the image, avoiding the boundary and the masked pixels.
         # We also make sure we are using an integral number of
         # steps to avoid partially covered binned pixels.
