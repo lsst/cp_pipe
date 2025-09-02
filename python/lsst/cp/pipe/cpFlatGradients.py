@@ -130,13 +130,6 @@ class CpFlatFitGradientsConfig(
         doc="Fit a linear gradient over the focal plane?",
         default=False,
     )
-    do_fit_outer_gradient = pexConfig.Field(
-        dtype=bool,
-        doc="Fit a separate gradient to the outer region of the focal plane?",
-        default=False,
-        # TODO DM-52352: Remove this deprecated config.
-        deprecated="This option has been deprecated and will be removed after v31.",
-    )
     do_normalize_center = pexConfig.Field(
         dtype=bool,
         doc="Normalize center of focal plane to 1.0?",
@@ -162,13 +155,6 @@ class CpFlatFitGradientsConfig(
         dtype=float,
         doc="Focal plane centroid y (mm).",
         default=0.0,
-    )
-    outer_gradient_radius = pexConfig.Field(
-        dtype=float,
-        doc="Minimum radius (mm) for the outer gradient fit.",
-        default=325.0,
-        # TODO DM-52352: Remove this deprecated config.
-        deprecated="This option has been deprecated and will be removed after v31.",
     )
     radial_spline_nodes = pexConfig.ListField(
         dtype=float,
@@ -342,7 +328,6 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
             constrain_zero=self.config.do_constrain_zero,
             fit_centroid=self.config.do_fit_centroid,
             fit_gradient=self.config.do_fit_gradient,
-            fit_outer_gradient=False,
             fp_centroid_x=self.config.fp_centroid_x,
             fp_centroid_y=self.config.fp_centroid_y,
         )
@@ -368,8 +353,6 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
             constrain_zero=self.config.do_constrain_zero,
             fit_centroid=self.config.do_fit_centroid,
             fit_gradient=self.config.do_fit_gradient,
-            fit_outer_gradient=self.config.do_fit_outer_gradient,
-            outer_gradient_radius=self.config.outer_gradient_radius,
             fp_centroid_x=self.config.fp_centroid_x,
             fp_centroid_y=self.config.fp_centroid_y,
         )
@@ -394,11 +377,6 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
         else:
             gradient_x, gradient_y = 0.0, 0.0
 
-        if self.config.do_fit_outer_gradient:
-            outer_gradient_x, outer_gradient_y = pars[fitter.indices["outer_gradient"]]
-        else:
-            outer_gradient_x, outer_gradient_y = 0.0, 0.0
-
         gradient.setParameters(
             radialSplineNodes=nodes,
             radialSplineValues=pars[fitter.indices["spline"]],
@@ -409,9 +387,6 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
             centroidDeltaY=centroid_delta_y,
             gradientX=gradient_x,
             gradientY=gradient_y,
-            outerGradientX=outer_gradient_x,
-            outerGradientY=outer_gradient_y,
-            outerGradientRadius=self.config.outer_gradient_radius,
             normalizationFactor=normalization,
         )
 
