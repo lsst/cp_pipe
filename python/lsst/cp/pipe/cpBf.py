@@ -338,8 +338,13 @@ class ElectrostaticBrighterFatterSolveTask(pipeBase.PipelineTask):
             bf.aMatrixDataSum[ampName] = symmetrize(fit.get_a()).sum()
             bf.aMatrixModelSum[ampName] = symmetrize(fit.model()).sum()
 
-            # m,o = fit.normalize_model(fit.raw_model())
-            # print("normalization : multiplicative factor, offset", m, o)
+            if self.config.normalizeElectrostaticModel:
+                m, o = fit.normalize_model(fit.raw_model())
+                self.log.info("Normalization (multiplicative factor, offset) for amp %s: (%f,%f)", ampName, m, o)
+
+            # Compute boundary shifts for a single electron
+            pixelDistortions = fit.computePixelDistortions(conversion_weights=None) # Todo: add conversion depth probability distribution for each band/wavelength
+            bf.pixelDistortions[ampName] = pixelDistortions
 
             # Check for validity
             if self.config.doCheckValidity:
