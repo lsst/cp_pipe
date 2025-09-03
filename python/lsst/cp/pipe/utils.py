@@ -38,6 +38,7 @@ from lsst.ip.isr import isrMock
 import lsst.afw.cameraGeom
 import lsst.afw.image
 import lsst.afw.math
+from deprecated.sphinx import deprecated
 
 
 def sigmaClipCorrection(nSigClip):
@@ -317,8 +318,7 @@ def fitLeastSq(initialParams, dataX, dataY, function, weightsY=None):
     Parameters
     ----------
     initialParams : `list` [`float`]
-        initial values for fit parameters. For ptcFitType=POLYNOMIAL,
-        its length determines the degree of the polynomial.
+        initial values for fit parameters.
     dataX : `numpy.array`, (N,)
         Data in the abscissa axis.
     dataY : `numpy.array`, (N,)
@@ -377,8 +377,7 @@ def fitBootstrap(initialParams, dataX, dataY, function, weightsY=None, confidenc
     Parameters
     ----------
     initialParams : `list` [`float`]
-        initial values for fit parameters. For ptcFitType=POLYNOMIAL,
-        its length determines the degree of the polynomial.
+        initial values for fit parameters.
     dataX : `numpy.array`, (N,)
         Data in the abscissa axis.
     dataY : `numpy.array`, (N,)
@@ -433,7 +432,8 @@ def fitBootstrap(initialParams, dataX, dataY, function, weightsY=None, confidenc
                                                 len(initialParams))
     return pFitBootstrap, pErrBootstrap, reducedChiSq
 
-
+@deprecated(reason="This method is no longer used for PTC fitting. Will be removed after v30.",
+            version="v30.0", category=FutureWarning)
 def funcPolynomial(pars, x):
     """Polynomial function definition
     Parameters

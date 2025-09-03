@@ -25,7 +25,7 @@ import warnings
 
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
-from lsst.cp.pipe.utils import (fitLeastSq, fitBootstrap, funcPolynomial,
+from lsst.cp.pipe.utils import (fitLeastSq, fitBootstrap,
                                 funcAstier, funcAstierWithSaturation,
                                 symmetrize, Pol2D, ampOffsetGainRatioFixup)
 
@@ -79,10 +79,9 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
 
     ptcFitType = pexConfig.ChoiceField(
         dtype=str,
-        doc="Fit PTC to Eq. 16, Eq. 20 in Astier+19, or to a polynomial.",
-        default="POLYNOMIAL",
+        doc="Fit PTC to Eq. 16 or Eq. 20 in Astier+19.",
+        default="EXPAPPROXIMATION",
         allowed={
-            "POLYNOMIAL": "n-degree polynomial (use 'polynomialFitDegree' to set 'n').",
             "EXPAPPROXIMATION": "Approximation in Astier+19 (Eq. 16).",
             "FULLCOVARIANCE_NO_B": "Full covariances model in Astier+19 (Eq. 15)",
             "FULLCOVARIANCE": "Full covariances model in Astier+19 (Eq. 20)",
@@ -152,6 +151,7 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
         dtype=int,
         doc="Degree of polynomial to fit the PTC, when 'ptcFitType'=POLYNOMIAL.",
         default=3,
+        deprecated="This field is no longer used. Will be removed after v30."
     )
     modelSaturation = pexConfig.Field(
         dtype=bool,
@@ -295,9 +295,9 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
     by ``PhotonTransferCurveMeasureTask`` into one single final PTC
     dataset, discarding the dummy datset as appropiate.
     The task fits the measured (co)variances to one of three models:
-    a polynomial model of a given order,  or the models described
-    in equations 16 and 20 of Astier+19. These options are referred
-    to as ``POLYNOMIAL``, ``EXPAPPROXIMATION``, and ``FULLCOVARIANCE``
+    any of the models described in equations 16 and 20 of Astier+19 and
+    equation 20 with specifically fixed to 0. These options are referred
+    to as ``EXPAPPROXIMATION``, ``FULLCOVARIANCE``, and ``FULLCOVARIANCE_NO_B``
     in the configuration options of the task, respectively).
     Parameters of interest such as the gain and noise are derived
     from the fits. The ``FULLCOVARIANCE`` model is fitted to the
@@ -452,16 +452,15 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 datasetPtc.expIdMask[ampName] = tempDatasetPtc.expIdMask[ampName]
             datasetPtc.fitType = self.config.ptcFitType
             datasetPtc = self.fitMeasurementsToModel(datasetPtc)
-        # The other options are: self.config.ptcFitType in
-        # ("EXPAPPROXIMATION", "POLYNOMIAL")
+        # The only other option is ``EXPAPPROXIMATION``
         else:
-            # Fit the PTC to a polynomial or to Astier+19 exponential
+            # Fit the PTC to Astier+19 exponential
             # approximation (Eq. 16).  Fill up
             # PhotonTransferCurveDataset object.
             tempDatasetPtc = copy.copy(datasetPtc)
             datasetPtc = self.fitMeasurementsToModel(tempDatasetPtc)
 
-            if self.config.modelSaturation and self.config.ptcFitType=="EXPAPPROXIMATION":
+            if self.config.modelSaturation:
                 preTurnoff = tempDatasetPtc.ptcTurnoff[ampName]
                 newMask = (tempDatasetPtc.rawMeans[ampName] >= preTurnoff) * \
                           (tempDatasetPtc.rawMeans[ampName] <= preTurnoff * (1 + self.config.extensionAboveSaturationThreshold))
@@ -523,9 +522,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         )
 
     def fitMeasurementsToModel(self, dataset, modelSaturation=False):
-        """Fit the measured covariances vs mean signal to a
-        polynomial or one of the models in Astier+19
-        (Eq. 16 or Eq.20).
+        """Fit the measured covariances vs mean signal one of the
+        models in Astier+19 (Eq. 16 or Eq.20).
 
         If `modelSaturation` is True, a roll-off model will be added
         to the initial fit of the PTC to try and capture saturation
@@ -555,13 +553,13 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             # The PTC is technically defined as variance vs signal,
             # with variance = Cov_00
             dataset = self.fitDataFullCovariance(dataset)
-        elif fitType in ["POLYNOMIAL", "EXPAPPROXIMATION"]:
+        elif fitType in ["EXPAPPROXIMATION"]:
             # The PTC is technically defined as variance vs signal
             dataset = self.fitPtc(dataset, modelSaturation=modelSaturation)
         else:
             raise RuntimeError(
                 f"Fitting option {fitType} not one of "
-                "'POLYNOMIAL', 'EXPAPPROXIMATION', or 'FULLCOVARIANCE'"
+                "'EXPAPPROXIMATION', 'FULLCOVARIANCE', or 'FULLCOVARIANCE_NO_B'"
             )
 
         return dataset
@@ -1021,8 +1019,10 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
 
         return covAtAmpMasked, covSqrtWeightsAtAmpMasked
 
-    # EXPAPPROXIMATION and POLYNOMIAL fit methods
+    # EXPAPPROXIMATION fit method
     @staticmethod
+    @deprecated(reason="POLYNOMIAL PTC fit is no longer supported. Will be removed after v30.",
+                version="v30.0", category=FutureWarning)
     def _initialParsForPolynomial(order):
         assert order >= 2
         pars = np.zeros(order, dtype=float)
@@ -1032,6 +1032,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         return pars
 
     @staticmethod
+    @deprecated(reason="POLYNOMIAL PTC fit is no longer supported. Will be removed after v30.",
+                version="v30.0", category=FutureWarning)
     def _boundsForPolynomial(initialPars, lowers=[], uppers=[]):
         if not len(lowers):
             lowers = [-np.inf for p in initialPars]
@@ -1129,13 +1131,11 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         return array
 
     def fitPtc(self, dataset, modelSaturation):
-        """Fit the photon transfer curve to a polynomial or to the
+        """Fit the photon transfer curve to the
         Astier+19 approximation (Eq. 16).
 
-        Fit the photon transfer curve with either a polynomial of
-        the order specified in the task config (POLNOMIAL),
-        or using the exponential approximation in Astier+19
-        (Eq. 16, FULLCOVARIANCE).
+        Fit the photon transfer curve using the exponential
+        approximation in Astier+19.
 
         Sigma clipping is performed iteratively for the fit, as
         well as an initial clipping of data points that are more
@@ -1229,7 +1229,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                        f"Setting {ampName} to BAD.")
                 self.log.warning(msg)
                 # Fill entries with NaNs
-                self.fillBadAmp(dataset, ptcFitType, ampName)
+                self.fillBadAmp(dataset, ampName)
                 continue
 
             mask = goodPoints.copy()
@@ -1260,10 +1260,6 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                         estimateTau = -(muMax - estimateMu0) / np.log(modelMinusData)
                     self.log.info("Setting estimates of roll off model parameters to (mu_0, tau) = (%f, %f) for amp %s" % (estimateMu0, estimateTau, ampName))
                     parsIniPtc.extend([estimateMu0, estimateTau]) # Estimate of mu_0 and tau
-            if ptcFitType == 'POLYNOMIAL':
-                ptcFunc = funcPolynomial
-                parsIniPtc = self._initialParsForPolynomial(self.config.polynomialFitDegree + 1)
-                bounds = self._boundsForPolynomial(parsIniPtc)
 
             # We perform an initial (unweighted) fit of variance vs signal
             # (after initial KS test or post-drop selection) to look for
@@ -1331,7 +1327,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                                f"Setting {ampName} to BAD.")
                         self.log.warning(msg)
                         # Fill entries with NaNs
-                        self.fillBadAmp(dataset, ptcFitType, ampName)
+                        self.fillBadAmp(dataset, ampName)
                         break
 
                     self.log.debug(
@@ -1427,7 +1423,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                        f"parameters of the PTC model({len(parsIniPtc)}). Setting {ampName} to BAD.")
                 self.log.warning(msg)
                 # Fill entries with NaNs
-                self.fillBadAmp(dataset, ptcFitType, ampName)
+                self.fillBadAmp(dataset, ampName)
                 continue
             # Fit the PTC.
             # The variance of the variance is Var(v)=2*v^2/Npix. This is
@@ -1459,11 +1455,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 ptcGainErr = parsFitErr[1]
                 ptcNoise = np.sqrt(np.fabs(parsFit[2]))
                 ptcNoiseErr = 0.5*(parsFitErr[2]/np.fabs(parsFit[2]))*np.sqrt(np.fabs(parsFit[2]))
-            if ptcFitType == 'POLYNOMIAL':
-                ptcGain = 1./parsFit[1]
-                ptcGainErr = np.fabs(1./parsFit[1])*(parsFitErr[1]/parsFit[1])
-                ptcNoise = np.sqrt(np.fabs(parsFit[0]))*ptcGain
-                ptcNoiseErr = (0.5*(parsFitErr[0]/np.fabs(parsFit[0]))*(np.sqrt(np.fabs(parsFit[0]))))*ptcGain
+
+            # Save results
             dataset.gain[ampName] = ptcGain
             dataset.gainUnadjusted[ampName] = ptcGain
             dataset.gainErr[ampName] = ptcGainErr
@@ -1477,7 +1470,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
 
         return dataset
 
-    def fillBadAmp(self, dataset, ptcFitType, ampName):
+    def fillBadAmp(self, dataset, ampName):
         """Fill the dataset with NaNs if there are not enough
         good points.
 
@@ -1486,9 +1479,6 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
             The dataset containing the means, variances and
             exposure times.
-        ptcFitType : {'POLYNOMIAL', 'EXPAPPROXIMATION'}
-            Fit a 'POLYNOMIAL' (degree: 'polynomialFitDegree') or
-            'EXPAPPROXIMATION' (Eq. 16 of Astier+19) to the PTC.
         ampName : `str`
             Amplifier name.
         """
@@ -1499,10 +1489,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         dataset.gainErr[ampName] = np.nan
         dataset.noise[ampName] = np.nan
         dataset.noiseErr[ampName] = np.nan
-        dataset.ptcFitPars[ampName] = (np.repeat(np.nan, self.config.polynomialFitDegree + 1) if
-                                       ptcFitType in ["POLYNOMIAL", ] else np.repeat(np.nan, 3))
-        dataset.ptcFitParsError[ampName] = (np.repeat(np.nan, self.config.polynomialFitDegree + 1) if
-                                            ptcFitType in ["POLYNOMIAL", ] else np.repeat(np.nan, 3))
+        dataset.ptcFitPars[ampName] = (np.repeat(np.nan, 3))
+        dataset.ptcFitParsError[ampName] = (np.repeat(np.nan, 3))
         dataset.ptcFitChiSq[ampName] = np.nan
         dataset.ptcTurnoff[ampName] = np.nan
         dataset.finalVars[ampName] = np.repeat(np.nan, len(dataset.rawExpTimes[ampName]))
