@@ -1551,10 +1551,7 @@ class FlatGradientFitter:
     is the center of the radial gradient, though it may be modified if
     fit_centroid is True. In addition, the fitter may fit a linear gradient
     in x/y if fit_gradient is True. The "pivot" of the gradient is at
-    fp_centroid_x/fp_centroid_y. Finally, the fitter may fit an additional
-    gradient in the outer region where the focal plane radius is greater
-    than outer_gradient_cut. This is controlled by fit_outer_gradient.
-    This outer gradient is applied "on top of" the primary gradient.
+    fp_centroid_x/fp_centroid_y.
 
     Parameters
     ----------
@@ -1574,10 +1571,6 @@ class FlatGradientFitter:
         Fit an additional centroid offset?
     fit_gradient : `bool`, optional
         Fit an additional plane gradient?
-    fit_outer_gradient : `bool`, optional
-        Fit an additional plane gradient at large focal plane radii?
-    outer_gradient_radius : `float`, optional
-        Radius (mm) at which the outer gradient is valid.
     fp_centroid_x : `float`, optional
         Focal plane centroid x (mm).
     fp_centroid_y : `float`, optional
@@ -1593,8 +1586,6 @@ class FlatGradientFitter:
         constrain_zero=True,
         fit_centroid=False,
         fit_gradient=False,
-        fit_outer_gradient=False,
-        outer_gradient_radius=325.0,
         fp_centroid_x=0.0,
         fp_centroid_y=0.0
     ):
@@ -1605,13 +1596,11 @@ class FlatGradientFitter:
         self._itl_indices = itl_indices
         self._fp_centroid_x = fp_centroid_x
         self._fp_centroid_y = fp_centroid_y
-        self._outer_gradient_radius = outer_gradient_radius
 
         self._constrain_zero = constrain_zero
 
         self._fit_centroid = fit_centroid
         self._fit_gradient = fit_gradient
-        self._fit_outer_gradient = fit_outer_gradient
 
         self.indices = {"spline": np.arange(len(nodes))}
         npar = len(nodes)
@@ -1632,10 +1621,6 @@ class FlatGradientFitter:
 
         if fit_gradient:
             self.indices["gradient"] = np.arange(2) + npar
-            npar += 2
-
-        if fit_outer_gradient:
-            self.indices["outer_gradient"] = np.arange(2) + npar
             npar += 2
 
         self._npar = npar
@@ -1711,9 +1696,6 @@ class FlatGradientFitter:
             fit = np.polyfit(self._y[ok], resid_ratio[ok], 1)
             pars[self.indices["gradient"][1]] = fit[0]
 
-        if self._fit_outer_gradient:
-            pars[self.indices["outer_gradient"]] = [0.0, 0.0]
-
         return pars
 
     def fit(self, p0, fit_eps=1e-8, fit_gtol=1e-10):
@@ -1783,14 +1765,6 @@ class FlatGradientFitter:
             a, b = pars[self.indices["gradient"]]
             gradient = 1 + a*(self._x - self._fp_centroid_x) + b*(self._y - self._fp_centroid_y)
             model /= gradient
-
-        if self._fit_outer_gradient:
-            # The outer gradient is applied to the outer regions
-            # in addition to the primary gradient.
-            ao, bo = pars[self.indices["outer_gradient"]]
-            gradiento = 1 + ao*(self._x - self._fp_centroid_x) + bo*(self._y - self._fp_centroid_y)
-            outer = radius > self._outer_gradient_radius
-            model[outer] /= gradiento[outer]
 
         return model
 
