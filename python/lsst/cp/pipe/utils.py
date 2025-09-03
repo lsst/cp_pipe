@@ -20,16 +20,18 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 
-__all__ = ['ddict2dict', 'CovFastFourierTransform', 'getReadNoise', 'ampOffsetGainRatioFixup']
+__all__ = ['ddict2dict', 'CovFastFourierTransform', 'getReadNoise', 'ampOffsetGainRatioFixup', 'ElectrostaticFit', 'BoundaryShifts', 'ElectrostaticCcdGeom']
 
 from astropy.table import Table
 import galsim
 import logging
 import numpy as np
 import itertools
+import pyfftw
 import numpy.polynomial.polynomial as poly
 import warnings
 
+from numpy.polynomial.legendre import  leggauss
 from scipy.interpolate import Akima1DInterpolator
 from scipy.optimize import leastsq, minimize
 from scipy.stats import median_abs_deviation, norm
