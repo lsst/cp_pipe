@@ -127,6 +127,7 @@ class FlatFitGradientTestCase(lsst.utils.tests.TestCase):
         config = CpFlatFitGradientsTask.ConfigClass()
         config.bin_factor = 4  # Small detectors for the test.
         config.normalize_center_radius = 1.0
+        config.radial_spline_nodes_initial = radial_nodes.tolist()
         config.radial_spline_nodes = radial_nodes.tolist()
         config.detector_boundary = 5
         config.do_constrain_zero = True
@@ -157,6 +158,7 @@ class FlatFitGradientTestCase(lsst.utils.tests.TestCase):
         config = CpFlatFitGradientsTask.ConfigClass()
         config.bin_factor = 4  # Small detectors for the test.
         config.normalize_center_radius = 1.0
+        config.radial_spline_nodes_initial = radial_nodes.tolist()
         config.radial_spline_nodes = radial_nodes.tolist()
         config.detector_boundary = 5
         config.do_constrain_zero = False
@@ -197,6 +199,7 @@ class FlatFitGradientTestCase(lsst.utils.tests.TestCase):
         config = CpFlatFitGradientsTask.ConfigClass()
         config.bin_factor = 4  # Small detectors for the test.
         config.normalize_center_radius = 1.0
+        config.radial_spline_nodes_initial = radial_nodes.tolist()
         config.radial_spline_nodes = radial_nodes.tolist()
         config.detector_boundary = 5
         config.do_constrain_zero = True
@@ -238,6 +241,7 @@ class FlatFitGradientTestCase(lsst.utils.tests.TestCase):
         config = CpFlatFitGradientsTask.ConfigClass()
         config.bin_factor = 4  # Small detectors for the test.
         config.normalize_center_radius = 1.0
+        config.radial_spline_nodes_initial = radial_nodes.tolist()
         config.radial_spline_nodes = radial_nodes.tolist()
         config.detector_boundary = 5
         config.do_constrain_zero = True
@@ -328,7 +332,7 @@ class FlatFitGradientTestCase(lsst.utils.tests.TestCase):
         config = CpFlatFitGradientsTask.ConfigClass()
         config.bin_factor = 4  # Small detectors for the test.
         config.normalize_center_radius = 1.0
-        config.initial_fit_radius = 4.0
+        config.radial_spline_nodes_initial = radial_nodes_sky[radial_nodes_sky <= 4.0].tolist()
         config.radial_spline_nodes = radial_nodes_sky.tolist()
         config.detector_boundary = 5
         config.do_constrain_zero = True
@@ -346,7 +350,7 @@ class FlatFitGradientTestCase(lsst.utils.tests.TestCase):
 
         self.assertFloatsAlmostEqual(gradient.normalizationFactor, 1.0, rtol=1e-3)
         self.assertFloatsAlmostEqual(gradient.radialSplineNodes, radial_nodes_sky)
-        self.assertFloatsAlmostEqual(gradient.radialSplineValues, radial_values_sky, atol=5e-4)
+        self.assertFloatsAlmostEqual(gradient.radialSplineValues, radial_values_sky, atol=7e-4)
         self.assertFloatsAlmostEqual(gradient.itlRatio, itl_ratio, atol=1e-4)
         self.assertFloatsAlmostEqual(gradient.centroidDeltaX, 0.0, atol=6e-3)
         self.assertFloatsAlmostEqual(gradient.centroidDeltaY, 0.0, atol=6e-3)

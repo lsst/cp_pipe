@@ -140,12 +140,6 @@ class CpFlatFitGradientsConfig(
         doc="Center normalization will be done using the average within this radius (mm).",
         default=25.0,
     )
-    initial_fit_radius = pexConfig.Field(
-        dtype=float,
-        doc=("Initial fit will be done within this radius (mm). This should be chosen to "
-             "make ITL/E2V ratio fitting more stable."),
-        default=317.0,
-    )
     fp_centroid_x = pexConfig.Field(
         dtype=float,
         doc="Focal plane centroid x (mm).",
@@ -156,10 +150,33 @@ class CpFlatFitGradientsConfig(
         doc="Focal plane centroid y (mm).",
         default=0.0,
     )
+    radial_spline_nodes_initial = pexConfig.ListField(
+        dtype=float,
+        doc="Spline nodes for use in initial fit (mm). Initial fit will only be performed "
+            "within the maximum radius for this list. The maximum radius should be chosen "
+            "to make ITL/E2V ratio fitting more stable.",
+        default=[0.0, 100.0, 200.0, 250.0, 275.0, 317.0],
+    )
     radial_spline_nodes = pexConfig.ListField(
         dtype=float,
-        doc="Spline nodes to use for radial fit.",
-        default=[0.0, 100.0, 200.0, 250.0, 275.0, 317.0, 325.0, 333.0, 350.0],
+        doc="Spline nodes to use for full radial fit (mm).",
+        default=[
+            0.0,
+            100.0,
+            200.0,
+            250.0,
+            275.0,
+            290.0,
+            300.0,
+            310.0,
+            315.0,
+            317.0,
+            320.0,
+            325.0,
+            333.0,
+            340.0,
+            350.0,
+        ],
     )
     min_flat_value = pexConfig.Field(
         dtype=float,
@@ -315,9 +332,13 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
         self.log.info("Fitting gradient to binned flat data.")
 
         # First pass, within a smaller radius.
-        use_initial = (fp_radius < self.config.initial_fit_radius)
-        nodes_initial = np.asarray(self.config.radial_spline_nodes)
-        nodes_initial[nodes_initial <= self.config.initial_fit_radius]
+        nodes_initial = np.asarray(self.config.radial_spline_nodes_initial)
+        initial_fit_radius = np.max(nodes_initial)
+        use_initial = (fp_radius < initial_fit_radius)
+        self.log.info(
+            "Initial fit will be performed with an outer radius cut of %.2f mm.",
+            initial_fit_radius,
+        )
 
         fitter_initial = FlatGradientFitter(
             nodes_initial,
@@ -343,7 +364,9 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
             itl_ratio_initial = 1.0
 
         # Second pass, full range.
-        nodes = self.config.radial_spline_nodes
+        nodes = np.asarray(self.config.radial_spline_nodes)
+        self.log.info("Final fit will be performed with an outer radius cut of %.2f mm.", np.max(nodes))
+
         fitter = FlatGradientFitter(
             nodes,
             binned["xf"],
@@ -357,7 +380,12 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
             fp_centroid_y=self.config.fp_centroid_y,
         )
         p0 = fitter.compute_p0(itl_ratio=itl_ratio_initial)
-        pars = fitter.fit(p0, fit_eps=self.config.fit_eps, fit_gtol=self.config.fit_gtol)
+        pars = fitter.fit(
+            p0,
+            freeze_itl_ratio=True,
+            fit_eps=self.config.fit_eps,
+            fit_gtol=self.config.fit_gtol,
+        )
 
         # Create the output FlatGradient calibration.
         gradient = FlatGradient()

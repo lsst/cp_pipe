@@ -1698,13 +1698,15 @@ class FlatGradientFitter:
 
         return pars
 
-    def fit(self, p0, fit_eps=1e-8, fit_gtol=1e-10):
+    def fit(self, p0, freeze_itl_ratio=False, fit_eps=1e-8, fit_gtol=1e-10):
         """Do a non-linear minimization to fit the parameters.
 
         Parameters
         ----------
         p0 : `np.ndarray`
             Array of initial parameter estimates.
+        freeze_itl_ratio : `bool`, optional
+            Freeze the ITL ratio in the fit?
         fit_eps : `float`, optional
             Value of ``eps`` to send to the scipy minimizer.
         fit_gtol : `float`, optional
@@ -1716,12 +1718,18 @@ class FlatGradientFitter:
             Array of parameters. Use ``fitter.indices`` for the
             dictionary to map parameters to subsets.
         """
+        bounds = self._bounds
+        if freeze_itl_ratio and self._fit_itl_ratio:
+            ind = self.indices["itl_ratio"]
+            par = p0[ind]
+            bounds[ind] = (par, par)
+
         res = minimize(
             self,
             p0,
             method="L-BFGS-B",
             jac=False,
-            bounds=self._bounds,
+            bounds=bounds,
             options={
                 "maxfun": 10000,
                 "maxiter": 10000,
