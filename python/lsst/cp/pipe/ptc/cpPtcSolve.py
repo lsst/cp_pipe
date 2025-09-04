@@ -418,63 +418,29 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         index = np.argsort(detectorMeans)
         datasetPtc.sort(index)
 
-        if self.config.ptcFitType in ["FULLCOVARIANCE", "FULLCOVARIANCE_NO_B"]:
-            # Fit the measured covariances vs mean signal to
-            # the Astier+19 full model (Eq. 20). Before that
-            # do a preliminary fit to the variance (C_00) vs mean
-            # signal (mu) curve using the EXPAPPROXIMATION model
-            # (Eq. 16 in Astier+19) in order to
-            # get the flat pairs that are masked. The
-            # points at these fluxes will also be masked when
-            # calculating the other elements of the covariance
-            # matrix, C_ij, i!=j).
+        # Always start with an initial EXPAPPROXIMATION fit
+        # Fit the measured covariances vs mean signal to
+        # the Astier+19 full model (Eq. 20). Before that
+        # do a preliminary fit to the variance (C_00) vs mean
+        # signal (mu) curve using the EXPAPPROXIMATION model
+        # (Eq. 16 in Astier+19) in order to
+        # get the flat pairs that are masked. The
+        # points at these fluxes will also be masked when
+        # calculating the other elements of the covariance
+        # matrix, C_ij, i!=j).
+        tempDatasetPtc = copy.copy(datasetPtc)
+        tempDatasetPtc.ptcFitType = "EXPAPPROXIMATION"
+        tempDatasetPtc = self.fitMeasurementsToModel(tempDatasetPtc)
 
-            # Preliminary fit, usign a temp dataset to get the mask
-            tempDatasetPtc = copy.copy(datasetPtc)
-            tempDatasetPtc.ptcFitType = "EXPAPPROXIMATION"
-            tempDatasetPtc = self.fitMeasurementsToModel(tempDatasetPtc)
+        if self.config.modelSaturation:
+            tempDatasetPtc = self.fitPtcRolloff(tempDatasetPtc)
 
-            if self.config.modelSaturation:
-                preTurnoff = tempDatasetPtc.ptcTurnoff[ampName]
-                newMask = (tempDatasetPtc.rawMeans[ampName] >= preTurnoff) * \
-                          (tempDatasetPtc.rawMeans[ampName] <= preTurnoff * (1 + self.config.extensionAboveSaturationThreshold))
-                newMask = np.logical_or(tempDatasetPtc.expIdMask[ampName], newMask)
-                if np.count_nonzero(newMax) == tempDatasetPtc.expIdMask[ampName]:
-                    self.log.warning("Expanding fit to include saturation, but no points detected above "
-                                     "initial computed PTC turnoff for amp %s" % (ampName))
-                tempDatasetPtc.expIdMask[ampName] = newMask
-
-                tempDatasetPtc = self.fitMeasurementsToModel(tempDatasetPtc, modelSaturation=True)
-
-            # "FULLCOVARIANCE", using the mask obtained from the
-            # previous fit.
-            for ampName in datasetPtc.ampNames:
-                datasetPtc.expIdMask[ampName] = tempDatasetPtc.expIdMask[ampName]
-            datasetPtc.fitType = self.config.ptcFitType
-            datasetPtc = self.fitMeasurementsToModel(datasetPtc)
-        # The only other option is ``EXPAPPROXIMATION``
-        else:
-            # Fit the PTC to Astier+19 exponential
-            # approximation (Eq. 16).  Fill up
-            # PhotonTransferCurveDataset object.
-            tempDatasetPtc = copy.copy(datasetPtc)
-            datasetPtc = self.fitMeasurementsToModel(tempDatasetPtc)
-
-            if self.config.modelSaturation:
-                preTurnoff = tempDatasetPtc.ptcTurnoff[ampName]
-                newMask = (tempDatasetPtc.rawMeans[ampName] >= preTurnoff) * \
-                          (tempDatasetPtc.rawMeans[ampName] <= preTurnoff * (1 + self.config.extensionAboveSaturationThreshold))
-                newMask = np.logical_or(tempDatasetPtc.expIdMask[ampName], newMask)
-                if np.count_nonzero(newMax) == tempDatasetPtc.expIdMask[ampName]:
-                    self.log.warning("Expanding fit to include saturation, but no points detected above "
-                                     "initial computed PTC turnoff for amp %s" % (ampName))
-                tempDatasetPtc.expIdMask[ampName] = newMask
-
-                datasetPtc = self.fitMeasurementsToModel(tempDatasetPtc, modelSaturation=True)
-
-            return datasetPtc
-
-
+        # Fit the data to the final model using the masks obtained from the
+        # previous fits.
+        for ampName in datasetPtc.ampNames:
+            datasetPtc.expIdMask[ampName] = tempDatasetPtc.expIdMask[ampName]
+        datasetPtc.fitType = self.config.ptcFitType
+        datasetPtc = self.fitMeasurementsToModel(datasetPtc)
 
         # Initial validation of PTC fit.
         for ampName in ampNames:
@@ -521,7 +487,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             outputPtcDataset=datasetPtc,
         )
 
-    def fitMeasurementsToModel(self, dataset, modelSaturation=False):
+    def fitMeasurementsToModel(self, dataset):
         """Fit the measured covariances vs mean signal one of the
         models in Astier+19 (Eq. 16 or Eq.20).
 
@@ -535,9 +501,6 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
             The dataset containing information such as the means,
             (co)variances, and exposure times.
-        modelSaturation : `bool`, default: False
-            Add a roll-off model to the initial fit of the PTC
-            to try and capture saturation (default: False).
 
         Returns
         -------
@@ -553,9 +516,9 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             # The PTC is technically defined as variance vs signal,
             # with variance = Cov_00
             dataset = self.fitDataFullCovariance(dataset)
-        elif fitType in ["EXPAPPROXIMATION"]:
+        elif fitType=="EXPAPPROXIMATION":
             # The PTC is technically defined as variance vs signal
-            dataset = self.fitPtc(dataset, modelSaturation=modelSaturation)
+            dataset = self.fitPtc(dataset)
         else:
             raise RuntimeError(
                 f"Fitting option {fitType} not one of "
@@ -1130,7 +1093,220 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
 
         return array
 
-    def fitPtc(self, dataset, modelSaturation):
+    def fitPtcRolloff(self, dataset):
+        """Fit the photon transfer curve to the
+        Astier+19 approximation (Eq. 16) with a roll-off model to try
+        and capture saturation effects.
+
+        Parameters
+        ----------
+        dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
+            The dataset containing the means, variances and
+            exposure times.
+
+        Returns
+        -------
+        dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
+            This is the same dataset as the input parameter, however,
+            it has been modified to include information such as the
+            fit vectors and the fit parameters. See the class
+            `PhotonTransferCurveDatase`.
+        """
+        # For FULLCOVARIANCE model fit
+        matrixSideFit = dataset.covMatrixSideFullCovFit
+        nanMatrixFit = np.empty((matrixSideFit, matrixSideFit))
+        nanMatrixFit[:] = np.nan
+
+        for amp in dataset.ampNames:
+            lenInputTimes = len(dataset.rawExpTimes[amp])
+            listNanMatrixFit = np.empty((lenInputTimes, matrixSideFit, matrixSideFit))
+            listNanMatrixFit[:] = np.nan
+
+            dataset.covariancesModel[amp] = listNanMatrixFit
+            dataset.aMatrix[amp] = nanMatrixFit
+            dataset.bMatrix[amp] = nanMatrixFit
+            dataset.noiseMatrix[amp] = nanMatrixFit
+
+        def errFunc(p, x, y):
+            return ptcFunc(p, x) - y
+
+        for i, ampName in enumerate(dataset.ampNames):
+            meanVecOriginal = dataset.rawMeans[ampName].copy()
+            varVecOriginal = dataset.rawVars[ampName].copy()
+            varVecOriginal = self._makeZeroSafe(varVecOriginal)
+
+            # These must be sorted for the given amplifier.
+            meanVecSort = np.argsort(meanVecOriginal)
+            meanVecSorted = meanVecOriginal[meanVecSort]
+            varVecSorted = varVecOriginal[meanVecSort]
+
+            # Make sure we have this properly sorted.
+            goodPoints = dataset.expIdMask[ampName].copy()
+            goodPoints = goodPoints[meanVecSort]
+
+            # Check if all points are bad from the previous fit.
+            initialExpIdMask = dataset.expIdMask[ampName].copy()
+
+            if not (goodPoints.any() and initialExpIdMask.any()):
+                msg = (f"SERIOUS: All points in goodPoints: {goodPoints} or "
+                       f"in initialExpIdMask: {initialExpIdMask} are bad."
+                       f"Setting {ampName} to BAD.")
+                self.log.warning(msg)
+                # Fill entries with NaNs
+                self.fillBadAmp(dataset, ampName)
+                continue
+
+            mask = goodPoints.copy()
+
+            preTurnoff = dataset.ptcTurnoff[ampName]
+            pointsToFit = (meanVecSorted >= preTurnoff) * \
+                           (meanVecSorted <= preTurnoff * (1 + self.config.extensionAboveSaturationThreshold))
+            pointsToFit = np.logical_or(mask, pointsToFit)
+            if np.count_nonzero(pointsToFit) == np.count_nonzero(mask):
+                self.log.warning("Expanding fit to include saturation, but no points detected above "
+                                 "initial computed PTC turnoff for amp %s" % (ampName))
+                return dataset
+
+            # Fit initialization
+            ptcFunc = funcAstierWithSaturation
+            parsIniPtc = [-1e-6, 1.0, 10.]  # a00, gain, noise^2
+
+            # Estimate initial parameters
+            muMax = meanVecSorted[pointsToFit][-1]
+            m = dataset.evalPtcModel([muMax])[ampName][0]
+            d = varVecSorted[pointsToFit][-1]
+            modelMinusData = m - d
+
+            estimateTurnoff = preTurnoff
+            if modelMinusData == 0:
+                estimateTau = -np.inf
+            elif modelMinusData < 0:
+                estimateTau = -np.inf
+                self.log.warning("No turnoff detected within extended roll-off PTC range for fitting amp %s" % (ampName))
+            else:
+                # Empirically determined good estimator based on the model
+                estimateTau = -(muMax - estimateTurnoff) / np.log(modelMinusData)
+            self.log.info("Setting estimates of roll off model parameters to (mu_0, tau) = (%f, %f) for amp %s" % (estimateMu0, estimateTau, ampName))
+            parsIniPtc.extend([estimateTurnoff, estimateTau]) # Estimate of mu_* and tau
+
+            # Set initial bounds
+            if self.config.binSize > 1:
+                bounds = self._boundsForAstier(parsIniPtc)
+            else:
+                bounds = self._boundsForAstier(
+                    parsIniPtc,
+                    lowers=[-1e-4, 0.1, 0, 0, -2000],
+                    uppers=[0, 10.0, 2000, 200000, 2000],
+                )
+
+            # Perform the fit
+            res = least_squares(
+                errFunc,
+                parsIniPtc,
+                bounds=bounds,
+                args=(meanVecSorted[pointsToFit], varVecSorted[pointsToFit]),
+            )
+            pars = res.x
+            a00, gain, noiseSquared, turnoff, tau = *pars
+
+            if not res.success:
+                self.log.warning(
+                    "Fit with saturation roll off model did not succeed for amp %s. Skipping and setting turnoff to original solution." % (ampName)
+                )
+                continue
+            else:
+                self.log.info("Fit with saturation roll off model returned estimates: turnoff=%f adu (%f el) and tau=%f" % (turnoff, turnoff * gain, tau))
+
+            # The PTC turnoff is not immediate, and we can tolerate some of the physics
+            # in the rolloff, so we define the turnoff where as threshold of deviation
+            # between the model without the rolloff and the model with the rolloff.
+            # The new turnoff estimate is the last acceptable point.
+            diff = funcAstier() - funcAstierWithSaturation()
+            diffSigma = np.abs(diff * dataset.covariancesSqrtWeights[ampName][pointsToFit,0,0])
+            acceptablePoints = np.argwhere(diffSigma <= self.config.saturationRolloffTolerance)
+            lastGoodIndex = acceptablePoints[-1]
+            turnoff = meanVecSorted[pointsToFit][lastGoodIndex]
+
+            # Set the mask to the new mask
+            newMask = pointsToFit * (meanVecSorted < turnoff)
+            dataset.expIdMask[ampName] = newMask
+            meanVecFinal = meanVecOriginal[newMask]
+            varVecFinal = varVecOriginal[newMask]
+
+            # Save the maximum point after outlier detection as the
+            # PTC turnoff point. We need to pay attention to the sorting
+            # here.
+            dataset.ptcTurnoff[ampName] = np.max(meanVecFinal)
+
+            # And compute the ptcTurnoffSamplingError as one half the
+            # difference between the previous and next point.
+            ptcTurnoffLow = meanVecSorted[lastGoodIndex - 1]
+            if lastGoodIndex == (len(meanVecSorted) - 1):
+                # If it's the last index, just use the interval.
+                ptcTurnoffSamplingError = dataset.ptcTurnoff[ampName] - ptcTurnoffLow
+            elif not np.isfinite(meanVecSorted[lastGoodIndex + 1]):
+                # If the next index is not finite, just use the interval.
+                ptcTurnoffSamplingError = dataset.ptcTurnoff[ampName] - ptcTurnoffLow
+            else:
+                ptcTurnoffSamplingError = (meanVecSorted[lastGoodIndex + 1] - ptcTurnoffLow)/2.
+            dataset.ptcTurnoffSamplingError[ampName] = ptcTurnoffSamplingError
+
+            # Fit the PTC without the rolloff model, but with the new mask.
+            # The variance of the variance is Var(v)=2*v^2/Npix. This is
+            # already calculated in `makeCovArray` of CpPtcExtract.
+            # dataset.covariancesSqrtWeights[ampName][:,0,0]
+            # has 1/sqrt(Var(v)).
+            ptcFunc = funcAstier
+            parsIniPtc = parsIniPtc[:-2]
+            if (len(meanVecFinal) < len(parsIniPtc)):
+                msg = (f"SERIOUS: Not enough data points ({len(meanVecFinal)}) compared to the number of "
+                       f"parameters of the PTC model({len(parsIniPtc)}) after initial fit with saturation "
+                       f"model. Setting {ampName} to BAD.")
+                self.log.warning(msg)
+                # Fill entries with NaNs
+                self.fillBadAmp(dataset, ampName)
+                continue
+
+            weightsY = dataset.covariancesSqrtWeights[ampName][:, 0, 0][newMask]
+            if self.config.doFitBootstrap:
+                parsFit, parsFitErr, reducedChiSqPtc = fitBootstrap(parsIniPtc, meanVecFinal,
+                                                                    varVecFinal, ptcFunc,
+                                                                    weightsY=weightsY)
+            else:
+                parsFit, parsFitErr, reducedChiSqPtc = fitLeastSq(parsIniPtc, meanVecFinal,
+                                                                  varVecFinal, ptcFunc,
+                                                                  weightsY=weightsY)
+            # Save results
+            dataset.ptcFitPars[ampName] = parsFit
+            dataset.ptcFitParsError[ampName] = parsFitErr
+            dataset.ptcFitChiSq[ampName] = reducedChiSqPtc
+
+            dataset.finalVars[ampName] = varVecOriginal
+            dataset.finalVars[ampName][~mask] = np.nan
+            dataset.finalModelVars[ampName] = ptcFunc(parsFit, meanVecOriginal)
+            dataset.finalModelVars[ampName][~mask] = np.nan
+            dataset.finalMeans[ampName] = meanVecOriginal
+            dataset.finalMeans[ampName][~mask] = np.nan
+
+            # Errors for EXPAPPROXIMATION
+            ptcGain = parsFit[1]
+            ptcGainErr = parsFitErr[1]
+            ptcNoise = np.sqrt(np.fabs(parsFit[2]))
+            ptcNoiseErr = 0.5*(parsFitErr[2]/np.fabs(parsFit[2]))*np.sqrt(np.fabs(parsFit[2]))
+
+            dataset.gain[ampName] = ptcGain
+            dataset.gainUnadjusted[ampName] = ptcGain
+            dataset.gainErr[ampName] = ptcGainErr
+            dataset.noise[ampName] = ptcNoise
+            dataset.noiseErr[ampName] = ptcNoiseErr
+
+        dataset.ptcFitType = "EXPAPPROXIMATION"
+        if len(dataset.badAmps) == 0:
+            dataset.badAmps = []
+
+        return dataset
+
+    def fitPtc(self, dataset, modelSaturation, maxIterationsPtcOutliers):
         """Fit the photon transfer curve to the
         Astier+19 approximation (Eq. 16).
 
@@ -1160,6 +1336,9 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         modelSaturation : `bool`, default: False
             Add a roll-off model to the initial fit of the PTC
             to try and capture saturation (default: False).
+        maxIterationsPtcOutliers : `int`
+            Number of times to redo the fit and apply sigma clipping
+            to identify outlier points.
 
         Returns
         -------
@@ -1178,6 +1357,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             ptcFitType = dataset.ptcFitType
         else:
             raise RuntimeError("ptcFitType is None of empty in PTC dataset.")
+
         # For FULLCOVARIANCE model fit
         matrixSideFit = dataset.covMatrixSideFullCovFit
         nanMatrixFit = np.empty((matrixSideFit, matrixSideFit))
@@ -1197,7 +1377,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             return ptcFunc(p, x) - y
 
         sigmaCutPtcOutliers = self.config.sigmaCutPtcOutliers
-        maxIterationsPtcOutliers = self.config.maxIterationsPtcOutliers
+        maxIterationsPtcOutliers = maxIterationsPtcOutliers
 
         for i, ampName in enumerate(dataset.ampNames):
             meanVecOriginal = dataset.rawMeans[ampName].copy()
@@ -1236,14 +1416,12 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
 
             if ptcFitType == 'EXPAPPROXIMATION':
                 ptcFunc = funcAstier
-                parsIniPtc = [-1e-9, 1.0, 10.]  # a00, gain, noise^2
-                # lowers and uppers obtained from BOT data studies by
-                # C. Lage (UC Davis, 11/2020).
+                parsIniPtc = [-1e-6, 1.0, 10.]  # a00, gain, noise^2
                 if self.config.binSize > 1:
                     bounds = self._boundsForAstier(parsIniPtc)
                 else:
-                    bounds = self._boundsForAstier(parsIniPtc, lowers=[-1e-4, 0.1, -2000],
-                                                   uppers=[1e-4, 10.0, 2000])
+                    bounds = self._boundsForAstier(parsIniPtc, lowers=[-1e-4, 0.1, 0],
+                                                   uppers=[0, 10.0, 2000])
 
                 if modelSaturation:
                     ptcFunc = funcAstierWithSaturation
