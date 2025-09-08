@@ -432,6 +432,7 @@ def fitBootstrap(initialParams, dataX, dataY, function, weightsY=None, confidenc
                                                 len(initialParams))
     return pFitBootstrap, pErrBootstrap, reducedChiSq
 
+
 @deprecated(reason="This method is no longer used for PTC fitting. Will be removed after v30.",
             version="v30.0", category=FutureWarning)
 def funcPolynomial(pars, x):
@@ -459,7 +460,8 @@ def funcAstier(pars, x):
 
     Model:
 
-    C_{00}(\mu) = \frac{1}{2 a_{00} g**2}[\exp(2 a_{00} \mu g ) - 1] + n_{00} / g**2
+    C_{00}(mu) = frac{1}{2 a_{00} g**2} * [exp(2 a_{00} mu g ) - 1]
+                 + n_{00} / g**2
 
     Parameters
     ----------
@@ -477,7 +479,8 @@ def funcAstier(pars, x):
     a00, gain, noiseSquared = pars
     return 0.5/(a00*gain*gain)*(np.exp(2*a00*x*gain)-1) + noiseSquared/(gain*gain)  # C_00
 
-def saturationModel(muTurnoff, tau, mu):
+
+def saturationModel(params, mu):
     """Piece-wise exponential saturation roll-off model of the PTC.
 
     Parameters
@@ -492,7 +495,9 @@ def saturationModel(muTurnoff, tau, mu):
     y : `numpy.array`, (N,)
         Difference in variance in ADU^2.
     """
+    muTurnoff, tau = params
     return np.where(mu < muTurnoff, 0, np.exp(-(mu - muTurnoff) / tau) - 1)
+
 
 def funcAstierWithSaturation(pars, x):
     """Single brighter-fatter parameter model for PTC; Equation 16 of
@@ -505,7 +510,11 @@ def funcAstierWithSaturation(pars, x):
 
     Model:
 
-    C_{00}(\mu) = funcAstier - np.where(x < muTurnoff, 0, np.exp(-(x - muTurnoff) / tau) - 1)
+    C_{00}(mu) = funcAstier - np.where(
+        x < muTurnoff,
+        0,
+        np.exp(-(x - muTurnoff) / tau) - 1,
+    )
 
     Parameters
     ----------
@@ -521,9 +530,11 @@ def funcAstierWithSaturation(pars, x):
         C_00 (variance) in ADU^2.
     """
     # Initial computation of Astier+19 (Eqn 19).
-    model = funcAstier(pars, x)
+    originalModelPars = pars[:-2]
+    saturationModelPars = pars[-2:]
+    model = funcAstier(originalModelPars, x)
 
-    return model - saturationModel(pars, x)  # C_00
+    return model - saturationModel(saturationModelPars, x)  # C_00
 
 
 def arrangeFlatsByExpTime(exposureList, exposureIdList, log=None):
