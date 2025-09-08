@@ -19,28 +19,25 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
+import copy
+import warnings
 import numpy as np
 from collections import Counter
-import warnings
+from itertools import groupby
+from operator import itemgetter
+from scipy.signal import fftconvolve
+from scipy.optimize import least_squares
+from scipy.stats import median_abs_deviation
 
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
+import lsst.pipe.base.connectionTypes as cT
+from lsst.ip.isr import PhotonTransferCurveDataset
 from lsst.cp.pipe.utils import (fitLeastSq, fitBootstrap,
                                 funcAstier, funcAstierWithSaturation,
                                 symmetrize, Pol2D, ampOffsetGainRatioFixup)
 
-from scipy.signal import fftconvolve
-from scipy.optimize import least_squares
-from scipy.stats import median_abs_deviation
-from itertools import groupby
-from operator import itemgetter
-
-import lsst.pipe.base.connectionTypes as cT
-
-from lsst.ip.isr import PhotonTransferCurveDataset
-
-import copy
-
+from deprecated.sphinx import deprecated
 
 __all__ = ['PhotonTransferCurveSolveConfig', 'PhotonTransferCurveSolveTask']
 
@@ -153,18 +150,23 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
         default=3,
         deprecated="This field is no longer used. Will be removed after v30."
     )
-    modelSaturation = pexConfig.Field(
+    modelPtcRolloff = pexConfig.Field(
         dtype=bool,
-        doc="Model the roll-off in the PTC turnoff as a exponential decay cause by pixel "
-            "saturation. Only performed for for the EXPONENTIAL fit and the initial "
-            "EXPONENTIAL fit if ptcFitType=FULLCOVARIANCE.",
+        doc="Model the roll-off in the PTC turnoff as a exponential decay.",
         default=False,
     )
-    extensionAboveSaturationThreshold = pexConfig.Field(
+    varianceRolloffSearchThreshold = pexConfig.Field(
         dtype=float,
-        doc="Percentage above initial computed PTC turnoff to fit the saturation model. "
-            "Only used if modelSaturation=True. Default: 5.0 (percent).",
-        default=5.0,
+        doc="Percentage below the variance at the initially computed turnoff to extend the search for the rolloff. "
+            "Only used if modelSaturation=True. Default: 0.1 (=10 percent).",
+        default=0.1,
+    )
+    saturationRolloffTolerance = pexConfig.Field(
+        dtype=float,
+        doc="Maximum percent difference between the model with saturation rolloff and the "
+            "model without to set the PTC turnoff. Only used if modelSaturation=True "
+            "(default = 0.01).",
+        default=0.1,
     )
     doLegacyTurnoffSelection = pexConfig.Field(
         dtype=bool,
@@ -200,10 +202,26 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
             "otherwise adu.",
         default=9_000.,
     )
+    minDeltaInitialPtcOutlierFit = pexConfig.Field(
+        dtype=float,
+        doc="If there are any outliers in the initial fit that have mean greater than "
+            "maxSignalInitialPtcOutlierFit, and those outlier make a gap larger than "
+            "this amount, it is considered a large gap. If "
+            "scaleMaxSignalInitialPtcOutlierFit=True then the units are electrons; "
+            "otherwise adu.",
+        default=1_000.,
+    )
+    expandGapSize = pexConfig.Field(
+        dtype=float,
+        doc="If there is a large gap detected, the mask around the gap will be expanded "
+            "by this amount. If scaleMaxSignalInitialPtcOutlierFit=True then the units "
+            "are electrons; otherwise adu.",
+        default=1_000.,
+    )
     scaleMaxSignalInitialPtcOutlierFit = pexConfig.Field(
         dtype=bool,
-        doc="Scale maxSignalInitialPtcOutlierFit and maxDeltaInitialPtcOutlierFit by "
-            "approximate gain?  If yes then "
+        doc="Scale maxSignalInitialPtcOutlierFit and maxDeltaInitialPtcOutlierFit "
+            "and minDeltaInitialPtcOutlierFit by approximate gain?  If yes then "
             "maxSignalInitialPtcOutlierFit and maxDeltaInitialPtcOutlierFit are assumed "
             "to have units of electrons, otherwise adu.",
         default=True,
@@ -432,10 +450,11 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         tempDatasetPtc.ptcFitType = "EXPAPPROXIMATION"
         tempDatasetPtc = self.fitMeasurementsToModel(tempDatasetPtc)
 
-        if self.config.modelSaturation:
+        # Model the PTC rolloff
+        if self.config.modelPtcRolloff:
             tempDatasetPtc = self.fitPtcRolloff(tempDatasetPtc)
 
-        # Fit the data to the final model using the masks obtained from the
+        # Fit the data to the final model usingffit the masks obtained from the
         # previous fits.
         for ampName in datasetPtc.ampNames:
             datasetPtc.expIdMask[ampName] = tempDatasetPtc.expIdMask[ampName]
@@ -491,7 +510,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         """Fit the measured covariances vs mean signal one of the
         models in Astier+19 (Eq. 16 or Eq.20).
 
-        If `modelSaturation` is True, a roll-off model will be added
+        If `modelPtcRolloff` is True, a roll-off model will be added
         to the initial fit of the PTC to try and capture saturation
         effects. This will only be applied if
         `ptcFitType=EXPAPPROXIMATION`.
@@ -516,7 +535,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             # The PTC is technically defined as variance vs signal,
             # with variance = Cov_00
             dataset = self.fitDataFullCovariance(dataset)
-        elif fitType=="EXPAPPROXIMATION":
+        elif fitType == "EXPAPPROXIMATION":
             # The PTC is technically defined as variance vs signal
             dataset = self.fitPtc(dataset)
         else:
@@ -1158,9 +1177,18 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
 
             mask = goodPoints.copy()
 
+            # Compute the extended mask
             preTurnoff = dataset.ptcTurnoff[ampName]
+            turnoffIdx = np.argwhere(meanVecSorted == preTurnoff)[0]
+            varianceAtTurnoff = varVecSorted[turnoffIdx]
+            turnoffSearchLimit = varianceAtTurnoff * (1 - self.config.varianceRolloffSearchThreshold)
+
+            # Add points up to some threshold below the variance of the turnoff
             pointsToFit = (meanVecSorted >= preTurnoff) * \
-                           (meanVecSorted <= preTurnoff * (1 + self.config.extensionAboveSaturationThreshold))
+                          (varVecSorted >= turnoffSearchLimit) * \
+                          (varVecSorted <= varianceAtTurnoff)
+
+            # Retain the original mask below the turnoff
             pointsToFit = np.logical_or(mask, pointsToFit)
             if np.count_nonzero(pointsToFit) == np.count_nonzero(mask):
                 self.log.warning("Expanding fit to include saturation, but no points detected above "
@@ -1169,11 +1197,11 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
 
             # Fit initialization
             ptcFunc = funcAstierWithSaturation
-            parsIniPtc = [-1e-6, 1.0, 10.]  # a00, gain, noise^2
+            parsIniPtc = [-2e-6, 1.5, 25.]  # a00, gain, noise^2
 
             # Estimate initial parameters
             muMax = meanVecSorted[pointsToFit][-1]
-            m = dataset.evalPtcModel([muMax])[ampName][0]
+            m = dataset.evalPtcModel(np.array([muMax]))[ampName][0]
             d = varVecSorted[pointsToFit][-1]
             modelMinusData = m - d
 
@@ -1182,12 +1210,15 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 estimateTau = -np.inf
             elif modelMinusData < 0:
                 estimateTau = -np.inf
-                self.log.warning("No turnoff detected within extended roll-off PTC range for fitting amp %s" % (ampName))
+                self.log.warning("No turnoff detected within extended roll-off PTC range "
+                                 "for fitting amp %s" % (ampName))
             else:
                 # Empirically determined good estimator based on the model
                 estimateTau = -(muMax - estimateTurnoff) / np.log(modelMinusData)
-            self.log.info("Setting estimates of roll off model parameters to (mu_0, tau) = (%f, %f) for amp %s" % (estimateMu0, estimateTau, ampName))
-            parsIniPtc.extend([estimateTurnoff, estimateTau]) # Estimate of mu_* and tau
+            estimateTau = -1200
+            self.log.info("Setting estimates of roll off model parameters to (mu_0, tau) = "
+                          "(%f, %f) for amp %s" % (estimateTurnoff, estimateTau, ampName))
+            parsIniPtc.extend([estimateTurnoff, estimateTau])  # Estimate of mu_* and tau
 
             # Set initial bounds
             if self.config.binSize > 1:
@@ -1195,8 +1226,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             else:
                 bounds = self._boundsForAstier(
                     parsIniPtc,
-                    lowers=[-1e-4, 0.1, 0, 0, -2000],
-                    uppers=[0, 10.0, 2000, 200000, 2000],
+                    lowers=[-1e-4, 0.1, 0, 0, -5000],
+                    uppers=[0, 10.0, 2000, 200000, -100],
                 )
 
             # Perform the fit
@@ -1207,31 +1238,36 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 args=(meanVecSorted[pointsToFit], varVecSorted[pointsToFit]),
             )
             pars = res.x
-            a00, gain, noiseSquared, turnoff, tau = *pars
+            a00, gain, noiseSquared, turnoff, tau = pars
+            originalModelPars = pars[:-2]
 
             if not res.success:
                 self.log.warning(
-                    "Fit with saturation roll off model did not succeed for amp %s. Skipping and setting turnoff to original solution." % (ampName)
+                    "Fit with saturation roll off model did not succeed for "
+                    f"amp {ampName}. Skipping and keeping original turnoff "
+                    "solution."
                 )
                 continue
             else:
-                self.log.info("Fit with saturation roll off model returned estimates: turnoff=%f adu (%f el) and tau=%f" % (turnoff, turnoff * gain, tau))
+                self.log.info("Fit with saturation roll off model returned estimates: "
+                              f"turnoff={turnoff} adu ({turnoff * gain} el) and tau={tau}")
 
             # The PTC turnoff is not immediate, and we can tolerate some of the physics
             # in the rolloff, so we define the turnoff where as threshold of deviation
             # between the model without the rolloff and the model with the rolloff.
             # The new turnoff estimate is the last acceptable point.
-            diff = funcAstier() - funcAstierWithSaturation()
-            diffSigma = np.abs(diff * dataset.covariancesSqrtWeights[ampName][pointsToFit,0,0])
-            acceptablePoints = np.argwhere(diffSigma <= self.config.saturationRolloffTolerance)
+            modelWithoutRolloff = funcAstier(originalModelPars, meanVecSorted[pointsToFit])
+            modelWithRolloff = funcAstierWithSaturation(pars, meanVecSorted[pointsToFit])
+            residual = np.fabs(modelWithRolloff / modelWithoutRolloff - 1)
+            acceptablePoints = np.argwhere(residual <= self.config.saturationRolloffTolerance)
             lastGoodIndex = acceptablePoints[-1]
             turnoff = meanVecSorted[pointsToFit][lastGoodIndex]
 
             # Set the mask to the new mask
             newMask = pointsToFit * (meanVecSorted < turnoff)
             dataset.expIdMask[ampName] = newMask
-            meanVecFinal = meanVecOriginal[newMask]
-            varVecFinal = varVecOriginal[newMask]
+            meanVecFinal = meanVecSorted[newMask]
+            varVecFinal = varVecSorted[newMask]
 
             # Save the maximum point after outlier detection as the
             # PTC turnoff point. We need to pay attention to the sorting
@@ -1306,7 +1342,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
 
         return dataset
 
-    def fitPtc(self, dataset, modelSaturation, maxIterationsPtcOutliers):
+    def fitPtc(self, dataset):
         """Fit the photon transfer curve to the
         Astier+19 approximation (Eq. 16).
 
@@ -1323,7 +1359,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         initial fit to fail, meaning the sigma cannot be calculated
         to perform the sigma-clipping.
 
-        If `modelSaturation` is True, a roll-off model will be added
+        If `modelPtcRolloff` is True, a roll-off model will be added
         to the initial fit of the PTC to try and capture saturation
         effects. This will only be applied if
         `ptcFitType=EXPAPPROXIMATION`.
@@ -1333,12 +1369,6 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
             The dataset containing the means, variances and
             exposure times.
-        modelSaturation : `bool`, default: False
-            Add a roll-off model to the initial fit of the PTC
-            to try and capture saturation (default: False).
-        maxIterationsPtcOutliers : `int`
-            Number of times to redo the fit and apply sigma clipping
-            to identify outlier points.
 
         Returns
         -------
@@ -1377,7 +1407,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             return ptcFunc(p, x) - y
 
         sigmaCutPtcOutliers = self.config.sigmaCutPtcOutliers
-        maxIterationsPtcOutliers = maxIterationsPtcOutliers
+        maxIterationsPtcOutliers = self.config.maxIterationsPtcOutliers
 
         for i, ampName in enumerate(dataset.ampNames):
             meanVecOriginal = dataset.rawMeans[ampName].copy()
@@ -1416,28 +1446,12 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
 
             if ptcFitType == 'EXPAPPROXIMATION':
                 ptcFunc = funcAstier
-                parsIniPtc = [-1e-6, 1.0, 10.]  # a00, gain, noise^2
+                parsIniPtc = [-2e-6, 1.5, 25.]  # a00, gain, noise^2
                 if self.config.binSize > 1:
                     bounds = self._boundsForAstier(parsIniPtc)
                 else:
                     bounds = self._boundsForAstier(parsIniPtc, lowers=[-1e-4, 0.1, 0],
                                                    uppers=[0, 10.0, 2000])
-
-                if modelSaturation:
-                    ptcFunc = funcAstierWithSaturation
-                    modelMinusData = dataset.evalPtcModel([muMax])[ampName] - varVecSorted[initialExpIdMask]
-                    muMax = np.max(meanVecSorted[initialExpIdMask])
-
-                    estimateMu0 = dataset.ptcTurnoff[ampName]
-                    if modelMinusData == 0:
-                        estimateTau = -np.inf
-                    elif modelMinusData < 0:
-                        estimateTau = -np.inf
-                        self.log.warning("No turnoff detected within extended roll-off PTC range for fitting amp %s" % (ampName))
-                    else:
-                        estimateTau = -(muMax - estimateMu0) / np.log(modelMinusData)
-                    self.log.info("Setting estimates of roll off model parameters to (mu_0, tau) = (%f, %f) for amp %s" % (estimateMu0, estimateTau, ampName))
-                    parsIniPtc.extend([estimateMu0, estimateTau]) # Estimate of mu_0 and tau
 
             # We perform an initial (unweighted) fit of variance vs signal
             # (after initial KS test or post-drop selection) to look for
@@ -1452,17 +1466,23 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 approxGain = np.nanmedian(meanVecSorted/varVecSorted)
                 maxADUInitialPtcOutlierFit = self.config.maxSignalInitialPtcOutlierFit/approxGain
                 maxDeltaADUInitialPtcOutlierFit = self.config.maxDeltaInitialPtcOutlierFit/approxGain
+                minDeltaADUInitialPtcOutlierFit = self.config.minDeltaInitialPtcOutlierFit/approxGain
+                expandGapSize = self.config.expandGapSize/approxGain
                 self.log.info(
-                    "Using approximate gain %.3f and ADU signal cutoff of %.1f and delta %.1f "
-                    "for amplifier %s",
+                    "Using approximate gain %.3f and ADU signal cutoff of %.1f and max delta %.1f "
+                    "and min delta %.1f and gap expansion size %.1f for amplifier %s",
                     approxGain,
                     maxADUInitialPtcOutlierFit,
                     maxDeltaADUInitialPtcOutlierFit,
+                    minDeltaADUInitialPtcOutlierFit,
+                    expandGapSize,
                     ampName,
                 )
             else:
                 maxADUInitialPtcOutlierFit = self.config.maxSignalInitialPtcOutlierFit
                 maxDeltaADUInitialPtcOutlierFit = self.config.maxDeltaInitialPtcOutlierFit
+                minDeltaADUInitialPtcOutlierFit = self.config.minDeltaInitialPtcOutlierFit
+                expandGapSize = self.config.expandGapSize
 
             if maxIterationsPtcOutliers == 0:
                 # We are not doing any outlier rejection here, but we do want
@@ -1515,11 +1535,29 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                         ampName,
                     )
 
+
+                    # If this is the first iteration, find the large gaps and expand the gaps
+                    # on either side of the gap.
+                    expandedMask, = np.where(newMask)
+                    if count == 0:
+                        useMask, = np.where(newMask)
+                        for useIndex, usePoint in enumerate(useMask):
+                            if useIndex == 0 or newMask[usePoint - 1]:
+                                # The previous point was good; continue.
+                                continue
+                            deltaADU = meanVecSorted[usePoint] - meanVecSorted[useMask[useIndex - 1]]
+                            if deltaADU > minDeltaADUInitialPtcOutlierFit:
+                                # This jump is large, and we should expand the mask around it.
+                                lower = max(meanVecSorted[useMask[useIndex - 1]] - expandGapSize, meanVecSorted[0])
+                                upper = min(meanVecSorted[usePoint] + expandGapSize, meanVecSorted[-1])
+                                self.log.info(f"{ampName}: Found gap at {meanVecSorted[usePoint] + deltaADU/2.} adu of size {deltaADU} adu; masking out [{lower},{upper}] adu.")
+                                expandedMask[(meanVecSorted >= lower) & (meanVecSorted <= upper)] = False
+
                     # Loop over all used (True) points. If one of them follows
                     # a False point, then it must be within
                     # maxDeltaADUInitialPtcOutlierFit of a True point. If it
                     # is a large gap, everything above is marked False.
-                    useMask, = np.where(newMask)
+                    useMask, = np.where(expandedMask)
                     for useIndex, usePoint in enumerate(useMask):
                         if useIndex == 0 or newMask[usePoint - 1]:
                             # The previous point was good; continue.
