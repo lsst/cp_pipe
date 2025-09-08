@@ -2085,6 +2085,6 @@ def bin_focal_plane(
     binned["detector"] = detector
 
     if include_itl_flag:
-        binned["itl"] = np.concatenate(itl_arrays)
+        binned["itl"] = np.concatenate(itl_arrays).astype(np.bool_)
 
     return binned
