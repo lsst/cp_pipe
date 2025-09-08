@@ -266,7 +266,9 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
             Dictionary of input defect handles, keyed by detector.
         binned_image : `np.ndarray`, optional
             Binned image from a previous run of the task. This will take
-            precedence over the input handles, for easy re-use.
+            precedence over the input handles, for easy re-use. This may
+            be used for debugging, or if CpFlatFitGradientsTask is used
+            as a sub-task.
 
         Returns
         -------
@@ -332,6 +334,9 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
         self.log.info("Fitting gradient to binned flat data.")
 
         # First pass, within a smaller radius.
+        # This first pass is to get a robust measurement of the
+        # ITL/E2V ratio which can be then used in the second pass
+        # (below).
         nodes_initial = np.asarray(self.config.radial_spline_nodes_initial)
         initial_fit_radius = np.max(nodes_initial)
         use_initial = (fp_radius < initial_fit_radius)
@@ -363,7 +368,11 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
         else:
             itl_ratio_initial = 1.0
 
-        # Second pass, full range.
+        # Second pass, full radial range.
+        # This second pass uses the ITL/E2V ratio from the first
+        # pass (above) to avoid degeneracies with the strongly varying
+        # radial function in the outer radii.
+
         nodes = np.asarray(self.config.radial_spline_nodes)
         self.log.info("Final fit will be performed with an outer radius cut of %.2f mm.", np.max(nodes))
 
