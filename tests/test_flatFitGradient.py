@@ -41,6 +41,7 @@ class FlatFitGradientTestCase(lsst.utils.tests.TestCase):
         initial_camera = mock.getCamera()
         camera_builder = initial_camera.rebuild()
         for counter, detector in enumerate(camera_builder):
+            detector.setType(lsst.afw.cameraGeom.DetectorType.SCIENCE)
             if counter < 2:
                 detector.setPhysicalType("pseudoITL")
             else:
@@ -59,9 +60,6 @@ class FlatFitGradientTestCase(lsst.utils.tests.TestCase):
         delta_y=0.0,
         gradient_x=0.0,
         gradient_y=0.0,
-        outer_gradient_x=0.0,
-        outer_gradient_y=0.0,
-        outer_gradient_radius=np.inf,
     ):
         spl = Akima1DInterpolator(radial_nodes, radial_values, method="akima")
 
@@ -91,12 +89,6 @@ class FlatFitGradientTestCase(lsst.utils.tests.TestCase):
 
             gradient = 1 + gradient_x*(xf - 0.0) + gradient_y*(yf - 0.0)
             value /= gradient
-
-            if np.isfinite(outer_gradient_radius):
-                fp_radius = np.sqrt(xf**2. + yf**2.)
-                outer = (fp_radius > outer_gradient_radius)
-                outer_gradient = 1 + outer_gradient_x*(xf - 0.0) + outer_gradient_y*(yf - 0.0)
-                value[outer] /= outer_gradient[outer]
 
             flat.image.array[:, :] = value.reshape(flat.image.array.shape) * normalization
 
@@ -135,13 +127,13 @@ class FlatFitGradientTestCase(lsst.utils.tests.TestCase):
         config = CpFlatFitGradientsTask.ConfigClass()
         config.bin_factor = 4  # Small detectors for the test.
         config.normalize_center_radius = 1.0
-        config.outer_gradient_radius = 4.5
+        config.radial_spline_nodes_initial = radial_nodes.tolist()
         config.radial_spline_nodes = radial_nodes.tolist()
         config.detector_boundary = 5
+        config.do_constrain_zero = True
         config.do_normalize_center = True
         config.do_fit_centroid = False
         config.do_fit_gradient = False
-        config.do_fit_outer_gradient = False
         config.do_normalize_center = True
 
         task = CpFlatFitGradientsTask(config=config)
@@ -166,14 +158,13 @@ class FlatFitGradientTestCase(lsst.utils.tests.TestCase):
         config = CpFlatFitGradientsTask.ConfigClass()
         config.bin_factor = 4  # Small detectors for the test.
         config.normalize_center_radius = 1.0
-        config.outer_gradient_radius = 4.5
+        config.radial_spline_nodes_initial = radial_nodes.tolist()
         config.radial_spline_nodes = radial_nodes.tolist()
         config.detector_boundary = 5
         config.do_constrain_zero = False
         config.do_normalize_center = True
         config.do_fit_centroid = False
         config.do_fit_gradient = False
-        config.do_fit_outer_gradient = False
         config.do_normalize_center = True
 
         task = CpFlatFitGradientsTask(config=config)
@@ -208,13 +199,13 @@ class FlatFitGradientTestCase(lsst.utils.tests.TestCase):
         config = CpFlatFitGradientsTask.ConfigClass()
         config.bin_factor = 4  # Small detectors for the test.
         config.normalize_center_radius = 1.0
-        config.outer_gradient_radius = 4.5
+        config.radial_spline_nodes_initial = radial_nodes.tolist()
         config.radial_spline_nodes = radial_nodes.tolist()
         config.detector_boundary = 5
+        config.do_constrain_zero = True
         config.do_normalize_center = True
         config.do_fit_centroid = True
         config.do_fit_gradient = False
-        config.do_fit_outer_gradient = False
         config.do_normalize_center = True
 
         task = CpFlatFitGradientsTask(config=config)
@@ -250,13 +241,13 @@ class FlatFitGradientTestCase(lsst.utils.tests.TestCase):
         config = CpFlatFitGradientsTask.ConfigClass()
         config.bin_factor = 4  # Small detectors for the test.
         config.normalize_center_radius = 1.0
-        config.outer_gradient_radius = 4.5
+        config.radial_spline_nodes_initial = radial_nodes.tolist()
         config.radial_spline_nodes = radial_nodes.tolist()
         config.detector_boundary = 5
+        config.do_constrain_zero = True
         config.do_normalize_center = True
         config.do_fit_centroid = False
         config.do_fit_gradient = True
-        config.do_fit_outer_gradient = False
         config.do_normalize_center = True
 
         task = CpFlatFitGradientsTask(config=config)
@@ -271,113 +262,6 @@ class FlatFitGradientTestCase(lsst.utils.tests.TestCase):
         self.assertFloatsAlmostEqual(gradient.radialSplineValues, radial_values, atol=2e-3)
         self.assertFloatsAlmostEqual(gradient.gradientX, gradient_x, atol=1e-4)
         self.assertFloatsAlmostEqual(gradient.gradientY, gradient_y, atol=1e-4)
-
-    def test_radial_planes(self):
-        radial_nodes = np.array([0, 1, 2, 3, 4, 4.5, 5.2], dtype=np.float64)
-        radial_values = np.array([1.0, 1.0, 1.0, 0.9, 0.5, 0.3, 0.0], dtype=np.float64)
-        normalization = 1.1
-
-        gradient_x = 0.01
-        gradient_y = -0.01
-        outer_gradient_x = -0.005
-        outer_gradient_y = 0.005
-
-        flat_handle_dict = self._get_flat_handle_dict(
-            radial_nodes,
-            radial_values,
-            normalization,
-            gradient_x=gradient_x,
-            gradient_y=gradient_y,
-            outer_gradient_x=outer_gradient_x,
-            outer_gradient_y=outer_gradient_y,
-            outer_gradient_radius=4.5,
-        )
-        defect_handle_dict = self._get_defect_handle_dict()
-
-        config = CpFlatFitGradientsTask.ConfigClass()
-        config.bin_factor = 4  # Small detectors for the test.
-        config.normalize_center_radius = 1.0
-        config.outer_gradient_radius = 4.5
-        config.radial_spline_nodes = radial_nodes.tolist()
-        config.detector_boundary = 5
-        config.do_normalize_center = True
-        config.do_fit_centroid = False
-        config.do_fit_gradient = True
-        config.do_fit_outer_gradient = True
-        config.do_normalize_center = True
-
-        task = CpFlatFitGradientsTask(config=config)
-        gradient = task.run(
-            camera=self.camera,
-            input_flat_handle_dict=flat_handle_dict,
-            input_defect_handle_dict=defect_handle_dict,
-        ).output_gradient
-
-        self.assertFloatsAlmostEqual(gradient.normalizationFactor, normalization, rtol=1e-2)
-        self.assertFloatsAlmostEqual(gradient.radialSplineNodes, radial_nodes)
-        self.assertFloatsAlmostEqual(gradient.radialSplineValues, radial_values, atol=5e-3)
-        self.assertFloatsAlmostEqual(gradient.gradientX, gradient_x, atol=1e-4)
-        self.assertFloatsAlmostEqual(gradient.gradientY, gradient_y, atol=1e-4)
-        self.assertFloatsAlmostEqual(gradient.outerGradientX, outer_gradient_x, atol=5e-3)
-        self.assertFloatsAlmostEqual(gradient.outerGradientY, outer_gradient_y, atol=5e-3)
-
-    def test_radial_centroid_planes(self):
-        radial_nodes = np.array([0, 1, 2, 3, 4, 4.5, 5.2], dtype=np.float64)
-        radial_values = np.array([1.0, 1.0, 1.0, 0.9, 0.5, 0.3, 0.0], dtype=np.float64)
-        normalization = 1.1
-
-        itl_ratio = 0.9
-        gradient_x = 0.01
-        gradient_y = -0.01
-        outer_gradient_x = -0.005
-        outer_gradient_y = 0.005
-        delta_x = 0.01
-        delta_y = -0.01
-
-        flat_handle_dict = self._get_flat_handle_dict(
-            radial_nodes,
-            radial_values,
-            normalization,
-            itl_ratio=itl_ratio,
-            delta_x=delta_x,
-            delta_y=delta_y,
-            gradient_x=gradient_x,
-            gradient_y=gradient_y,
-            outer_gradient_x=outer_gradient_x,
-            outer_gradient_y=outer_gradient_y,
-            outer_gradient_radius=4.5,
-        )
-        defect_handle_dict = self._get_defect_handle_dict()
-
-        config = CpFlatFitGradientsTask.ConfigClass()
-        config.bin_factor = 4  # Small detectors for the test.
-        config.normalize_center_radius = 1.0
-        config.outer_gradient_radius = 4.5
-        config.radial_spline_nodes = radial_nodes.tolist()
-        config.detector_boundary = 5
-        config.do_normalize_center = True
-        config.do_fit_centroid = True
-        config.do_fit_gradient = True
-        config.do_fit_outer_gradient = True
-        config.do_normalize_center = True
-
-        task = CpFlatFitGradientsTask(config=config)
-        gradient = task.run(
-            camera=self.camera,
-            input_flat_handle_dict=flat_handle_dict,
-            input_defect_handle_dict=defect_handle_dict,
-        ).output_gradient
-
-        self.assertFloatsAlmostEqual(gradient.normalizationFactor, normalization, rtol=1e-2)
-        self.assertFloatsAlmostEqual(gradient.radialSplineNodes, radial_nodes)
-        self.assertFloatsAlmostEqual(gradient.radialSplineValues, radial_values, atol=2e-3)
-        self.assertFloatsAlmostEqual(gradient.itlRatio, itl_ratio, atol=1e-4)
-        self.assertFloatsAlmostEqual(gradient.centroidDeltaX, delta_x, atol=6e-3)
-        self.assertFloatsAlmostEqual(gradient.centroidDeltaY, delta_y, atol=6e-3)
-        self.assertFloatsAlmostEqual(gradient.gradientX, gradient_x, atol=1e-4)
-        self.assertFloatsAlmostEqual(gradient.gradientY, gradient_y, atol=1e-4)
-        self.assertFloatsAlmostEqual(gradient.outerGradientX, outer_gradient_x, atol=5e-3)
-        self.assertFloatsAlmostEqual(gradient.outerGradientY, outer_gradient_y, atol=5e-3)
 
     def test_apply(self):
         # This will create source and target; no fitting.
@@ -401,8 +285,6 @@ class FlatFitGradientTestCase(lsst.utils.tests.TestCase):
         itl_ratio = 0.9
         gradient_x = 0.01
         gradient_y = -0.01
-        outer_gradient_x = -0.005
-        outer_gradient_y = 0.005
         delta_x = 0.01
         delta_y = -0.01
 
@@ -414,9 +296,6 @@ class FlatFitGradientTestCase(lsst.utils.tests.TestCase):
             itlRatio=itl_ratio,
             gradientX=gradient_x,
             gradientY=gradient_y,
-            outerGradientX=outer_gradient_x,
-            outerGradientY=outer_gradient_y,
-            outerGradientRadius=4.5,
             centroidDeltaX=delta_x,
             centroidDeltaY=delta_y,
         )
@@ -430,9 +309,6 @@ class FlatFitGradientTestCase(lsst.utils.tests.TestCase):
             delta_y=delta_y,
             gradient_x=gradient_x,
             gradient_y=gradient_y,
-            outer_gradient_x=outer_gradient_x,
-            outer_gradient_y=outer_gradient_y,
-            outer_gradient_radius=4.5,
         )
 
         config = CpFlatApplyGradientsTask.ConfigClass()
@@ -456,13 +332,13 @@ class FlatFitGradientTestCase(lsst.utils.tests.TestCase):
         config = CpFlatFitGradientsTask.ConfigClass()
         config.bin_factor = 4  # Small detectors for the test.
         config.normalize_center_radius = 1.0
-        config.outer_gradient_radius = 4.5
+        config.radial_spline_nodes_initial = radial_nodes_sky[radial_nodes_sky <= 4.0].tolist()
         config.radial_spline_nodes = radial_nodes_sky.tolist()
         config.detector_boundary = 5
+        config.do_constrain_zero = True
         config.do_normalize_center = True
         config.do_fit_centroid = True
         config.do_fit_gradient = True
-        config.do_fit_outer_gradient = True
         config.do_normalize_center = True
 
         task = CpFlatFitGradientsTask(config=config)
@@ -474,14 +350,12 @@ class FlatFitGradientTestCase(lsst.utils.tests.TestCase):
 
         self.assertFloatsAlmostEqual(gradient.normalizationFactor, 1.0, rtol=1e-3)
         self.assertFloatsAlmostEqual(gradient.radialSplineNodes, radial_nodes_sky)
-        self.assertFloatsAlmostEqual(gradient.radialSplineValues, radial_values_sky, atol=5e-4)
+        self.assertFloatsAlmostEqual(gradient.radialSplineValues, radial_values_sky, atol=7e-4)
         self.assertFloatsAlmostEqual(gradient.itlRatio, itl_ratio, atol=1e-4)
         self.assertFloatsAlmostEqual(gradient.centroidDeltaX, 0.0, atol=6e-3)
         self.assertFloatsAlmostEqual(gradient.centroidDeltaY, 0.0, atol=6e-3)
         self.assertFloatsAlmostEqual(gradient.gradientX, 0.0, atol=1e-7)
         self.assertFloatsAlmostEqual(gradient.gradientY, 0.0, atol=1e-7)
-        self.assertFloatsAlmostEqual(gradient.outerGradientX, 0.0, atol=5e-3)
-        self.assertFloatsAlmostEqual(gradient.outerGradientY, 0.0, atol=5e-3)
 
 
 class TestMemory(lsst.utils.tests.MemoryTestCase):

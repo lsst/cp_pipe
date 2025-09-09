@@ -372,7 +372,6 @@ class PhotonTransferCurveAdjustGainRatiosTask(lsst.pipe.base.PipelineTask):
                     constrain_zero=False,
                     fit_centroid=False,
                     fit_gradient=False,
-                    fit_outer_gradient=False,
                     fp_centroid_x=0.0,
                     fp_centroid_y=0.0,
                 )

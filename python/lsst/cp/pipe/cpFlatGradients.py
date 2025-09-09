@@ -19,7 +19,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import numpy as np
-import warnings
 
 import lsst.afw.cameraGeom
 import lsst.pipe.base as pipeBase
@@ -27,7 +26,7 @@ from lsst.ip.isr import FlatGradient
 import lsst.pex.config as pexConfig
 from lsst.utils.plotting import make_figure
 
-from .utils import FlatGradientFitter
+from .utils import FlatGradientFitter, bin_focal_plane
 
 __all__ = [
     "CpFlatFitGradientsTask",
@@ -119,7 +118,7 @@ class CpFlatFitGradientsConfig(
     do_constrain_zero = pexConfig.Field(
         dtype=bool,
         doc="Constrain the outermost radial spline value to zero?",
-        default=True,
+        default=False,
     )
     do_fit_centroid = pexConfig.Field(
         dtype=bool,
@@ -129,11 +128,6 @@ class CpFlatFitGradientsConfig(
     do_fit_gradient = pexConfig.Field(
         dtype=bool,
         doc="Fit a linear gradient over the focal plane?",
-        default=False,
-    )
-    do_fit_outer_gradient = pexConfig.Field(
-        dtype=bool,
-        doc="Fit a separate gradient to the outer region of the focal plane?",
         default=False,
     )
     do_normalize_center = pexConfig.Field(
@@ -156,15 +150,33 @@ class CpFlatFitGradientsConfig(
         doc="Focal plane centroid y (mm).",
         default=0.0,
     )
-    outer_gradient_radius = pexConfig.Field(
+    radial_spline_nodes_initial = pexConfig.ListField(
         dtype=float,
-        doc="Minimum radius (mm) for the outer gradient fit.",
-        default=325.0,
+        doc="Spline nodes for use in initial fit (mm). Initial fit will only be performed "
+            "within the maximum radius for this list. The maximum radius should be chosen "
+            "to make ITL/E2V ratio fitting more stable.",
+        default=[0.0, 100.0, 200.0, 250.0, 275.0, 317.0],
     )
     radial_spline_nodes = pexConfig.ListField(
         dtype=float,
-        doc="Spline nodes to use for radial fit.",
-        default=[0., 200., 250., 300., 310., 320., 330., 340., 350., 360., 368.],
+        doc="Spline nodes to use for full radial fit (mm).",
+        default=[
+            0.0,
+            100.0,
+            200.0,
+            250.0,
+            275.0,
+            290.0,
+            300.0,
+            310.0,
+            315.0,
+            317.0,
+            320.0,
+            325.0,
+            333.0,
+            340.0,
+            350.0,
+        ],
     )
     min_flat_value = pexConfig.Field(
         dtype=float,
@@ -190,6 +202,17 @@ class CpFlatFitGradientsConfig(
         dtype=float,
         doc="Minimizer gtol parameter.",
         default=1e-10,
+    )
+    do_use_non_science_detectors = pexConfig.Field(
+        dtype=bool,
+        doc="Use non-science detectors in addition to science detectors?",
+        default=False,
+    )
+    fixed_model_residual_plot_scale = pexConfig.Field(
+        dtype=float,
+        doc="Fixed scale for making residual plots.",
+        optional=True,
+        default=None,
     )
 
 
@@ -221,7 +244,7 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
 
         butlerQC.put(struct, outputRefs)
 
-    def run(self, *, camera, input_flat_handle_dict, input_defect_handle_dict):
+    def run(self, *, camera, input_flat_handle_dict, input_defect_handle_dict, binned_image=None):
         """Run the CpFlatFitGradientsTask.
 
         This task will fit full focal-plane gradients. See
@@ -241,6 +264,11 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
         input_defect_handle_dict : `dict` [`int`,
                                            `lsst.daf.butler.DeferredDatasetHandle`]
             Dictionary of input defect handles, keyed by detector.
+        binned_image : `np.ndarray`, optional
+            Binned image from a previous run of the task. This will take
+            precedence over the input handles, for easy re-use. This may
+            be used for debugging, or if CpFlatFitGradientsTask is used
+            as a sub-task.
 
         Returns
         -------
@@ -250,22 +278,35 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
                 ``output_reference_gradient``: `lsst.ip.isr.FlatGradient`
                 ``model_residual_plot``: `matplotlib.Figure`
                 ``radial_model_plot``: `matplotlib.Figure`
+                ``binned_image``: `np.ndarray`
         """
-        # Load in and rebin the data.
-        self.log.info("Loading and rebinning %d flats.", len(input_flat_handle_dict))
-        rebinned = self._rebin_flats(input_flat_handle_dict, input_defect_handle_dict)
+        # Load in and bin the data.
+        if binned_image is None:
+            self.log.info("Loading and binning %d flats.", len(input_flat_handle_dict))
+            binned = bin_focal_plane(
+                input_flat_handle_dict,
+                self.config.detector_boundary,
+                self.config.bin_factor,
+                defect_handle_dict=input_defect_handle_dict,
+                include_itl_flag=True,
+            )
+        else:
+            self.log.info("Using provided binned flat image.")
+            binned = binned_image
+
+        binned_unaltered = binned.copy()
 
         # Renormalize and filter out bad data.
         fp_radius = np.sqrt(
-            (rebinned["xf"] - self.config.fp_centroid_x)**2.
-            + (rebinned["yf"] - self.config.fp_centroid_y)**2.
+            (binned["xf"] - self.config.fp_centroid_x)**2.
+            + (binned["yf"] - self.config.fp_centroid_y)**2.
         )
         use = (fp_radius < self.config.normalize_center_radius)
-        central_value = np.median(rebinned["value"][use])
+        central_value = np.median(binned["value"][use])
 
         if self.config.do_normalize_center:
             normalization = central_value
-            rebinned["value"] /= normalization
+            binned["value"] /= normalization
             value_min = self.config.min_flat_value
             value_max = self.config.max_flat_value
         else:
@@ -273,33 +314,87 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
             value_min = self.config.min_flat_value * central_value
             value_max = self.config.max_flat_value * central_value
 
-        good = (
-            np.isfinite(rebinned["value"])
-            & (rebinned["value"] >= value_min)
-            & (rebinned["value"] <= value_max)
+        good = np.ones(len(binned), dtype=np.bool_)
+        if not self.config.do_use_non_science_detectors:
+            # Remove science detectors.
+            for detector in camera:
+                if detector.getType() != lsst.afw.cameraGeom.DetectorType.SCIENCE:
+                    good[binned["detector"] == detector.getId()] = False
+
+        good &= (
+            np.isfinite(binned["value"])
+            & (binned["value"] >= value_min)
+            & (binned["value"] <= value_max)
+            & (fp_radius <= self.config.radial_spline_nodes[-1])
         )
-        rebinned = rebinned[good]
+        binned = binned[good]
+        fp_radius = fp_radius[good]
 
         # Do the fit.
-        self.log.info("Fitting gradient to rebinned flat data.")
-        nodes = self.config.radial_spline_nodes
+        self.log.info("Fitting gradient to binned flat data.")
 
-        fitter = FlatGradientFitter(
-            nodes,
-            rebinned["xf"],
-            rebinned["yf"],
-            rebinned["value"],
-            np.where(rebinned["itl"])[0],
+        # First pass, within a smaller radius.
+        # This first pass is to get a robust measurement of the
+        # ITL/E2V ratio which can be then used in the second pass
+        # (below).
+        nodes_initial = np.asarray(self.config.radial_spline_nodes_initial)
+        initial_fit_radius = np.max(nodes_initial)
+        use_initial = (fp_radius < initial_fit_radius)
+        self.log.info(
+            "Initial fit will be performed with an outer radius cut of %.2f mm.",
+            initial_fit_radius,
+        )
+
+        fitter_initial = FlatGradientFitter(
+            nodes_initial,
+            binned["xf"][use_initial],
+            binned["yf"][use_initial],
+            binned["value"][use_initial],
+            np.where(binned["itl"][use_initial])[0],
             constrain_zero=self.config.do_constrain_zero,
             fit_centroid=self.config.do_fit_centroid,
             fit_gradient=self.config.do_fit_gradient,
-            fit_outer_gradient=self.config.do_fit_outer_gradient,
-            outer_gradient_radius=self.config.outer_gradient_radius,
             fp_centroid_x=self.config.fp_centroid_x,
             fp_centroid_y=self.config.fp_centroid_y,
         )
-        p0 = fitter.compute_p0()
-        pars = fitter.fit(p0, fit_eps=self.config.fit_eps, fit_gtol=self.config.fit_gtol)
+        p0_initial = fitter_initial.compute_p0()
+        pars_initial = fitter_initial.fit(
+            p0_initial,
+            fit_eps=self.config.fit_eps,
+            fit_gtol=self.config.fit_gtol,
+        )
+        if "itl_ratio" in fitter_initial.indices:
+            itl_ratio_initial = pars_initial[fitter_initial.indices["itl_ratio"]]
+        else:
+            itl_ratio_initial = 1.0
+
+        # Second pass, full radial range.
+        # This second pass uses the ITL/E2V ratio from the first
+        # pass (above) to avoid degeneracies with the strongly varying
+        # radial function in the outer radii.
+
+        nodes = np.asarray(self.config.radial_spline_nodes)
+        self.log.info("Final fit will be performed with an outer radius cut of %.2f mm.", np.max(nodes))
+
+        fitter = FlatGradientFitter(
+            nodes,
+            binned["xf"],
+            binned["yf"],
+            binned["value"],
+            np.where(binned["itl"])[0],
+            constrain_zero=self.config.do_constrain_zero,
+            fit_centroid=self.config.do_fit_centroid,
+            fit_gradient=self.config.do_fit_gradient,
+            fp_centroid_x=self.config.fp_centroid_x,
+            fp_centroid_y=self.config.fp_centroid_y,
+        )
+        p0 = fitter.compute_p0(itl_ratio=itl_ratio_initial)
+        pars = fitter.fit(
+            p0,
+            freeze_itl_ratio=True,
+            fit_eps=self.config.fit_eps,
+            fit_gtol=self.config.fit_gtol,
+        )
 
         # Create the output FlatGradient calibration.
         gradient = FlatGradient()
@@ -319,11 +414,6 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
         else:
             gradient_x, gradient_y = 0.0, 0.0
 
-        if self.config.do_fit_outer_gradient:
-            outer_gradient_x, outer_gradient_y = pars[fitter.indices["outer_gradient"]]
-        else:
-            outer_gradient_x, outer_gradient_y = 0.0, 0.0
-
         gradient.setParameters(
             radialSplineNodes=nodes,
             radialSplineValues=pars[fitter.indices["spline"]],
@@ -334,16 +424,13 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
             centroidDeltaY=centroid_delta_y,
             gradientX=gradient_x,
             gradientY=gradient_y,
-            outerGradientX=outer_gradient_x,
-            outerGradientY=outer_gradient_y,
-            outerGradientRadius=self.config.outer_gradient_radius,
             normalizationFactor=normalization,
         )
 
         flat = input_flat_handle_dict[list(input_flat_handle_dict.keys())[0]].get()
 
         self.log.info("Making QA plots.")
-        plot_dict = self._make_qa_plots(rebinned, gradient, flat.getFilter())
+        plot_dict = self._make_qa_plots(binned, gradient, flat.getFilter())
 
         # Set the calib metadata.
         filter_label = flat.getFilter()
@@ -354,6 +441,7 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
         struct = pipeBase.Struct(
             model_residual_plot=plot_dict["model_residuals"],
             radial_model_plot=plot_dict["radial"],
+            binned_image=binned_unaltered,
         )
         if self.config.do_reference_gradient:
             struct.output_reference_gradient = gradient
@@ -362,116 +450,13 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
 
         return struct
 
-    def _rebin_flats(self, input_flat_handle_dict, input_defect_handle_dict):
-        """Rebin the input flats.
+    def _make_qa_plots(self, binned, gradient, filter_label):
+        """Make QA plots for the binned data.
 
         Parameters
         ----------
-        input_flat_handle_dict : `dict` [`int`,
-                                         `lsst.daf.butler.DeferredDatasetHandle`]
-            Dictionary of input flat handles, keyed by detector.
-        input_defect_handle_dict : `dict` [`int`,
-                                           `lsst.daf.butler.DeferredDatasetHandle`]
-            Dictionary of input defect handles, keyed by detector.
-
-        Returns
-        -------
-        rebinned : `np.ndarray`
-            Array with focal plane positions (``xf``, ``yf``); flat values
-            (``value``) and whether or not the observation was itl (``itl``).
-        """
-        xf_arrays = []
-        yf_arrays = []
-        value_arrays = []
-        itl_arrays = []
-
-        for det in input_flat_handle_dict.keys():
-            flat = input_flat_handle_dict[det].get()
-            defect_handle = input_defect_handle_dict.get(det, None)
-            if defect_handle is not None:
-                defects = defect_handle.get()
-            else:
-                defects = None
-
-            detector = flat.getDetector()
-
-            # Mask out defects if we have them.
-            if defects is not None:
-                for defect in defects:
-                    flat.image[defect.getBBox()].array[:, :] = np.nan
-
-            # Bin the image, avoiding the boundary and the masked pixels.
-            # We also make sure we are using an integral number of
-            # steps to avoid partially covered binned pixels.
-
-            arr = flat.image.array
-
-            n_step_y = (arr.shape[0] - (2 * self.config.detector_boundary)) // self.config.bin_factor
-            y_min = self.config.detector_boundary
-            y_max = self.config.bin_factor * n_step_y + y_min
-            n_step_x = (arr.shape[1] - (2 * self.config.detector_boundary)) // self.config.bin_factor
-            x_min = self.config.detector_boundary
-            x_max = self.config.bin_factor * n_step_x + x_min
-
-            arr = arr[y_min: y_max, x_min: x_max]
-            binned = arr.reshape((n_step_y, self.config.bin_factor, n_step_x, self.config.bin_factor))
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", r"Mean of empty")
-                binned = np.nanmean(binned, axis=1)
-                binned = np.nanmean(binned, axis=2)
-
-            xx = np.arange(binned.shape[1]) * self.config.bin_factor + self.config.bin_factor / 2. + x_min
-            yy = np.arange(binned.shape[0]) * self.config.bin_factor + self.config.bin_factor / 2. + y_min
-            x, y = np.meshgrid(xx, yy)
-            x = x.ravel()
-            y = y.ravel()
-            value = binned.ravel()
-
-            # Transform to focal plane coordinates.
-            transform = detector.getTransform(lsst.afw.cameraGeom.PIXELS, lsst.afw.cameraGeom.FOCAL_PLANE)
-            xy = np.vstack((x, y))
-            xf, yf = np.vsplit(transform.getMapping().applyForward(xy), 2)
-            xf = xf.ravel()
-            yf = yf.ravel()
-
-            is_itl = np.zeros(len(value), dtype=np.bool_)
-            # We use this check so that ITL matches ITL science detectors,
-            # ITL_WF wavefront detectors, and pseudoITL test detectors.
-            is_itl[:] = ("ITL" in detector.getPhysicalType())
-
-            xf_arrays.append(xf)
-            yf_arrays.append(yf)
-            value_arrays.append(value)
-            itl_arrays.append(is_itl)
-
-        xf = np.concatenate(xf_arrays)
-        yf = np.concatenate(yf_arrays)
-        value = np.concatenate(value_arrays)
-        itl = np.concatenate(itl_arrays)
-
-        rebinned = np.zeros(
-            len(xf),
-            dtype=[
-                ("xf", "f8"),
-                ("yf", "f8"),
-                ("value", "f8"),
-                ("itl", "?"),
-            ],
-        )
-        rebinned["xf"] = xf
-        rebinned["yf"] = yf
-        rebinned["value"] = value
-        rebinned["itl"] = itl
-
-        return rebinned
-
-    def _make_qa_plots(self, rebinned, gradient, filter_label):
-        """Make QA plots for the rebinned data.
-
-        Parameters
-        ----------
-        rebinned : `np.ndarray`
-            Array with rebinned flat data.
+        binned : `np.ndarray`
+            Array with binned flat data.
         gradient : `lsst.ip.isr.FlatGradient`
             Flat gradient parameters.
         filter_label : `lsst.afw.image.FilterLabel`
@@ -482,15 +467,15 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
         plot_dict : `dict` [`str`, `matplotlib.Figure`]
             Dictionary of plot figures, keyed by name.
         """
-        vmin, vmax = np.nanpercentile(rebinned["value"], [5, 95])
-        model = gradient.computeFullModel(rebinned["xf"], rebinned["yf"], rebinned["itl"])
+        vmin, vmax = np.nanpercentile(binned["value"], [5, 95])
+        model = gradient.computeFullModel(binned["xf"], binned["yf"], binned["itl"])
 
         # Fig1 is a 3 panel plot of data, model, and data/model.
         fig1 = make_figure(figsize=(16, 6))
 
         ax1 = fig1.add_subplot(131)
 
-        im1 = ax1.hexbin(rebinned["xf"], rebinned["yf"], C=rebinned["value"], vmin=vmin, vmax=vmax)
+        im1 = ax1.hexbin(binned["xf"], binned["yf"], C=binned["value"], vmin=vmin, vmax=vmax)
 
         ax1.set_xlabel("Focal Plane x (mm)")
         ax1.set_ylabel("Focal Plane y (mm)")
@@ -501,7 +486,7 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
 
         ax2 = fig1.add_subplot(132)
 
-        im2 = ax2.hexbin(rebinned["xf"], rebinned["yf"], C=model, vmin=vmin, vmax=vmax)
+        im2 = ax2.hexbin(binned["xf"], binned["yf"], C=model, vmin=vmin, vmax=vmax)
 
         ax2.set_xlabel("Focal Plane x (mm)")
         ax2.set_ylabel("Focal Plane y (mm)")
@@ -512,10 +497,14 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
 
         ax3 = fig1.add_subplot(133)
 
-        ratio = rebinned["value"] / model
-        vmin, vmax = np.nanpercentile(ratio, [1, 99])
+        ratio = binned["value"] / model
+        if self.config.fixed_model_residual_plot_scale is not None:
+            vmin = 1.0 - self.config.fixed_model_residual_plot_scale
+            vmax = 1.0 + self.config.fixed_model_residual_plot_scale
+        else:
+            vmin, vmax = np.nanpercentile(ratio, [1, 99])
 
-        im3 = ax3.hexbin(rebinned["xf"], rebinned["yf"], C=ratio, vmin=vmin, vmax=vmax)
+        im3 = ax3.hexbin(binned["xf"], binned["yf"], C=ratio, vmin=vmin, vmax=vmax)
 
         ax3.set_xlabel("Focal Plane x (mm)")
         ax3.set_ylabel("Focal Plane y (mm)")
@@ -533,11 +522,11 @@ class CpFlatFitGradientsTask(pipeBase.PipelineTask):
         centroid_x = gradient.centroidX + gradient.centroidDeltaX
         centroid_y = gradient.centroidY + gradient.centroidDeltaY
 
-        radius = np.sqrt((rebinned["xf"] - centroid_x)**2. + (rebinned["yf"] - centroid_y)**2.)
-        value_adjusted = rebinned["value"].copy()
+        radius = np.sqrt((binned["xf"] - centroid_x)**2. + (binned["yf"] - centroid_y)**2.)
+        value_adjusted = binned["value"].copy()
 
-        value_adjusted *= gradient.computeGradientModel(rebinned["xf"], rebinned["yf"])
-        value_adjusted[rebinned["itl"]] /= gradient.itlRatio
+        value_adjusted *= gradient.computeGradientModel(binned["xf"], binned["yf"])
+        value_adjusted[binned["itl"]] /= gradient.itlRatio
 
         ax.hexbin(radius, value_adjusted, bins="log")
         xvals = np.linspace(gradient.radialSplineNodes[0], gradient.radialSplineNodes[-1], 1000)

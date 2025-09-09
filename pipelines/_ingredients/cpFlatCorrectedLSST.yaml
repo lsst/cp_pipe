@@ -44,7 +44,6 @@ tasks:
     config:
       do_reference_gradient: false
       do_fit_gradient: true
-      do_fit_outer_gradient: true
       do_fit_centroid: true
   cpFlatApplyGradients:
     class: lsst.cp.pipe.CpFlatApplyGradientsTask

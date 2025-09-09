@@ -7,17 +7,11 @@ tasks:
     class: lsst.cp.pipe.CalibCombineByFilterTask
     config:
       doVignetteMask: true
-      # The radius is derived from the Batoid vignetting
-      # polynomial, with a threshold of 0.1 (90% vignetted).
-      # This corresponds to roughly 80% vignetting in the dome
-      # flats.
-      vignette.radius: 364.51
+      # This radius is from RFC-1120.
+      vignette.radius: 350.0
   cpFlatRedCombine:
     class: lsst.cp.pipe.CalibCombineByFilterTask
     config:
       doVignetteMask: true
-      # The radius is derived from the Batoid vignetting
-      # polynomial, with a threshold of 0.1 (90% vignetted).
-      # This corresponds to roughly 80% vignetting in the dome
-      # flats.
-      vignette.radius: 364.51
+      # This radius is from RFC-1120.
+      vignette.radius: 350.0
