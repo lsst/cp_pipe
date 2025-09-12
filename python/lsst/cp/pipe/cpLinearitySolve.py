@@ -22,6 +22,7 @@
 
 __all__ = ["LinearitySolveTask", "LinearitySolveConfig"]
 
+import logging
 import numpy as np
 import esutil
 from scipy.stats import median_abs_deviation
@@ -478,7 +479,15 @@ class LinearitySolveTask(pipeBase.PipelineTask):
         if self.config.usePhotodiode and self.config.applyPhotodiodeCorrection:
             abscissaCorrections = inputPhotodiodeCorrection.abscissaCorrections
 
-        groupingValues = self._determineInputGroups(inputPtc)
+        groupingValues = _determineInputGroups(
+            inputPtc,
+            self.config.doAutoGrouping,
+            self.config.autoGroupingUseExptime,
+            self.config.autoGroupingMaxSignalFraction,
+            self.config.autoGroupingThreshold,
+            self.config.splineGroupingColumn,
+            self.config.minPhotodiodeCurrent,
+        )
 
         if self.config.linearityType == 'Spline':
             if self.config.doSplineFitTemperature:
@@ -554,13 +563,17 @@ class LinearitySolveTask(pipeBase.PipelineTask):
             turnoffMask = inputPtc.expIdMask[ampName].copy()
             turnoffMask &= mask
 
-            turnoffIndex, turnoff, maxSignal = self._computeTurnoffAndMax(
+            turnoffIndex, turnoff, maxSignal = _computeTurnoffAndMax(
                 inputAbscissa,
                 inputPtc.rawMeans[ampName],
                 turnoffMask,
                 groupingValues,
                 ampName=ampName,
+                minSignalFitLinearityTurnoff=self.config.minSignalFitLinearityTurnoff,
+                maxFracLinearityDeviation=self.config.maxFracLinearityDeviation,
+                log=self.log,
             )
+
             if np.isnan(turnoff):
                 # This is a bad amp, with no linearizer.
                 linearizer = self.fillBadAmp(linearizer, fitOrder, inputPtc, amp)
@@ -1028,119 +1041,6 @@ class LinearitySolveTask(pipeBase.PipelineTask):
 
         return groupingValues
 
-    def _computeTurnoffAndMax(self, abscissa, ordinate, initialMask, groupingValues, ampName="UNKNOWN"):
-        """Compute the turnoff and max signal.
-
-        Parameters
-        ----------
-        abscissa : `np.ndarray`
-            Input x values, either photoCharges or exposure times.
-            These should be cleaned of any non-finite values.
-        ordinate : `np.ndarray`
-            Input y values, the raw mean values for the amp.
-            These should be cleaned of any non-finite values.
-        initialMask : `np.ndarray`
-            Mask to use for initial fit (usually from PTC).
-        groupingValues : `np.ndarray`
-            Array of values that are used to group different fits.
-        ampName : `str`, optional
-            Amplifier name (used for logging).
-
-        Returns
-        -------
-        turnoffIndex : `int`
-            Fit turnoff index (keyed to raw input).
-        turnoff : `float`
-            Fit turnoff value.
-        maxSignal : `float`
-            Fit maximum signal value.
-        """
-        # Follow eo_pipe:
-        # https://github.com/lsst-camera-dh/eo_pipe/blob/6afa546569f622b8d604921e248200481c445730/python/lsst/eo/pipe/linearityPlotsTask.py#L50
-        # Replacing flux with abscissa, Ne with ordinate.
-
-        # Fit a line with the y-intercept fixed to zero, using the
-        # signal counts Ne as the variance in the chi-square, i.e.,
-        # chi2 = sum( (ordinate - aa*abscissa)**2/ordinate )
-        # Minimizing chi2 wrt aa, gives
-        # aa = sum(abscissa) / sum(abscissa**2/ordinate)
-
-        fitMask = initialMask.copy()
-        fitMask[ordinate < self.config.minSignalFitLinearityTurnoff] = False
-
-        gValues = np.unique(groupingValues)
-        groupIndicesList = []
-        for gValue in gValues:
-            use, = np.where(groupingValues == gValue)
-            groupIndicesList.append(use)
-
-        found = False
-        while (fitMask.sum() >= 4) and not found:
-            residuals = np.zeros_like(ordinate)
-
-            abscissaMasked = abscissa.copy()
-            abscissaMasked[~fitMask] = np.nan
-            ordinateMasked = ordinate.copy()
-            ordinateMasked[~fitMask] = np.nan
-
-            for groupIndices in groupIndicesList:
-                num = np.nansum(abscissaMasked[groupIndices])
-                denom = np.nansum(abscissaMasked[groupIndices]**2./ordinateMasked[groupIndices])
-                aa = num / denom
-
-                residuals[groupIndices] = (ordinate[groupIndices] - aa*abscissa[groupIndices]) / \
-                    ordinate[groupIndices]
-
-            # Use the residuals to compute the turnoff.
-            residuals -= np.nanmedian(residuals)
-
-            goodPoints = np.abs(residuals) < self.config.maxFracLinearityDeviation
-
-            if goodPoints.sum() > 4:
-                # This was an adequate fit.
-                found = True
-                turnoff = np.max(ordinate[goodPoints])
-                turnoffIndex = np.where(np.isclose(ordinate, turnoff))[0][0]
-            else:
-                # This was a bad fit; remove the largest outlier.
-                badIndex = np.argmax(np.abs(residuals)[fitMask])
-                fitIndices, = np.nonzero(fitMask)
-                fitMask[fitIndices[badIndex]] = False
-
-        if not found:
-            # Could not find any reasonable value.
-            self.log.warning(
-                "Could not find a reasonable initial linear fit to compute linearity turnoff for "
-                "amplifier %s; may need finer sampling of input data?",
-                ampName,
-            )
-            if np.all(~fitMask):
-                return -1, np.nan, np.nan
-
-            turnoff = np.max(ordinate[fitMask])
-            turnoffIndex = np.where(np.isclose(ordinate, turnoff))[0][0]
-
-            residuals = np.zeros(len(ordinate))
-
-        # Fit the maximum signal.
-        if turnoffIndex == (len(residuals) - 1):
-            # This is the last point; we can't do a fit.
-            # This is not a warning because we do not actually need this
-            # value in practice.
-            self.log.info(
-                "No linearity turnoff detected for amplifier %s; try to increase the signal range.",
-                ampName,
-            )
-            maxSignal = ordinate[turnoffIndex]
-        else:
-            maxSignalInitial = np.nanmax(ordinate)
-
-            highFluxPoints = (np.nan_to_num(ordinate)
-                              > (1.0 - self.config.maxFracLinearityDeviation)*maxSignalInitial)
-            maxSignal = np.median(ordinate[highFluxPoints])
-
-        return turnoffIndex, turnoff, maxSignal
-
     def debugFit(self, stepname, xVector, yVector, yModel, mask, ampName):
         """Debug method for linearity fitting.
 
@@ -1211,3 +1111,248 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 elif ans in ('x', ):
                     exit()
             plt.close()
+
+
+def _determineInputGroups(
+    ptc,
+    doAutoGrouping,
+    autoGroupingUseExptime,
+    autoGroupingMaxSignalFraction,
+    autoGroupingThreshold,
+    groupingColumn,
+    minPhotodiodeCurrent,
+):
+    """Determine input groups for linearity fit.
+
+    If ``splineGroupingColumn`` is set, then grouping will be done
+    based on this. Otherwise, if ``doAutoGrouping`` is False, then
+    no grouping will be done. Finally, grouping will be done by measuring
+    the ratio of signal to exposure time (if
+    ``autoGroupingUseExptime`` is set; recommended) or photocharge.
+    These are then clustered with a simple algorithm to split into groups.
+    If the data was taking by varying exposure time at different
+    illumination levels, this grouping is very robust as the clusters are
+    very well separated.
+
+    Parameters
+    ----------
+    ptc : `lsst.ip.isr.PhotonTransferCurveDataset`
+        Input PTC to do grouping.
+    doAutoGrouping : `bool`
+        Do automatic grouping of pairs?
+    autoGroupingUseExptime : `bool`
+        Use exposure time for automatic grouping of pairs?
+    autoGroupingMaxSignalFraction : `float`
+        All exposures with signal higher than this threshold will
+        be put into the largest signal group.
+    autoGroupingThreshold : `float`
+        Minimum relative jump from sorted values to determine a group.
+    minPhotodiodeCurrent : `float`
+        Minimum photodiode current if auto-grouping is used and
+        autoGroupingUseExptime is False.
+    splineGroupingColumn : `str` or `None`
+        Column to be used for spline grouping (if doAutoGrouping is False).
+
+    Returns
+    -------
+    groupingValues : `np.ndarray`
+        Array of values that are unique for a given group.
+    """
+    nPair = np.asarray(ptc.inputExpIdPairs[ptc.ampNames[0]]).shape[0]
+    groupingValues = np.zeros(nPair, dtype=np.int64)
+
+    if not doAutoGrouping:
+        if groupingColumn is not None:
+            if groupingColumn not in ptc.auxValues:
+                raise ValueError(f"Config requests grouping by {groupingColumn}, "
+                                 "but this column is not available in ptc.auxValues.")
+
+            uGroupValues = np.unique(ptc.auxValues[groupingColumn])
+            for i, uGroupValue in enumerate(uGroupValues):
+                groupingValues[ptc.auxValues[groupingColumn] == uGroupValue] = i
+    else:
+        means = np.zeros((nPair, len(ptc.ampNames)))
+        exptimes = np.zeros_like(means)
+        for i, ampName in enumerate(ptc.ampNames):
+            means[:, i] = ptc.rawMeans[ampName] * ptc.gain[ampName]
+            exptimes[:, i] = ptc.rawExpTimes[ampName]
+        detMeans = np.nanmean(means, axis=1)
+        detExptimes = np.nanmean(exptimes, axis=1)
+
+        if autoGroupingUseExptime:
+            abscissa = detExptimes
+        else:
+            abscissa = ptc.photoCharges[ptc.ampNames[0]].copy()
+            # Set illegal photocharges to NaN.
+            abscissa[abscissa < minPhotodiodeCurrent] = np.nan
+
+        ratio = detMeans / abscissa
+        ratio /= np.nanmedian(ratio)
+
+        # Adjust those that are above threshold so they fall into the
+        # largest group.
+        above = (detMeans > autoGroupingMaxSignalFraction*np.nanmax(detMeans))
+        maxIndex = np.argmax(detMeans[~above])
+        ratio[above] = ratio[maxIndex]
+
+        # The clustering of ratios into groups is performed with a simple
+        # algorithm based on sorting and looking for the largest gaps.
+        # See https://stackoverflow.com/a/18385795
+        st = np.argsort(ratio)
+        stratio = ratio[st]
+        delta = stratio[1:] - stratio[0: -1]
+
+        transitions, = np.where(delta > autoGroupingThreshold)
+        if len(transitions) > 0:
+            ratioCuts = stratio[transitions] + autoGroupingThreshold/2.
+
+            for i in range(len(transitions) + 1):
+                if i == 0:
+                    inGroup, = np.where(ratio < ratioCuts[i])
+                elif i == len(transitions):
+                    inGroup, = np.where(ratio > ratioCuts[i - 1])
+                else:
+                    inGroup, = np.where((ratio > ratioCuts[i - 1]) & (ratio < ratioCuts[i]))
+                groupingValues[inGroup] = i
+
+        # Ensure out-of-range photoCharges/exptimes are in their own group.
+        # These are masked later on.
+        groupingValues[~np.isfinite(abscissa)] = -1
+        # And put the high ones in the max group.
+        groupingValues[above] = groupingValues[maxIndex]
+
+    return groupingValues
+
+
+def _computeTurnoffAndMax(
+    abscissa,
+    ordinate,
+    initialMask,
+    groupingValues,
+    ampName="UNKNOWN",
+    minSignalFitLinearityTurnoff=1000.0,
+    maxFracLinearityDeviation=0.01,
+    log=None,
+):
+    """Compute the turnoff and max signal.
+
+    Parameters
+    ----------
+    minSignalFitLinearityTurnoff : `float`
+        Minimum signal to cmpute raw linearity slope for linearityTurnoff.
+    abscissa : `np.ndarray`
+        Input x values, either photoCharges or exposure times.
+        These should be cleaned of any non-finite values.
+    ordinate : `np.ndarray`
+        Input y values, the raw mean values for the amp.
+        These should be cleaned of any non-finite values.
+    initialMask : `np.ndarray`
+        Mask to use for initial fit (usually from PTC).
+    groupingValues : `np.ndarray`
+        Array of values that are used to group different fits.
+    ampName : `str`, optional
+        Amplifier name (used for logging).
+    minSignalFitLinearityTurnoff : `float`, optional
+        Minimum signal to cmpute raw linearity slope for linearityTurnoff.
+    maxFracLinearityDeviation : `float`, optional
+        Maximum fraction deviation from raw linearity to compute turnoff.
+    log : `logging.Logger`, optional
+        Log object.
+
+    Returns
+    -------
+    turnoffIndex : `int`
+        Fit turnoff index (keyed to raw input).
+    turnoff : `float`
+        Fit turnoff value.
+    maxSignal : `float`
+        Fit maximum signal value.
+    """
+    if log is None:
+        log = logging.getLogger(__name__)
+
+    # Follow eo_pipe:
+    # https://github.com/lsst-camera-dh/eo_pipe/blob/6afa546569f622b8d604921e248200481c445730/python/lsst/eo/pipe/linearityPlotsTask.py#L50
+    # Replacing flux with abscissa, Ne with ordinate.
+
+    # Fit a line with the y-intercept fixed to zero, using the
+    # signal counts Ne as the variance in the chi-square, i.e.,
+    # chi2 = sum( (ordinate - aa*abscissa)**2/ordinate )
+    # Minimizing chi2 wrt aa, gives
+    # aa = sum(abscissa) / sum(abscissa**2/ordinate)
+
+    fitMask = initialMask.copy()
+    fitMask[ordinate < minSignalFitLinearityTurnoff] = False
+
+    gValues = np.unique(groupingValues)
+    groupIndicesList = []
+    for gValue in gValues:
+        use, = np.where(groupingValues == gValue)
+        groupIndicesList.append(use)
+
+    found = False
+    while (fitMask.sum() >= 4) and not found:
+        residuals = np.zeros_like(ordinate)
+
+        abscissaMasked = abscissa.copy()
+        abscissaMasked[~fitMask] = np.nan
+        ordinateMasked = ordinate.copy()
+        ordinateMasked[~fitMask] = np.nan
+
+        for groupIndices in groupIndicesList:
+            num = np.nansum(abscissaMasked[groupIndices])
+            denom = np.nansum(abscissaMasked[groupIndices]**2./ordinateMasked[groupIndices])
+            aa = num / denom
+
+            residuals[groupIndices] = (ordinate[groupIndices] - aa*abscissa[groupIndices]) / \
+                ordinate[groupIndices]
+
+        # Use the residuals to compute the turnoff.
+        residuals -= np.nanmedian(residuals)
+
+        goodPoints = np.abs(residuals) < maxFracLinearityDeviation
+
+        if goodPoints.sum() > 4:
+            # This was an adequate fit.
+            found = True
+            turnoff = np.max(ordinate[goodPoints])
+            turnoffIndex = np.where(np.isclose(ordinate, turnoff))[0][0]
+        else:
+            # This was a bad fit; remove the largest outlier.
+            badIndex = np.argmax(np.abs(residuals)[fitMask])
+            fitIndices, = np.nonzero(fitMask)
+            fitMask[fitIndices[badIndex]] = False
+
+    if not found:
+        # Could not find any reasonable value.
+        log.warning(
+            "Could not find a reasonable initial linear fit to compute linearity turnoff for "
+            "amplifier %s; may need finer sampling of input data?",
+            ampName,
+        )
+        if np.all(~fitMask):
+            return -1, np.nan, np.nan
+
+        turnoff = np.max(ordinate[fitMask])
+        turnoffIndex = np.where(np.isclose(ordinate, turnoff))[0][0]
+
+        residuals = np.zeros(len(ordinate))
+
+    # Fit the maximum signal.
+    if turnoffIndex == (len(residuals) - 1):
+        # This is the last point; we can't do a fit.
+        # This is not a warning because we do not actually need this
+        # value in practice.
+        log.info(
+            "No linearity turnoff detected for amplifier %s; try to increase the signal range.",
+            ampName,
+        )
+        maxSignal = ordinate[turnoffIndex]
+    else:
+        maxSignalInitial = np.nanmax(ordinate)
+
+        highFluxPoints = (np.nan_to_num(ordinate)
+                          > (1.0 - maxFracLinearityDeviation)*maxSignalInitial)
+        maxSignal = np.median(ordinate[highFluxPoints])
+
+    return turnoffIndex, turnoff, maxSignal

@@ -37,6 +37,7 @@ from lsst.ip.isr import PhotonTransferCurveDataset
 import lsst.afw.image
 import lsst.afw.math
 from lsst.cp.pipe import LinearitySolveTask, LinearityNormalizeTask
+from lsst.cp.pipe.cpLinearitySolve import _computeTurnoffAndMax
 from lsst.cp.pipe.ptc import PhotonTransferCurveSolveTask
 from lsst.cp.pipe.utils import funcPolynomial
 from lsst.ip.isr.isrMock import FlatMock, IsrMock
@@ -605,7 +606,7 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
         task = LinearitySolveTask(config=config)
 
         with self.assertNoLogs(level=logging.WARNING):
-            turnoff_index, turnoff, max_signal = task._computeTurnoffAndMax(
+            turnoff_index, turnoff, max_signal = _computeTurnoffAndMax(
                 abscissa,
                 ordinate,
                 ptc_mask,
@@ -670,7 +671,7 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
         cutoff = (ordinate < turnoff)
 
         with self.assertLogs(level=logging.INFO) as cm:
-            turnoff_index2, turnoff2, max_signal2 = task._computeTurnoffAndMax(
+            turnoff_index2, turnoff2, max_signal2 = _computeTurnoffAndMax(
                 abscissa[cutoff],
                 ordinate[cutoff],
                 ptc_mask[cutoff],
