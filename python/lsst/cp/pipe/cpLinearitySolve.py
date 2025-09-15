@@ -26,6 +26,7 @@ import logging
 import numpy as np
 import esutil
 from scipy.stats import median_abs_deviation
+from scipy.interpolate import Akima1DInterpolator
 
 import lsst.afw.image as afwImage
 import lsst.pipe.base as pipeBase
@@ -1111,6 +1112,878 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 elif ans in ('x', ):
                     exit()
             plt.close()
+
+
+class LinearityDoubleSplineSolveConnections(
+    pipeBase.PipelineTaskConnections,
+    dimensions=("instrument", "detector"),
+):
+    dummy = cT.Input(
+        name="raw",
+        doc="Dummy exposure.",
+        storageClass='Exposure',
+        dimensions=("instrument", "exposure", "detector"),
+        multiple=True,
+        deferLoad=True,
+    )
+    camera = cT.PrerequisiteInput(
+        name="camera",
+        doc="Camera Geometry definition.",
+        storageClass="Camera",
+        dimensions=("instrument", ),
+        isCalibration=True,
+    )
+    inputLinearizerPtc = cT.Input(
+        name="linearizerPtc",
+        doc="Input linearizer PTC dataset.",
+        storageClass="PhotonTransferCurveDataset",
+        dimensions=("instrument", "detector"),
+        isCalibration=True,
+    )
+    inputNormalization = cT.Input(
+        name="cpLinearizerPtcNormalization",
+        doc="Focal-plane normalization table.",
+        storageClass="ArrowAstropy",
+        dimensions=("instrument",),
+        isCalibration=True,
+    )
+    inputBinnedImages = cT.Input(
+        name="cpPtcPairBinned",
+        doc="Tabulated binned exposure pairs.",
+        storageClass="ArrowAstropy",
+        dimensions=("instrument", "exposure", "detector"),
+        multiple=True,
+        deferLoad=True,
+    )
+
+    def __init__(self, *, config=None):
+        super().__init__(config=config)
+
+        if not config.useFocalPlaneNormalization:
+            del self.inputNormalization
+
+
+class LinearityDoubleSplineSolveConfig(
+    pipeBase.PipelineTaskConfig,
+    pipelineConnections=LinearityDoubleSplineSolveConnections,
+):
+    # FIXME RENAME
+    minLinearAdu = pexConfig.Field(
+        dtype=float,
+        doc="Minimum adu value to use to estimate linear term.",
+        default=30.0,
+    )
+    # Need trimmedState! Or figure out if needed.
+    maxFracLinearityDeviation = pexConfig.Field(
+        dtype=float,
+        doc="Maximum fraction deviation from raw linearity to compute "
+            "linearityTurnoff and linearityMaxSignal.",
+        # TODO: DM-46811 investigate if this can be raised to 0.05.
+        default=0.01,
+    )
+    minSignalFitLinearityTurnoff = pexConfig.Field(
+        dtype=float,
+        doc="Minimum signal to compute raw linearity slope for linearityTurnoff.",
+        default=1000.0,
+    )
+    usePhotodiode = pexConfig.Field(
+        dtype=bool,
+        doc="Use the photodiode info instead of the raw expTimes?",
+        default=False,
+    )
+    minPhotodiodeCurrent = pexConfig.Field(
+        dtype=float,
+        doc="Minimum value to trust photodiode signals.",
+        default=0.0,
+    )
+    doAutoGrouping = pexConfig.Field(
+        dtype=bool,
+        doc="Do automatic group detection? Cannot be True if splineGroupingColumn is also set. "
+            "The automatic group detection will use the ratio of signal to exposure time (if "
+            "autoGroupingUseExptime is True) or photodiode (if False) to determine which "
+            "flat pairs were taken with different illumination settings.",
+        default=False,
+    )
+    autoGroupingUseExptime = pexConfig.Field(
+        dtype=bool,
+        doc="Use exposure time to determine automatic grouping. Used if doAutoGrouping=True.",
+        default=True,
+    )
+    autoGroupingThreshold = pexConfig.Field(
+        dtype=float,
+        doc="Minimum relative jump from sorted conversion values to determine a group.",
+        default=0.1,
+    )
+    autoGroupingMaxSignalFraction = pexConfig.Field(
+        dtype=float,
+        doc="Only do auto-grouping when the signal is this fraction of the maximum signal. "
+            "All exposures with signal higher than this threshold will be put into the "
+            "largest signal group. This config is needed if the input PTC goes beyond "
+            "the linearity turnoff.",
+        default=0.9,
+    )
+    groupingColumn = pexConfig.Field(
+        dtype=str,
+        doc="Column to use for grouping together points, to allow "
+            "for different proportionality constants. If None, then grouping will "
+            "only be done if doAutoGrouping is True.",
+        default=None,
+        optional=True,
+    )
+    groupingMinPoints = pexConfig.Field(
+        dtype=int,
+        doc="Minimum number of linearity points to allow grouping together points "
+            "for Spline mode with splineGroupingColumn. This configuration is here "
+            "to prevent misuse of the Spline code to avoid over-fitting.",
+        default=100,
+    )
+    absoluteSplineNodeSize = pexConfig.Field(
+        dtype=float,
+        doc="Minimum size for linearity nodes for absolute spline (adu); "
+            "note that there will always be a node at the reference PTC turnoff.",
+        default=5000.0,
+    )
+    absoluteSplineFitMinIter = pexConfig.Field(
+        dtype=int,
+        doc="Minimum number of iterations for absolute spline fit.",
+        default=3,
+    )
+    absoluteSplineFitMaxIter = pexConfig.Field(
+        dtype=int,
+        doc="Maximum number of iterations for absolute spline fit.",
+        default=20,
+    )
+    absoluteSplineFitMaxRejectionPerIteration = pexConfig.Field(
+        dtype=int,
+        doc="Maximum number of rejections per iteration for absolute spline fit.",
+        default=5,
+    )
+    absoluteNSigmaClipLinear = pexConfig.Field(
+        dtype=float,
+        doc="Sigma-clipping for absolute spline solution.",
+        default=5.0,
+    )
+    doAbsoluteSplineFitOffset = pexConfig.Field(
+        dtype=bool,
+        doc="Fit a scattered light offset in the spline fit.",
+        default=True,
+    )
+    doAbsoluteSplineFitWeights = pexConfig.Field(
+        dtype=bool,
+        doc="Fit linearity weight parameters in the spline fit.",
+        default=False,
+    )
+    absoluteSplineFitWeightParsStart = pexConfig.ListField(
+        dtype=float,
+        doc="Starting parameters for weight fit, if doSplineFitWeights=True. "
+            "Parameters are such that sigma = sqrt(par[0]**2. + par[1]**2./mu)."
+            "If doSplineFitWeights=False then these are used as-is; otherwise "
+            "they are used as the initial values for fitting these parameters.",
+        length=2,
+        default=[1.0, 0.0],
+    )
+    doAbsoluteSplineFitTemperature = pexConfig.Field(
+        dtype=bool,
+        doc="Fit temperature coefficient in spline fit?",
+        default=False,
+    )
+    absoluteSplineFitTemperatureColumn = pexConfig.Field(
+        dtype=str,
+        doc="Name of the temperature column to use when fitting temperature "
+            "coefficients in spline fit; this must not be None if "
+            "doSplineFitTemperature is True.",
+        default=None,
+        optional=True,
+    )
+    doAbsoluteSplineFitTemporal = pexConfig.Field(
+        dtype=bool,
+        doc="Fit a linear temporal parameter coefficient in spline fit?",
+        default=False,
+    )
+    useFocalPlaneNormalization = pexConfig.Field(
+        dtype=bool,
+        doc="Use focal-plane normalization in addition to/instead of photodiode? "
+            "(Only used with for absolute spline fitting).",
+        default=False,
+    )
+    relativeSplineReferenceCounts = pexConfig.Field(
+        dtype=float,
+        doc="Number of target counts (adu) to select a reference image for "
+            "relative spline solution.",
+        default=10000.0,
+    )
+    relativeSplineMinimumSignalNode = pexConfig.Field(
+        dtype=float,
+        doc="Smallest node (above 0) for relative spline (adu).",
+        default=100.0,
+    )
+    relativeSplineLowThreshold = pexConfig.Field(
+        dtype=float,
+        doc="Threshold for the low-level linearity nodes for relative spline (adu).",
+        default=5000.0,
+    )
+    relativeSplineLowNodeSize = pexConfig.Field(
+        dtype=float,
+        doc="Minimum size for low-level linearity nodes for relative spline (adu).",
+        default=750.0,
+    )
+    relativeSplineMidNodeSize = pexConfig.Field(
+        dtype=float,
+        doc="Minimum size for mid-level linearity nodes for relative spline (adu); "
+            "this applies to counts between relativeSplineLowThreshold and the "
+            "PTC turnoff.",
+        default=5000.0,
+    )
+    relativeSplineHighNodeSize = pexConfig.Field(
+        dtype=float,
+        doc="Minimum size for high-level linearity nodes for relative spline (adu); "
+            "this applies to counts between the PTC and linearity turnoffs.",
+        default=2000.0,
+    )
+    relativeSplineFitMinIter = pexConfig.Field(
+        dtype=int,
+        doc="Minimum number of iterations for relative spline fit.",
+        default=3,
+    )
+    relativeSplineFitMaxIter = pexConfig.Field(
+        dtype=int,
+        doc="Maximum number of iterations for relative spline fit.",
+        default=20,
+    )
+    relativeSplineFitMaxRejectionPerIteration = pexConfig.Field(
+        dtype=int,
+        doc="Maximum number of rejections per iteration for relative spline fit.",
+        default=5,
+    )
+    relativeNSigmaClipLinear = pexConfig.Field(
+        dtype=float,
+        doc="Sigma-clipping for relative spline solution.",
+        default=5.0,
+    )
+
+
+class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
+    ConfigClass = LinearityDoubleSplineSolveConfig
+    _DefaultName = "cpLinearityDoubleSplineSolve"
+
+    def runQuantum(self, butlerQC, inputRefs, outputRefs):
+        # docstring inherited
+        inputs = butlerQC.get(inputRefs)
+
+        # Create the inputBinnedImageDict.
+        inputBinnedImagesDict = {
+            handle.dataId["exposure"]: handle for handle in inputs["inputBinnedImages"]
+        }
+
+        if self.config.useFocalPlaneNormalization:
+            inputNormalization = inputs["inputNormalization"]
+        else:
+            inputNormalization = None
+
+        # Add calibration provenance info to header.
+        kwargs = dict()
+        reference = getattr(inputRefs, "inputLinearizerPtc", None)
+
+        if reference is not None and hasattr(reference, "run"):
+            runKey = "PTC_RUN"
+            runValue = reference.run
+            idKey = "PTC_UUID"
+            idValue = str(reference.id)
+            dateKey = "PTC_DATE"
+            calib = inputs.get("inputPtc", None)
+            dateValue = extractCalibDate(calib)
+
+            kwargs[runKey] = runValue
+            kwargs[idKey] = idValue
+            kwargs[dateKey] = dateValue
+
+            self.log.info("Using " + str(reference.run))
+
+        outputs = self.run(
+            inputPtc=inputs["inputLinearizerPtc"],
+            camera=inputs["camera"],
+            inputBinnedImagesDict=inputBinnedImagesDict,
+            inputNormalization=inputNormalization,
+        )
+        outputs.outputLinearizer.updateMetadata(setDate=False, **kwargs)
+
+        butlerQC.put(outputs, outputRefs)
+
+    def run(
+        self,
+        *,
+        inputPtc,
+        camera,
+        inputBinnedImagesDict,
+        inputNormalization,
+    ):
+        """Fit the double-spline relative/absolute linearity correction.
+
+        Parameters
+        ----------
+        inputPtc : `lsst.ip.isr.PtcDataset`
+            Pre-measured PTC dataset.
+        camera : `lsst.afw.cameraGeom.Camera`
+            Camera geometry.
+        inputBinnedImagesDict : `dict` [`int`, `DeferredDatasetHandle`]
+            Dictionary of input binned pairs, keyed by exposure.
+        inputNormalization : `astropy.table.Table`, optional
+            Focal plane normalization table to use if
+            useFocalPlaneNormalization is True.
+
+        Returns
+        -------
+        results : `lsst.pipe.base.Struct`
+            The results struct containing:
+
+            ``outputLinearizer``
+                Final linearizer calibration (`lsst.ip.isr.Linearizer`).
+            ``outputProvenance``
+                Provenance data for the new calibration
+                (`lsst.ip.isr.IsrProvenance`).
+        """
+        detector = camera[inputPtc.metadata["DETECTOR"]]
+
+        linearizer = Linearizer(detector=detector, log=self.log)
+        linearizer.updateMetadataFromExposures([inputPtc])
+
+        groupingValues = _determineInputGroups(
+            inputPtc,
+            self.config.doAutoGrouping,
+            self.config.autoGroupingUseExptime,
+            self.config.autoGroupingMaxSignalFraction,
+            self.config.autoGroupingThreshold,
+            self.config.splineGroupingColumn,
+            self.config.minPhotodiodeCurrent,
+        )
+
+        if self.config.doAbsoluteSplineFitTemperature:
+            if self.config.absoluteSplineFitTemperatureColumn not in inputPtc.auxValues:
+                raise ValueError(
+                    "Config requests fitting temperature coefficient for "
+                    f"{self.config.splineFitTemperatureColumn} but this column "
+                    "is not available in inputPtc.auxValues.",
+                )
+                temperatureValues = inputPtc.auxValues[self.config.splineFitTemperatureColumn]
+        else:
+            temperatureValues = None
+
+        # Fill the linearizer with empty values.
+        firstAmp = inputPtc.ampNames[0]
+        nExp = len(inputPtc.inputExpIdPairs[firstAmp]) * 2
+        nAmp = len(inputPtc.ampNames)
+
+        for amp in detector:
+            ampName = amp.getName()
+
+            linearizer.linearityType[ampName] = None
+            linearizer.linearityCoeffs[ampName] = np.zeros(1)
+            # This is not used; kept for compatibility.
+            linearizer.linearityBBox[ampName] = amp.getBBox()
+            linearizer.fitParams[ampName] = np.zeros(1)
+            linearizer.fitParamsErr[ampName] = np.zeros(1)
+            linearizer.fitChiSq[ampName] = np.nan
+            linearizer.fitResiduals[ampName] = np.zeros(nExp)
+            linearizer.fitResidualsSigmaMad[ampName] = np.nan
+            linearizer.fitResidualsUnmasked[ampName] = np.zeros(nExp)
+            linearizer.fitResidualsModel[ampName] = np.zeros(nExp)
+            linearizer.linearFit[ampName] = np.zeros(2)
+            linearizer.linearityTurnoff[ampName] = np.nan
+            linearizer.linearityMaxSignal[ampName] = np.nan
+            linearizer.inputMask[ampName] = np.zeros(nExp, dtype=np.bool_)
+            linearizer.inputAbscissa[ampName] = np.zeros(nExp)
+            linearizer.inputOrdinate[ampName] = np.zeros(nExp)
+            linearizer.inputGroupingIndex[ampName] = np.zeros(nExp, dtype=np.int64)
+            linearizer.inputNormalization[ampName] = np.ones(nExp)
+
+        linearizer.absoluteInputAbscissa = np.zeros(nExp)
+        linearizer.absoluteInputOrdinate = np.zeros(nExp)
+        linearizer.absoluteInputMask = np.zeros(nExp, dtype=np.bool_)
+        linearizer.absoluteFitResiduals = np.zeros(nExp)
+        linearizer.absoluteFitResidualsSigmaMad = np.nan
+        linearizer.absoluteFitResidualsUnmasked = np.zeros(nExp)
+        linearizer.absoluteFitResidualsModel = np.zeros(nExp)
+
+        # Extract values in common, and per-amp.
+        data = np.zeros(
+            nExp,
+            dtype=[
+                ("exp_id", "i8"),
+                ("exptime", "f8"),
+                ("photocharge", "f8"),
+                ("mjd", "f8"),
+                ("raw_mean", ("f8", nAmp)),
+                ("abscissa", "f8"),
+                ("grouping", "i4"),
+                # The following are computed in the relative scaling
+                # measurements.
+                ("ref_counts", "f8"),
+                ("gain_ratio", ("f8", nAmp)),
+            ],
+        )
+
+        data["exp_id"] = np.asarray(inputPtc.inputExpIdPairs[firstAmp]).ravel()
+        data["exptime"] = np.repeat(inputPtc.rawExpTimes[firstAmp], 2)
+        data["mjd"] = np.repeat(inputPtc.inputExpPairMjdStartList[firstAmp], 2)
+        data["photocharge"] = np.repeat(inputPtc.photoCharges[firstAmp], 2)
+        data["photocharge"][::2] -= inputPtc.photoChargeDeltas[firstAmp] / 2.
+        data["photocharge"][1::2] += inputPtc.photoChargeDeltas[firstAmp] / 2.
+        data["grouping"] = np.repeat(groupingValues, 2)
+
+        for i, amp in enumerate(detector):
+            ampName = amp.getName()
+
+            data["raw_mean"][:, i] = np.repeat(inputPtc.rawMeans[ampName], 2)
+            data["raw_mean"][::2, i] -= inputPtc.rawDeltas[ampName] / 2.
+            data["raw_mean"][1::2, i] += inputPtc.rawDeltas[ampName] / 2.
+
+        if self.config.usePhotodiode:
+            data["abscissa"][:] = data["photocharge"]
+
+            data["abscissa"][data["photocharge"] < self.config.minPhotodiodeCurrent] = np.nan
+        else:
+            data["abscissa"][:] = data["exptime"]
+
+        # Normalize if configured.
+        inputNorm = np.ones(nExp, dtype=np.float64)
+        if self.config.useFocalPlaneNormalization:
+            a, b = esutil.numpy_util.match(data["exp_id"], inputNormalization["exposure"])
+            inputNorm[a] = inputNormalization["normalization"][b]
+            data["abscissa"] *= inputNorm
+
+        # Compute linearity turnoff for each amp.
+        for i, amp in enumerate(detector):
+            ampName = amp.getName()
+
+            if ampName in inputPtc.badAmps:
+                self.log.warning(
+                    "Amp %s in detector %s has no usable PTC information. Skipping!",
+                    ampName,
+                    detector.getName(),
+                )
+                continue
+
+            mask = np.isfinite(data["raw_mean"][:, i])
+
+            turnoffMask = np.repeat(inputPtc.expIdMask[ampName], 2)
+            turnoffMask &= mask
+
+            turnoffIndex, turnoff, maxSignal = _computeTurnoffAndMax(
+                data["abscissa"],
+                data["raw_mean"][:, i],
+                turnoffMask,
+                data["grouping"],
+                ampName=ampName,
+                minSignalFitLinearityTurnoff=self.config.minSignalFitLinearityTurnoff,
+                maxFracLinearityDeviation=self.config.maxFracLinearityDeviation,
+                log=self.log,
+            )
+
+            if np.isnan(turnoff):
+                # This is a bad amp, with no linearizer.
+                self.log.warning(
+                    "Amp %s in detector %s has no usable linearizer information. Skipping!",
+                    ampName,
+                    detector.getName(),
+                )
+                continue
+
+            linearizer.linearityTurnoff[ampName] = turnoff
+            linearizer.linearityMaxSignal[ampName] = maxSignal
+
+        # Choose the reference amplifier as the one with the largest
+        # turnoff. This ensures that the absolute fit covers the full
+        # range.
+        turnoffArray = np.asarray([linearizer.linearityTurnoff[ampName] for ampName in inputPtc.ampNames])
+        refAmpIndex = np.argmax(np.nan_to_num(turnoffArray))
+        refAmpName = inputPtc.ampNames[refAmpIndex]
+
+        # Choose a reference image.
+        refExpIndex = np.argmin(
+            np.abs(
+                np.nan_to_num(data["raw_mean"][:, refAmpIndex]) - self.config.relativeSplineReferenceCounts
+            )
+        )
+        refExpId = data["exp_id"][refExpIndex]
+
+        self.log.info(
+            "Using exposure %d (%.2f adu in amp %s) as reference.",
+            refExpId,
+            data["raw_mean"][refExpIndex, refAmpIndex],
+            refAmpName,
+        )
+
+        # We need to know if the reference exposure is the first or second
+        # in the pair, because the binned are pairs.
+        offset = refExpIndex % 2
+
+        refBinned = inputBinnedImagesDict[data["exp_id"][refExpIndex - offset]].get()
+        if offset == 0:
+            refBinned["value"] = refBinned["value1"]
+        else:
+            refBinned["value"] = refBinned["value2"]
+
+        # Scale reference according to reference amplifier.
+        refScaling = np.median(refBinned["value"][refBinned["amp_index"] == refAmpIndex])
+        refBinned["value"] /= refScaling
+
+        # Get the invidual amp scalings.
+        # These are the relative gains for the reference image.
+        ampScalings = np.asarray(
+            [
+                np.median(refBinned["value"][refBinned["amp_index"] == ampIndex])
+                for ampIndex in range(nAmp)
+            ],
+        )
+
+        # Compute the gain ratios for every exposure.
+        # The binned images are stored as pairs.
+        for i in range(len(data)):
+            expId = data["exp_id"][i]
+            if (i % 2) == 0:
+                binned = inputBinnedImagesDict[expId].get()
+                binned["value"] = binned["value1"]
+            else:
+                binned["value"] = binned["value2"]
+
+            binned["value"] /= refBinned["value"]
+
+            gainRatios = np.asarray(
+                [
+                    np.median(binned["value"][binned["amp_index"] == ampIndex])
+                    for ampIndex in range(nAmp)
+                ]
+            )
+            ref_counts = gainRatios[refAmpIndex]
+            gainRatios /= ref_counts
+
+            data["ref_counts"][i] = ref_counts
+            data["gain_ratio"][i, :] = gainRatios
+
+        # We need to know which group has the largest size.
+        groupAmplitudes = np.zeros(len(np.unique(data["grouping"])))
+        for g in range(len(groupAmplitudes)):
+            use = (data["grouping"] == g)
+            groupAmplitudes[g] = np.nanmax(data["ref_counts"][use]) - np.nanmin(data["ref_counts"][use])
+        maxAmplitudeGroup = np.argmax(groupAmplitudes)
+
+        # The Noderator computes node locations.
+        def _noderator(turnoff1, turnoff2, minNode, lowThreshold, lowNodeSize, midNodeSize, highNodeSize):
+            if lowThreshold > minNode:
+                nNodesLow = int(np.ceil((lowThreshold - minNode) / lowNodeSize))
+            else:
+                nNodesLow = 0
+            nNodesMid = int(np.ceil((turnoff1 - lowThreshold) / midNodeSize))
+            nNodesHigh = int(np.ceil((turnoff2 - turnoff1) / highNodeSize))
+            nodesLow = np.linspace(minNode, lowThreshold, nNodesLow)
+            nodesMid = np.linspace(lowThreshold, turnoff1, nNodesMid)
+            nodesHigh = np.linspace(turnoff1, turnoff2, nNodesHigh)
+
+            # Make sure we do not duplicate nodes when concatenating.
+            nodeList = [[0.0]]
+            if nNodesLow > 1:
+                nodeList.append(nodesLow[:-1])
+            if nNodesMid > 1:
+                nodeList.append(nodesMid)
+            if nNodesHigh > 1:
+                nodeList.append(nodesHigh[1:])
+            return np.concatenate(nodeList)
+
+        # Compute relative linearization first.
+        maxRelNodes = 0
+
+        for i, amp in enumerate(detector):
+            if i == refAmpIndex:
+                continue
+
+            ampName = amp.getName()
+
+            ptcTurnoff = inputPtc.ptcTurnoff[ampName]
+            linearityTurnoff = linearizer.linearityTurnoff[ampName]
+
+            if not np.isfinite(ptcTurnoff) or not np.isfinite(linearityTurnoff):
+                # This is a bad amp; skip it.
+                continue
+
+            # Need to check what happens if these are the same (corner dets).
+            relNodes = _noderator(
+                ptcTurnoff,
+                linearityTurnoff,
+                self.config.relativeSplineMinimumSignalNode,
+                self.config.relativeSplineLowThreshold,
+                self.config.relativeSplineLowNodeSize,
+                self.config.relativeSplineMidNodeSize,
+                self.config.relativeSplineHighNodeSize,
+            )
+
+            if len(relNodes) > maxRelNodes:
+                maxRelNodes = len(relNodes)
+
+            relAbscissa = data["ref_counts"] * ampScalings[i]
+            relOrdinate = data["ref_counts"] * data["gain_ratio"][:, i] * ampScalings[i]
+
+            # We use everything below the linearity turnoff to start.
+            relMask = (relOrdinate < linearityTurnoff)
+
+            linearizer.inputMask[ampName] = relMask.copy()
+            linearizer.inputAbscissa[ampName] = relAbscissa.copy()
+            linearizer.inputOrdinate[ampName] = relOrdinate.copy()
+            linearizer.inputGroupingIndex[ampName] = data["grouping"].copy()
+            linearizer.inputNormalization[ampName] = np.ones_like(relAbscissa)
+
+            fitter = AstierSplineLinearityFitter(
+                relNodes,
+                data["grouping"],
+                relAbscissa,
+                relOrdinate,
+                mask=relMask,
+                fit_offset=False,
+                fit_weights=False,
+                fit_temperature=False,
+                max_signal_nearly_linear=ptcTurnoff,
+                fit_temporal=False,
+                # Turn off max correction clipping.
+                max_correction=np.inf,
+            )
+            p0 = fitter.estimate_p0()
+            pars = fitter.fit(
+                p0,
+                min_iter=self.config.relativeSplineFitMinIter,
+                max_iter=self.config.relativeSplineFitMaxIter,
+                max_rejection_per_iteration=self.config.relativeSplineFitMaxRejectionPerIteration,
+                n_sigma_clip=self.config.relativeNSigmaClipLinear,
+            )
+
+            # Confirm that the first parameter is 0, and set it to
+            # exactly zero.
+            relValues = pars[fitter.par_indices["values"]]
+            if not np.isclose(relValues[0], 0):
+                raise RuntimeError("Programmer error! First spline parameter must "
+                                   "be consistent with zero.")
+            relValues[0] = 0.0
+
+            # We adjust the node values according to the slope of the
+            # group with the largest amplitude.  This removes a degeneracy
+            # in the normalization and ensures that the overall linearized
+            # correction is as close to the reference as possible.
+            relValues -= (1.0 - pars[fitter.par_indices["groups"][maxAmplitudeGroup]]) * relNodes
+
+            relChisq = fitter.compute_chisq_dof(pars)
+
+            # Our reference fit is always 1.0 slope.
+            relLinearFit = np.array([0.0, 1.0])
+
+            # Adjust the abscissa for different groups for residuals.
+            for j, groupIndex in enumerate(fitter.group_indices):
+                relAbscissa[groupIndex] *= (pars[fitter.par_indices["groups"][j]] / relLinearFit[1])
+
+            relMask = fitter.mask
+
+            # Record values in the linearizer.
+            linearizer.linearityType[ampName] = "DoubleSpline"
+            # Note that we have a placeholder for the number of nodes in
+            # the absolute spline.
+            linearizer.linearityCoeffs[ampName] = np.concatenate([len(relNodes), 0], relNodes, relValues)
+            linearizer.fitChiSq[ampName] = relChisq
+            linearizer.linearFit[ampName] = relLinearFit
+
+            # Compute residuals.
+            spl = Akima1DInterpolator(relNodes, relValues, method="akima")
+            relOffset = spl(relOrdinate)
+            relModel = relOrdinate - relOffset
+
+            if relMask.sum() < 2:
+                self.log.warning("Amp %s in detector %s has not enough points in linear ordinate "
+                                 "for residuals. Skipping!", ampName, detector.getName())
+                relResiduals = np.full_like(relModel, np.nan)
+                relResidualsUnmasked = relResiduals.copy()
+            else:
+                postLinearFit, _, _, _ = irlsFit(
+                    relLinearFit,
+                    relAbscissa[relMask],
+                    relModel[relMask],
+                    funcPolynomial,
+                )
+                # When computing residuals, we only care about the slope of
+                # the postLinearFit and not the intercept. The intercept
+                # itself depends on a possibly unknown zero in the abscissa
+                # (often photodiode) which may have an arbitrary value.
+                relResiduals = relModel - (postLinearFit[1] * relAbscissa)
+                relResidualsUnmasked = relResiduals.copy()
+                # We set masked residuals to nan.
+                relResiduals[~relMask] = np.nan
+
+            linearizer.fitResidualsUnmasked[ampName] = relResidualsUnmasked
+            linearizer.fitResiduals[ampName] = relResiduals
+            linearizer.fitResidualsModel[ampName] = relModel.copy()
+
+            finite = np.isfinite(relResiduals)
+            if finite.sum() == 0:
+                sigmad = np.nan
+            else:
+                sigmad = median_abs_deviation(relResiduals[finite]/relOrdinate[finite], scale="normal")
+            linearizer.fitResidualsSigmaMad[ampName] = sigmad
+
+        # Now compute absolute linearization.
+
+        if temperatureValues is not None:
+            temperatureValuesScaled = temperatureValues - np.median(temperatureValues)
+        else:
+            temperatureValuesScaled = None
+
+        if self.config.doAbsoluteSplineFitTemporal:
+            inputMjdScaled = data[""].copy()
+            inputMjdScaled -= np.nanmedian(inputMjdScaled)
+        else:
+            inputMjdScaled = None
+
+        absPtcTurnoff = inputPtc.ptcTurnoff[refAmpIndex]
+        absLinearityTurnoff = linearizer.linearityTurnoff[refAmpIndex]
+
+        if not np.isfinite(absPtcTurnoff) or not np.isfinite(absLinearityTurnoff):
+            raise RuntimeError("CHECK ABOVE")
+
+        absNodes = _noderator(
+            absPtcTurnoff,
+            absLinearityTurnoff,
+            # Do not do low-level nodes
+            0.0,
+            -100.0,
+            1.0,
+            self.config.absoluteSplineNodeSize,
+            self.config.absoluteSplineNodeSize,
+        )
+
+        absAbscissa = data["abscissa"]
+        absOrdinate = data["ref_counts"]
+        absMask = ((absOrdinate < absLinearityTurnoff) & np.isfinite(absAbscissa))
+
+        linearizer.absoluteInputMask = absMask.copy()
+        linearizer.absoluteInputAbscissa = absAbscissa.copy()
+        linearizer.absoluteInputOrdinate = absOrdinate.copy()
+        linearizer.absoluteInputGroupingIndex = data["grouping"]
+        linearizer.absoluteInputNormalization = inputNorm.copy()
+
+        fitter = AstierSplineLinearityFitter(
+            absNodes,
+            data["grouping"],
+            absAbscissa,
+            absOrdinate,
+            mask=absMask,
+            log=self.log,
+            fit_offset=self.config.doAbsoluteSplineFitOffset,
+            fit_weights=self.config.doAbsoluteSplineFitWeights,
+            weight_pars_start=self.config.absoluteSplineFitWeightParsStart,
+            fit_temperature=self.config.doAbsoluteSplineFitTemperature,
+            temperature_scaled=temperatureValuesScaled,
+            max_signal_nearly_linear=absPtcTurnoff,
+            fit_temporal=self.config.doAbsoluteSplineFitTemporal,
+            mjd_scaled=inputMjdScaled,
+        )
+        p0 = fitter.estimate_p0()
+        pars = fitter.fit(
+            p0,
+            min_iter=self.config.absoluteSplineFitMinIter,
+            max_iter=self.config.absoluteSplineFitMaxIter,
+            max_rejection_per_iteration=self.config.absoluteSplineFitMaxRejectionPerIteration,
+            n_sigma_clip=self.config.absoluteNSigmaClipLinear,
+        )
+
+        # Confirm that the first parameter is 0, and set it to
+        # exactly zero.
+        absValues = pars[fitter.par_indices["values"]]
+        if not np.isclose(relValues[0], 0):
+            raise RuntimeError("Programmer error! First spline parameter must "
+                               "be consistent with zero.")
+        absValues[0] = 0.0
+
+        # We need a place to store this.
+        linearizer.absoluteFitChiSq = fitter.compute_chisq_dof(pars)
+
+        absLinearFit = np.array([0.0, np.mean(pars[fitter.par_indices["groups"]])])
+
+        # We must modify the inputOrdinate according to the
+        # nuisance terms in the linearity fit for the residual
+        # computation code to work properly.
+        # The true mu (inputOrdinate) is given by
+        #  mu = mu_in * (1 + alpha*t_scale) * (1 + beta*mjd_scale)
+        if self.config.doAbsoluteSplineFitTemperature:
+            absOrdinate *= (1.0
+                            + pars[fitter.par_indices["temperature_coeff"]]*temperatureValuesScaled)
+        if self.config.doAbsoluteSplineFitTemporal:
+            absOrdinate *= (1.0
+                            + pars[fitter.par_indices["temporal_coeff"]]*inputMjdScaled)
+
+        # Adjust the abscissa for different groups for residuals.
+        for j, groupIndex in enumerate(fitter.group_indices):
+            absAbscissa[groupIndex] *= (pars[fitter.par_indices["groups"][j]] / absLinearFit[1])
+        # And remove the offset term.
+        if self.config.doAbsoluteSplineFitOffset:
+            absOrdinate -= pars[fitter.par_indices["offset"]]
+
+        absMask = fitter.mask
+
+        # Compute residuals.
+        spl = Akima1DInterpolator(absNodes, absValues, method="akima")
+        absOffset = spl(absOrdinate)
+        absModel = absOrdinate - absOffset
+
+        if absMask.sum() < 2:
+            self.log.warning("Detector %s has not enough points in linear ordinate "
+                             "for residuals. Skipping!", detector.getName())
+            # We have to KICK OUT HERE something is VERY wrong.
+            absResiduals = np.full_like(absModel, np.nan)
+            absResidualsUnmasked = relResiduals.copy()
+        else:
+            postLinearFit, _, _, _ = irlsFit(
+                absLinearFit,
+                absAbscissa[absMask],
+                absModel[absMask],
+                funcPolynomial,
+            )
+            # When computing residuals, we only care about the slope of
+            # the postLinearFit and not the intercept. The intercept
+            # itself depends on a possibly unknown zero in the abscissa
+            # (often photodiode) which may have an arbitrary value.
+            absResiduals = absModel - (postLinearFit[1] * absAbscissa)
+            absResidualsUnmasked = absResiduals.copy()
+            # We set masked residuals to nan.
+            absResiduals[~absMask] = np.nan
+
+        linearizer.absoluteFitResidualsUnmasked = absResidualsUnmasked
+        linearizer.absoluteFitResiduals = absResiduals
+        linearizer.absoluteFitResidualsModel = absModel.copy()
+
+        finite = np.isfinite(relResiduals)
+        if finite.sum() == 0:
+            sigmad = np.nan
+        else:
+            sigmad = median_abs_deviation(absResiduals[finite]/absOrdinate[finite], scale="normal")
+        linearizer.absoluteFitResidualsSigmaMad = sigmad
+
+        # Record the absolute nodes and values in each individual amplifier,
+        # along with extra padding for alignment.
+
+        for i, amp in enumerate(detector):
+            ampName = amp.getName()
+
+            coeffs = np.zeros(len(absNodes) + maxRelNodes + 2)
+            coeffs[0] = linearizer.linearityCoeffs[0]
+            coeffs[1] = len(absNodes)
+            coeffs[2: 2 * coeffs[0]] = linearizer.linearityCoeffs[2: 2 * coeffs[0]]
+            coeffs[2 * coeffs[0]: 2 * coeffs[0] + 2 * coeffs[1]] = absValues
+
+        linearizer.hasLinearity = True
+        linearizer.validate()
+        linearizer.updateMetadata(camera=camera, detector=detector, filterName='NONE')
+        linearizer.updateMetadata(setDate=True, setCalibId=True)
+        linearizer.updateMetadataFromExposures([inputPtc])
+        provenance = IsrProvenance(calibType='linearizer')
+
+        return pipeBase.Struct(
+            outputLinearizer=linearizer,
+            outputProvenance=provenance,
+        )
 
 
 def _determineInputGroups(
