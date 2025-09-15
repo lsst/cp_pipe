@@ -203,29 +203,19 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
             "scaleMaxSignalInitialPtcOutlierFit=True then the units are electrons; "
             "otherwise adu.",
         default=9_000.,
-        deprecated="This option is no longer used and will be removed after v31.",
     )
-    minDeltaInitialPtcOutlierFit = pexConfig.Field(
+    extendRollofSearchMaskSizeAdu  = pexConfig.Field(
         dtype=float,
-        doc="If there are any outliers in the initial fit that have mean greater than "
-            "maxSignalInitialPtcOutlierFit, and those outlier make a gap larger than "
-            "this amount, it is considered a large gap. If "
-            "scaleMaxSignalInitialPtcOutlierFit=True then the units are electrons; "
-            "otherwise adu.",
-        default=1_000.,
-    )
-    expandGapSize = pexConfig.Field(
-        dtype=float,
-        doc="If there is a large gap detected, the mask around the gap will be expanded "
-            "by this amount. If scaleMaxSignalInitialPtcOutlierFit=True then the units "
-            "are electrons; otherwise adu.",
-        default=1_000.,
+        doc="The amount to extend the mask beyond the initial PTC turnoff to fit "
+            "the rolloff. Only used if modelPtcRolloff=True (units: adu). "
+            "(default: 5000).",
+        default=5_000.,
     )
     scaleMaxSignalInitialPtcOutlierFit = pexConfig.Field(
         dtype=bool,
-        doc="Scale maxSignalInitialPtcOutlierFit and minDeltaInitialPtcOutlierFit "
+        doc="Scale maxSignalInitialPtcOutlierFit and maxDeltaInitialPtcOutlierFit "
             "by approximate gain?  If yes then "
-            "maxSignalInitialPtcOutlierFit and minDeltaInitialPtcOutlierFit "
+            "maxSignalInitialPtcOutlierFit and maxDeltaInitialPtcOutlierFit "
             "are assumed to have units of electrons, otherwise adu.",
         default=True,
     )
@@ -453,7 +443,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         # matrix, C_ij, i!=j).
         tempDatasetPtc = copy.copy(datasetPtc)
         tempDatasetPtc.ptcFitType = "EXPAPPROXIMATION"
-        tempDatasetPtc = self.fitMeasurementsToModel(tempDatasetPtc, expandGapSize=self.config.expandGapSize)
+        tempDatasetPtc = self.fitMeasurementsToModel(tempDatasetPtc)
         initialEstimatePtcTurnoff = tempDatasetPtc.ptcTurnoff
         initialEstimatePtcTurnoffSamplingError = tempDatasetPtc.ptcTurnoffSamplingError
 
@@ -465,8 +455,14 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         # previous fits.
         for ampName in datasetPtc.ampNames:
             datasetPtc.expIdMask[ampName] = tempDatasetPtc.expIdMask[ampName]
+            datasetPtc.expIdRolloffMask[ampName] = tempDatasetPtc.expIdRolloffMask[ampName]
+            datasetPtc.ptcRolloff[ampName] = tempDatasetPtc.ptcRolloff[ampName]
+            datasetPtc.ptcRolloffTau[ampName] = tempDatasetPtc.ptcRolloffTau[ampName]
+            datasetPtc.ptcRolloffError[ampName] = tempDatasetPtc.ptcRolloffError[ampName]
+            datasetPtc.ptcRolloffTauError[ampName] = tempDatasetPtc.ptcRolloffTauError[ampName]
+
         datasetPtc.fitType = self.config.ptcFitType
-        datasetPtc = self.fitMeasurementsToModel(datasetPtc, expandGapSize=0)
+        datasetPtc = self.fitMeasurementsToModel(datasetPtc)
         datasetPtc.ptcTurnoff = initialEstimatePtcTurnoff
         datasetPtc.ptcTurnoffSamplingError = initialEstimatePtcTurnoffSamplingError
 
@@ -515,7 +511,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             outputPtcDataset=datasetPtc,
         )
 
-    def fitMeasurementsToModel(self, dataset, expandGapSize):
+    def fitMeasurementsToModel(self, dataset):
         """Fit the measured covariances vs mean signal one of the
         models in Astier+19 (Eq. 16 or Eq.20).
 
@@ -546,7 +542,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             dataset = self.fitDataFullCovariance(dataset)
         elif fitType == "EXPAPPROXIMATION":
             # The PTC is technically defined as variance vs signal
-            dataset = self.fitPtc(dataset, expandGapSize=expandGapSize)
+            dataset = self.fitPtc(dataset)
         else:
             raise RuntimeError(
                 f"Fitting option {fitType} not one of "
@@ -1188,56 +1184,37 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
 
             # Compute the extended mask
             preTurnoff = dataset.ptcTurnoff[ampName]
-            turnoffIdx = np.argwhere(meanVecSorted == preTurnoff)[0]
+            turnoffIdx = np.argwhere(meanVecSorted == preTurnoff)[0][0]
             varianceAtTurnoff = varVecSorted[turnoffIdx]
             turnoffSearchLimit = varianceAtTurnoff * (1 - self.config.varianceRolloffSearchThreshold)
 
             # Add points up to some threshold below the variance of the turnoff
             pointsToFit = (meanVecSorted >= preTurnoff) * \
-                          (varVecSorted >= turnoffSearchLimit) * \
+                          (meanVecSorted < preTurnoff+self.config.extendRollofSearchMaskSizeAdu) * \
                           (varVecSorted <= varianceAtTurnoff)
 
             # Retain the original mask below the turnoff
             pointsToFit = np.logical_or(mask, pointsToFit)
             if np.count_nonzero(pointsToFit) == np.count_nonzero(mask):
                 self.log.warning("Expanding fit to include saturation, but no points detected above "
-                                 "initial computed PTC turnoff for amp %s" % (ampName))
-                return dataset
+                                 f"initial computed PTC turnoff for amp {ampName}.")
+                continue
 
             # Fit initialization
             ptcFunc = funcAstierWithRolloff
             parsIniPtc = dataset.ptcFitPars[ampName]  # a00, gain, noise^2
 
             # Estimate initial parameters
-            muMax = meanVecSorted[pointsToFit][-1]
-            m = dataset.evalPtcModel(np.array([muMax]))[ampName][0]
-            d = varVecSorted[pointsToFit][-1]
-            modelMinusData = m - d
-
             estimateTurnoff = preTurnoff
-            if modelMinusData == 0:
-                estimateTau = -np.inf
-            elif modelMinusData < 0:
-                estimateTau = -np.inf
-                self.log.warning("No turnoff detected within extended roll-off PTC range "
-                                 "for fitting amp %s" % (ampName))
-            else:
-                # Empirically determined good estimator based on the model
-                estimateTau = -(muMax - estimateTurnoff) / np.log(modelMinusData)
-            estimateTau = -1200
-            self.log.info("Setting estimates of roll off model parameters to (mu_0, tau) = "
-                          "(%f, %f) for amp %s" % (estimateTurnoff, estimateTau, ampName))
+            estimateTau = -1200  # This turns out to be a generally good guess!
             parsIniPtc = np.append(parsIniPtc, [estimateTurnoff, estimateTau])  # Estimate of mu_rolloff and tau
 
             # Set initial bounds
-            if self.config.binSize > 1:
-                bounds = self._boundsForAstier(parsIniPtc)
-            else:
-                bounds = self._boundsForAstier(
-                    parsIniPtc,
-                    lowers=[-1e-4, 0.1, 0, 0, -5000],
-                    uppers=[0, 10.0, 2000, 200000, -100],
-                )
+            bounds = self._boundsForAstier(
+                parsIniPtc,
+                lowers=[-1e-4, 0.1, 0, min(preTurnoff-20000, 0), -10000],
+                uppers=[0, 10.0, 2000, preTurnoff, -100],
+            )
 
             # Perform the fit
             res = least_squares(
@@ -1252,16 +1229,13 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             cov = np.linalg.inv(J.T @ J)
             parErrors = np.sqrt(np.diag(cov))
             a00, gain, noiseSquared, rolloff, tau = pars
-            a00Err, gainErr, noiseSquaredError, rolloffErr, tauErr = parErrors
+            a00Err, gainErr, noiseSquaredError, rolloffError, tauError = parErrors
 
             if not res.success:
                 self.log.warning(
                     "Fit with saturation roll off model did not succeed for "
-                    f"amp {ampName}. Skipping and keeping original turnoff "
-                    "solution."
+                    f"amp {ampName}."
                 )
-                rolloff = dataset.ptcTurnoff[ampName]
-                rolloffErr = np.inf
                 continue
             else:
                 self.log.info("Fit with saturation roll off model returned estimates: "
@@ -1278,14 +1252,18 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             acceptablePoints = np.argwhere(residual <= self.config.maxPtcRolloffDeviation)
             lastGoodIndex = acceptablePoints[-1]
             rolloff = meanVecSorted[pointsToFit][lastGoodIndex][0]
+            rolloff = min(rolloff, preTurnoff)
 
             # Set the mask to the new mask
             newMask = pointsToFit * (meanVecSorted < rolloff)
             dataset.expIdMask[ampName] = newMask
 
             # Save the rolloff point
+            dataset.expIdRolloffMask[ampName] = pointsToFit
             dataset.ptcRolloff[ampName] = rolloff
-            dataset.ptcRolloffError[ampName] = rolloffErr
+            dataset.ptcRolloffError[ampName] = rolloffError
+            dataset.ptcRolloffTau[ampName] = tau
+            dataset.ptcRolloffTauError[ampName] = tauError
 
         # Do bad amp searching?
         # if len(dataset.badAmps) == 0:
@@ -1293,7 +1271,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
 
         return dataset
 
-    def fitPtc(self, dataset, expandGapSize=0):
+    def fitPtc(self, dataset):
         """Fit the photon transfer curve to the
         Astier+19 approximation (Eq. 16).
 
@@ -1361,25 +1339,17 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         maxIterationsPtcOutliers = self.config.maxIterationsPtcOutliers
 
         for i, ampName in enumerate(dataset.ampNames):
-            meanVecOriginal = dataset.rawMeans[ampName].copy()
-            varVecOriginal = dataset.rawVars[ampName].copy()
-            varVecOriginal = self._makeZeroSafe(varVecOriginal)
+            # These are already sorted
+            meanVecRaw = dataset.rawMeans[ampName].copy()
+            varVecRaw = dataset.rawVars[ampName].copy()
+            varVecRaw = self._makeZeroSafe(varVecRaw)
 
-            # These must be sorted for the given amplifier.
-            meanVecSort = np.argsort(meanVecOriginal)
-            meanVecSorted = meanVecOriginal[meanVecSort]
-            varVecSorted = varVecOriginal[meanVecSort]
-
-            # Make sure we have this properly sorted.
             # Check if all points are bad from the 'cpExtractPtcTask'
-            initialExpIdMask = dataset.expIdMask[ampName].copy()
             goodPoints = dataset.expIdMask[ampName].copy()
-            goodPoints = goodPoints[meanVecSort]
 
             if not (goodPoints.any() and initialExpIdMask.any()):
-                msg = (f"SERIOUS: All points in goodPoints: {goodPoints} or "
-                       f"in initialExpIdMask: {initialExpIdMask} are bad."
-                       f"Setting {ampName} to BAD.")
+                msg = (f"SERIOUS: All points in goodPoints: {goodPoints} "
+                       f"{initialExpIdMask} are bad. Setting {ampName} to BAD.")
                 self.log.warning(msg)
                 # Fill entries with NaNs
                 self.fillBadAmp(dataset, ampName)
@@ -1409,29 +1379,25 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             # This algorithm was initially developed by Seth Digel for
             # the EO Testing pipeline.
             if self.config.scaleMaxSignalInitialPtcOutlierFit:
-                approxGain = np.nanmedian(meanVecSorted/varVecSorted)
+                approxGain = np.nanmedian(meanVec/varVecRaw)
                 maxADUInitialPtcOutlierFit = self.config.maxSignalInitialPtcOutlierFit/approxGain
-                minDeltaADUInitialPtcOutlierFit = self.config.minDeltaInitialPtcOutlierFit/approxGain
-                expandGapSize = expandGapSize/approxGain
+                maxDeltaADUInitialPtcOutlierFit = self.config.maxDeltaInitialPtcOutlierFit/approxGain
                 self.log.info(
-                    "Using approximate gain %.3f and ADU signal cutoff of %.1f and max delta %.1f "
-                    "and min delta %.1f and gap expansion size %.1f for amplifier %s",
+                    "Using approximate gain %.3f and ADU signal cutoff of %.1f "
+                    "and max delta %.1f for amplifier %s",
                     approxGain,
                     maxADUInitialPtcOutlierFit,
                     maxDeltaADUInitialPtcOutlierFit,
-                    minDeltaADUInitialPtcOutlierFit,
-                    expandGapSize,
                     ampName,
                 )
             else:
                 maxADUInitialPtcOutlierFit = self.config.maxSignalInitialPtcOutlierFit
-                minDeltaADUInitialPtcOutlierFit = self.config.minDeltaInitialPtcOutlierFit
-                expandGapSize = expandGapSize  # Do nothing
+                maxDeltaADUInitialPtcOutlierFit = self.config.maxDeltaInitialPtcOutlierFit
 
             count = 0
             converged = False
             while count < maxIterationsPtcOutliers:
-                pointsToFit = (mask & (meanVecSorted <= maxADUInitialPtcOutlierFit))
+                pointsToFit = (mask & (meanVecRaw <= maxADUInitialPtcOutlierFit))
                 lastMask = mask.copy()
 
                 # Demand at least 2 points to continue.
@@ -1447,11 +1413,11 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                     errFunc,
                     parsIniPtc,
                     bounds=bounds,
-                    args=(meanVecSorted[pointsToFit], varVecSorted[pointsToFit]),
+                    args=(meanVecRaw[pointsToFit], varVecRaw[pointsToFit]),
                 )
                 pars = res.x
 
-                sigResids = (varVecSorted - ptcFunc(pars, meanVecSorted))/np.sqrt(varVecSorted)
+                sigResids = (varVecRaw - ptcFunc(pars, meanVecRaw))/np.sqrt(varVecRaw)
                 # The new mask includes points where the residuals are
                 # finite, are less than the cut, and include the original
                 # mask of known points that should not be used.
@@ -1460,36 +1426,32 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                     & (np.abs(np.nan_to_num(sigResids)) < sigmaCutPtcOutliers)
                 )
 
-                # If this is the first iteration, find the large gaps
-                # and expand the gaps on either side of the gap.
-                expandedMask = mask.copy()
-                if count == 0:
-                    useMask, = np.where(mask)
-                    for useIndex, usePoint in enumerate(useMask):
-                        if useIndex == 0 or mask[usePoint - 1]:
-                            # The previous point was good; continue.
-                            continue
-                        deltaADU = meanVecSorted[usePoint] - meanVecSorted[useMask[useIndex - 1]]
-                        if deltaADU > minDeltaADUInitialPtcOutlierFit:
-                            # This jump is large, and we should expand
-                            # the mask around it.
-                            lower = max(
-                                meanVecSorted[useMask[useIndex - 1]] - expandGapSize,
-                                meanVecSorted[0]
-                            )
-                            upper = min(
-                                meanVecSorted[usePoint] + expandGapSize,
-                                meanVecSorted[-1]
-                            )
-                            self.log.info(
-                                f"{ampName}: Found gap at "
-                                f"{meanVecSorted[usePoint] + deltaADU/2.} adu "
-                                f"of size {deltaADU} adu; masking out "
-                                f"[{lower},{upper}] adu."
-                            )
-                            expandedMask[(meanVecSorted >= lower) & (meanVecSorted <= upper)] = False
+                # Loop over all used (True) points. If one of them follows
+                # a False point, then it must be within
+                # maxDeltaADUInitialPtcOutlierFit of a True point. If it
+                # is a large gap, everything above is marked False.
+                useMask, = np.where(mask)
+                for useIndex, usePoint in enumerate(useMask):
+                    if useIndex == 0 or mask[usePoint - 1]:
+                        # The previous point was good; continue.
+                        continue
+                    deltaADU = meanVec[usePoint] - meanVec[useMask[useIndex - 1]]
+                    if deltaADU < maxDeltaADUInitialPtcOutlierFit:
+                        # This jump is fine; continue.
+                        continue
 
-                mask = expandedMask.copy()
+                    self.log.info(
+                        "Found a jump of %.2f for amp %s, greater than %.2f. Masking points higher "
+                        "than %.2f ADU.",
+                        deltaADU,
+                        ampName,
+                        maxDeltaADUInitialPtcOutlierFit,
+                        meanVecSorted[useMask[useIndex - 1]],
+                    )
+
+                    # Mark all further points bad.
+                    mask[usePoint:] = False
+                    break
 
                 self.log.debug(
                     "Iteration %d: Removed %d points in total for %s.",
@@ -1531,12 +1493,12 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             dataset.expIdMask[ampName] = mask
 
             parsIniPtc = pars
-            meanVecFinal = meanVecOriginal[mask]
-            varVecFinal = varVecOriginal[mask]
+            meanVecFinal = meanVecRaw[mask]
+            varVecFinal = varVecRaw[mask]
 
             if Counter(mask)[False] > 0:
                 self.log.info("Number of points discarded in PTC of amplifier %s:"
-                              " %d out of %d", ampName, Counter(mask)[False], len(meanVecOriginal))
+                              " %d out of %d", ampName, Counter(mask)[False], len(meanVecRaw))
 
             if (len(meanVecFinal) < len(parsIniPtc)):
                 msg = (f"SERIOUS: Not enough data points ({len(meanVecFinal)}) compared to the number of "
@@ -1562,16 +1524,16 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                                                                   weightsY=weightsY)
 
             # Determine PTC turnoff
-            sigResids = (varVecSorted - ptcFunc(parsFit, meanVecSorted))/np.sqrt(varVecSorted)
+            sigResids = (varVecRaw - ptcFunc(parsFit, meanVecRaw))/np.sqrt(varVecRaw)
             dataset.ptcTurnoff[ampName] = np.max(meanVecFinal)
             # And compute the ptcTurnoffSamplingError as one half the
             # difference between the previous and next point.
             lastGoodIndex = np.where(mask)[0][-1]
-            ptcTurnoffLow = meanVecSorted[lastGoodIndex - 1]
-            if lastGoodIndex == (len(meanVecSorted) - 1):
+            ptcTurnoffLow = meanVecRaw[lastGoodIndex - 1]
+            if lastGoodIndex == (len(meanVec) - 1):
                 # If it's the last index, just use the interval.
                 ptcTurnoffSamplingError = dataset.ptcTurnoff[ampName] - ptcTurnoffLow
-            elif not np.isfinite(meanVecSorted[lastGoodIndex + 1]):
+            elif not np.isfinite(meanVecRaw[lastGoodIndex + 1]):
                 # If the next index is not finite, just use the interval.
                 ptcTurnoffSamplingError = dataset.ptcTurnoff[ampName] - ptcTurnoffLow
             else:
@@ -1582,11 +1544,11 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             dataset.ptcFitParsError[ampName] = parsFitErr
             dataset.ptcFitChiSq[ampName] = reducedChiSqPtc
 
-            dataset.finalVars[ampName] = varVecOriginal
+            dataset.finalVars[ampName] = varVecRaw
             dataset.finalVars[ampName][~mask] = np.nan
-            dataset.finalModelVars[ampName] = ptcFunc(parsFit, meanVecOriginal)
+            dataset.finalModelVars[ampName] = ptcFunc(parsFit, meanVec)
             dataset.finalModelVars[ampName][~mask] = np.nan
-            dataset.finalMeans[ampName] = meanVecOriginal
+            dataset.finalMeans[ampName] = meanVecRaw
             dataset.finalMeans[ampName][~mask] = np.nan
 
             ptcGain = parsFit[1]

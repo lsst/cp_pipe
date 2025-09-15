@@ -1,4 +1,4 @@
-pipelineYaml: "${CP_PIPE_DIR}/pipelines/${INSTRUMENT}/cpPtc.yaml"
+pipelineYaml: "${CP_PIPE_DIR}/pipelines/${INSTRUMENT}/cpPtc.yaml#cpPtcAdjustGainRatios"
 
 project: "${TICKET}"
 campaign: "${TICKET}"
@@ -18,5 +18,5 @@ payload:
   payloadName: "${INSTRUMENT}_${TICKET}_ptc"
   output: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET}/${TAG}/ptcGen.${RERUN}"
   butlerConfig: "${REPO}"
-  inCollection: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET},${RAW_COLLECTION},${CALIB_COLLECTIONS}"
+  inCollection: "u/abrought/LSSTCam/calib/DM-52242/test/ptcGen.20250915b/20250916T054414Z,LSSTCam/calib/DM-51897/3s_v1/ptcGen.20250808a/20250810T155447Z,${RAW_COLLECTION},${CALIB_COLLECTIONS}"
   dataQuery: "${SELECTION_PTC}"

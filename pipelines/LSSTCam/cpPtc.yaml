@@ -34,7 +34,10 @@ tasks:
   cpPtcSolve:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
     config:
-      sigmaCutPtcOutliers: 3.0
+      sigmaCutPtcOutliers: 5.0
       maxDeltaInitialPtcOutlierFit: 1_000
-      maxSignalInitialPtcOutlierFit: 30_000
+      maxSignalInitialPtcOutlierFit: 20_000
       scaleMaxSignalInitialPtcOutlierFit: False
+      modelPtcRolloff: True
+      maxPtcRolloffDeviation: 0.005
+      varianceRolloffSearchThreshold: 0.1
