@@ -1864,8 +1864,8 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
         else:
             inputMjdScaled = None
 
-        absPtcTurnoff = inputPtc.ptcTurnoff[refAmpIndex]
-        absLinearityTurnoff = linearizer.linearityTurnoff[refAmpIndex]
+        absPtcTurnoff = inputPtc.ptcTurnoff[refAmpName]
+        absLinearityTurnoff = linearizer.linearityTurnoff[refAmpName]
 
         if not np.isfinite(absPtcTurnoff) or not np.isfinite(absLinearityTurnoff):
             raise RuntimeError("CHECK ABOVE")
