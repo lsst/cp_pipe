@@ -19,11 +19,13 @@ tasks:
     config:
       connections.inputExp: "cpLinearizerIsrExp"
       connections.outputCovariance: "cpLinearizerPtcPartial"
+      connections.outputBinnedImages: "cpLinearizerPtcPairBinned"
       maximumRangeCovariancesAstier: 1
       numEdgeSuspect: 20
       edgeMaskLevel: "AMP"
       useEfdPhotodiodeData: true
       auxiliaryHeaderKeys: ["TEMP6"]
+      doOutputBinnedImages: true
   cpLinearizerPtcSolve:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
     config:
