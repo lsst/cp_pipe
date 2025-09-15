@@ -1810,7 +1810,7 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
             linearizer.linearityType[ampName] = "DoubleSpline"
             # Note that we have a placeholder for the number of nodes in
             # the absolute spline.
-            linearizer.linearityCoeffs[ampName] = np.concatenate([len(relNodes), 0], relNodes, relValues)
+            linearizer.linearityCoeffs[ampName] = np.concatenate([[len(relNodes), 0], relNodes, relValues])
             linearizer.fitChiSq[ampName] = relChisq
             linearizer.linearFit[ampName] = relLinearFit
 
