@@ -1611,7 +1611,7 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
             linearizer.linearityTurnoff[ampName] = turnoff
             linearizer.linearityMaxSignal[ampName] = maxSignal
 
-            self.log.info("Amplifier %s has a linearity turnoff of %.2 adu.", ampName, turnoff)
+            self.log.info("Amplifier %s has a linearity turnoff of %.2f adu.", ampName, turnoff)
 
         # Choose the reference amplifier as the one with the largest
         # turnoff. This ensures that the absolute fit covers the full
