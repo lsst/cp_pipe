@@ -2189,4 +2189,4 @@ def bin_flat(ptc, exposure, bin_factor=8, amp_boundary=20, apply_gains=True, gai
     binned["value"] = value
     binned["amp_index"] = amp_index
 
-    return binned
+    return Table(data=binned)
