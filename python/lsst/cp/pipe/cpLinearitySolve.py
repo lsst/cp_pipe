@@ -1859,7 +1859,7 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
             temperatureValuesScaled = None
 
         if self.config.doAbsoluteSplineFitTemporal:
-            inputMjdScaled = data[""].copy()
+            inputMjdScaled = data["mjd"].copy()
             inputMjdScaled -= np.nanmedian(inputMjdScaled)
         else:
             inputMjdScaled = None
