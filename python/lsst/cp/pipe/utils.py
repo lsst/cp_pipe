@@ -499,7 +499,7 @@ def saturationModel(params, mu):
     return np.where(mu < muTurnoff, 0, np.exp(-(mu - muTurnoff) / tau) - 1)
 
 
-def funcAstierWithSaturation(pars, x):
+def funcAstierWithRolloff(pars, x):
     """Single brighter-fatter parameter model for PTC; Equation 16 of
     Astier+19 with an piece-wise exponential model for the PTC roll-off
     of the PTC caused by saturation.
