@@ -1496,7 +1496,7 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
         for amp in detector:
             ampName = amp.getName()
 
-            linearizer.linearityType[ampName] = None
+            linearizer.linearityType[ampName] = "None"
             linearizer.linearityCoeffs[ampName] = np.zeros(1)
             # This is not used; kept for compatibility.
             linearizer.linearityBBox[ampName] = amp.getBBox()
@@ -1516,13 +1516,7 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
             linearizer.inputGroupingIndex[ampName] = np.zeros(nExp, dtype=np.int64)
             linearizer.inputNormalization[ampName] = np.ones(nExp)
 
-        linearizer.absoluteInputAbscissa = np.zeros(nExp)
-        linearizer.absoluteInputOrdinate = np.zeros(nExp)
-        linearizer.absoluteInputMask = np.zeros(nExp, dtype=np.bool_)
-        linearizer.absoluteFitResiduals = np.zeros(nExp)
-        linearizer.absoluteFitResidualsSigmaMad = np.nan
-        linearizer.absoluteFitResidualsUnmasked = np.zeros(nExp)
-        linearizer.absoluteFitResidualsModel = np.zeros(nExp)
+        linearizer.absoluteReferenceAmplifier = ""
 
         # Extract values in common, and per-amp.
         data = np.zeros(
@@ -1619,6 +1613,7 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
         turnoffArray = np.asarray([linearizer.linearityTurnoff[ampName] for ampName in inputPtc.ampNames])
         refAmpIndex = np.argmax(np.nan_to_num(turnoffArray))
         refAmpName = inputPtc.ampNames[refAmpIndex]
+        linearizer.absoluteReferenceAmplifier = refAmpName
 
         # Choose a reference image.
         refExpIndex = np.argmin(
@@ -1921,11 +1916,13 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
         absOrdinate = data["ref_counts"]
         absMask = ((absOrdinate < absLinearityTurnoff) & np.isfinite(absAbscissa))
 
-        linearizer.absoluteInputMask = absMask.copy()
-        linearizer.absoluteInputAbscissa = absAbscissa.copy()
-        linearizer.absoluteInputOrdinate = absOrdinate.copy()
-        linearizer.absoluteInputGroupingIndex = data["grouping"]
-        linearizer.absoluteInputNormalization = inputNorm.copy()
+        # We store the absolute residuals with the reference amplifier.
+        linearizer.linearityType[refAmpName] = "DoubleSpline"
+        linearizer.inputMask[refAmpName] = absMask.copy()
+        linearizer.inputAbscissa[refAmpName] = absAbscissa.copy()
+        linearizer.inputOrdinate[refAmpName] = absOrdinate.copy()
+        linearizer.inputGroupingIndex[refAmpName] = data["grouping"]
+        linearizer.inputNormalization[refAmpName] = inputNorm.copy()
 
         fitter = AstierSplineLinearityFitter(
             absNodes,
@@ -1961,7 +1958,7 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
         absValues[0] = 0.0
 
         # We need a place to store this.
-        linearizer.absoluteFitChiSq = fitter.compute_chisq_dof(pars)
+        linearizer.fitChiSq[refAmpName] = fitter.compute_chisq_dof(pars)
 
         absLinearFit = np.array([0.0, np.mean(pars[fitter.par_indices["groups"]])])
 
@@ -2013,16 +2010,16 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
             # We set masked residuals to nan.
             absResiduals[~absMask] = np.nan
 
-        linearizer.absoluteFitResidualsUnmasked = absResidualsUnmasked
-        linearizer.absoluteFitResiduals = absResiduals
-        linearizer.absoluteFitResidualsModel = absModel.copy()
+        linearizer.fitResidualsUnmasked[refAmpName] = absResidualsUnmasked
+        linearizer.fitResiduals[refAmpName] = absResiduals
+        linearizer.fitResidualsModel[refAmpName] = absModel.copy()
 
-        finite = np.isfinite(relResiduals)
+        finite = np.isfinite(absResiduals)
         if finite.sum() == 0:
             sigmad = np.nan
         else:
             sigmad = median_abs_deviation(absResiduals[finite]/absOrdinate[finite], scale="normal")
-        linearizer.absoluteFitResidualsSigmaMad = sigmad
+        linearizer.fitResidualsSigmaMad[refAmpName] = sigmad
 
         # Record the absolute nodes and values in each individual amplifier,
         # along with extra padding for alignment.
@@ -2030,13 +2027,19 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
         for i, amp in enumerate(detector):
             ampName = amp.getName()
 
-            nRelNodes = int(linearizer.linearityCoeffs[ampName][0])
-
             coeffs = np.zeros(2 * nAbsNodes + 2 * maxRelNodes + 2)
-            coeffs[0] = nRelNodes
-            coeffs[1] = nAbsNodes
-            coeffs[2: 2 + 2 * nRelNodes] = linearizer.linearityCoeffs[ampName][2: 2 + 2 * nRelNodes]
-            coeffs[2 * nRelNodes: 2 * nRelNodes + 2 * nAbsNodes] = np.concatenate([absNodes, absValues])
+            if ampName == refAmpName:
+                # The reference amplifier only has the absolute spline.
+                coeffs[1] = nAbsNodes
+                coeffs[2: 2 + 2 * nAbsNodes] = np.concatenate([absNodes, absValues])
+            else:
+                nRelNodes = int(linearizer.linearityCoeffs[ampName][0])
+
+                coeffs = np.zeros(2 * nAbsNodes + 2 * maxRelNodes + 2)
+                coeffs[0] = nRelNodes
+                coeffs[1] = nAbsNodes
+                coeffs[2: 2 + 2 * nRelNodes] = linearizer.linearityCoeffs[ampName][2: 2 + 2 * nRelNodes]
+                coeffs[2 * nRelNodes: 2 * nRelNodes + 2 * nAbsNodes] = np.concatenate([absNodes, absValues])
 
             linearizer.linearityCoeffs[ampName] = coeffs
 
