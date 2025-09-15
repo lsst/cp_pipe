@@ -1693,20 +1693,55 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
         self.log.info("Illumination group %d has the largest signal amplitude.", maxAmplitudeGroup)
 
         # The Noderator computes node locations.
-        def _noderator(turnoff1, turnoff2, minNode, lowThreshold, lowNodeSize, midNodeSize, highNodeSize):
-            if lowThreshold > minNode:
-                nNodesLow = int(np.ceil((lowThreshold - minNode) / lowNodeSize))
+        def _noderator(turnoff0, turnoff1, turnoff2, minNode, lowNodeSize, midNodeSize, highNodeSize):
+            """The "noderator" node-finder.
+
+            Parameters
+            ----------
+            turnoff0 : `float`
+                Zeroth turnoff value (e.g. expectation of low-level
+                non-linearity threshold) (adu).
+            turnoff1 : `float`
+                First turnoff value (e.g. ptc turnoff) (adu).
+            turnoff2 : `float`
+                Second turnoff value (e.g. linearity turnoff) (adu).
+            minNode : `float`
+                Location to place the first node after 0.0 (if this is <= 0.0
+                it will be ignored) (adu).
+            lowNodeSize : `float`
+                Minimum node size in the low-level non-linearity regime
+                (below turnoff0) (adu).
+            midNodeSize : `float`
+                Minimum node size in the mid-level non-linearity regime
+                (between turnoff0 and turnoff1) (adu).
+            highNodeSize : `float`
+                Minimum node size in the high-level non-linearity regime
+                (between turnoff1 and turnoff2) (adu).
+
+            Returns
+            -------
+            nodes : `np.ndarray`
+                Array of node values (adu).
+            """
+            if turnoff0 > minNode:
+                nNodesLow = int(np.ceil((turnoff0 - minNode) / lowNodeSize))
+                midStart = turnoff0
             else:
                 nNodesLow = 0
-            nNodesMid = int(np.ceil((turnoff1 - lowThreshold) / midNodeSize))
-            nNodesHigh = int(np.ceil((turnoff2 - turnoff1) / highNodeSize))
-            nodesLow = np.linspace(minNode, lowThreshold, nNodesLow)
-            nodesMid = np.linspace(lowThreshold, turnoff1, nNodesMid)
+                midStart = 0.0
+            nNodesMid = int(np.ceil((turnoff1 - midStart) / midNodeSize))
+            if turnoff2 > turnoff1:
+                nNodesHigh = int(np.ceil((turnoff2 - turnoff1) / highNodeSize))
+            else:
+                nNodesHigh = 0
+            nodesLow = np.linspace(minNode, turnoff0, nNodesLow)
+            nodesMid = np.linspace(midStart, turnoff1, nNodesMid)
             nodesHigh = np.linspace(turnoff1, turnoff2, nNodesHigh)
 
             # Make sure we do not duplicate nodes when concatenating.
-            nodeList = [[0.0]]
+            nodeList = []
             if nNodesLow > 1:
+                nodeList.append([0.0])
                 nodeList.append(nodesLow[:-1])
             if nNodesMid > 1:
                 nodeList.append(nodesMid)
@@ -1732,10 +1767,10 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
 
             # Need to check what happens if these are the same (corner dets).
             relNodes = _noderator(
+                self.config.relativeSplineLowThreshold,
                 ptcTurnoff,
                 linearityTurnoff,
                 self.config.relativeSplineMinimumSignalNode,
-                self.config.relativeSplineLowThreshold,
                 self.config.relativeSplineLowNodeSize,
                 self.config.relativeSplineMidNodeSize,
                 self.config.relativeSplineHighNodeSize,
@@ -1871,11 +1906,10 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
             raise RuntimeError("CHECK ABOVE")
 
         absNodes = _noderator(
+            0.0,  # Do not do low-level nodes.
             absPtcTurnoff,
             absLinearityTurnoff,
-            # Do not do low-level nodes
             0.0,
-            -100.0,
             1.0,
             self.config.absoluteSplineNodeSize,
             self.config.absoluteSplineNodeSize,
