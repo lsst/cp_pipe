@@ -34,7 +34,7 @@ import lsst.pipe.base as pipeBase
 import lsst.pipe.base.connectionTypes as cT
 from lsst.ip.isr import PhotonTransferCurveDataset
 from lsst.cp.pipe.utils import (fitLeastSq, fitBootstrap,
-                                funcAstier, funcAstierWithSaturation,
+                                funcAstier, funcAstierWithRolloff,
                                 symmetrize, Pol2D, ampOffsetGainRatioFixup)
 
 from deprecated.sphinx import deprecated
@@ -1205,7 +1205,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 return dataset
 
             # Fit initialization
-            ptcFunc = funcAstierWithSaturation
+            ptcFunc = funcAstierWithRolloff
             parsIniPtc = dataset.ptcFitPars[ampName]  # a00, gain, noise^2
 
             # Estimate initial parameters
@@ -1273,7 +1273,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             # and the model with the rolloff. The rolloff estimate is the
             # last acceptable point.
             modelWithoutRolloff = funcAstier(originalModelPars, meanVecSorted[pointsToFit])
-            modelWithRolloff = funcAstierWithSaturation(pars, meanVecSorted[pointsToFit])
+            modelWithRolloff = funcAstierWithRolloff(pars, meanVecSorted[pointsToFit])
             residual = np.fabs(modelWithRolloff / modelWithoutRolloff - 1)
             acceptablePoints = np.argwhere(residual <= self.config.maxPtcRolloffDeviation)
             lastGoodIndex = acceptablePoints[-1]
