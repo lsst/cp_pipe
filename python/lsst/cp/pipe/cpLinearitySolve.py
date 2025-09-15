@@ -1611,6 +1611,8 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
             linearizer.linearityTurnoff[ampName] = turnoff
             linearizer.linearityMaxSignal[ampName] = maxSignal
 
+            self.log.info("Amplifier %s has a linearity turnoff of %.2 adu.", ampName, turnoff)
+
         # Choose the reference amplifier as the one with the largest
         # turnoff. This ensures that the absolute fit covers the full
         # range.
@@ -1658,6 +1660,7 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
 
         # Compute the gain ratios for every exposure.
         # The binned images are stored as pairs.
+        self.log.info("Computing gain ratios for %d exposures.", len(data))
         for i in range(len(data)):
             expId = data["exp_id"][i]
             if (i % 2) == 0:
@@ -1686,6 +1689,8 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
             use = (data["grouping"] == g)
             groupAmplitudes[g] = np.nanmax(data["ref_counts"][use]) - np.nanmin(data["ref_counts"][use])
         maxAmplitudeGroup = np.argmax(groupAmplitudes)
+
+        self.log.info("Illumination group %d has the largest signal amplitude.", maxAmplitudeGroup)
 
         # The Noderator computes node locations.
         def _noderator(turnoff1, turnoff2, minNode, lowThreshold, lowNodeSize, midNodeSize, highNodeSize):
@@ -1735,6 +1740,8 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
                 self.config.relativeSplineMidNodeSize,
                 self.config.relativeSplineHighNodeSize,
             )
+
+            self.log.info("Relative linearity for amplifier %s using %d nodes.", ampName, len(relNodes))
 
             if len(relNodes) > maxRelNodes:
                 maxRelNodes = len(relNodes)
@@ -1873,6 +1880,8 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
             self.config.absoluteSplineNodeSize,
             self.config.absoluteSplineNodeSize,
         )
+
+        self.log.info("Absolute linearity for using %d nodes.", ampName, len(absNodes))
 
         absAbscissa = data["abscissa"]
         absOrdinate = data["ref_counts"]
