@@ -20,7 +20,12 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 
-__all__ = ["LinearitySolveTask", "LinearitySolveConfig"]
+__all__ = [
+    "LinearitySolveTask",
+    "LinearitySolveConfig",
+    "LinearityDoubleSplineSolveTask",
+    "LinearityDoubleSplineSolveConfig",
+]
 
 import logging
 import numpy as np
@@ -1155,6 +1160,14 @@ class LinearityDoubleSplineSolveConnections(
         multiple=True,
         deferLoad=True,
     )
+    outputLinearizer = cT.Output(
+        name="linearity",
+        doc="Output linearity measurements.",
+        storageClass="Linearizer",
+        dimensions=("instrument", "detector"),
+        isCalibration=True,
+    )
+
 
     def __init__(self, *, config=None):
         super().__init__(config=config)
