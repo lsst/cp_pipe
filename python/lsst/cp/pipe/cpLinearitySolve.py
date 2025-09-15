@@ -1915,7 +1915,7 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
             self.config.absoluteSplineNodeSize,
         )
 
-        self.log.info("Absolute linearity for using %d nodes.", ampName, len(absNodes))
+        self.log.info("Absolute linearity for using %d nodes.", len(absNodes))
 
         absAbscissa = data["abscissa"]
         absOrdinate = data["ref_counts"]
