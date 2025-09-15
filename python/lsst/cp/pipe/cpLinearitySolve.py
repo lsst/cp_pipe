@@ -1168,7 +1168,6 @@ class LinearityDoubleSplineSolveConnections(
         isCalibration=True,
     )
 
-
     def __init__(self, *, config=None):
         super().__init__(config=config)
 
@@ -1242,13 +1241,6 @@ class LinearityDoubleSplineSolveConfig(
             "only be done if doAutoGrouping is True.",
         default=None,
         optional=True,
-    )
-    groupingMinPoints = pexConfig.Field(
-        dtype=int,
-        doc="Minimum number of linearity points to allow grouping together points "
-            "for Spline mode with splineGroupingColumn. This configuration is here "
-            "to prevent misuse of the Spline code to avoid over-fitting.",
-        default=100,
     )
     absoluteSplineNodeSize = pexConfig.Field(
         dtype=float,
@@ -1374,6 +1366,21 @@ class LinearityDoubleSplineSolveConfig(
         default=5.0,
     )
 
+    def validate(self):
+        super().validate()
+
+        if self.doAbsoluteSplineFitTemperature and self.absoluteSplineFitTemperatureColumn is None:
+            raise ValueError(
+                "Must set absoluteSplineFitTemperatureColumn if doAbsoluteSplineFitTemperature is True.",
+            )
+
+        if self.doAutoGrouping and self.groupingColumn is not None:
+            raise ValueError("Must not set doAutoGrouping and also groupingColumn")
+        if self.doAutoGrouping:
+            if not self.autoGroupingUseExptime and not self.usePhotodiode:
+                raise ValueError("If doAutoGrouping is True and autoGroupingUseExptime is False, then "
+                                 "usePhotodiode must be True.")
+
 
 class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
     ConfigClass = LinearityDoubleSplineSolveConfig
@@ -1466,7 +1473,7 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
             self.config.autoGroupingUseExptime,
             self.config.autoGroupingMaxSignalFraction,
             self.config.autoGroupingThreshold,
-            self.config.splineGroupingColumn,
+            self.config.groupingColumn,
             self.config.minPhotodiodeCurrent,
         )
 
