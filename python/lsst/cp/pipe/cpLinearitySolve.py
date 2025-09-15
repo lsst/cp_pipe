@@ -2026,15 +2026,19 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
 
         # Record the absolute nodes and values in each individual amplifier,
         # along with extra padding for alignment.
-
+        nAbsNodes = len(absNodes)
         for i, amp in enumerate(detector):
             ampName = amp.getName()
 
-            coeffs = np.zeros(len(absNodes) + maxRelNodes + 2)
-            coeffs[0] = linearizer.linearityCoeffs[0]
-            coeffs[1] = len(absNodes)
-            coeffs[2: 2 * coeffs[0]] = linearizer.linearityCoeffs[2: 2 * coeffs[0]]
-            coeffs[2 * coeffs[0]: 2 * coeffs[0] + 2 * coeffs[1]] = absValues
+            nRelNodes = int(linearizer.linearityCoeffs[ampName][0])
+
+            coeffs = np.zeros(2 * nAbsNodes + 2 * maxRelNodes + 2)
+            coeffs[0] = nRelNodes
+            coeffs[1] = nAbsNodes
+            coeffs[2: 2 + 2 * nRelNodes] = linearizer.linearityCoeffs[ampName][2: 2 + 2 * nRelNodes]
+            coeffs[2 * nRelNodes: 2 * nRelNodes + 2 * nAbsNodes] = np.concatenate([absNodes, absValues])
+
+            linearizer.linearityCoeffs[ampName] = coeffs
 
         linearizer.hasLinearity = True
         linearizer.validate()
