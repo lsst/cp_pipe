@@ -206,7 +206,16 @@ class CalibCombineConfig(pipeBase.PipelineTaskConfig,
         target=VignetteTask,
         doc="Vignetting task.",
     )
-
+    doPartialVignetteMask = pexConfig.Field(
+        dtype=bool,
+        default=False,
+        doc="Compute a PARTLY_VIGNETTED mask plane for partly vignetted "
+            "regions? (Used for LSST flats).",
+    )
+    partialVignette = pexConfig.ConfigurableField(
+        target=VignetteTask,
+        doc="Vignetting task, configured for partial vignetting.",
+    )
     distributionPercentiles = pexConfig.ListField(
         dtype=float,
         default=[0, 5, 16, 50, 84, 95, 100],
@@ -259,6 +268,8 @@ class CalibCombineConfig(pipeBase.PipelineTaskConfig,
             raise ValueError("doVignetteMask is only supported with ``flat`` calibrationType.")
         if self.doVignetteMask and self.doVignette:
             raise ValueError("Cannot set both doVignetteMask and doVignette.")
+        if self.doPartialVignetteMask and self.calibrationType != "flat":
+            raise ValueError("doPartialVignetteMask is only supported with ``flat`` calibrationType.")
 
 
 class CalibCombineTask(pipeBase.PipelineTask):
@@ -274,6 +285,8 @@ class CalibCombineTask(pipeBase.PipelineTask):
             self.makeSubtask("stats")
             if self.config.doVignetteMask:
                 self.makeSubtask("vignette")
+            if self.config.doPartialVignetteMask:
+                self.makeSubtask("partialVignette")
 
     def runQuantum(self, butlerQC, inputRefs, outputRefs):
         inputs = butlerQC.get(inputRefs)
@@ -445,8 +458,21 @@ class CalibCombineTask(pipeBase.PipelineTask):
             self.vignette.run(
                 exposure=combinedExp,
                 doUpdateMask=True,
+                doUpdatePolygon=True,
                 vignetteValue=0.0,
                 log=self.log,
+                maskPlane=["NO_DATA", "VIGNETTED"],
+            )
+
+        combinedExp.mask.addMaskPlane("PARTLY_VIGNETTED")
+        if self.config.doPartialVignetteMask:
+            self.partialVignette.run(
+                exposure=combinedExp,
+                doUpdateMask=True,
+                doUpdatePolygon=False,
+                vignetteValue=None,
+                log=self.log,
+                maskPlane="PARTLY_VIGNETTED",
             )
 
         # Combine headers
