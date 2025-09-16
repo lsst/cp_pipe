@@ -1719,14 +1719,17 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
                 Array of node values (adu).
             """
             if turnoff0 > minNode:
-                nNodesLow = int(np.ceil((turnoff0 - minNode) / lowNodeSize))
+                # At least 2 nodes (edges) in the low signal regime.
+                nNodesLow = np.clip(int(np.ceil((turnoff0 - minNode) / lowNodeSize)), 2, None)
                 midStart = turnoff0
             else:
                 nNodesLow = 0
                 midStart = 0.0
-            nNodesMid = int(np.ceil((turnoff1 - midStart) / midNodeSize))
+            # At least 5 nodes (akima minimum) in the mid signal regime.
+            nNodesMid = np.clip(int(np.ceil((turnoff1 - midStart) / midNodeSize)), 5, None)
             if turnoff2 > turnoff1:
-                nNodesHigh = int(np.ceil((turnoff2 - turnoff1) / highNodeSize))
+                # At least 2 nodes (edges) in the high signal regime.
+                nNodesHigh = np.clip(int(np.ceil((turnoff2 - turnoff1) / highNodeSize)), 2, None)
             else:
                 nNodesHigh = 0
             nodesLow = np.linspace(minNode, turnoff0, nNodesLow)
@@ -1914,7 +1917,7 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
 
         absAbscissa = data["abscissa"]
         absOrdinate = data["ref_counts"]
-        absMask = ((absOrdinate < absLinearityTurnoff) & np.isfinite(absAbscissa))
+        absMask = ((absOrdinate <= absLinearityTurnoff) & np.isfinite(absAbscissa))
 
         # We store the absolute residuals with the reference amplifier.
         linearizer.linearityType[refAmpName] = "DoubleSpline"
