@@ -40,7 +40,7 @@ tasks:
     config:
       useFocalPlaneNormalization: false
       connections.outputLinearizer: "linearizerUnnormalized1"
-      connections.inputBinnedImages: "cpLinearizerPtcPairBinned"
+      connections.inputBinnedImagesHandles: "cpLinearizerPtcPairBinned"
       usePhotodiode: true
       absoluteSplineNodeSize: 10000.0
   cpLinearizerNormalize1:
@@ -55,7 +55,7 @@ tasks:
       connections.inputLinearizerPtc: "linearizerPtc"
       connections.outputLinearizer: "linearizer"
       connections.inputNormalization: "cpLinearizerNormalization1"
-      connections.inputBinnedImages: "cpLinearizerPtcPairBinned"
+      connections.inputBinnedImagesHandles: "cpLinearizerPtcPairBinned"
       usePhotodiode: true
 
 subsets:

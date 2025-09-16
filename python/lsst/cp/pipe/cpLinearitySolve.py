@@ -1152,7 +1152,7 @@ class LinearityDoubleSplineSolveConnections(
         dimensions=("instrument",),
         isCalibration=True,
     )
-    inputBinnedImages = cT.Input(
+    inputBinnedImagesHandles = cT.Input(
         name="cpPtcPairBinned",
         doc="Tabulated binned exposure pairs.",
         storageClass="ArrowAstropy",
@@ -1390,11 +1390,6 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
         # docstring inherited
         inputs = butlerQC.get(inputRefs)
 
-        # Create the inputBinnedImageDict.
-        inputBinnedImagesDict = {
-            handle.dataId["exposure"]: handle for handle in inputs["inputBinnedImages"]
-        }
-
         if self.config.useFocalPlaneNormalization:
             inputNormalization = inputs["inputNormalization"]
         else:
@@ -1422,7 +1417,7 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
         outputs = self.run(
             inputPtc=inputs["inputLinearizerPtc"],
             camera=inputs["camera"],
-            inputBinnedImagesDict=inputBinnedImagesDict,
+            inputBinnedImageHandles=inputs["inputBinnedImageHandles"],
             inputNormalization=inputNormalization,
         )
         outputs.outputLinearizer.updateMetadata(setDate=False, **kwargs)
@@ -1434,7 +1429,7 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
         *,
         inputPtc,
         camera,
-        inputBinnedImagesDict,
+        inputBinnedImagesHandles,
         inputNormalization,
     ):
         """Fit the double-spline relative/absolute linearity correction.
@@ -1445,8 +1440,8 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
             Pre-measured PTC dataset.
         camera : `lsst.afw.cameraGeom.Camera`
             Camera geometry.
-        inputBinnedImagesDict : `dict` [`int`, `DeferredDatasetHandle`]
-            Dictionary of input binned pairs, keyed by exposure.
+        inputBinnedImagesHandles : `list` [`DeferredDatasetHandle`]
+            Handles for input binned image pairs.
         inputNormalization : `astropy.table.Table`, optional
             Focal plane normalization table to use if
             useFocalPlaneNormalization is True.
@@ -1463,6 +1458,10 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
                 (`lsst.ip.isr.IsrProvenance`).
         """
         detector = camera[inputPtc.metadata["DETECTOR"]]
+
+        binnedImagesHandleDict = {
+            handle.dataId["exposure"]: handle for handle in inputBinnedImagesHandles
+        }
 
         linearizer = Linearizer(detector=detector, log=self.log)
         linearizer.updateMetadataFromExposures([inputPtc])
@@ -1634,7 +1633,7 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
         # in the pair, because the binned are pairs.
         offset = refExpIndex % 2
 
-        refBinned = inputBinnedImagesDict[data["exp_id"][refExpIndex - offset]].get()
+        refBinned = binnedImagesHandleDict[data["exp_id"][refExpIndex - offset]].get()
         if offset == 0:
             refBinned["value"] = refBinned["value1"]
         else:
@@ -1659,7 +1658,7 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
         for i in range(len(data)):
             expId = data["exp_id"][i]
             if (i % 2) == 0:
-                binned = inputBinnedImagesDict[expId].get()
+                binned = binnedImagesHandleDict[expId].get()
                 binned["value"] = binned["value1"]
             else:
                 binned["value"] = binned["value2"]
