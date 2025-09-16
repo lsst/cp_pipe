@@ -9,9 +9,15 @@ tasks:
       doVignetteMask: true
       # This radius is from RFC-1120.
       vignette.radius: 350.0
+      doPartialVignetteMask: true
+      # This radius is from RFC-1125.
+      partialVignette.radius: 317.0
   cpFlatRedCombine:
     class: lsst.cp.pipe.CalibCombineByFilterTask
     config:
       doVignetteMask: true
       # This radius is from RFC-1120.
       vignette.radius: 350.0
+      doPartialVignetteMask: true
+      # This radius is from RFC-1125.
+      partialVignette.radius: 317.0
