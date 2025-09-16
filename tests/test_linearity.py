@@ -882,6 +882,7 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
         nconfig = LinearityNormalizeTask.ConfigClass()
         nconfig.normalizeDetectors = [0]
         nconfig.referenceDetector = 0
+        nconfig.doNormalizeAbsoluteLinearizer = False
         ntask = LinearityNormalizeTask(config=nconfig)
 
         ptc_handles = [

@@ -133,6 +133,13 @@ class LinearityNormalizeConfig(
             "residuals in order to be used to create a normalization value.",
         default=0.5,
     )
+    doNormalizeAbsoluteLinearizer = pexConfig.Field(
+        dtype=bool,
+        doc="Do the normalization with an ``absolute`` linearizer, which implies "
+            "both single-image (vs pairs) and only using the absolute reference "
+            "amplifier for normalization.",
+        default=True,
+    )
 
     def validate(self):
         super().validate()
@@ -167,10 +174,6 @@ class LinearityNormalizeTask(pipeBase.PipelineTask):
             ``outputNormalization``
                 Normalization table, `astropy.table.Table`.
         """
-        # Get information about the reference detector.
-        refDetector = camera[self.config.referenceDetector]
-        nAmp = len(refDetector)
-
         ptcHandleDict = {handle.dataId["detector"]: handle for handle in inputPtcHandles}
         linHandleDict = {handle.dataId["detector"]: handle for handle in inputLinearizerHandles}
 
@@ -186,12 +189,26 @@ class LinearityNormalizeTask(pipeBase.PipelineTask):
         # Get the exposure numbers and exposure times from the reference PTC.
         # These will be matched for all amps.
         # Note that all amps in a ptc must have the same input exposures.
-        exposures = np.asarray(referencePtc.inputExpIdPairs[referencePtc.ampNames[0]])[:, 0]
-        exptimes = referencePtc.rawExpTimes[referencePtc.ampNames[0]]
+
+        if self.config.doNormalizeAbsoluteLinearizer:
+            nAmp = 1
+            refAmp = referenceLinearizer.absoluteReferenceAmplifier
+            ampNames = [refAmp]
+        else:
+            nAmp = len(referencePtc.ampNames)
+            refAmp = referencePtc.ampNames[0]
+            ampNames = referencePtc.ampNames
+
+        if self.config.doNormalizeAbsoluteLinearizer:
+            exposures = np.asarray(referencePtc.inputExpIdPairs[refAmp]).ravel()
+            exptimes = np.repeat(referencePtc.rawExpTimes[refAmp], 2)
+        else:
+            exposures = np.asarray(referencePtc.inputExpIdPairs[refAmp])[:, 0]
+            exptimes = referencePtc.rawExpTimes[refAmp]
 
         # Get the input normalization values from the reference linearizer.
         # These will be matched for all amps.
-        inputNormalization = referenceLinearizer.inputNormalization[referencePtc.ampNames[0]]
+        inputNormalization = referenceLinearizer.inputNormalization[refAmp]
 
         # The rawMeans and fitResiduals arrays will hold all the exposures
         # and amps for the detectors that go into the global normalization.
@@ -214,7 +231,10 @@ class LinearityNormalizeTask(pipeBase.PipelineTask):
             ptc = ptcHandle.get()
             lin = linHandle.get()
 
-            ptcExposures = np.asarray(ptc.inputExpIdPairs[ptc.ampNames[0]])[:, 0]
+            if self.config.doNormalizeAbsoluteLinearizer:
+                ptcExposures = np.asarray(ptc.inputExpIdPairs[refAmp]).ravel()
+            else:
+                ptcExposures = np.asarray(ptc.inputExpIdPairs[refAmp])[:, 0]
 
             if len(ptcExposures) != len(exposures):
                 self.log.warning(
@@ -232,8 +252,8 @@ class LinearityNormalizeTask(pipeBase.PipelineTask):
                 )
                 continue
 
-            for j, ampName in enumerate(ptc.ampNames):
-                rawMeans[i, a, j] = ptc.rawMeans[ampName][b]
+            for j, ampName in enumerate(ampNames):
+                rawMeans[i, a, j] = lin.inputOrdinate[ampName][b]
                 models[i, a, j] = lin.fitResidualsModel[ampName][b]
                 fitResiduals[i, a, j] = (
                     lin.fitResiduals[ampName][b] / lin.fitResidualsModel[ampName][b]
