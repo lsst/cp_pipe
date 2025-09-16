@@ -2041,8 +2041,12 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
                 coeffs = np.zeros(2 * nAbsNodes + 2 * maxRelNodes + 2)
                 coeffs[0] = nRelNodes
                 coeffs[1] = nAbsNodes
-                coeffs[2: 2 + 2 * nRelNodes] = linearizer.linearityCoeffs[ampName][2: 2 + 2 * nRelNodes]
-                coeffs[2 * nRelNodes: 2 * nRelNodes + 2 * nAbsNodes] = np.concatenate([absNodes, absValues])
+                relStart = 2
+                relEnd = relStart + 2 * nRelNodes
+                coeffs[relStart: relEnd] = linearizer.linearityCoeffs[ampName][relStart: relEnd]
+                absStart = relEnd
+                absEnd = absStart + 2 * nAbsNodes
+                coeffs[absStart: absEnd] = np.concatenate([absNodes, absValues])
 
             linearizer.linearityCoeffs[ampName] = coeffs
 
