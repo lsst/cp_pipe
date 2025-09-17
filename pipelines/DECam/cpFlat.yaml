@@ -19,3 +19,8 @@ tasks:
     class: lsst.cp.pipe.CpFlatNormalizationTask
     config:
       level: "AMP"
+  cpFlatCombine:
+    class: lsst.cp.pipe.CalibCombineByFilterTask
+    config:
+    - checkNoData: False
+      censorMaskPlanes: False

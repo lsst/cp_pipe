@@ -2,3 +2,9 @@ description: cp_pipe DARK calibration construction
 instrument: lsst.obs.decam.DarkEnergyCamera
 imports:
   - location: $CP_PIPE_DIR/pipelines/_ingredients/cpDark.yaml
+tasks:
+  cpDarkCombine:
+    class: lsst.cp.pipe.CalibCombineTask
+    config:
+    - checkNoData: False
+      censorMaskPlanes: False

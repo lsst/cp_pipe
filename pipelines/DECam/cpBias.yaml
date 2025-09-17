@@ -2,3 +2,9 @@ description: cp_pipe BIAS calibration construction for DECam
 instrument: lsst.obs.decam.DarkEnergyCamera
 imports:
   - location: $CP_PIPE_DIR/pipelines/_ingredients/cpBias.yaml
+tasks:
+  cpBiasCombine:
+    class: lsst.cp.pipe.CalibCombineTask
+    config:
+    - checkNoData: False
+      censorMaskPlanes: False
