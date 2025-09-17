@@ -1417,7 +1417,7 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
         outputs = self.run(
             inputPtc=inputs["inputLinearizerPtc"],
             camera=inputs["camera"],
-            inputBinnedImageHandles=inputs["inputBinnedImageHandles"],
+            inputBinnedImagesHandles=inputs["inputBinnedImagesHandles"],
             inputNormalization=inputNormalization,
         )
         outputs.outputLinearizer.updateMetadata(setDate=False, **kwargs)
