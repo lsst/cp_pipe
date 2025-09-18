@@ -38,6 +38,6 @@ tasks:
       maxDeltaInitialPtcOutlierFit: 1_000
       maxSignalInitialPtcOutlierFit: 20_000
       scaleMaxSignalInitialPtcOutlierFit: False
-      modelPtcRolloff: True
+      doModelPtcRolloff: True
       maxPtcRolloffDeviation: 0.005
       varianceRolloffSearchThreshold: 0.1

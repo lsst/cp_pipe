@@ -474,7 +474,6 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         order=None,
         fitType=None,
         doFitBootstrap=False,
-        doLegacy=False,
     ):
         localDataset = copy.deepcopy(self.dataset)
         localDataset.ptcFitType = fitType
@@ -482,33 +481,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         if doFitBootstrap:
             configSolve.doFitBootstrap = True
 
-        configSolve.doLegacyTurnoffSelection = doLegacy
-
-        order = 2
-
-        if fitType == "POLYNOMIAL":
-            if order not in [2, 3]:
-                RuntimeError("Enter a valid polynomial order for this test: 2 or 3")
-            if order == 2:
-                for ampName in self.ampNames:
-                    # Need to include the noise in adu^2
-                    localDataset.rawVars[ampName] = [
-                        self.noiseSq / self.gain**2 + self.c1 * mu + self.c2 * mu**2
-                        for mu in localDataset.rawMeans[ampName]
-                    ]
-                configSolve.polynomialFitDegree = 2
-            if order == 3:
-                for ampName in self.ampNames:
-                    # Need to include the noise in adu^2
-                    localDataset.rawVars[ampName] = [
-                        self.noiseSq / self.gain**2
-                        + self.c1 * mu
-                        + self.c2 * mu**2
-                        + self.c3 * mu**3
-                        for mu in localDataset.rawMeans[ampName]
-                    ]
-                configSolve.polynomialFitDegree = 3
-        elif fitType == "EXPAPPROXIMATION":
+        if fitType == "EXPAPPROXIMATION":
             g = self.gain
             for ampName in self.ampNames:
                 localDataset.rawVars[ampName] = [
@@ -520,7 +493,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                 ]
         else:
             raise RuntimeError(
-                "Enter a fit function type: 'POLYNOMIAL' or 'EXPAPPROXIMATION'"
+                "Fit type must be 'EXPAPPROXIMATION'"
             )
 
         # Initialize mask and covariance weights that will be used in fits.
@@ -564,19 +537,6 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         for ampName in self.ampNames:
             self.assertEqual(fitType, localDataset.ptcFitType)
             self.assertAlmostEqual(self.gain, localDataset.gain[ampName])
-            if fitType == "POLYNOMIAL":
-                self.assertAlmostEqual(self.c1, localDataset.ptcFitPars[ampName][1])
-                # Noise already in electrons
-                self.assertAlmostEqual(
-                    np.sqrt(self.noiseSq), localDataset.noise[ampName]
-                )
-                # If the noise error is greater than the noise, something
-                # is seriously wrong. Possibly some kind of gain application
-                # mismatch.
-                self.assertLess(
-                    localDataset.noiseErr[ampName],
-                    np.sqrt(self.noiseSq)
-                )
             if fitType == "EXPAPPROXIMATION":
                 self.assertAlmostEqual(
                     self.a00, localDataset.ptcFitPars[ampName][0]
@@ -622,7 +582,6 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
                 configSolve = copy.copy(self.defaultConfigSolve)
                 configSolve.doFitBootstrap = False
-                configSolve.doLegacyTurnoffSelection = False
 
                 solveTask = cpPipe.ptc.PhotonTransferCurveSolveTask(config=configSolve)
 
@@ -632,7 +591,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                 self.assertFloatsAlmostEqual(
                     solvedDataset.ptcTurnoff[ampName],
                     ptcTurnoff,
-                    msg=f"Dense: {dense}; Mode: {mode}",
+                    msg=f"Dense: {dense}; Mode: {mode}; Amp: {ampName}",
                 )
 
                 # Check that no values above the turnoff are "good".
@@ -649,17 +608,13 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                 )
 
     def test_ptcFit(self):
-        for doLegacy in [False, True]:
-            for fitType, order in [
-                ("POLYNOMIAL", 2),
-                ("POLYNOMIAL", 3),
-                ("EXPAPPROXIMATION", None),
-            ]:
-                self.ptcFitAndCheckPtc(
-                    fitType=fitType,
-                    order=order,
-                    doLegacy=doLegacy,
-                )
+        for fitType, order in [
+            ("EXPAPPROXIMATION", None),
+        ]:
+            self.ptcFitAndCheckPtc(
+                fitType=fitType,
+                order=order
+            )
 
     def test_meanVarMeasurement(self):
         task = self.defaultTaskExtract
@@ -913,7 +868,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
     def test_ptcFitBootstrap(self):
         """Test the bootstrap fit option for the PTC"""
-        for (fitType, order) in [('POLYNOMIAL', 2), ('POLYNOMIAL', 3), ('EXPAPPROXIMATION', None)]:
+        for (fitType, order) in [('EXPAPPROXIMATION', None)]:
             self.ptcFitAndCheckPtc(fitType=fitType, order=order, doFitBootstrap=True)
 
     def test_ampOffsetGainRatioFixup(self):
@@ -1105,7 +1060,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         """
         if dense and mode == "normal":
             # Taken from dense run 13591, detector 94, amplifier C02
-            ptcTurnoff = 92239.4794
+            ptcTurnoff = 92787.0984
             rawMeans = np.array([
                 3.72806883e+01, 3.86850679e+01, 4.09319941e+01, 4.30288886e+01,
                 4.59546561e+01, 4.77510985e+01, 5.06130505e+01, 5.35060747e+01,
