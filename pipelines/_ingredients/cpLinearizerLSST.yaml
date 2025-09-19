@@ -39,8 +39,8 @@ tasks:
     class: lsst.cp.pipe.LinearityDoubleSplineSolveTask
     config:
       useFocalPlaneNormalization: false
-      connections.outputLinearizer: "linearizerUnnormalized1"
       connections.inputBinnedImagesHandles: "cpLinearizerPtcPairBinned"
+      connections.outputLinearizer: "linearizerUnnormalized1"
       usePhotodiode: true
       absoluteSplineLowThreshold: 0.0
       absoluteSplineNodeSize: 10000.0
@@ -53,8 +53,9 @@ tasks:
     class: lsst.cp.pipe.LinearityDoubleSplineSolveTask
     config:
       useFocalPlaneNormalization: true
-      connections.outputLinearizer: "linearizerUnnormalized2"
+      connections.inputNormalization: "cpLinearizerNormalization1"
       connections.inputBinnedImagesHandles: "cpLinearizerPtcPairBinned"
+      connections.outputLinearizer: "linearizerUnnormalized2"
       usePhotodiode: true
   cpLinearizerNormalize2:
     class: lsst.cp.pipe.LinearityNormalizeTask
@@ -65,10 +66,9 @@ tasks:
     class: lsst.cp.pipe.LinearityDoubleSplineSolveTask
     config:
       useFocalPlaneNormalization: true
-      connections.inputLinearizerPtc: "linearizerPtc"
-      connections.outputLinearizer: "linearizer"
       connections.inputNormalization: "cpLinearizerNormalization2"
       connections.inputBinnedImagesHandles: "cpLinearizerPtcPairBinned"
+      connections.outputLinearizer: "linearizer"
       usePhotodiode: true
 
 subsets:
