@@ -25,9 +25,7 @@ __all__ = ['ElectrostaticBrighterFatterSolveTask',
            'ElectrostaticBrighterFatterSolveConfig']
 
 import numpy as np
-import copy
 
-import lsst.afw.math as afwMath
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 import lsst.pipe.base.connectionTypes as cT
