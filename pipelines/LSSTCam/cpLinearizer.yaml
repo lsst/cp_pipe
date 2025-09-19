@@ -81,6 +81,49 @@ tasks:
         - 137
         - 144
       referenceDetector: 94
+  cpLinearizerUnnormalizedSolve2:
+    class: lsst.cp.pipe.LinearityDoubleSplineSolveTask
+    config:
+      usePhotodiode: false
+      doAutoGrouping: true
+      absoluteSplineFitTemperatureColumn: TEMPAVG
+      doAbsoluteSplineFitWeights: false
+      doAbsoluteSplineFitTemperature: false
+      doAbsoluteSplineFitTemporal: true
+      doAbsoluteSplineFitOffset: true
+      absoluteSplineFitMaxIter: 40
+      absoluteNSigmaClipLinear: 20
+      relativeNSigmaClipLinear: 20
+  cpLinearizerNormalize2:
+    class: lsst.cp.pipe.LinearityNormalizeTask
+    config:
+      normalizeDetectors:
+        - 44
+        - 51
+        - 52
+        - 53
+        - 60
+        - 83
+        - 90
+        - 91
+        - 92
+        - 99
+        - 86
+        - 93
+        - 94
+        - 95
+        - 102
+        - 89
+        - 96
+        - 97
+        - 98
+        - 105
+        - 128
+        - 135
+        - 136
+        - 137
+        - 144
+      referenceDetector: 94
   cpLinearizerSolve:
     class: lsst.cp.pipe.LinearityDoubleSplineSolveTask
     config:
