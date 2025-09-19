@@ -1242,14 +1242,16 @@ class LinearityDoubleSplineSolveConfig(
         default=None,
         optional=True,
     )
-    absoluteSplineMinimumSignalNodes = pexConfig.Field(
+    absoluteSplineMinimumSignalNode = pexConfig.Field(
         dtype=float,
         doc="Smallest node (above 0) for absolute spline (adu).",
         default=500.0,
     )
     absoluteSplineLowThreshold = pexConfig.Field(
         dtype=float,
-        doc="Threshold for the low-level linearity nodes for absolute spline (adu).",
+        doc="Threshold for the low-level linearity nodes for absolute spline (adu). "
+            "If this is below ``absoluteSplineMinimumSignalNode`` then the low "
+            "level checks will be skipped.",
         default=10000.0,
     )
     absoluteSplineLowNodeSize = pexConfig.Field(
@@ -1339,7 +1341,9 @@ class LinearityDoubleSplineSolveConfig(
     )
     relativeSplineLowThreshold = pexConfig.Field(
         dtype=float,
-        doc="Threshold for the low-level linearity nodes for relative spline (adu).",
+        doc="Threshold for the low-level linearity nodes for relative spline (adu)."
+            "If this is below ``relativeSplineMinimumSignalNode`` then the low "
+            "level checks will be skipped.",
         default=5000.0,
     )
     relativeSplineLowNodeSize = pexConfig.Field(
@@ -1937,7 +1941,7 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
             lowThreshold,
             absPtcTurnoff,
             absLinearityTurnoff,
-            self.config.absoluteSplineMinimumSignalNodes,
+            self.config.absoluteSplineMinimumSignalNode,
             self.config.absoluteSplineLowNodeSize,
             # The medium and high are matched for absolute spline.
             self.config.absoluteSplineNodeSize,
