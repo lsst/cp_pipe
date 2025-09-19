@@ -1925,8 +1925,8 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
 
         self.log.info("Absolute linearity for using %d nodes.", len(absNodes))
 
-        absAbscissa = data["abscissa"]
-        absOrdinate = data["ref_counts"]
+        absAbscissa = data["abscissa"].copy()
+        absOrdinate = data["ref_counts"].copy()
         absMask = ((absOrdinate <= absLinearityTurnoff) & np.isfinite(absAbscissa))
 
         # We store the absolute residuals with the reference amplifier.
@@ -1934,12 +1934,12 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
         linearizer.inputMask[refAmpName] = absMask.copy()
         linearizer.inputAbscissa[refAmpName] = absAbscissa.copy()
         linearizer.inputOrdinate[refAmpName] = absOrdinate.copy()
-        linearizer.inputGroupingIndex[refAmpName] = data["grouping"]
+        linearizer.inputGroupingIndex[refAmpName] = data["grouping"].copy()
         linearizer.inputNormalization[refAmpName] = inputNorm.copy()
 
         fitter = AstierSplineLinearityFitter(
             absNodes,
-            data["grouping"],
+            data["grouping"].copy(),
             absAbscissa,
             absOrdinate,
             mask=absMask,
