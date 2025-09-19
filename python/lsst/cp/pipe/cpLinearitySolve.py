@@ -1488,7 +1488,13 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
             temperatureValues = None
 
         # Fill the linearizer with empty values.
-        firstAmp = inputPtc.ampNames[0]
+        firstAmp = None
+        for ampName in inputPtc.ampNames:
+            if ampName not in inputPtc.badAmps:
+                firstAmp = ampName
+                break
+        if firstAmp is None:
+            raise pipeBase.NoWorkFound("No valid amps in input PTC.")
         nExp = len(inputPtc.inputExpIdPairs[firstAmp]) * 2
         nAmp = len(inputPtc.ampNames)
 
