@@ -1762,9 +1762,14 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
                 # This is a bad amp; skip it.
                 continue
 
+            if ptcTurnoff < self.config.relativeSplineLowThreshold:
+                lowThreshold = 0.0
+            else:
+                lowThreshold = self.config.relativeSplineLowThreshold
+
             # Need to check what happens if these are the same (corner dets).
             relNodes = _noderator(
-                self.config.relativeSplineLowThreshold,
+                lowThreshold,
                 ptcTurnoff,
                 linearityTurnoff,
                 self.config.relativeSplineMinimumSignalNode,
