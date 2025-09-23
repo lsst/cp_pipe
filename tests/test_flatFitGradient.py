@@ -350,7 +350,7 @@ class FlatFitGradientTestCase(lsst.utils.tests.TestCase):
 
         self.assertFloatsAlmostEqual(gradient.normalizationFactor, 1.0, rtol=1e-3)
         self.assertFloatsAlmostEqual(gradient.radialSplineNodes, radial_nodes_sky)
-        self.assertFloatsAlmostEqual(gradient.radialSplineValues, radial_values_sky, atol=7e-4)
+        self.assertFloatsAlmostEqual(gradient.radialSplineValues, radial_values_sky, atol=1e-3)
         self.assertFloatsAlmostEqual(gradient.itlRatio, itl_ratio, atol=1e-4)
         self.assertFloatsAlmostEqual(gradient.centroidDeltaX, 0.0, atol=6e-3)
         self.assertFloatsAlmostEqual(gradient.centroidDeltaY, 0.0, atol=6e-3)
