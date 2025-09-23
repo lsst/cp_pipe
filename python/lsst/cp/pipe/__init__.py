@@ -21,6 +21,7 @@
 #
 
 from ._configure import *
+from .cpElectrostaticBF import *
 from .cpBfk import *
 from .cpCombine import *
 from .cpCrosstalk import *
