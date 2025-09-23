@@ -29,7 +29,7 @@ import numpy as np
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 import lsst.pipe.base.connectionTypes as cT
-from scipy.optimize import leastsq
+from lmfit import Model, Parameter, report_fit
 
 from .utils import (funcPolynomial, irlsFit, extractCalibDate)
 from .cpLinearitySolve import ptcLookup
@@ -66,8 +66,8 @@ class ElectrostaticBrighterFatterSolveConnections(pipeBase.PipelineTaskConnectio
         isCalibration=True,
     )
 
-    outputBF = cT.Output(
-        name="bf",
+    output = cT.Output(
+        name="ebf",
         doc="Output measured brighter-fatter electrostatic model.",
         storageClass="ElectrostaticBrighterFatterCalibration",
         dimensions=("instrument", "detector"),
@@ -85,36 +85,82 @@ class ElectrostaticBrighterFatterSolveConnections(pipeBase.PipelineTaskConnectio
 class ElectrostaticBrighterFatterSolveConfig(pipeBase.PipelineTaskConfig,
                                              pipelineConnections=BrighterFatterKernelSolveConnections):
 
-    maxFitRange = pexConfig.Field(
+    fitRange = pexConfig.Field(
         dtype=float,
         doc="Maximum pixel range to compute the electrostatic fit.",
         default=8,
     )
+    fitMethod = pexConfig.Field(
+        dtype=str,
+        doc="Minimization technique to fit the electrostatic solution. "
+            "Should be one of the available fitting methods in "
+            "`lmfit.minimizer.Minimizer.minimize`. For list of all possible "
+            "methods see the documentation. Default: 'leastsq'."
+        default="leastsq",
+    )
+    doNormalizeElectrostaticModel = pexConfig.Field(
+        dtype=bool,
+        doc="Do you want apply a final normalization to the modeled "
+            "aMatrix? Default: False."
+        default=False,
+    )
+    doFitOffset = pexConfig.Field(
+        dtype=bool,
+        doc="Do you want to fit an offset to the a matrix? This caused "
+            "by long range correlations in the data. Default: False."
+        default=False,
+    )
+    nImageChargePairs = pexConfig.Field(
+        dtype=int,
+        doc="Number of image charge pairs to use when computing "
+            "Gauss's law. The larger number, the better, and an "
+            "odd number is preferred. Default: 11.",
+        default=11,
+    )
     doCheckValidity = pexConfig.Field(
         dtype=bool,
         doc="Check the AMP kernels for basic validity criteria? "
-            "Will set bfk.valid for each amp.",
+            "Will set electrostaticBfCalib.valid for each amp.",
         default=True,
     )
-    fixThicknessTo = pexConfig.Field(
-        dtype=float,
-        doc="If set, fix thickness to this value in the fit (microns). Use None to leave free.",
-        default=None,
+    initialParametersDict = pexConfig.DictField(
+        keytype=str,
+        itemtype=float,
+        doc="Initial fit parameters, should contain `thickness`, "
+            "`pixelsize`, `zq`, zsh`, `zsv`, `a`, `b`, `alpha`, "
+            " and `beta`. See the class docstring for descriptions "
+            " and units of each parameter."
+        default={
+            'thickness': 100.0,
+            'pixelsize' : 10.0,
+            'zq' : 1.0,
+            'zsh': 2.0,
+            'zsv' : 3.0,
+            'a': 1.0,
+            'b': 3.0,
+            'alpha': 1.0,
+            'beta': 0.0,
+        },
     )
-    fixPixSizeTo = pexConfig.Field(
-        dtype=float,
-        doc="If set, fix pixel size to this value in the fit (microns). Use None to leave free.",
-        default=None,
-    )
-    fixAlphaTo = pexConfig.Field(
-        dtype=float,
-        doc="If set, fix alpha (see https://arxiv.org/abs/2301.03274, Equation 16) to this value in the fit. Use None to leave free.",
-        default=None,
-    )
-    fixBetaTo = pexConfig.Field(
-        dtype=float,
-        doc="If set, fix beta (see https://arxiv.org/abs/2301.03274, Equation 16) to this value in the fit. Use None to leave free.",
-        default=None,
+    parametersToVary = pexConfig.DictField(
+        keytype=str,
+        itemtype=bool,
+        doc="Dictionary of parameters and booleans which will configure "
+            "if the parameter is allowed to vary in the fit, should contain "
+            "`zq`, zsh`, `zsv`, `a`, `b`, `alpha`,  and `beta`. If False, "
+            "the parameter will be fixed to the initial value set in "
+            "initialParameterDict. `thickness` and `pixelsize` are always "
+            "fixed.See the class docstring for descriptions and units of each "
+            "parameter."
+        default={
+            'zq' : True,
+            'zsh': True,
+            'zsv' : True,
+            'a': True,
+            'b': True,
+            'alpha': True,
+            'beta': True,
+        },
     )
 
 
@@ -139,7 +185,7 @@ class ElectrostaticBrighterFatterSolveTask(pipeBase.PipelineTask):
         """
         inputs = butlerQC.get(inputRefs)
 
-        # Use the dimensions to set calib/provenance information.
+        # Use the dimensions to set electrostaticBfCalib/provenance information.
 
         if self.config.useBfkPtc:
             inputs["inputDims"] = dict(inputRefs.inputBfkPtc.dataId.required)
@@ -197,51 +243,37 @@ class ElectrostaticBrighterFatterSolveTask(pipeBase.PipelineTask):
         detector = camera[inputDims['detector']]
         detName = detector.getName()
 
+        inputRange = inputPtc.covMatrixSide
+        fitRange = self.config.fitRange
 
         if not inputPtc.ptcFitType.startswith("FULLCOVARIANCE"):
             raise ValueError("ptcFitType must be FULLCOVARIANCE* to solve for electrostatic solution.")
-        if maxFitRange > inputPtc.covMatrixSide:
-            raise ValueError("Cannot compute the electrostatic solution if int(inputPtc.covMatrixSide) < maxFitRange.")
+        if self.config.fitRange > inputPtc.covMatrixSide:
+            raise ValueError("Cannot compute the electrostatic solution if int(inputPtc.covMatrixSide) < fitRange.")
 
-        # Get flux sample dictionary
-        fluxSampleDict = {ampName: 0.0 for ampName in inputPtc.ampNames}
-        for ampName in inputPtc.ampNames:
-            if 'ALL_AMPS' in self.config.covModelFluxSample:
-                fluxSampleDict[ampName] = self.config.covModelFluxSample['ALL_AMPS']
-            elif ampName in self.config.covModelFluxSample:
-                fluxSampleDict[ampName] = self.config.covModelFluxSample[ampName]
-
-        bf = ElectrostaticBrighterFatterCalibration(
+        # Initialize the output calibration
+        electrostaticBfCalib = ElectrostaticBrighterFatterCalibration(
             camera=camera,
             detectorId=detector.getId(),
+            inputRange=inputRange,
+            fitRange=fitRange,
         )
-        bf.rawMeans = inputPtc.rawMeans  # ADU
-        bf.rawVariances = inputPtc.rawVars  # ADU^2
-        bf.expIdMask = inputPtc.expIdMask
-        bf.aMatrix = inputPtc.aMatrix
-        bf.aMatrixErr = inputPtc.ptcFitParsError
 
-        # Use the PTC covariances as the cross-correlations.
-        # The input covariances are in (x, y) index
-        # ordering, as is the aMatrix.
-        bf.rawXcorrs = inputPtc.covariances  # ADU^2
-        bf.badAmps = inputPtc.badAmps
-        maxFitRange = self.config.maxFitRange
-        bf.shape = (maxFitRange, maxFitRange)
-        bf.gain = inputPtc.gain
-        bf.noise = inputPtc.noise
-        bf.valid = dict()
-        bf.updateMetadataFromExposures([inputPtc])
+        electrostaticBfCalib.badAmps = inputPtc.badAmps
+        electrostaticBfCalib.gain = inputPtc.gain
+
+        aMatrixDict = inputPtc.aMatrix
+        aMatrixSigmaDict = inputPtc.aMatrixError
+
+        electrostaticBfCalib.updateMetadataFromExposures([inputPtc])
 
         for amp in detector:
             ampName = amp.getName()
-            gain = inp.gain[ampName]
-            aMatrix = inputPtc.aMatrix[ampName]
-            mask = inputPtc.expIdMask[ampName]
+            gain = inputPtc.gain[ampName]
+            aMatrix = aMatrixDict[ampName]
+            aMatrixSigma = aMatrixSigmaDict[ampName]
 
-            aMatrixSigma = inputPtc.ptcFitParsError
-
-            if np.isfinite(aMatrixSigma) or None:
+            if not np.isfinite(aMatrixSigma) or None:
                 # If the general uncertainty is one, the measurements uncertainties
                 # along the axes are sqrt(2), and sqrt(8) in (0,0) (because the
                 # slope of C00 is fitted)
@@ -259,60 +291,106 @@ class ElectrostaticBrighterFatterSolveTask(pipeBase.PipelineTask):
                 self.log.warning("No aMatrix sigma found for amp %s in input PTC, setting unceratinties "
                                  "to default value for electrostatic fit.", ampName)
 
+            # Set bad amp
             if gain <= 0:
                 # We've received very bad data.
                 self.log.warning("Impossible gain recieved from PTC for %s: %f. Skipping bad amplifier.",
                                  ampName, gain)
-                bfk.meanXcorrs[ampName] = np.zeros(bfk.shape)
-                bfk.ampKernels[ampName] = np.zeros(bfk.shape)
-                bfk.rawXcorrs[ampName] = np.zeros((len(mask), inputPtc.covMatrixSide, inputPtc.covMatrixSide))
-                bfk.valid[ampName] = False
+                electrostaticBfCalib.badAmps.append(ampName)
                 continue
 
+            # Set initial parameters using config
+            thickness = self.config.initialParametersDict['thickness']
+            pixelsize = self.config.initialParametersDict['pixelsize']
+            zq = self.config.initialParametersDict['zq']
+            zsh = self.config.initialParametersDict['zsh']
+            zsv = self.config.initialParametersDict['zsv']
+            a = self.config.initialParametersDict['a']
+            b = self.config.initialParametersDict['b']
+            alpha = self.config.initialParametersDict['alpha']
+            beta = self.config.initialParametersDict['beta']
+
+            initalParams = Parameters()
+            initalParams.add(
+                "thickness",
+                value=thickness,
+                vary=False,
+            )
+            initalParams.add(
+                "pixelsize",
+                value=pixelsize,
+                vary=False,
+            )
+            initalParams.add(
+                "zq",
+                value=zq,
+                vary=self.config.parametersToVary["zq"],
+                min=0,
+                max=thickness,
+            )
+            initalParams.add(
+                "zsh",
+                value=zsh,
+                vary=self.config.parametersToVary["zsh"],
+                min=0,
+                max=thickness,
+            )
+            initalParams.add(
+                "zsv",
+                value=zsv,
+                vary=self.config.parametersToVary["zsv"],
+                min=0,
+                max=thickness,
+            )
+            initalParams.add(
+                "a",
+                value=a,
+                vary=self.config.parametersToVary["a"],
+                min=0,
+                max=pixelsize,
+            )
+            initalParams.add(
+                "b",
+                value=b,
+                vary=self.config.parametersToVary["b"],
+                min=0,
+                max=pixelsize,
+            )
+            initalParams.add(
+                "alpha",
+                value=alpha,
+                vary=self.config.parametersToVary["alpha"],
+                min=-np.inf,
+                max=np.inf,
+            )
+            initalParams.add(
+                "beta",
+                value=beta,
+                vary=self.config.parametersToVary["beta"],
+                min=-np.inf,
+                max=np.inf,
+            )
+
             # Compute the electrostatic fit
-            fit = electro_fit(meas_a, sig_meas_a,
-                        input_range=options.input_range,
-                        output_range=options.output_range)
+            electrostaticFit = ElectrostaticFit(
+                initalParams=initalParams,
+                method=self.config.fitMethod,
+                aMatrix=aMatrix,
+                aMatrixSigma=aMatrixSigma,
+                fitRange=fitRange,
+                doFitOffset=self.config.doFitOffset,
+                nImageChargePairs=self.config.nImageChargePairs,
+            )
 
-            # Set initial parameters
-            fit.set_params({
-                'thickness': 100.,
-                'pixsize' : 10,
-                'z_q' : 1,
-                'zsh': 2.,
-                'zsv' : 3.,
-                'a': 1.,
-                'b': 3.,
-                'alpha': 1.,
-                'beta': 0,
-            })
+            # Do the fit
+            result = electrostaticFit.fit()
 
-            # Fix parameters if config values are set
-            if self.config.fixThicknessTo is not None:
-                fit.params['thickness'] = self.config.fixThickness
-                fit.params.fix('thickness')
-            if self.config.fixPixSizeTo is not None:
-                fit.params['pixsize'] = self.config.fixPixsize
-                fit.params.fix('pixsize')
-            if self.config.fixBetaTo is not None:
-                fit.params['beta'] = self.config.fixBeta
-                fit.params.fix('beta')
+            # Check if fit was successful
+            if not result.success:
+                self.log.warning(f"Fit was not successful for amp {ampName}: {result.message}")
+                # TODO: Fill bad amp
+                continue
 
-            params = fit.get_params()
-            print("Starting parameters: ", params)
-
-            fitted_params, cov_params, ls_stuff, mesg, ierr = leastsq(fit.wres, params, full_output=True, maxfev=200000)
-            if ierr not in [1,2,3,4] :
-                raise RuntimeError(mesg)
-            else :
-                fitted_params = params
-            fit.params.free = fitted_params
-
-            del fitted_params # to make sure the sign flip just below cannot be reversed.
-            # a and b can go negative, but the calculations only
-            # depend on the abs value
-            fit.params['a'] = np.abs(fit.params['a'].full[0])
-            fit.params['b'] = np.abs(fit.params['b'].full[0])
             self.log.info('%s %s a,b (microns): %f %f' % (detName, ampName, round(fit.params['a'].full[0], 2), round(fit.params['b'].full[0], 2)))
             self.log.info('%s %s Chi2: %g' % (detName, ampName, fit.getChi2()))
             self.log.info('%s %s Model: \n' % (detName, ampName, fit.model()))
@@ -326,31 +404,55 @@ class ElectrostaticBrighterFatterSolveTask(pipeBase.PipelineTask):
             # pickle.dump(cov_params, open('cov_params%s.pkl'%tag,'wb'))
 
             # Save the fit
-            fitParamNames = np.array([x for x in fit.params._struct])
-            bf.fitParamNames = fitParamNames
-            bf.freeFitParams = paramNames[np.array(fit.params._free)]
-            bf.fitParams[ampName] = fit.params
-            bf.chi2[ampName] = fit.getChi2()
-            bf.aMatrixData[ampName] = fit.get_a()
-            bf.aMatrixModel[ampName] = fit.model()
-            bf.aMatrixDataSum[ampName] = symmetrize(fit.get_a()).sum()
-            bf.aMatrixModelSum[ampName] = symmetrize(fit.model()).sum()
+            finalParams = result.params
+            electrostaticBfCalib.fitParamNames = np.array([name for name, p in finalParams.items() if p.vary])
+            electrostaticBfCalib.freeFitParamNames = np.array([name for name, p in finalParams.items() if p.vary])
+            electrostaticBfCalib.fitParams[ampName] = finalParams.valuesdict()
+            electrostaticBfCalib.fitParamErrors[ampName] = {name: p.stderr for name, p in finalParams.items()}
+            electrostaticBfCalib.chi2[ampName] = result.chisqr
+            electrostaticBfCalib.reducedChi2[ampName] = result.redchi
+            electrostaticBfCalib.fitParamCovMatrix[ampName] = result.covar
 
-            if self.config.normalizeElectrostaticModel:
-                m, o = fit.normalize_model(fit.raw_model())
+            # Compute the final model
+            aMatrixModel = electrostaticFit.model(result.params)
+
+            modelNormalization = [1,0]
+            if self.config.doNormalizeElectrostaticModel:
+                m, o = electrostaticFit.normalizeModel(aMatrixModel)
+                modelNormalization = [m, o]
+                aMatrixModel = m*aMatrixModel + o
                 self.log.info("Normalization (multiplicative factor, offset) for amp %s: (%f,%f)", ampName, m, o)
 
+            # Save the original data and the final model.
+            electrostaticBfCalib.aMatrix[ampName] = aMatrix
+            electrostaticBfCalib.aMatrixSigma[ampName] = aMatrixSigma
+            electrostaticBfCalib.aMatrixModel[ampName] = aMatrixModel
+            electrostaticBfCalib.aMatrixSum[ampName] = symmetrize(aMatrix).sum()
+            electrostaticBfCalib.aMatrixModelSum[ampName] = symmetrize(aMatrixModel).sum()
+            electrostaticBfCalib.modelNormalization[ampName] = modelNormalization
+
+            # Todo: add conversion depth probability distribution for each band/wavelength
             # Compute boundary shifts for a single electron
-            pixelDistortions = fit.computePixelDistortions(conversion_weights=None) # Todo: add conversion depth probability distribution for each band/wavelength
-            bf.pixelDistortions[ampName] = pixelDistortions
+            pd = fit.computePixelDistortions(conversionWeights=None)
+
+            aN, aS, aE, aW = (pd.aN, pd.aS, pd.aE, pd.W)
+            ath = pd.ath
+            athMinusBeta = pd.athMinusBeta
+            fitMask = np.zeros_like(aN, dtype=bool)
+            fitMask[:fitRange, :fitRange] = True
+
+            electrostaticBfCalib.fitMask[ampName] = fitMask
+            electrostaticBfCalib.ath[ampName] = ath
+            electrostaticBfCalib.athMinusBeta[ampName] = athMinusBeta
+            electrostaticBfCalib.aN[ampName] = aN
+            electrostaticBfCalib.aS[ampName] = aS
+            electrostaticBfCalib.aE[ampName] = aE
+            electrostaticBfCalib.aW[ampName] = aW
 
             # Check for validity
             if self.config.doCheckValidity:
                 # Todo:
-                bf.valid[ampName] = True
-            else:
-                # The kernel at this point will be valid
-                bf.valid[ampName] = True
+                pass
 
         # Assemble a detector kernel?
         # if self.config.level == 'DETECTOR':
@@ -359,14 +461,13 @@ class ElectrostaticBrighterFatterSolveTask(pipeBase.PipelineTask):
         #     else:
         #         preKernel = self.averageCorrelations(detectorCorrList, f"Det: {detName}")
         #     finalSum = np.sum(preKernel)
-        #     center = int((bfk.shape[0] - 1) / 2)
+        #     center = int((electrostaticBfCalib..shape[0] - 1) / 2)
 
         #     postKernel = self.successiveOverRelax(preKernel)
-        #     bfk.detKernels[detName] = postKernel
+        #     electrostaticBfCalib..detKernels[detName] = postKernel
         #     self.log.info("Det: %s Sum: %g  Center Info Pre: %g  Post: %g",
         #                   detName, finalSum, preKernel[center, center], postKernel[center, center])
 
         return pipeBase.Struct(
-            outputBF=bf,
+            outputBF=electrostaticBfCalib,
         )
-
