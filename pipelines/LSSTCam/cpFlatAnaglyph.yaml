@@ -1,7 +1,7 @@
-description: cp_pipe two-LED LSSTCam flat calibration construction.
+description: cp_pipe anaglyph (red/blue) LSSTCam flat calibration construction.
 instrument: lsst.obs.lsst.LsstCam
 imports:
-  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpFlatTwoLedLSST.yaml
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpFlatAnaglyphLSST.yaml
 tasks:
   cpFlatBlueCombine:
     class: lsst.cp.pipe.CalibCombineByFilterTask

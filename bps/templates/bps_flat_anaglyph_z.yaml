@@ -1,4 +1,4 @@
-pipelineYaml: "${CP_PIPE_DIR}/pipelines/${INSTRUMENT}/cpFlatTwoLed.yaml"
+pipelineYaml: "${CP_PIPE_DIR}/pipelines/${INSTRUMENT}/cpFlatAnaglyph.yaml"
 
 project: "${TICKET}"
 campaign: "${TICKET}"
@@ -12,10 +12,10 @@ cluster:
     dimensions: exposure
 
 payload:
-  payloadName: "${INSTRUMENT}_${TICKET}_flat_g"
-  output: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET}/${TAG}/flatTwoLedGen-g.${RERUN}"
+  payloadName: "${INSTRUMENT}_${TICKET}_flat_z"
+  output: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET}/${TAG}/flatAnaglyphGen-z.${RERUN}"
   butlerConfig: "${REPO}"
   inCollection: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET},${RAW_COLLECTION},${CALIB_COLLECTIONS}"
-  dataQuery: "${SELECTION_FLAT_g} and band='g'"
+  dataQuery: "${SELECTION_FLAT_z} and band='z'"
 
-extraQgraphOptions: "--config cpFlatBlueNormalize:downSelectionValue=single_led_flat_m455l4 --config cpFlatRedNormalize:downSelectionValue=single_led_flat_m505l4 --config cpFlatRedBlueCombine:weightOne=0.630"
+extraQgraphOptions: "--config cpFlatBlueNormalize:downSelectionValue=single_led_flat_m850l3 --config cpFlatRedNormalize:downSelectionValue=single_led_flat_m940l3 --config cpFlatRedBlueCombine:weightOne=0.620"
