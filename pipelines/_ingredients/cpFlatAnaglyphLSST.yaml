@@ -1,4 +1,4 @@
-description: cp_pipe two-LED flat calibration for LSST isr task
+description: cp_pipe anaglyph (red/blue) flat calibration for LSST isr task
 tasks:
   cpFlatIsr:
     class: lsst.ip.isr.IsrTaskLSST

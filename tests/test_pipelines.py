@@ -80,7 +80,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
             "cpPtcFixupGainRatios.yaml",
             "cpPtcRename.yaml",
             "cpIlluminationCorrection.yaml",
-            "cpFlatTwoLed.yaml",
+            "cpFlatAnaglyph.yaml",
             "cpFlatGradientReference.yaml",
             "cpQuadNotch.yaml",
         }
@@ -122,7 +122,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
         expected = set([pipeline for pipeline in self._get_pipelines() if "Bootstrap" not in pipeline])
         # These pipelines have only an "LSST" version.
         expected.discard("cpIlluminationCorrection.yaml")
-        expected.discard("cpFlatTwoLed.yaml")
+        expected.discard("cpFlatAnaglyph.yaml")
         expected.discard("cpFlatGradientReference.yaml")
         self.assertEqual(ingredients, expected)
 
@@ -155,7 +155,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 # The following tasks are not defined for LATISS.
                 "cpMonochromatorScan.yaml",
                 "cpIlluminationCorrection.yaml",
-                "cpFlatTwoLed.yaml",
+                "cpFlatAnaglyph.yaml",
                 "cpFlatGradientReference.yaml",
                 # The following tasks will be added in the future.
                 "cpCrosstalk.yaml",
@@ -179,7 +179,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 "cpFringe.yaml",
                 "cpQuadNotch.yaml",
         ]):
-            if pipeline == "cpFlatTwoLed.yaml":
+            if pipeline == "cpFlatAnaglyph.yaml":
                 overrides = {
                     "cpFlatBlueNormalize": ("downSelectionValue", "test1"),
                     "cpFlatRedNormalize": ("downSelectionValue", "test2"),
@@ -204,7 +204,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 "cpPtcFixupGainRatios.yaml",
                 "cpPtcRename.yaml",
                 "cpIlluminationCorrection.yaml",
-                "cpFlatTwoLed.yaml",
+                "cpFlatAnaglyph.yaml",
                 "cpFlatGradientReference.yaml",
                 "cpQuadNotch.yaml",
         ]):
@@ -222,7 +222,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 "cpSpectroFlat.yaml",
                 "cpCrosstalk.yaml",
                 "cpFringe.yaml",
-                "cpFlatTwoLed.yaml",
+                "cpFlatAnaglyph.yaml",
                 "cpFlatGradientReference.yaml",
                 "cpQuadNotch.yaml",
                 # TODO: DM-46426
@@ -247,7 +247,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 "cpPtcFixupGainRatios.yaml",
                 "cpPtcRename.yaml",
                 "cpIlluminationCorrection.yaml",
-                "cpFlatTwoLed.yaml",
+                "cpFlatAnaglyph.yaml",
                 "cpFlatGradientReference.yaml",
                 "cpQuadNotch.yaml",
         ]):
@@ -265,7 +265,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 "cpPtcFixupGainRatios.yaml",
                 "cpPtcRename.yaml",
                 "cpIlluminationCorrection.yaml",
-                "cpFlatTwoLed.yaml",
+                "cpFlatAnaglyph.yaml",
                 "cpFlatGradientReference.yaml",
                 "cpQuadNotch.yaml",
         ]):
@@ -284,7 +284,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 "cpPtcFixupGainRatios.yaml",
                 "cpPtcRename.yaml",
                 "cpIlluminationCorrection.yaml",
-                "cpFlatTwoLed.yaml",
+                "cpFlatAnaglyph.yaml",
                 "cpFlatGradientReference.yaml",
                 "cpQuadNotch.yaml",
         ]):
@@ -303,7 +303,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 "cpPtcFixupGainRatios.yaml",
                 "cpPtcRename.yaml",
                 "cpIlluminationCorrection.yaml",
-                "cpFlatTwoLed.yaml",
+                "cpFlatAnaglyph.yaml",
                 "cpFlatGradientReference.yaml",
                 "cpQuadNotch.yaml",
         ]):

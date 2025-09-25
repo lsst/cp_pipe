@@ -1,4 +1,4 @@
-pipelineYaml: "${CP_PIPE_DIR}/pipelines/${INSTRUMENT}/cpFlatTwoLed.yaml"
+pipelineYaml: "${CP_PIPE_DIR}/pipelines/${INSTRUMENT}/cpFlatAnaglyph.yaml"
 
 project: "${TICKET}"
 campaign: "${TICKET}"
@@ -13,7 +13,7 @@ cluster:
 
 payload:
   payloadName: "${INSTRUMENT}_${TICKET}_flat_y"
-  output: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET}/${TAG}/flatTwoLedGen-y.${RERUN}"
+  output: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET}/${TAG}/flatAnaglyphGen-y.${RERUN}"
   butlerConfig: "${REPO}"
   inCollection: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET},${RAW_COLLECTION},${CALIB_COLLECTIONS}"
   dataQuery: "${SELECTION_FLAT_y} and band='y'"
