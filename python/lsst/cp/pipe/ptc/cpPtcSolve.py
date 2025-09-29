@@ -421,6 +421,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             else:
                 detectorMeans[i] = np.mean(arr[good])
 
+        # Make sure this is sorted
         index = np.argsort(detectorMeans)
         datasetPtc.sort(index)
 
@@ -1127,46 +1128,34 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             This is the same dataset as the input parameter, however,
             it has been modified to include information such as the
             fit vectors and the fit parameters. See the class
-            `PhotonTransferCurveDatase`.
+            `PhotonTransferCurveDataset`.
         """
         # For FULLCOVARIANCE model fit
         matrixSideFit = dataset.covMatrixSideFullCovFit
         nanMatrixFit = np.empty((matrixSideFit, matrixSideFit))
         nanMatrixFit[:] = np.nan
 
-        for amp in dataset.ampNames:
-            lenInputTimes = len(dataset.rawExpTimes[amp])
-            listNanMatrixFit = np.empty((lenInputTimes, matrixSideFit, matrixSideFit))
-            listNanMatrixFit[:] = np.nan
-
-            dataset.covariancesModel[amp] = listNanMatrixFit
-            dataset.aMatrix[amp] = nanMatrixFit
-            dataset.bMatrix[amp] = nanMatrixFit
-            dataset.noiseMatrix[amp] = nanMatrixFit
-
         def errFunc(p, x, y):
             return ptcFunc(p, x) - y
 
         for i, ampName in enumerate(dataset.ampNames):
-            meanVecOriginal = dataset.rawMeans[ampName].copy()
-            varVecOriginal = dataset.rawVars[ampName].copy()
-            varVecOriginal = self._makeZeroSafe(varVecOriginal)
-
-            # These must be sorted for the given amplifier.
-            meanVecSort = np.argsort(meanVecOriginal)
-            meanVecSorted = meanVecOriginal[meanVecSort]
-            varVecSorted = varVecOriginal[meanVecSort]
+            meanVec = dataset.rawMeans[ampName].copy()
+            varVec = dataset.rawVars[ampName].copy()
+            varVec = self._makeZeroSafe(varVec)
 
             # Make sure we have this properly sorted.
             goodPoints = dataset.expIdMask[ampName].copy()
-            goodPoints = goodPoints[meanVecSort]
 
-            # Check if all points are bad from the previous fit.
-            initialExpIdMask = dataset.expIdMask[ampName].copy()
+            if not goodPoints.any():
+                msg = (f"SERIOUS: All points in goodPoints: {goodPoints} "
+                       f"are bad. Setting {ampName} to BAD.")
+                self.log.warning(msg)
+                # Fill entries with NaNs
+                self.fillBadAmp(dataset, ampName)
+                continue
 
-            if not (goodPoints.any() and initialExpIdMask.any()):
-                msg = (f"SERIOUS: All points in goodPoints: {goodPoints} or "
-                       f"in initialExpIdMask: {initialExpIdMask} are bad."
+            if np.isfinite(dataset.ptcTurnoff[ampName]):
+                msg = (f"SERIOUS: Initial PTC turnoff is not finite. "
                        f"Setting {ampName} to BAD.")
                 self.log.warning(msg)
                 # Fill entries with NaNs
@@ -1177,13 +1166,13 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
 
             # Compute the extended mask
             preTurnoff = dataset.ptcTurnoff[ampName]
-            turnoffIdx = np.argwhere(meanVecSorted == preTurnoff)[0][0]
-            varianceAtTurnoff = varVecSorted[turnoffIdx]
+            turnoffIdx = np.argwhere(meanVec == preTurnoff)[0][0]
+            varianceAtTurnoff = varVec[turnoffIdx]
 
             # Add points up to some threshold below the variance of the turnoff
-            pointsToFit = (meanVecSorted >= preTurnoff) * \
-                          (meanVecSorted < preTurnoff+self.config.extendRollofSearchMaskSizeAdu) * \
-                          (varVecSorted <= varianceAtTurnoff)
+            pointsToFit = (meanVec >= preTurnoff) * \
+                          (meanVec < preTurnoff+self.config.extendRollofSearchMaskSizeAdu) * \
+                          (varVec <= varianceAtTurnoff)
 
             # Retain the original mask below the turnoff
             pointsToFit = np.logical_or(mask, pointsToFit)
@@ -1216,7 +1205,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 errFunc,
                 parsIniPtc,
                 bounds=bounds,
-                args=(meanVecSorted[pointsToFit], varVecSorted[pointsToFit]),
+                args=(meanVec[pointsToFit], varVec[pointsToFit]),
             )
             pars = res.x
             originalModelPars = pars[:-2]
@@ -1228,29 +1217,30 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
 
             if not res.success:
                 self.log.warning(
-                    "Fit with saturation roll off model did not succeed for "
-                    f"amp {ampName}."
+                    "Fit with saturation roll off model did not succeed for amp %s.",
+                    ampName,
                 )
                 continue
             else:
                 self.log.info("Fit with saturation roll off model returned estimates: "
-                              f"rolloff={rolloff} adu ({rolloff * gain} el) and tau={tau}")
+                              "rolloff=%f adu (%f el) and tau=%f",
+                              rolloff, rolloff * gain, tau)
 
             # The PTC turnoff is not immediate, and we can tolerate some of
             # the physics in the rolloff, so we define the turnoff as a
             # threshold of deviation between the model without the rolloff
             # and the model with the rolloff. The rolloff estimate is the
             # last acceptable point.
-            modelWithoutRolloff = funcAstier(originalModelPars, meanVecSorted[pointsToFit])
-            modelWithRolloff = funcAstierWithRolloff(pars, meanVecSorted[pointsToFit])
+            modelWithoutRolloff = funcAstier(originalModelPars, meanVec[pointsToFit])
+            modelWithRolloff = funcAstierWithRolloff(pars, meanVec[pointsToFit])
             residual = np.fabs(modelWithRolloff / modelWithoutRolloff - 1)
             acceptablePoints = np.argwhere(residual <= self.config.maxPtcRolloffDeviation)
             lastGoodIndex = acceptablePoints[-1]
-            rolloff = meanVecSorted[pointsToFit][lastGoodIndex][0]
+            rolloff = meanVec[pointsToFit][lastGoodIndex][0]
             rolloff = min(rolloff, preTurnoff)
 
             # Set the mask to the new mask
-            newMask = pointsToFit * (meanVecSorted < rolloff)
+            newMask = pointsToFit * (meanVec < rolloff)
             dataset.expIdMask[ampName] = newMask
 
             # Save the rolloff point
@@ -1259,10 +1249,6 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             dataset.ptcRolloffError[ampName] = rolloffError
             dataset.ptcRolloffTau[ampName] = tau
             dataset.ptcRolloffTauError[ampName] = tauError
-
-        # Do bad amp searching?
-        # if len(dataset.badAmps) == 0:
-        #     dataset.badAmps = []
 
         return dataset
 

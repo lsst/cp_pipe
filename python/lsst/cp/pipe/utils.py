@@ -434,7 +434,7 @@ def fitBootstrap(initialParams, dataX, dataY, function, weightsY=None, confidenc
 
 
 @deprecated(reason="This method is no longer used for PTC fitting. Will be removed after v30.",
-            version="v30.0", category=FutureWarning)
+            version="v31.0", category=FutureWarning)
 def funcPolynomial(pars, x):
     """Polynomial function definition
     Parameters
@@ -480,7 +480,7 @@ def funcAstier(pars, x):
     return 0.5/(a00*gain*gain)*(np.exp(2*a00*x*gain)-1) + noiseSquared/(gain*gain)  # C_00
 
 
-def saturationModel(params, mu):
+def ptcRolloffModel(params, mu):
     """Piece-wise exponential saturation roll-off model of the PTC.
 
     Parameters
@@ -531,10 +531,10 @@ def funcAstierWithRolloff(pars, x):
     """
     # Initial computation of Astier+19 (Eqn 19).
     originalModelPars = pars[:-2]
-    saturationModelPars = pars[-2:]
+    ptcRolloffModelPars = pars[-2:]
     model = funcAstier(originalModelPars, x)
 
-    return model - saturationModel(saturationModelPars, x)  # C_00
+    return model - ptcRolloffModel(ptcRolloffModelPars, x)  # C_00
 
 
 def arrangeFlatsByExpTime(exposureList, exposureIdList, log=None):
