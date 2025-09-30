@@ -24,21 +24,25 @@
 #
 """Test cases for cp_pipe linearity code."""
 
+from astropy.table import Table
 import logging
 import unittest
 import numpy as np
 import copy
+from scipy.interpolate import Akima1DInterpolator
 
 import lsst.utils
 import lsst.utils.tests
 
-from lsst.ip.isr import PhotonTransferCurveDataset
+from lsst.ip.isr import PhotonTransferCurveDataset, IsrMockLSST
 
 import lsst.afw.image
 import lsst.afw.math
-from lsst.cp.pipe import LinearitySolveTask, LinearityNormalizeTask
-from lsst.cp.pipe.ptc import PhotonTransferCurveSolveTask
-from lsst.cp.pipe.utils import funcPolynomial
+from lsst.cp.pipe import LinearitySolveTask, LinearityNormalizeTask, LinearityDoubleSplineSolveTask
+from lsst.cp.pipe.cpLinearitySolve import _computeTurnoffAndMax, _noderator
+from lsst.cp.pipe.ptc import PhotonTransferCurveSolveTask, PhotonTransferCurveExtractPairTask
+from lsst.cp.pipe.utils import funcPolynomial, funcAstier
+from lsst.daf.base import DateTime
 from lsst.ip.isr.isrMock import FlatMock, IsrMock
 from lsst.pipe.base import InMemoryDatasetHandle
 
@@ -605,7 +609,7 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
         task = LinearitySolveTask(config=config)
 
         with self.assertNoLogs(level=logging.WARNING):
-            turnoff_index, turnoff, max_signal = task._computeTurnoffAndMax(
+            turnoff_index, turnoff, max_signal, _ = _computeTurnoffAndMax(
                 abscissa,
                 ordinate,
                 ptc_mask,
@@ -670,7 +674,7 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
         cutoff = (ordinate < turnoff)
 
         with self.assertLogs(level=logging.INFO) as cm:
-            turnoff_index2, turnoff2, max_signal2 = task._computeTurnoffAndMax(
+            turnoff_index2, turnoff2, max_signal2, _ = _computeTurnoffAndMax(
                 abscissa[cutoff],
                 ordinate[cutoff],
                 ptc_mask[cutoff],
@@ -881,6 +885,7 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
         nconfig = LinearityNormalizeTask.ConfigClass()
         nconfig.normalizeDetectors = [0]
         nconfig.referenceDetector = 0
+        nconfig.doNormalizeAbsoluteLinearizer = False
         ntask = LinearityNormalizeTask(config=nconfig)
 
         ptc_handles = [
@@ -1241,6 +1246,324 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
         )
 
         return exp_times, photo_charges, raw_means, ptc_mask
+
+
+class DoubleSplineLinearityTestCase(lsst.utils.tests.TestCase):
+    def setUp(self):
+        mock = IsrMockLSST()
+        self.camera = mock.getCamera()
+        self.detector = self.camera[20]
+        self.detector_id = self.detector.getId()
+
+    def _compute_logistic_nonlinearity(self, xvals, midpoint, amplitude, transition=3000.0):
+        """Compute a simple non-linearity with a logistic curve.
+
+        Parameters
+        ----------
+        xvals : `np.ndarray`
+            Input count values.
+        midpoint : `float`
+            Transition point for logistic curve.
+        amplitude : `float`
+            Fractional amplitude of logistic curve.
+        transition : `float`, optional
+            Transition value (sharpness).
+
+        Returns
+        -------
+        offsets : `np.ndarray`
+            Offset count values.
+        """
+        frac_offset = amplitude / 2. - (amplitude / (1. + np.exp(-(1./transition)*(xvals - midpoint))))
+
+        return xvals * frac_offset
+
+    def test_linearity_doublespline(self):
+        n_pair = 100
+        pair_sigma = 0.005  # Fractional variation.
+
+        rng = np.random.RandomState(seed=12345)
+
+        amp_names = [amp.getName() for amp in self.detector]
+        n_amps = len(amp_names)
+
+        rel_amplitudes = rng.uniform(low=0.001, high=0.003, size=n_amps)
+        rel_midpoints = rng.uniform(low=20000.0, high=50000.0, size=n_amps)
+        linearity_turnoffs = rng.uniform(low=90000.0, high=100000.0, size=n_amps)
+
+        noises = rng.uniform(low=5.0, high=10.0, size=n_amps)
+        gains = rng.uniform(low=1.4, high=1.6, size=n_amps)
+        a00s = rng.uniform(low=-2e-6, high=-4e-6, size=n_amps)
+        ptc_turnoffs = rng.uniform(low=70000.0, high=80000.0, size=n_amps)
+
+        ref_amp_index = np.argmax(linearity_turnoffs)
+        ref_amp_name = amp_names[ref_amp_index]
+
+        # Make sure this one is significantly higher for consistency.
+        linearity_turnoffs[ref_amp_index] *= 1.1
+
+        # Reset the relative linearity for the reference amp.
+        rel_amplitudes[ref_amp_index] = 0.0
+
+        # Create an absolute linearizer.
+        abs_amplitude = -0.001
+        abs_midpoint = 10000.0
+
+        range_e = np.asarray([50.0, linearity_turnoffs[ref_amp_index]]) * gains[ref_amp_index]
+
+        pair_levels_e = np.linspace(range_e[0], range_e[1], n_pair)
+
+        ptc_extract_config = PhotonTransferCurveExtractPairTask.ConfigClass()
+        ptc_extract_config.doOutputBinnedImages = True
+        ptc_extract_config.maximumRangeCovariancesAstier = 1
+        ptc_extract_config.minNumberGoodPixelsForCovariance = 100
+        ptc_extract_config.numEdgeSuspect = 4
+        ptc_extract_config.edgeMaskLevel = "AMP"
+        ptc_extract_config.doGain = False
+
+        ptc_extract_task = PhotonTransferCurveExtractPairTask(config=ptc_extract_config)
+
+        pair_handles = []
+        binned_handles = []
+
+        normalization_exposures = []
+        normalization_values = []
+
+        for i in range(n_pair):
+            # We generate two images with the same level for
+            # simpler testing.
+            # The level is done in electrons then we apply gain,
+            # and compute the variance from the Astier function.
+
+            levels_e = pair_levels_e[i] + rng.normal(loc=0.0, scale=pair_sigma * pair_levels_e[i], size=2)
+            # levels_e = pair_levels_e[i] + np.array([0.0, 0.0])
+            exptime = np.mean(levels_e) / 10.0
+
+            # normalization_exposures.extend([i * 2
+
+            flat_pair = []
+            for j in range(2):
+                flat = lsst.afw.image.ExposureF(self.detector.getBBox())
+                flat.setDetector(self.detector)
+                visit_info = lsst.afw.image.VisitInfo(
+                    exposureTime=exptime,
+                    date=DateTime("2025-09-25T00:00:00", DateTime.TAI),
+                )
+                flat.info.id = i * 2 + j
+                flat.info.setVisitInfo(visit_info)
+                flat_pair.append(flat)
+
+                normalization_exposures.append(i * 2 + j)
+                normalization_values.append((levels_e[j] / 10.) / exptime)
+
+            for j in range(2):
+                flat = flat_pair[j]
+                # Compute the variance for all the amps at this level.
+                var_adu = funcAstier([a00s, gains, noises**2.], levels_e[j] / gains)
+
+                # Adjust the variance for those above the ptc turnoff
+                var_adu[(levels_e[j] / gains) > ptc_turnoffs] *= 0.5
+
+                # Build the flat.
+                for k, amp in enumerate(self.detector):
+
+                    # Offset things above the linearizer turnoff.
+                    # I don't know if this will actually work ...
+                    level_e = levels_e[j]
+                    if level_e > linearity_turnoffs[k] * gains[k]:
+                        level_e *= 0.8
+                        var_adu[k] *= 0.8
+
+                    noise_key = f"LSST ISR OVERSCAN RESIDUAL SERIAL STDEV {amp.getName()}"
+                    flat.metadata[noise_key] = noises[k] / gains[k]
+                    median_key = f"LSST ISR OVERSCAN SERIAL MEDIAN {amp.getName()}"
+                    flat.metadata[median_key] = 0.0
+                    pedestal_key = f"LSST ISR AMPOFFSET PEDESTAL {amp.getName()}"
+                    flat.metadata[pedestal_key] = 0.0
+
+                    bbox = amp.getBBox()
+                    flat[bbox].image.array[:, :] = rng.normal(
+                        loc=level_e,
+                        scale=np.sqrt(var_adu[k]) * gains[k],
+                        size=flat[bbox].image.array.shape,
+                    ) / gains[k]
+
+                    # Apply the non-linearity... first the absolute.
+                    abs_offset = self._compute_logistic_nonlinearity(
+                        flat[bbox].image.array,
+                        abs_midpoint,
+                        abs_amplitude,
+                    )
+                    flat[bbox].image.array[:, :] += abs_offset
+
+                    # And then the relative.
+                    rel_offset = self._compute_logistic_nonlinearity(
+                        flat[bbox].image.array,
+                        rel_midpoints[k],
+                        rel_amplitudes[k],
+                    )
+                    flat[bbox].image.array[:, :] += rel_offset
+
+            # Run the PTC extraction on the pair and store the rebinned images.
+            # How long does this take?  Memory?
+
+            handles = [
+                InMemoryDatasetHandle(
+                    flat,
+                    dataId={"exposure": flat.info.id, "detector": flat.getDetector().getId()},
+                )
+                for flat in flat_pair
+            ]
+            inputDims = [flat.info.id for flat in flat_pair]
+            results = ptc_extract_task.run(inputExp=handles, inputDims=inputDims)
+
+            data_id = {"exposure": flat_pair[0].info.id, "detector": flat_pair[0].getDetector().getId()}
+            pair_handles.append(
+                InMemoryDatasetHandle(
+                    results.outputCovariance,
+                    dataId=data_id,
+                )
+            )
+            binned_handles.append(
+                InMemoryDatasetHandle(
+                    results.outputBinnedImages,
+                    dataId=data_id,
+                )
+            )
+
+        normalization = Table({"exposure": normalization_exposures, "normalization": normalization_values})
+
+        # Build the linearizer PTC.
+        ptc_solve_config = PhotonTransferCurveSolveTask.ConfigClass()
+        ptc_solve_config.ptcFitType = "EXPAPPROXIMATION"
+        ptc_solve_config.maximumRangeCovariancesAstier = 1
+        ptc_solve_config.maximumRangeCovariancesAstierFullCovFit = 1
+        ptc_solve_config.ksTestMinPvalue = 0.0
+        # This is a large number because these small amplifiers are noisy.
+        ptc_solve_config.sigmaCutPtcOutliers = 20.0
+
+        ptc_solve_task = PhotonTransferCurveSolveTask(config=ptc_solve_config)
+        input_covariances = [handle.get() for handle in pair_handles]
+        results = ptc_solve_task.run(input_covariances, camera=self.camera, detId=self.detector_id)
+        linearizer_ptc = results.outputPtcDataset
+
+        # Now we run the linearize solving code.
+
+        linearity_solve_config = LinearityDoubleSplineSolveTask.ConfigClass()
+        linearity_solve_config.relativeSplineMinimumSignalNode = 0.0
+        linearity_solve_config.relativeSplineLowThreshold = 0.0
+        linearity_solve_config.relativeSplineMidNodeSize = 10000.0
+        linearity_solve_config.relativeSplineHighNodeSize = 10000.0
+        linearity_solve_config.absoluteSplineNodeSize = 10000.0
+        linearity_solve_config.useFocalPlaneNormalization = True
+        linearity_solve_task = LinearityDoubleSplineSolveTask(config=linearity_solve_config)
+
+        results = linearity_solve_task.run(
+            inputPtc=linearizer_ptc,
+            camera=self.camera,
+            inputBinnedImagesHandles=binned_handles,
+            inputNormalization=normalization,
+        )
+
+        linearizer = results.outputLinearizer
+
+        # Check that we chose the correct reference amplifier.
+        self.assertEqual(linearizer.absoluteReferenceAmplifier, ref_amp_name)
+
+        # Check the relative residuals.
+        for amp_name in linearizer.ampNames:
+            if amp_name == ref_amp_name:
+                continue
+
+            frac_resid = linearizer.fitResiduals[amp_name] / linearizer.inputOrdinate[amp_name]
+
+            self.assertFloatsAlmostEqual(np.nan_to_num(frac_resid), 0.0, atol=7e-4)
+
+        # Check the absolute residuals.
+        abs_frac_resid = linearizer.fitResiduals[ref_amp_name] / linearizer.inputOrdinate[ref_amp_name]
+        self.assertFloatsAlmostEqual(np.nan_to_num(abs_frac_resid), 0.0, atol=5e-4)
+
+        def _check_spline_midpoint(coeffs, expected_midpoint, turnoff, tolerance=6000.0):
+            centers, values = np.split(coeffs, 2)
+
+            xvals = np.linspace(1.0, centers[-1], 1000)
+            spl = Akima1DInterpolator(centers, values, method="akima")
+            yvals = spl(xvals) / xvals
+
+            grad = np.gradient(yvals, xvals)
+            # This is the point of maximum gradient, which should match
+            # the input midpoints.
+            max_grad = xvals[np.argmax(np.abs(grad))]
+
+            self.assertFloatsAlmostEqual(max_grad, expected_midpoint, atol=tolerance)
+
+            self.assertFloatsAlmostEqual(centers[-1], turnoff, atol=1000.0)
+
+        # Check that the linearizers are consistent with expectations.
+        coeffs = linearizer.linearityCoeffs[ref_amp_name]
+        n_nodes1 = int(coeffs[0])
+        n_nodes2 = int(coeffs[1])
+        self.assertEqual(n_nodes1, 0)
+        abs_coeff = coeffs[2 + 2 * n_nodes1: 2 + 2 * n_nodes1 + 2 * n_nodes2]
+
+        _check_spline_midpoint(abs_coeff, abs_midpoint, linearity_turnoffs[ref_amp_index], tolerance=4000.0)
+
+        for i, amp_name in enumerate(linearizer.ampNames):
+            if amp_name == ref_amp_name:
+                continue
+
+            coeffs = linearizer.linearityCoeffs[amp_name]
+
+            n_nodes1 = int(coeffs[0])
+            n_nodes2 = int(coeffs[1])
+
+            spline_coeff1 = coeffs[2: 2 + 2 * n_nodes1]
+
+            _check_spline_midpoint(spline_coeff1, rel_midpoints[i], linearity_turnoffs[i])
+
+            # Confirm that the absolute parameters are matched.
+            spline_coeff2 = coeffs[2 + 2 * n_nodes1: 2 + 2 * n_nodes1 + 2 * n_nodes2]
+            self.assertFloatsAlmostEqual(spline_coeff2, abs_coeff)
+
+    def test_noderator(self):
+        # Test "regular" usage.
+        low = 5000.0
+        mid = 70000.0
+        high = 100000.0
+        nodes = _noderator(low, mid, high, 50.0, 750.0, 5000.0, 2000.0)
+
+        self.assertEqual(nodes[0], 0.0)
+        self.assertEqual(nodes[1], 50.0)
+        self.assertEqual(nodes[-1], high)
+        self.assertTrue(np.any(nodes == low))
+        self.assertTrue(np.any(nodes == mid))
+        self.assertTrue(np.all(np.arange(len(nodes)) == np.argsort(nodes)))
+        self.assertGreater(nodes[2] - nodes[1], 750.0)
+        self.assertGreater(nodes[10] - nodes[9], 5000.0)
+        self.assertGreater(nodes[-1] - nodes[-2], 2000.0)
+
+        # Test no "low turnoff"
+        low = 0.0
+        nodes = _noderator(low, mid, high, 0.0, 750.0, 5000.0, 2000.0)
+        self.assertEqual(nodes[0], 0.0)
+        self.assertEqual(nodes[-1], high)
+        self.assertTrue(np.any(nodes == mid))
+        self.assertGreater(nodes[1] - nodes[0], 5000.0)
+        self.assertGreater(nodes[-1] - nodes[-2], 2000.0)
+
+        # Test no "high turnoff"
+        low = 5000.0
+        high = mid - 1.0
+        nodes = _noderator(low, mid, high, 50.0, 750.0, 5000.0, 2000.0)
+        self.assertEqual(nodes[0], 0.0)
+        self.assertEqual(nodes[1], 50.0)
+        self.assertEqual(nodes[-1], mid)
+        self.assertTrue(np.any(nodes == low))
+        self.assertTrue(np.any(nodes == mid))
+        self.assertTrue(np.all(np.arange(len(nodes)) == np.argsort(nodes)))
+        self.assertGreater(nodes[2] - nodes[1], 750.0)
+        self.assertGreater(nodes[10] - nodes[9], 5000.0)
+        self.assertGreater(nodes[-1] - nodes[-2], 5000.0)
 
 
 class TestMemory(lsst.utils.tests.MemoryTestCase):
