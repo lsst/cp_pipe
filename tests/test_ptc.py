@@ -69,7 +69,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
     def setUp(self):
         self.defaultConfigExtract = (
-            cpPipe.ptc.PhotonTransferCurveExtractTask.ConfigClass()
+            cpPipe.ptc.PhotonTransferCurveExtractPairTask.ConfigClass()
         )
         self.defaultTaskExtract = cpPipe.ptc.PhotonTransferCurveExtractTask(
             config=self.defaultConfigExtract
