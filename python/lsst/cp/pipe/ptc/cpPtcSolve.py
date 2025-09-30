@@ -437,28 +437,29 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         # matrix, C_ij, i!=j).
         tempDatasetPtc = copy.copy(datasetPtc)
         tempDatasetPtc.ptcFitType = "EXPAPPROXIMATION"
-        tempDatasetPtc = self.fitMeasurementsToModel(tempDatasetPtc)
-        initialEstimatePtcTurnoff = tempDatasetPtc.ptcTurnoff
-        initialEstimatePtcTurnoffSamplingError = tempDatasetPtc.ptcTurnoffSamplingError
+        tempDatasetPtc = self.fitPtc(tempDatasetPtc, computePtcTurnoff=True)
 
         # Model the PTC rolloff
         if self.config.doModelPtcRolloff:
             tempDatasetPtc = self.fitPtcRolloff(tempDatasetPtc)
 
-        # Fit the data to the final model using the masks obtained from the
-        # previous fits.
-        for ampName in datasetPtc.ampNames:
-            datasetPtc.expIdMask[ampName] = tempDatasetPtc.expIdMask[ampName]
-            datasetPtc.expIdRolloffMask[ampName] = tempDatasetPtc.expIdRolloffMask[ampName]
-            datasetPtc.ptcRolloff[ampName] = tempDatasetPtc.ptcRolloff[ampName]
-            datasetPtc.ptcRolloffTau[ampName] = tempDatasetPtc.ptcRolloffTau[ampName]
-            datasetPtc.ptcRolloffError[ampName] = tempDatasetPtc.ptcRolloffError[ampName]
-            datasetPtc.ptcRolloffTauError[ampName] = tempDatasetPtc.ptcRolloffTauError[ampName]
-
-        datasetPtc.fitType = self.config.ptcFitType
-        datasetPtc = self.fitMeasurementsToModel(datasetPtc)
-        datasetPtc.ptcTurnoff = initialEstimatePtcTurnoff
-        datasetPtc.ptcTurnoffSamplingError = initialEstimatePtcTurnoffSamplingError
+        # Do the final fit
+        # The turnoff was already computed during
+        # the initial fit.
+        tempDatasetPtc.fitType = self.config.ptcFitType
+        if self.config.ptcFitType == "EXPAPPROXIMATION":
+            # Fit with the exponential approximation
+            datasetPtc = self.fitPtc(tempDatasetPtc, computePtcTurnoff=False)
+        elif self.config.ptcFitType in ["FULLCOVARIANCE", "FULLCOVARIANCE_NO_B"]:
+            # Fit with the full covariance model (with/without b)
+            # This does not change the PTC turnoff.
+            datasetPtc = self.fitDataFullCovariance(tempDatasetPtc)
+        else:
+            # This fit type is not recognized
+            raise RuntimeError(
+                f"Fitting option {self.config.ptcFitType} not one of "
+                "'EXPAPPROXIMATION', 'FULLCOVARIANCE', or 'FULLCOVARIANCE_NO_B'"
+            )
 
         # Initial validation of PTC fit.
         for ampName in ampNames:
@@ -504,46 +505,6 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         return pipeBase.Struct(
             outputPtcDataset=datasetPtc,
         )
-
-    def fitMeasurementsToModel(self, dataset):
-        """Fit the measured covariances vs mean signal one of the
-        models in Astier+19 (Eq. 16 or Eq.20).
-
-        If `doModelPtcRolloff` is True, a roll-off model will be added
-        to the initial fit of the PTC to try and capture saturation
-        effects. This will only be applied if
-        `ptcFitType=EXPAPPROXIMATION`.
-
-        Parameters
-        ----------
-        dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
-            The dataset containing information such as the means,
-            (co)variances, and exposure times.
-
-        Returns
-        -------
-        dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
-            This is the same dataset as the input parameter, however,
-            it has been modified to include information such as the
-            fit vectors and the fit parameters. See the class
-            `PhotonTransferCurveDatase`.
-        """
-        fitType = dataset.ptcFitType
-        if fitType in ["FULLCOVARIANCE", "FULLCOVARIANCE_NO_B"]:
-            # This model uses the full covariance matrix in the fit.
-            # The PTC is technically defined as variance vs signal,
-            # with variance = Cov_00
-            dataset = self.fitDataFullCovariance(dataset)
-        elif fitType == "EXPAPPROXIMATION":
-            # The PTC is technically defined as variance vs signal
-            dataset = self.fitPtc(dataset)
-        else:
-            raise RuntimeError(
-                f"Fitting option {fitType} not one of "
-                "'EXPAPPROXIMATION', 'FULLCOVARIANCE', or 'FULLCOVARIANCE_NO_B'"
-            )
-
-        return dataset
 
     def fitDataFullCovariance(self, dataset):
         """Fit measured flat covariances to the full model in
@@ -1154,7 +1115,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 self.fillBadAmp(dataset, ampName)
                 continue
 
-            if np.isfinite(dataset.ptcTurnoff[ampName]):
+            if not np.isfinite(dataset.ptcTurnoff[ampName]):
                 msg = (f"SERIOUS: Initial PTC turnoff is not finite. "
                        f"Setting {ampName} to BAD.")
                 self.log.warning(msg)
@@ -1252,7 +1213,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
 
         return dataset
 
-    def fitPtc(self, dataset):
+    def fitPtc(self, dataset, computePtcTurnoff=True):
         """Fit the photon transfer curve to the
         Astier+19 approximation (Eq. 16).
 
@@ -1279,6 +1240,10 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         dataset : `lsst.ip.isr.ptcDataset.PhotonTransferCurveDataset`
             The dataset containing the means, variances and
             exposure times.
+        computePtcTurnoff : `bool`
+            Compute and save the PTC turnoff and PTC turnoff sampling
+            error. If False, this will preserve the attributes in the
+            input `dataset`.
 
         Returns
         -------
@@ -1293,11 +1258,6 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         RuntimeError
             Raised if dataset.ptcFitType is None or empty.
         """
-        if dataset.ptcFitType:
-            ptcFitType = dataset.ptcFitType
-        else:
-            raise RuntimeError("ptcFitType is None of empty in PTC dataset.")
-
         # For FULLCOVARIANCE model fit
         matrixSideFit = dataset.covMatrixSideFullCovFit
         nanMatrixFit = np.empty((matrixSideFit, matrixSideFit))
@@ -1505,22 +1465,23 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                                                                   weightsY=weightsY)
 
             # Determine PTC turnoff
-            sigResids = (varVecRaw - ptcFunc(parsFit, meanVecRaw))/np.sqrt(varVecRaw)
-            dataset.ptcTurnoff[ampName] = np.max(meanVecFinal)
-            # And compute the ptcTurnoffSamplingError as one half the
-            # difference between the previous and next point.
-            lastGoodIndex = np.where(mask)[0][-1]
-            ptcTurnoffLow = meanVecRaw[lastGoodIndex - 1]
-            if lastGoodIndex == (len(meanVecRaw) - 1):
-                # If it's the last index, just use the interval.
-                ptcTurnoffSamplingError = dataset.ptcTurnoff[ampName] - ptcTurnoffLow
-            elif not np.isfinite(meanVecRaw[lastGoodIndex + 1]):
-                # If the next index is not finite, just use the interval.
-                ptcTurnoffSamplingError = dataset.ptcTurnoff[ampName] - ptcTurnoffLow
-            else:
-                ptcTurnoffSamplingError = (meanVecRaw[lastGoodIndex + 1] - ptcTurnoffLow)/2.
-            dataset.ptcTurnoffSamplingError[ampName] = ptcTurnoffSamplingError
+            if computePtcTurnoff:
+                dataset.ptcTurnoff[ampName] = np.max(meanVecFinal)
+                # And compute the ptcTurnoffSamplingError as one half the
+                # difference between the previous and next point.
+                lastGoodIndex = np.where(mask)[0][-1]
+                ptcTurnoffLow = meanVecRaw[lastGoodIndex - 1]
+                if lastGoodIndex == (len(meanVecRaw) - 1):
+                    # If it's the last index, just use the interval.
+                    ptcTurnoffSamplingError = dataset.ptcTurnoff[ampName] - ptcTurnoffLow
+                elif not np.isfinite(meanVecRaw[lastGoodIndex + 1]):
+                    # If the next index is not finite, just use the interval.
+                    ptcTurnoffSamplingError = dataset.ptcTurnoff[ampName] - ptcTurnoffLow
+                else:
+                    ptcTurnoffSamplingError = (meanVecRaw[lastGoodIndex + 1] - ptcTurnoffLow)/2.
+                dataset.ptcTurnoffSamplingError[ampName] = ptcTurnoffSamplingError
 
+            sigResids = (varVecRaw - ptcFunc(parsFit, meanVecRaw))/np.sqrt(varVecRaw)
             dataset.ptcFitPars[ampName] = parsFit
             dataset.ptcFitParsError[ampName] = parsFitErr
             dataset.ptcFitChiSq[ampName] = reducedChiSqPtc
@@ -1544,8 +1505,6 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             dataset.noise[ampName] = ptcNoise
             dataset.noiseErr[ampName] = ptcNoiseErr
 
-        if not len(dataset.ptcFitType) == 0:
-            dataset.ptcFitType = ptcFitType
         if len(dataset.badAmps) == 0:
             dataset.badAmps = []
 

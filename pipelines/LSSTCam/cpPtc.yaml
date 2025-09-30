@@ -37,7 +37,7 @@ tasks:
       sigmaCutPtcOutliers: 5.0
       maxDeltaInitialPtcOutlierFit: 1_000
       maxSignalInitialPtcOutlierFit: 20_000
+      extendRollofSearchMaskSizeAdu: 5_000
       scaleMaxSignalInitialPtcOutlierFit: False
       doModelPtcRolloff: True
       maxPtcRolloffDeviation: 0.005
-      varianceRolloffSearchThreshold: 0.1
