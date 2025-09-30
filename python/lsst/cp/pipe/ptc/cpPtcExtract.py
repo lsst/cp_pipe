@@ -33,7 +33,8 @@ import lsst.pipe.base as pipeBase
 from lsst.geom import (Box2I, Point2I, Extent2I)
 from lsst.cp.pipe.utils import (arrangeFlatsByExpTime, arrangeFlatsByExpId,
                                 arrangeFlatsByExpFlux, sigmaClipCorrection,
-                                CovFastFourierTransform, getReadNoise)
+                                CovFastFourierTransform, getReadNoise,
+                                bin_flat)
 from lsst.cp.pipe.utilsEfd import CpEfdClient
 
 import lsst.pipe.base.connectionTypes as cT
@@ -100,6 +101,18 @@ class PhotonTransferCurveExtractPairConnections(
         dimensions=("instrument", "exposure", "detector"),
         isCalibration=True,
     )
+    outputBinnedImages = cT.Output(
+        name="cpPtcPairBinned",
+        doc="Tabular binned images for the PTC pair.",
+        storageClass="ArrowAstropy",
+        dimensions=("instrument", "exposure", "detector"),
+    )
+
+    def __init__(self, *, config=None):
+        super().__init__(config=config)
+
+        if not config.doOutputBinnedImages:
+            del self.outputBinnedImages
 
     def adjust_all_quanta(self, adjuster):
         _LOG = logging.getLogger(__name__)
@@ -476,7 +489,16 @@ class PhotonTransferCurveExtractPairConfig(
     PhotonTransferCurveExtractConfigBase,
     pipelineConnections=PhotonTransferCurveExtractPairConnections,
 ):
-    pass
+    doOutputBinnedImages = pexConfig.Field(
+        dtype=bool,
+        doc="Output binned images in tabular form?",
+        default=False,
+    )
+    outputBinnedImagesBinFactor = pexConfig.Field(
+        dtype=int,
+        doc="Output binned images bin factor.",
+        default=8,
+    )
 
 
 class PhotonTransferCurveExtractTaskBase(pipeBase.PipelineTask):
@@ -1720,6 +1742,28 @@ class PhotonTransferCurveExtractPairTask(PhotonTransferCurveExtractTaskBase):
             expTime,
         )
 
+        if self.config.doOutputBinnedImages:
+            binned = bin_flat(
+                partialPtcDataset,
+                exp1,
+                bin_factor=self.config.outputBinnedImagesBinFactor,
+                amp_boundary=self.config.numEdgeSuspect,
+                apply_gains=False,
+            )
+            binned2 = bin_flat(
+                partialPtcDataset,
+                exp2,
+                bin_factor=self.config.outputBinnedImagesBinFactor,
+                amp_boundary=self.config.numEdgeSuspect,
+                apply_gains=False,
+            )
+            # Combine the two tables; these will have the same
+            # binning and therefore can be simply concatenated this way.
+            binned.rename_column("value", "value1")
+            binned["value2"] = binned2["value"]
+        else:
+            binned = None
+
         partialPtcDataset.updateMetadataFromExposures([exp1, exp2])
         partialPtcDataset.updateMetadata(setDate=True, detector=detector)
 
@@ -1733,4 +1777,5 @@ class PhotonTransferCurveExtractPairTask(PhotonTransferCurveExtractTaskBase):
 
         return pipeBase.Struct(
             outputCovariance=partialPtcDataset,
+            outputBinnedImages=binned,
         )
