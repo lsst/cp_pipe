@@ -2088,3 +2088,101 @@ def bin_focal_plane(
         binned["itl"] = np.concatenate(itl_arrays).astype(np.bool_)
 
     return binned
+
+
+def bin_flat(ptc, exposure, bin_factor=8, amp_boundary=20, apply_gains=True, gain_ratios=None):
+    """Bin a flat image, being careful with amplifier edges.
+
+    This will optionally apply gains, and apply any gain
+    ratios.
+
+    Parameters
+    ----------
+    ptc : `lsst.ip.isr.PhotonTransferCurveDatasets`
+        PTC dataset with relevant gains.
+    exposure : `lsst.afw.image.Exposure`
+        Exposure to bin.
+    bin_factor : `int`, optional
+        Binning factor.
+    amp_boundary : `int`, optional
+        Boundary around each amp to ignore in binning.
+    apply_gains : `bool`, optional
+        Apply gains before binning?
+    gain_ratios : `np.ndarray`, optional
+        Array of gain ratios to apply.
+
+    Returns
+    -------
+    binned : `astropy.table.Table`
+        Table with detector coordinates at the center of each bin
+        (``xd``, ``yd``); average image values (``value``); and amplifier
+        index (``amp_index``).
+    """
+    detector = exposure.getDetector()
+
+    for i, amp_name in enumerate(ptc.ampNames):
+        bbox = detector[amp_name].getBBox()
+        if amp_name in ptc.badAmps:
+            exposure[bbox].image.array[:, :] = np.nan
+            continue
+
+        if apply_gains:
+            exposure[bbox].image.array[:, :] *= ptc.gainUnadjusted[amp_name]
+            if gain_ratios is not None:
+                exposure[bbox].image.array[:, :] /= gain_ratios[i]
+
+    # Next we bin the detector, avoiding amp edges.
+    xd_arrays = []
+    yd_arrays = []
+    value_arrays = []
+    amp_arrays = []
+
+    for i, amp in enumerate(detector):
+        arr = exposure[amp.getBBox()].image.array
+
+        n_step_y = (arr.shape[0] - (2 * amp_boundary)) // bin_factor
+        y_min = amp_boundary
+        y_max = bin_factor * n_step_y + y_min
+        n_step_x = (arr.shape[1] - (2 * amp_boundary)) // bin_factor
+        x_min = amp_boundary
+        x_max = bin_factor * n_step_x + x_min
+
+        arr = arr[y_min: y_max, x_min: x_max]
+        binned = arr.reshape((n_step_y, bin_factor, n_step_x, bin_factor))
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", r"Mean of empty")
+            binned = np.nanmean(binned, axis=1)
+            binned = np.nanmean(binned, axis=2)
+
+        xx = np.arange(binned.shape[1]) * bin_factor + bin_factor / 2. + x_min
+        yy = np.arange(binned.shape[0]) * bin_factor + bin_factor / 2. + y_min
+        x, y = np.meshgrid(xx, yy)
+        x = x.ravel() + amp.getBBox().getBeginX()
+        y = y.ravel() + amp.getBBox().getBeginY()
+        value = binned.ravel()
+
+        xd_arrays.append(x)
+        yd_arrays.append(y)
+        value_arrays.append(value)
+        amp_arrays.append(np.full(len(x), i))
+
+    xd = np.concatenate(xd_arrays)
+    yd = np.concatenate(yd_arrays)
+    value = np.concatenate(value_arrays)
+    amp_index = np.concatenate(amp_arrays)
+
+    binned = np.zeros(
+        len(xd),
+        dtype=[
+            ("xd", "f8"),
+            ("yd", "f8"),
+            ("value", "f8"),
+            ("amp_index", "i4"),
+        ],
+    )
+    binned["xd"] = xd
+    binned["yd"] = yd
+    binned["value"] = value
+    binned["amp_index"] = amp_index
+
+    return Table(data=binned)

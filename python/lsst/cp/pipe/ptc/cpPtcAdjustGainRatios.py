@@ -22,14 +22,13 @@
 import copy
 import esutil
 import numpy as np
-import warnings
 from astropy.table import Table
 
 import lsst.pipe.base
 import lsst.pex.config
 import lsst.afw.cameraGeom
 
-from ..utils import FlatGradientFitter, FlatGainRatioFitter
+from ..utils import FlatGradientFitter, FlatGainRatioFitter, bin_flat
 
 
 __all__ = [
@@ -269,78 +268,31 @@ class PhotonTransferCurveAdjustGainRatiosTask(lsst.pipe.base.PipelineTask):
                 "PhotonTransferCurveAdjustGainRatiosTask can only be run on bootstrap exposures.",
             )
 
-        # Gain-correct the exposure.
         detector = exposure.getDetector()
 
-        for amp_name in ptc.ampNames:
-            bbox = detector[amp_name].getBBox()
-            if amp_name in ptc.badAmps:
-                exposure[bbox].image.array[:, :] = np.nan
-                continue
-
-            exposure[bbox].image.array[:, :] *= ptc.gainUnadjusted[amp_name]
-
-        # Next we bin the detector, avoiding amp edges.
-        xd_arrays = []
-        yd_arrays = []
-        value_arrays = []
-        amp_arrays = []
-
-        amp_boundary = self.config.amp_boundary
-        bin_factor = self.config.bin_factor
-
-        for i, amp in enumerate(detector):
-            arr = exposure[amp.getBBox()].image.array
-
-            n_step_y = (arr.shape[0] - (2 * amp_boundary)) // bin_factor
-            y_min = amp_boundary
-            y_max = bin_factor * n_step_y + y_min
-            n_step_x = (arr.shape[1] - (2 * amp_boundary)) // bin_factor
-            x_min = amp_boundary
-            x_max = bin_factor * n_step_x + x_min
-
-            arr = arr[y_min: y_max, x_min: x_max]
-            binned = arr.reshape((n_step_y, bin_factor, n_step_x, bin_factor))
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", r"Mean of empty")
-                binned = np.nanmean(binned, axis=1)
-                binned = np.nanmean(binned, axis=2)
-
-            xx = np.arange(binned.shape[1]) * bin_factor + bin_factor / 2. + x_min
-            yy = np.arange(binned.shape[0]) * bin_factor + bin_factor / 2. + y_min
-            x, y = np.meshgrid(xx, yy)
-            x = x.ravel() + amp.getBBox().getBeginX()
-            y = y.ravel() + amp.getBBox().getBeginY()
-            value = binned.ravel()
-
-            xd_arrays.append(x)
-            yd_arrays.append(y)
-            value_arrays.append(value)
-            amp_arrays.append(np.full(len(x), i))
-
-        xd = np.concatenate(xd_arrays)
-        yd = np.concatenate(yd_arrays)
-        value = np.concatenate(value_arrays)
-        amp_index = np.concatenate(amp_arrays)
+        binned = bin_flat(
+            ptc,
+            exposure,
+            bin_factor=self.config.bin_factor,
+            amp_boundary=self.config.amp_boundary,
+            apply_gains=True,
+        )
 
         # Clip out non-finite and extreme values.
         # We need to be careful about unmasked defects, so we take
         # a tighter percentile and expand.
-        lo, hi = np.nanpercentile(value, [5.0, 95.0])
+        lo, hi = np.nanpercentile(binned["value"], [5.0, 95.0])
         lo *= 0.8
         hi *= 1.2
-        use = (np.isfinite(value) & (value >= lo) & (value <= hi))
-        xd = xd[use]
-        yd = yd[use]
-        value = value[use]
-        amp_index = amp_index[use]
+        use = (np.isfinite(binned["value"]) & (binned["value"] >= lo) & (binned["value"] <= hi))
+        binned = binned[use]
 
         # We iterate up to 8x to look for any bad amps (that have a gain offset
         # fit greater than config.max_fractional_gain_ratio) and reject them
         # from the fits.
         bad_amps_converged = False
         n_iter = 0
-        value_uncorrected = value.copy()
+        value_uncorrected = binned["value"].copy()
         while not bad_amps_converged and n_iter < len(ptc.ampNames) // 2:
             # If configured, fit the radial gradient.
             if self.config.do_remove_radial_gradient:
@@ -348,7 +300,7 @@ class PhotonTransferCurveAdjustGainRatiosTask(lsst.pipe.base.PipelineTask):
                     lsst.afw.cameraGeom.PIXELS,
                     lsst.afw.cameraGeom.FOCAL_PLANE,
                 )
-                xy = np.vstack((xd, yd))
+                xy = np.vstack((binned["xd"], binned["yd"]))
                 xf, yf = np.vsplit(transform.getMapping().applyForward(xy), 2)
                 xf = xf.ravel()
                 yf = yf.ravel()
@@ -361,13 +313,13 @@ class PhotonTransferCurveAdjustGainRatiosTask(lsst.pipe.base.PipelineTask):
                 )
 
                 # Put in a normalization for fitting.
-                norm = np.nanpercentile(value, 95.0)
+                norm = np.nanpercentile(binned["value"], 95.0)
 
                 fitter = FlatGradientFitter(
                     nodes,
                     xf,
                     yf,
-                    value/norm,
+                    binned["value"]/norm,
                     np.array([]),
                     constrain_zero=False,
                     fit_centroid=False,
@@ -378,16 +330,16 @@ class PhotonTransferCurveAdjustGainRatiosTask(lsst.pipe.base.PipelineTask):
                 p0 = fitter.compute_p0()
                 pars = fitter.fit(p0)
 
-                value /= fitter.compute_model(pars)
+                binned["value"] /= fitter.compute_model(pars)
 
             # Fit gain ratios.
             fitter = FlatGainRatioFitter(
                 exposure.getBBox(),
                 self.config.chebyshev_gradient_order,
-                xd,
-                yd,
-                amp_index,
-                value,
+                binned["xd"],
+                binned["yd"],
+                binned["amp_index"],
+                binned["value"],
                 np.arange(len(ptc.ampNames)),
                 fixed_amp_index,
             )
@@ -403,13 +355,11 @@ class PhotonTransferCurveAdjustGainRatiosTask(lsst.pipe.base.PipelineTask):
                     ptc.ampNames[max_ratio_ind],
                     amp_pars[max_ratio_ind],
                 )
-                good = (amp_index != max_ratio_ind)
-                xd = xd[good]
-                yd = yd[good]
-                value = value_uncorrected[good]
-                amp_index = amp_index[good]
+                good = (binned["amp_index"] != max_ratio_ind)
+                binned = binned[good]
+                binned["value"] = value_uncorrected[good]
 
-                value_uncorrected = value.copy()
+                value_uncorrected = binned["value"].copy()
             else:
                 bad_amps_converged = True
 
