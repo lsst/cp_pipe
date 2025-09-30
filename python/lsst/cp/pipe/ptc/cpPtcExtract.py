@@ -651,8 +651,18 @@ class PhotonTransferCurveExtractTaskBase(pipeBase.PipelineTask):
         expId1, expId2 = expIds
         exp1, exp2 = exps
 
-        expMjd1 = exp1.metadata['MJD']
-        expMjd2 = exp2.metadata['MJD']
+        date1 = exp1.visitInfo.getDate()
+        if date1 is not None and date1.isValid():
+            expMjd1 = date1.toAstropy().mjd
+        else:
+            self.log.warning("No valid date found for exposure %d", expId1)
+            expMjd1 = np.nan
+        date2 = exp2.visitInfo.getDate()
+        if date2 is not None and date2.isValid():
+            expMjd2 = date2.toAstropy().mjd
+        else:
+            self.log.warning("No valid date found for exposure %d", expId2)
+            expMjd2 = np.nan
         inputExpPairMjdStart = min([expMjd1, expMjd2])
 
         self.log.info("Extracting PTC data from flat pair %d, %d", expId1, expId2)
