@@ -718,6 +718,25 @@ class PhotonTransferCurveExtractTaskBase(pipeBase.PipelineTask):
         maskValue1 = exp1.mask.getPlaneBitMask(self.config.maskNameList)
         maskValue2 = exp2.mask.getPlaneBitMask(self.config.maskNameList)
 
+        # Extract photocharge for exposures.
+        photoCharge = np.nan
+        photoChargeDelta = np.nan
+        if self.config.doExtractPhotodiodeData or self.config.useEfdPhotodiodeData:
+            nExps = 0
+            photoCharge = 0.0
+            for expId in [expId1, expId2]:
+                if expId in photoChargeDict:
+                    photoCharge += photoChargeDict[expId]
+                    nExps += 1
+
+            if nExps > 0:
+                photoCharge /= nExps
+            else:
+                photoCharge = np.nan
+
+            if nExps == 2:
+                photoChargeDelta = photoChargeDict[expId2] - photoChargeDict[expId1]
+
         # Get the following statistics for each amp
         for ampNumber, amp in enumerate(detector):
             ampName = amp.getName()
@@ -772,6 +791,8 @@ class PhotonTransferCurveExtractTaskBase(pipeBase.PipelineTask):
                     rawExpTime=expTime,
                     expIdMask=False,
                     nPixelCovariance=nPixelCovariance1,
+                    photoCharge=photoCharge,
+                    photoChargeDelta=photoChargeDelta,
                 )
                 continue
 
@@ -864,23 +885,6 @@ class PhotonTransferCurveExtractTaskBase(pipeBase.PipelineTask):
                     # When this is turned off, we will always allow it to
                     # pass downstream.
                     kspValue = 1.0
-
-            photoChargeDelta = np.nan
-            if self.config.doExtractPhotodiodeData or self.config.useEfdPhotodiodeData:
-                nExps = 0
-                photoCharge = 0.0
-                for expId in [expId1, expId2]:
-                    if expId in photoChargeDict:
-                        photoCharge += photoChargeDict[expId]
-                        nExps += 1
-                if nExps > 0:
-                    photoCharge /= nExps
-                else:
-                    photoCharge = np.nan
-                if nExps == 2:
-                    photoChargeDelta = photoChargeDict[expId1] - photoChargeDict[expId2]
-            else:
-                photoCharge = np.nan
 
             # Get amp offsets if available.
             ampOffsetKey = f"LSST ISR AMPOFFSET PEDESTAL {ampName}"
