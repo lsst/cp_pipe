@@ -12,9 +12,9 @@ tasks:
       efdSalIndex: 201
   # Leave the normalizer in to exercise the code and have a record.
   cpLinearizerUnnormalizedSolve1:
-    class: lsst.cp.pipe.LinearitySolveTask
+    class: lsst.cp.pipe.LinearityDoubleSplineSolveTask
     config:
-      maxLinearAdu: 120000
+      minSignalFitLinearityTurnoff: 10000
       usePhotodiode: false
   cpLinearizerNormalize1:
     class: lsst.cp.pipe.LinearityNormalizeTask
@@ -24,9 +24,9 @@ tasks:
   # But turn off the normalization because one detector
   # is not enough to run it reliably.
   cpLinearizerSolve:
-    class: lsst.cp.pipe.LinearitySolveTask
+    class: lsst.cp.pipe.LinearityDoubleSplineSolveTask
     config:
       connections.inputNormalization: "cpLinearizerNormalization1"
-      maxLinearAdu: 120000
+      minSignalFitLinearityTurnoff: 10000
       usePhotodiode: false
       useFocalPlaneNormalization: false
