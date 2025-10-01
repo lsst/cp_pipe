@@ -1,4 +1,4 @@
-pipelineYaml: "${CP_PIPE_DIR}/pipelines/${INSTRUMENT}/cpPtc.yaml#cpPtcAdjustGainRatios"
+pipelineYaml: "${CP_PIPE_DIR}/pipelines/${INSTRUMENT}/cpPtc.yaml"
 
 project: "${TICKET}"
 campaign: "${TICKET}"

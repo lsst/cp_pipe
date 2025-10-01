@@ -158,8 +158,7 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
     maxPtcRolloffDeviation = pexConfig.Field(
         dtype=float,
         doc="Maximum percent difference between the model with saturation rolloff and the "
-            "model without to set the PTC turnoff. Only used if doModelPtcRolloff=True "
-            "(default = 0.01).",
+            "model without to set the PTC turnoff. Only used if doModelPtcRolloff=True.",
         default=0.01,
     )
     doLegacyTurnoffSelection = pexConfig.Field(
@@ -200,8 +199,7 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
     extendRollofSearchMaskSizeAdu = pexConfig.Field(
         dtype=float,
         doc="The amount to extend the mask beyond the initial PTC turnoff to fit "
-            "the rolloff. Only used if doModelPtcRolloff=True (units: adu). "
-            "(default: 5000).",
+            "the rolloff. Only used if doModelPtcRolloff=True (units: adu). ",
         default=5_000.,
     )
     scaleMaxSignalInitialPtcOutlierFit = pexConfig.Field(
@@ -1111,14 +1109,6 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             # Make sure we have this properly sorted.
             goodPoints = dataset.expIdMask[ampName].copy()
 
-            if not goodPoints.any():
-                msg = (f"SERIOUS: All points in goodPoints: {goodPoints} "
-                       f"are bad. Setting {ampName} to BAD.")
-                self.log.warning(msg)
-                # Fill entries with NaNs
-                self.fillBadAmp(dataset, ampName)
-                continue
-
             if not np.isfinite(dataset.ptcTurnoff[ampName]):
                 msg = (f"SERIOUS: Initial PTC turnoff is not finite. "
                        f"Setting {ampName} to BAD.")
@@ -1135,9 +1125,11 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             varianceAtTurnoff = varVec[turnoffIdx]
 
             # Add points up to some threshold below the variance of the turnoff
-            pointsToFit = (meanVec >= preTurnoff) * \
-                          (meanVec < preTurnoff+self.config.extendRollofSearchMaskSizeAdu) * \
-                          (varVec <= varianceAtTurnoff)
+            pointsToFit = (
+                (meanVec >= preTurnoff)
+                & (meanVec < preTurnoff+self.config.extendRollofSearchMaskSizeAdu)
+                & (varVec <= varianceAtTurnoff)
+            )
 
             # Retain the original mask below the turnoff
             pointsToFit = np.logical_or(mask, pointsToFit)
