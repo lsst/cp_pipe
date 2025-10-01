@@ -584,10 +584,6 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                     mask[~np.isfinite(rawMeans) | ~np.isfinite(rawVars)] = False
                     dataset.expIdMask[ampName] = mask
 
-                    # # Make sure that it is sorted:
-                    # index = np.argsort(rawMeans)
-                    # dataset.sort(index)
-
                     configSolve = copy.copy(self.defaultConfigSolve)
                     configSolve.doModelPtcRolloff = doModelPtcRolloff
                     configSolve.doFitBootstrap = False
@@ -616,8 +612,10 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                     maxMean = solvedDataset.ptcTurnoff[ampName]
                     if doModelPtcRolloff:
                         # Check that the PTC rolloff is less
-                        # than the PTC turnoff
+                        # than the PTC turnoff and within 10%
+                        # of the turnoff.
                         if dense:
+                            # Check that
                             self.assertLess(
                                 solvedDataset.ptcRolloff[ampName],
                                 solvedDataset.ptcTurnoff[ampName],
@@ -627,7 +625,20 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                                     f"Amp: {ampName}"
                                 ),
                             )
+                            self.assertAlmostEqual(
+                                solvedDataset.ptcRolloff[ampName],
+                                solvedDataset.ptcTurnoff[ampName],
+                                atol=0.1 * solvedDataset.ptcTurnoff[ampName],
+                                msg=(
+                                    f"Dense: {dense}; Mode: {mode}, "
+                                    f"doModelPtcRolloff: {doModelPtcRolloff}; "
+                                    f"Amp: {ampName}"
+                                ),
+                            )
                         else:
+                            # In all other cases, it should not be able to
+                            # find points beyond the turnoff, and the
+                            # rolloff should be set to the PTC turnoff.
                             self.assertEqual(
                                 solvedDataset.ptcRolloff[ampName],
                                 solvedDataset.ptcTurnoff[ampName],
@@ -639,7 +650,6 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                             )
 
                         # If that passes set the maxMean to the PTC Rolloff
-                        # (comment line <= 79 chars)
                         maxMean = solvedDataset.ptcRolloff[ampName]
 
                     above = (solvedDataset.finalMeans[ampName] > maxMean)
