@@ -625,7 +625,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                                     f"Amp: {ampName}"
                                 ),
                             )
-                            self.assertAlmostEqual(
+                            self.assertFloatsAlmostEqual(
                                 solvedDataset.ptcRolloff[ampName],
                                 solvedDataset.ptcTurnoff[ampName],
                                 atol=0.1 * solvedDataset.ptcTurnoff[ampName],

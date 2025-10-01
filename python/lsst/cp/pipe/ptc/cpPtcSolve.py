@@ -144,6 +144,8 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
         doc="Maximum number of iterations in full model fit for FULLCOVARIANCE ptcFitType",
         default=3,
     )
+    # TODO: DM-52720 - remove deprecated POLYNOMIAL fit
+    # and legacy turnoff
     polynomialFitDegree = pexConfig.Field(
         dtype=int,
         doc="Degree of polynomial to fit the PTC, when 'ptcFitType'=POLYNOMIAL.",
@@ -161,12 +163,14 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
             "model without to set the PTC turnoff. Only used if doModelPtcRolloff=True.",
         default=0.01,
     )
+    # TODO: DM-52720 - remove deprecated POLYNOMIAL fit
+    # and legacy turnoff
     doLegacyTurnoffSelection = pexConfig.Field(
         dtype=bool,
         doc="Use 'legacy' computation for PTC turnoff selection. If set "
             "to False, then the KS test p-value selection will be used instead.",
         default=False,
-        deprecated="This option has been deprecated and will be removed after v31.",
+        deprecated="This option has been deprecated and will be removed after v30.",
     )
     sigmaCutPtcOutliers = pexConfig.Field(
         dtype=float,
@@ -210,6 +214,8 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
             "are assumed to have units of electrons, otherwise adu.",
         default=True,
     )
+    # TODO: DM-52720 - remove deprecated POLYNOMIAL fit
+    # and legacy turnoff
     minVarPivotSearch = pexConfig.Field(
         dtype=float,
         doc="The code looks for a pivot signal point after which the variance starts decreasing at high-flux"
@@ -217,8 +223,10 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
             " decreases slightly. Set this variable for the variance value, in adu^2, after which the pivot "
             " should be sought. Only used if doLegacyTurnoffSelection is True.",
         default=10000,
-        deprecated="This option has been deprecated and will be removed after v31.",
+        deprecated="This option has been deprecated and will be removed after v30.",
     )
+    # TODO: DM-52720 - remove deprecated POLYNOMIAL fit
+    # and legacy turnoff
     consecutivePointsVarDecreases = pexConfig.RangeField(
         dtype=int,
         doc="Required number of consecutive points/fluxes in the PTC where the variance "
@@ -226,14 +234,16 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
             "Only used if doLegacyTurnoffSelection is True.",
         default=2,
         min=2,
-        deprecated="This option has been deprecated and will be removed after v31.",
+        deprecated="This option has been deprecated and will be removed after v30.",
     )
+    # TODO: DM-52720 - remove deprecated POLYNOMIAL fit
+    # and legacy turnoff
     ksTestMinPvalue = pexConfig.Field(
         dtype=float,
         doc="Minimum value of the Gaussian histogram KS test p-value to be used in PTC fit. "
             "Only used if doLegacyTurnoffSelection is False.",
         default=0.01,
-        deprecated="This option has been deprecated and will be removed after v31.",
+        deprecated="This option has been deprecated and will be removed after v30.",
     )
     doFitBootstrap = pexConfig.Field(
         dtype=bool,
@@ -245,23 +255,29 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
         doc="Bin the image by this factor in both dimensions.",
         default=1,
     )
+    # TODO: DM-52720 - remove deprecated POLYNOMIAL fit
+    # and legacy turnoff
     doAmpOffsetGainRatioFixup = pexConfig.Field(
         dtype=bool,
         doc="Do gain ratio fixup based on amp offsets?",
         default=False,
-        deprecated="This option has been deprecated and will be removed after v31.",
+        deprecated="This option has been deprecated and will be removed after v30.",
     )
+    # TODO: DM-52720 - remove deprecated POLYNOMIAL fit
+    # and legacy turnoff
     ampOffsetGainRatioMinAdu = pexConfig.Field(
         dtype=float,
         doc="Minimum number of adu to use for amp offset gain ratio fixup.",
         default=1000.0,
-        deprecated="This option has been deprecated and will be removed after v31.",
+        deprecated="This option has been deprecated and will be removed after v30.",
     )
+    # TODO: DM-52720 - remove deprecated POLYNOMIAL fit
+    # and legacy turnoff
     ampOffsetGainRatioMaxAdu = pexConfig.Field(
         dtype=float,
         doc="Maximum number of adu to use for amp offset gain ratio fixup.",
         default=20000.0,
-        deprecated="This option has been deprecated and will be removed after v31.",
+        deprecated="This option has been deprecated and will be removed after v30.",
     )
 
     def validate(self):
@@ -961,9 +977,11 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         return covAtAmpMasked, covSqrtWeightsAtAmpMasked
 
     # EXPAPPROXIMATION fit method
+    # TODO: DM-52720 - remove deprecated POLYNOMIAL fit
+    # and legacy turnoff
     @staticmethod
-    @deprecated(reason="POLYNOMIAL PTC fit is no longer supported. Will be removed after v31.",
-                version="v31.0", category=FutureWarning)
+    @deprecated(reason="POLYNOMIAL PTC fit is no longer supported. Will be removed after v30.",
+                version="v30.0", category=FutureWarning)
     def _initialParsForPolynomial(order):
         assert order >= 2
         pars = np.zeros(order, dtype=float)
@@ -973,6 +991,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         return pars
 
     @staticmethod
+    # TODO: DM-52720 - remove deprecated POLYNOMIAL fit
+    # and legacy turnoff
     @deprecated(reason="POLYNOMIAL PTC fit is no longer supported. Will be removed after v30.",
                 version="v30.0", category=FutureWarning)
     def _boundsForPolynomial(initialPars, lowers=[], uppers=[]):
@@ -991,10 +1011,12 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             uppers = [np.inf for p in initialPars]
         return (lowers, uppers)
 
+    # TODO: DM-52720 - remove deprecated POLYNOMIAL fit
+    # and legacy turnoff
     @staticmethod
     @deprecated(reason="This is only used by doLegacyTurnoffSelection, which is deprecated, "
-                "so this deprecated too. Will be removed after v31.",
-                version="v31.0", category=FutureWarning)
+                "so this deprecated too. Will be removed after v30.",
+                version="v30.0", category=FutureWarning)
     def _getInitialGoodPoints(means, variances, minVarPivotSearch, consecutivePointsVarDecreases):
         """Return a boolean array to mask bad points.
 
