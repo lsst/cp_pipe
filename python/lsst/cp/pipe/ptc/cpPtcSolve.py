@@ -453,6 +453,7 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         elif self.config.ptcFitType in ["FULLCOVARIANCE", "FULLCOVARIANCE_NO_B"]:
             # Fit with the full covariance model (with/without b)
             # This does not change the PTC turnoff.
+            tempDatasetPtc.ptcFitType = self.config.ptcFitType
             datasetPtc = self.fitDataFullCovariance(tempDatasetPtc)
         else:
             # This fit type is not recognized
@@ -963,8 +964,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
 
     # EXPAPPROXIMATION fit method
     @staticmethod
-    @deprecated(reason="POLYNOMIAL PTC fit is no longer supported. Will be removed after v30.",
-                version="v30.0", category=FutureWarning)
+    @deprecated(reason="POLYNOMIAL PTC fit is no longer supported. Will be removed after v31.",
+                version="v31.0", category=FutureWarning)
     def _initialParsForPolynomial(order):
         assert order >= 2
         pars = np.zeros(order, dtype=float)
@@ -993,6 +994,9 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         return (lowers, uppers)
 
     @staticmethod
+    @deprecated(reason="This is only used by doLegacyTurnoffSelection, which is deprecated, "
+                "so this deprecated too. Will be removed after v31.",
+                version="v31.0", category=FutureWarning)
     def _getInitialGoodPoints(means, variances, minVarPivotSearch, consecutivePointsVarDecreases):
         """Return a boolean array to mask bad points.
 
@@ -1140,6 +1144,11 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             if np.count_nonzero(pointsToFit) == np.count_nonzero(mask):
                 self.log.warning("Expanding fit to include saturation, but no points detected above "
                                  f"initial computed PTC turnoff for amp {ampName}.")
+                dataset.expIdRolloffMask[ampName] = pointsToFit
+                dataset.ptcRolloff[ampName] = dataset.ptcTurnoff[ampName]
+                dataset.ptcRolloffError[ampName] = np.nan
+                dataset.ptcRolloffTau[ampName] = np.nan
+                dataset.ptcRolloffTauError[ampName] = np.nan
                 continue
 
             # Fit initialization

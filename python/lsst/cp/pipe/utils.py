@@ -38,7 +38,6 @@ from lsst.ip.isr import isrMock
 import lsst.afw.cameraGeom
 import lsst.afw.image
 import lsst.afw.math
-from deprecated.sphinx import deprecated
 
 
 def sigmaClipCorrection(nSigClip):
@@ -433,8 +432,6 @@ def fitBootstrap(initialParams, dataX, dataY, function, weightsY=None, confidenc
     return pFitBootstrap, pErrBootstrap, reducedChiSq
 
 
-@deprecated(reason="This method is no longer used for PTC fitting. Will be removed after v30.",
-            version="v31.0", category=FutureWarning)
 def funcPolynomial(pars, x):
     """Polynomial function definition
     Parameters
@@ -614,9 +611,10 @@ def arrangeFlatsByExpFlux(exposureList, exposureIdList, fluxKeyword, log=None):
 def arrangeFlatsByExpId(exposureList, exposureIdList):
     """Arrange exposures by exposure ID.
 
-    There is no guarantee that this will properly group exposures, but
-    allows a sequence of flats that have different illumination
-    (despite having the same exposure time) to be processed.
+    There is no guarantee that this will properly group exposures,
+    but allows a sequence of flats that have different
+    illumination (despite having the same exposure time) to be
+    processed.
 
     Parameters
     ----------

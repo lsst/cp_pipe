@@ -131,7 +131,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                 (1, self.dataset.covMatrixSide, self.dataset.covMatrixSide)
             )
 
-    def notest_covAstier(self):
+    def test_covAstier(self):
         """Test to check getCovariancesAstier
 
         We check that the gain is the same as the input gain from the
@@ -456,6 +456,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                         ptc.covariancesSqrtWeights[ampName].shape, covSqrtShape
                     )
                     self.assertEqual(ptc.covariancesModel[ampName].shape, covModelShape)
+
                 # Check if evalPtcModel produces expected values
                 nanMask = ~np.isnan(ptc.finalMeans[ampName])
                 means = ptc.finalMeans[ampName][nanMask]
@@ -571,7 +572,6 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
 
                     # We only need a single amp.
                     ampName = self.ampNames[0]
-                    print(f"\nDense: {dense}; Mode: {mode}, doModelPtcRolloff: {doModelPtcRolloff}; Amp: {ampName}")
                     dataset = PhotonTransferCurveDataset([ampName], ptcFitType="EXPAPPROXIMATION")
                     dataset.rawExpTimes[ampName] = np.arange(len(rawMeans), dtype=np.float64) + 1.0
                     dataset.rawMeans[ampName] = rawMeans
@@ -595,71 +595,81 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                     solveTask = cpPipe.ptc.PhotonTransferCurveSolveTask(config=configSolve)
 
                     initialFitDataset = solveTask.fitPtc(dataset, computePtcTurnoff=True)
-                    print(f"1: initialFitDataset.ptcTurnoff = {initialFitDataset.ptcTurnoff[ampName]}")
 
                     # Model the PTC rolloff
                     if doModelPtcRolloff:
                         initialFitDataset = solveTask.fitPtcRolloff(initialFitDataset)
 
-                    print(f"2: initialFitDataset.ptcTurnoff = {initialFitDataset.ptcTurnoff[ampName]}")
-                    print(f"2: initialFitDataset.ptcRolloff = {initialFitDataset.ptcRolloff[ampName]}")
-
                     solvedDataset = solveTask.fitPtc(initialFitDataset, computePtcTurnoff=False)
-
-                    print(f"       SolvedDataset.ptcTurnoff = {initialFitDataset.ptcTurnoff[ampName]}")
-                    print(f"       SolvedDataset.ptcRolloff = {initialFitDataset.ptcRolloff[ampName]}")
-
                     # Check that the ptcTurnoff is what is expected.
                     self.assertFloatsAlmostEqual(
                         solvedDataset.ptcTurnoff[ampName],
                         ptcTurnoff,
-                        msg=f"Dense: {dense}; Mode: {mode}, doModelPtcRolloff: {doModelPtcRolloff}; Amp: {ampName}",
+                        msg=(
+                            f"Dense: {dense}; Mode: {mode}, "
+                            f"doModelPtcRolloff: {doModelPtcRolloff}; Amp: {ampName}"
+                        ),
                     )
 
-                    # Check that no values above the turnoff/rolloff are "good".
+                    # Check that no values above the
+                    # turnoff/rolloff are "good".
                     maxMean = solvedDataset.ptcTurnoff[ampName]
                     if doModelPtcRolloff:
-                        # Check that the PTC rolloff is less than the PTC turnoff
-                        if mode == "normal":
+                        # Check that the PTC rolloff is less
+                        # than the PTC turnoff
+                        if dense:
                             self.assertLess(
                                 solvedDataset.ptcRolloff[ampName],
                                 solvedDataset.ptcTurnoff[ampName],
-                                msg=f"Dense: {dense}; Mode: {mode}, doModelPtcRolloff: {doModelPtcRolloff}; Amp: {ampName}",
+                                msg=(
+                                    f"Dense: {dense}; Mode: {mode}, "
+                                    f"doModelPtcRolloff: {doModelPtcRolloff}; "
+                                    f"Amp: {ampName}"
+                                ),
                             )
                         else:
-                            if mode == "normal":
                             self.assertEqual(
                                 solvedDataset.ptcRolloff[ampName],
                                 solvedDataset.ptcTurnoff[ampName],
-                                msg=f"Dense: {dense}; Mode: {mode}, doModelPtcRolloff: {doModelPtcRolloff}; Amp: {ampName}",
+                                msg=(
+                                    f"Dense: {dense}; Mode: {mode}, "
+                                    f"doModelPtcRolloff: {doModelPtcRolloff}; "
+                                    f"Amp: {ampName}"
+                                ),
                             )
 
                         # If that passes set the maxMean to the PTC Rolloff
+                        # (comment line <= 79 chars)
                         maxMean = solvedDataset.ptcRolloff[ampName]
 
                     above = (solvedDataset.finalMeans[ampName] > maxMean)
                     self.assertEqual(
                         np.sum(above),
                         0,
-                        msg=f"Dense: {dense}; Mode: {mode}, doModelPtcRolloff: {doModelPtcRolloff}; Amp: {ampName}",
+                        msg=(
+                            f"Dense: {dense}; Mode: {mode}, "
+                            f"doModelPtcRolloff: {doModelPtcRolloff}; Amp: {ampName}"
+                        ),
                     )
 
                     # Check the sampling error on the turnoff.
-                    last = np.where(np.isfinite(solvedDataset.finalMeans[ampName]))[0][-1]
-                    samplingError = (rawMeans[last + 1] - rawMeans[last - 1])/2.
+                    turnoffIdx = np.argwhere(
+                        solvedDataset.rawMeans[ampName] == solvedDataset.ptcTurnoff[ampName]
+                    )
+                    samplingError = (rawMeans[turnoffIdx + 1] - rawMeans[turnoffIdx - 1])/2.
                     self.assertFloatsAlmostEqual(
                         solvedDataset.ptcTurnoffSamplingError[ampName],
                         samplingError,
                         msg=f"Dense: {dense}; Mode: {mode}",
                     )
 
-    def notest_ptcFit(self):
+    def test_ptcFit(self):
         for fitType in ["EXPAPPROXIMATION"]:
             self.ptcFitAndCheckPtc(
                 fitType=fitType
             )
 
-    def notest_meanVarMeasurement(self):
+    def test_meanVarMeasurement(self):
         task = self.defaultTaskExtract
         im1Area, im2Area, imStatsCtrl, mu1, mu2 = task.getImageAreasMasksStats(
             self.flatExp1, self.flatExp2
@@ -669,7 +679,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         self.assertLess(self.flatWidth - np.sqrt(varDiff), 1)
         self.assertLess(self.flatMean - mu, 1)
 
-    def notest_meanVarMeasurementWithNans(self):
+    def test_meanVarMeasurementWithNans(self):
         task = self.defaultTaskExtract
 
         flatExp1 = self.flatExp1.clone()
@@ -707,7 +717,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         self.assertLess(np.sqrt(expectedVar) - np.sqrt(varDiff), 1)
         self.assertLess(expectedMu - mu, 1)
 
-    def notest_meanVarMeasurementAllNan(self):
+    def test_meanVarMeasurementAllNan(self):
         task = self.defaultTaskExtract
         flatExp1 = self.flatExp1.clone()
         flatExp2 = self.flatExp2.clone()
@@ -727,7 +737,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         self.assertTrue(covDiff is None)
         self.assertTrue(np.isnan(rowMeanVariance))
 
-    def notest_meanVarMeasurementTooFewPixels(self):
+    def test_meanVarMeasurementTooFewPixels(self):
         task = self.defaultTaskExtract
         flatExp1 = self.flatExp1.clone()
         flatExp2 = self.flatExp2.clone()
@@ -753,7 +763,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         self.assertTrue(covDiff is None)
         self.assertTrue(np.isnan(rowMeanVariance))
 
-    def notest_meanVarMeasurementTooNarrowStrip(self):
+    def test_meanVarMeasurementTooNarrowStrip(self):
         # We need a new config to make sure the second covariance cut is
         # triggered.
         config = cpPipe.ptc.PhotonTransferCurveExtractTask.ConfigClass()
@@ -787,7 +797,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         self.assertTrue(covDiff is None)
         self.assertTrue(np.isnan(rowMeanVariance))
 
-    def notest_makeZeroSafe(self):
+    def test_makeZeroSafe(self):
         noZerosArray = [1.0, 20, -35, 45578.98, 90.0, 897, 659.8]
         someZerosArray = [1.0, 20, 0, 0, 90, 879, 0]
         allZerosArray = [0.0, 0.0, 0, 0, 0.0, 0, 0]
@@ -822,7 +832,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         for exp, meas in zip(noZerosArray, measuredNoZerosArray):
             self.assertEqual(exp, meas)
 
-    def notest_getInitialGoodPoints(self):
+    def test_getInitialGoodPoints(self):
         xs = [1, 2, 3, 4, 5, 6]
         ys = [2 * x for x in xs]
         points = self.defaultTaskSolve._getInitialGoodPoints(
@@ -901,7 +911,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                     ptc.noiseList[ampName][i], np.sqrt(self.noiseSq) / self.gain,
                 )
 
-    def notest_getGainFromFlatPair(self):
+    def test_getGainFromFlatPair(self):
         for gainCorrectionType in [
             "NONE",
             "SIMPLE",
@@ -909,12 +919,12 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         ]:
             self.runGetGainFromFlatPair(gainCorrectionType)
 
-    def notest_ptcFitBootstrap(self):
+    def test_ptcFitBootstrap(self):
         """Test the bootstrap fit option for the PTC"""
         for fitType in ['EXPAPPROXIMATION']:
             self.ptcFitAndCheckPtc(fitType=fitType, doFitBootstrap=True)
 
-    def notest_ampOffsetGainRatioFixup(self):
+    def test_ampOffsetGainRatioFixup(self):
         """Test the ampOffsetGainRatioFixup code via
         PhotonTransferCurveFixupGainRatiosTask."""
         rng = np.random.RandomState(12345)
@@ -1037,7 +1047,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
             ampOffsetGainRatioFixup(ptc, 1000.0, 20000.0)
         self.assertIn("Cannot apply ampOffsetGainRatioFixup", cm.output[0])
 
-    def notest_maskVignetteFunctionRegion(self):
+    def test_maskVignetteFunctionRegion(self):
         # The function coefficients are chosen to trigger on some amps.
         # The amps with no masked pixels are C:1,0 and C:1,3 due to the
         # curvature.
@@ -1775,7 +1785,7 @@ class MeasurePhotonTransferCurveDatasetTestCase(lsst.utils.tests.TestCase):
             "C01": [(123, 234), (345, 456), (567, 678)],
         }
 
-    def notest_generalBehaviour(self):
+    def test_generalBehaviour(self):
         test = PhotonTransferCurveDataset(["C00", "C01"], " ")
         test.inputExpIdPairs = {
             "C00": [(123, 234), (345, 456), (567, 678)],

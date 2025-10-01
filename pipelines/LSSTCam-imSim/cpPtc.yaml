@@ -16,6 +16,5 @@ tasks:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
     config:
       ptcFitType: FULLCOVARIANCE
-      minVarPivotSearch: 250000
       sigmaCutPtcOutliers: 10
       sigmaClipFullFitCovariancesAstier: 10
