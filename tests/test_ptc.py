@@ -1108,7 +1108,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         """
         if dense and mode == "normal":
             # Taken from dense run 13591, detector 94, amplifier C02
-            ptcTurnoff = 92787.0984
+            ptcTurnoff = 92239.4794
             rawMeans = np.array([
                 3.72806883e+01, 3.86850679e+01, 4.09319941e+01, 4.30288886e+01,
                 4.59546561e+01, 4.77510985e+01, 5.06130505e+01, 5.35060747e+01,
