@@ -1,9 +1,0 @@
-description: cp_pipe LSSTCam flat gradient reference calibration construction (u band).
-instrument: lsst.obs.lsst.LsstCam
-imports:
-  - location: $CP_PIPE_DIR/pipelines/LSSTCam/cpFlatGradientReference.yaml
-tasks:
-  cpFlatFitGradientsReference:
-    class: lsst.cp.pipe.CpFlatFitGradientsTask
-    config:
-      radial_spline_nodes: [0., 200., 250., 300., 320., 330., 340., 350., 360., 368.]
