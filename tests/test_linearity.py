@@ -39,7 +39,7 @@ from lsst.ip.isr import PhotonTransferCurveDataset, IsrMockLSST
 import lsst.afw.image
 import lsst.afw.math
 from lsst.cp.pipe import LinearitySolveTask, LinearityNormalizeTask, LinearityDoubleSplineSolveTask
-from lsst.cp.pipe.cpLinearitySolve import _computeTurnoffAndMax, _noderator
+from lsst.cp.pipe.cpLinearitySolve import _computeTurnoffAndMax, _noderator, _determineInputGroups
 from lsst.cp.pipe.ptc import PhotonTransferCurveSolveTask, PhotonTransferCurveExtractPairTask
 from lsst.cp.pipe.utils import funcPolynomial, funcAstier
 from lsst.daf.base import DateTime
@@ -726,17 +726,31 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
         # First test: do grouping by aux value.
         config = LinearitySolveTask.ConfigClass()
         config.splineGroupingColumn = "AUX"
-        task = LinearitySolveTask(config=config)
 
-        grouping_values = task._determineInputGroups(ptc)
+        grouping_values = _determineInputGroups(
+            ptc,
+            config.doAutoGrouping,
+            config.autoGroupingUseExptime,
+            config.autoGroupingMaxSignalFraction,
+            config.autoGroupingThreshold,
+            config.splineGroupingColumn,
+            config.minPhotodiodeCurrent,
+        )
         _compare_grouping_values(grouping_values, grouping_values_truth)
 
         # Second test: do grouping automatically, with exp time.
         config = LinearitySolveTask.ConfigClass()
         config.doAutoGrouping = True
-        task = LinearitySolveTask(config=config)
 
-        grouping_values = task._determineInputGroups(ptc)
+        grouping_values = _determineInputGroups(
+            ptc,
+            config.doAutoGrouping,
+            config.autoGroupingUseExptime,
+            config.autoGroupingMaxSignalFraction,
+            config.autoGroupingThreshold,
+            config.splineGroupingColumn,
+            config.minPhotodiodeCurrent,
+        )
         _compare_grouping_values(grouping_values, grouping_values_truth)
 
         # Third test: do grouping automatically, with photodiode.
@@ -746,11 +760,18 @@ class LinearityTaskTestCase(lsst.utils.tests.TestCase):
         config.autoGroupingUseExptime = False
         config.autoGroupingThreshold = 0.008
         config.minPhotodiodeCurrent = 1e-10
-        task = LinearitySolveTask(config=config)
 
         # We have to modify here to allow the lowest point to be "ungrouped"
         # because it has an illegally low photocharge.
-        grouping_values = task._determineInputGroups(ptc)
+        grouping_values = _determineInputGroups(
+            ptc,
+            config.doAutoGrouping,
+            config.autoGroupingUseExptime,
+            config.autoGroupingMaxSignalFraction,
+            config.autoGroupingThreshold,
+            config.splineGroupingColumn,
+            config.minPhotodiodeCurrent,
+        )
         grouping_values_truth_mod = grouping_values_truth.copy()
         grouping_values_truth_mod[0] = -1
         _compare_grouping_values(grouping_values, grouping_values_truth_mod)
