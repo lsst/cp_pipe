@@ -1549,8 +1549,29 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
 
         # Choose the reference amplifier as the one with the largest
         # turnoff. This ensures that the absolute fit covers the full
-        # range.
+        # range. We additionally confirm that the ptc turnoff is
+        # finite for this amplifier.
         turnoffArray = np.asarray([linearizer.linearityTurnoff[ampName] for ampName in inputPtc.ampNames])
+        # This is a possibly redundant check to make sure that a bad amp is
+        # not chosen as a reference amp.
+        for i, ampName in enumerate(inputPtc.ampNames):
+            if ampName in inputPtc.badAmps or not np.isfinite(inputPtc.ptcTurnoff[ampName]):
+                turnoffArray[i] = np.nan
+
+        if np.all(~np.isfinite(turnoffArray)):
+            # Return the default blank linearizer.
+            linearizer.hasLinearity = True
+            linearizer.validate()
+            linearizer.updateMetadata(camera=camera, detector=detector, filterName='NONE')
+            linearizer.updateMetadata(setDate=True, setCalibId=True)
+            linearizer.updateMetadataFromExposures([inputPtc])
+            provenance = IsrProvenance(calibType='linearizer')
+
+            return pipeBase.Struct(
+                outputLinearizer=linearizer,
+                outputProvenance=provenance,
+            )
+
         refAmpIndex = np.argmax(np.nan_to_num(turnoffArray))
         refAmpName = inputPtc.ampNames[refAmpIndex]
         linearizer.absoluteReferenceAmplifier = refAmpName
@@ -1783,11 +1804,9 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
         else:
             inputMjdScaled = None
 
+        # These are guaranteed to be finite (as checked previously).
         absPtcTurnoff = inputPtc.ptcTurnoff[refAmpName]
         absLinearityTurnoff = linearizer.linearityTurnoff[refAmpName]
-
-        if not np.isfinite(absPtcTurnoff) or not np.isfinite(absLinearityTurnoff):
-            raise RuntimeError("CHECK ABOVE")
 
         if absPtcTurnoff < self.config.absoluteSplineLowThreshold:
             lowThreshold = 0.0
