@@ -19,11 +19,13 @@ tasks:
     config:
       connections.inputExp: "cpLinearizerIsrExp"
       connections.outputCovariance: "cpLinearizerPtcPartial"
+      connections.outputBinnedImages: "cpLinearizerPtcPairBinned"
       maximumRangeCovariancesAstier: 1
       numEdgeSuspect: 20
       edgeMaskLevel: "AMP"
       useEfdPhotodiodeData: true
       auxiliaryHeaderKeys: ["TEMP6"]
+      doOutputBinnedImages: true
   cpLinearizerPtcSolve:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
     config:
@@ -34,51 +36,39 @@ tasks:
       maximumRangeCovariancesAstier: 1
       maximumRangeCovariancesAstierFullCovFit: 1
   cpLinearizerUnnormalizedSolve1:
-    class: lsst.cp.pipe.LinearitySolveTask
+    class: lsst.cp.pipe.LinearityDoubleSplineSolveTask
     config:
-      useLinearizerPtc: true
       useFocalPlaneNormalization: false
-      connections.inputLinearizerPtc: "linearizerPtc"
+      connections.inputBinnedImagesHandles: "cpLinearizerPtcPairBinned"
       connections.outputLinearizer: "linearizerUnnormalized1"
-      linearityType: "Spline"
-      splineKnots: 10
-      trimmedState: false
       usePhotodiode: true
+      absoluteSplineLowThreshold: 0.0
+      absoluteSplineNodeSize: 10000.0
   cpLinearizerNormalize1:
     class: lsst.cp.pipe.LinearityNormalizeTask
     config:
-      connections.inputPtcHandles: "linearizerPtc"
       connections.inputLinearizerHandles: "linearizerUnnormalized1"
       connections.outputNormalization: "cpLinearizerNormalization1"
   cpLinearizerUnnormalizedSolve2:
-    class: lsst.cp.pipe.LinearitySolveTask
+    class: lsst.cp.pipe.LinearityDoubleSplineSolveTask
     config:
-      useLinearizerPtc: true
       useFocalPlaneNormalization: true
-      connections.inputLinearizerPtc: "linearizerPtc"
-      connections.outputLinearizer: "linearizerUnnormalized2"
       connections.inputNormalization: "cpLinearizerNormalization1"
-      linearityType: "Spline"
-      splineKnots: 10
-      trimmedState: false
+      connections.inputBinnedImagesHandles: "cpLinearizerPtcPairBinned"
+      connections.outputLinearizer: "linearizerUnnormalized2"
       usePhotodiode: true
   cpLinearizerNormalize2:
     class: lsst.cp.pipe.LinearityNormalizeTask
     config:
-      connections.inputPtcHandles: "linearizerPtc"
       connections.inputLinearizerHandles: "linearizerUnnormalized2"
       connections.outputNormalization: "cpLinearizerNormalization2"
   cpLinearizerSolve:
-    class: lsst.cp.pipe.LinearitySolveTask
+    class: lsst.cp.pipe.LinearityDoubleSplineSolveTask
     config:
-      useLinearizerPtc: true
       useFocalPlaneNormalization: true
-      connections.inputLinearizerPtc: "linearizerPtc"
-      connections.outputLinearizer: "linearizer"
       connections.inputNormalization: "cpLinearizerNormalization2"
-      linearityType: "Spline"
-      splineKnots: 10
-      trimmedState: false
+      connections.inputBinnedImagesHandles: "cpLinearizerPtcPairBinned"
+      connections.outputLinearizer: "linearizer"
       usePhotodiode: true
 
 subsets:

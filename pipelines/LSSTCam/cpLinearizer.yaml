@@ -39,19 +39,18 @@ tasks:
       maxSignalInitialPtcOutlierFit: 30_000
       scaleMaxSignalInitialPtcOutlierFit: False
   cpLinearizerUnnormalizedSolve1:
-    class: lsst.cp.pipe.LinearitySolveTask
+    class: lsst.cp.pipe.LinearityDoubleSplineSolveTask
     config:
-      linearityType: Spline
       usePhotodiode: false
       doAutoGrouping: true
-      splineFitTemperatureColumn: TEMPAVG
-      doSplineFitWeights: false
-      doSplineFitTemperature: false
-      doSplineFitTemporal: true
-      doSplineFitOffset: true
-      splineFitMaxIter: 40
-      splineKnots: 10
-      nSigmaClipLinear: 20
+      absoluteSplineFitTemperatureColumn: TEMPAVG
+      doAbsoluteSplineFitWeights: false
+      doAbsoluteSplineFitTemperature: false
+      doAbsoluteSplineFitTemporal: true
+      doAbsoluteSplineFitOffset: true
+      absoluteSplineFitMaxIter: 40
+      absoluteNSigmaClipLinear: 20
+      relativeNSigmaClipLinear: 20
   cpLinearizerNormalize1:
     class: lsst.cp.pipe.LinearityNormalizeTask
     config:
@@ -83,18 +82,18 @@ tasks:
         - 144
       referenceDetector: 94
   cpLinearizerUnnormalizedSolve2:
-    class: lsst.cp.pipe.LinearitySolveTask
+    class: lsst.cp.pipe.LinearityDoubleSplineSolveTask
     config:
-      linearityType: Spline
       usePhotodiode: false
       doAutoGrouping: true
-      splineFitTemperatureColumn: TEMPAVG
-      doSplineFitWeights: false
-      doSplineFitTemperature: false
-      doSplineFitTemporal: true
-      doSplineFitOffset: true
-      splineFitMaxIter: 40
-      splineKnots: 20
+      absoluteSplineFitTemperatureColumn: TEMPAVG
+      doAbsoluteSplineFitWeights: false
+      doAbsoluteSplineFitTemperature: false
+      doAbsoluteSplineFitTemporal: true
+      doAbsoluteSplineFitOffset: true
+      absoluteSplineFitMaxIter: 40
+      absoluteNSigmaClipLinear: 20
+      relativeNSigmaClipLinear: 20
   cpLinearizerNormalize2:
     class: lsst.cp.pipe.LinearityNormalizeTask
     config:
@@ -126,15 +125,15 @@ tasks:
         - 144
       referenceDetector: 94
   cpLinearizerSolve:
-    class: lsst.cp.pipe.LinearitySolveTask
+    class: lsst.cp.pipe.LinearityDoubleSplineSolveTask
     config:
-      linearityType: Spline
       usePhotodiode: false
       doAutoGrouping: true
-      splineFitTemperatureColumn: TEMPAVG
-      doSplineFitWeights: false
-      doSplineFitTemperature: false
-      doSplineFitTemporal: true
-      doSplineFitOffset: true
-      splineFitMaxIter: 40
-      splineKnots: 20
+      absoluteSplineFitTemperatureColumn: TEMPAVG
+      doAbsoluteSplineFitWeights: false
+      doAbsoluteSplineFitTemperature: false
+      doAbsoluteSplineFitTemporal: true
+      doAbsoluteSplineFitOffset: true
+      absoluteSplineFitMaxIter: 40
+      absoluteNSigmaClipLinear: 20
+      relativeNSigmaClipLinear: 20

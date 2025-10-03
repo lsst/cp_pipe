@@ -33,7 +33,8 @@ import lsst.pipe.base as pipeBase
 from lsst.geom import (Box2I, Point2I, Extent2I)
 from lsst.cp.pipe.utils import (arrangeFlatsByExpTime, arrangeFlatsByExpId,
                                 arrangeFlatsByExpFlux, sigmaClipCorrection,
-                                CovFastFourierTransform, getReadNoise)
+                                CovFastFourierTransform, getReadNoise,
+                                bin_flat)
 from lsst.cp.pipe.utilsEfd import CpEfdClient
 
 import lsst.pipe.base.connectionTypes as cT
@@ -100,6 +101,18 @@ class PhotonTransferCurveExtractPairConnections(
         dimensions=("instrument", "exposure", "detector"),
         isCalibration=True,
     )
+    outputBinnedImages = cT.Output(
+        name="cpPtcPairBinned",
+        doc="Tabular binned images for the PTC pair.",
+        storageClass="ArrowAstropy",
+        dimensions=("instrument", "exposure", "detector"),
+    )
+
+    def __init__(self, *, config=None):
+        super().__init__(config=config)
+
+        if not config.doOutputBinnedImages:
+            del self.outputBinnedImages
 
     def adjust_all_quanta(self, adjuster):
         _LOG = logging.getLogger(__name__)
@@ -476,7 +489,16 @@ class PhotonTransferCurveExtractPairConfig(
     PhotonTransferCurveExtractConfigBase,
     pipelineConnections=PhotonTransferCurveExtractPairConnections,
 ):
-    pass
+    doOutputBinnedImages = pexConfig.Field(
+        dtype=bool,
+        doc="Output binned images in tabular form?",
+        default=False,
+    )
+    outputBinnedImagesBinFactor = pexConfig.Field(
+        dtype=int,
+        doc="Output binned images bin factor.",
+        default=8,
+    )
 
 
 class PhotonTransferCurveExtractTaskBase(pipeBase.PipelineTask):
@@ -629,8 +651,18 @@ class PhotonTransferCurveExtractTaskBase(pipeBase.PipelineTask):
         expId1, expId2 = expIds
         exp1, exp2 = exps
 
-        expMjd1 = exp1.metadata['MJD']
-        expMjd2 = exp2.metadata['MJD']
+        date1 = exp1.visitInfo.getDate()
+        if date1 is not None and date1.isValid():
+            expMjd1 = date1.toAstropy().mjd
+        else:
+            self.log.warning("No valid date found for exposure %d", expId1)
+            expMjd1 = np.nan
+        date2 = exp2.visitInfo.getDate()
+        if date2 is not None and date2.isValid():
+            expMjd2 = date2.toAstropy().mjd
+        else:
+            self.log.warning("No valid date found for exposure %d", expId2)
+            expMjd2 = np.nan
         inputExpPairMjdStart = min([expMjd1, expMjd2])
 
         self.log.info("Extracting PTC data from flat pair %d, %d", expId1, expId2)
@@ -686,6 +718,25 @@ class PhotonTransferCurveExtractTaskBase(pipeBase.PipelineTask):
         maskValue1 = exp1.mask.getPlaneBitMask(self.config.maskNameList)
         maskValue2 = exp2.mask.getPlaneBitMask(self.config.maskNameList)
 
+        # Extract photocharge for exposures.
+        photoCharge = np.nan
+        photoChargeDelta = np.nan
+        if self.config.doExtractPhotodiodeData or self.config.useEfdPhotodiodeData:
+            nExps = 0
+            photoCharge = 0.0
+            for expId in [expId1, expId2]:
+                if expId in photoChargeDict:
+                    photoCharge += photoChargeDict[expId]
+                    nExps += 1
+
+            if nExps > 0:
+                photoCharge /= nExps
+            else:
+                photoCharge = np.nan
+
+            if nExps == 2:
+                photoChargeDelta = photoChargeDict[expId2] - photoChargeDict[expId1]
+
         # Get the following statistics for each amp
         for ampNumber, amp in enumerate(detector):
             ampName = amp.getName()
@@ -740,6 +791,8 @@ class PhotonTransferCurveExtractTaskBase(pipeBase.PipelineTask):
                     rawExpTime=expTime,
                     expIdMask=False,
                     nPixelCovariance=nPixelCovariance1,
+                    photoCharge=photoCharge,
+                    photoChargeDelta=photoChargeDelta,
                 )
                 continue
 
@@ -832,23 +885,6 @@ class PhotonTransferCurveExtractTaskBase(pipeBase.PipelineTask):
                     # When this is turned off, we will always allow it to
                     # pass downstream.
                     kspValue = 1.0
-
-            photoChargeDelta = np.nan
-            if self.config.doExtractPhotodiodeData or self.config.useEfdPhotodiodeData:
-                nExps = 0
-                photoCharge = 0.0
-                for expId in [expId1, expId2]:
-                    if expId in photoChargeDict:
-                        photoCharge += photoChargeDict[expId]
-                        nExps += 1
-                if nExps > 0:
-                    photoCharge /= nExps
-                else:
-                    photoCharge = np.nan
-                if nExps == 2:
-                    photoChargeDelta = photoChargeDict[expId1] - photoChargeDict[expId2]
-            else:
-                photoCharge = np.nan
 
             # Get amp offsets if available.
             ampOffsetKey = f"LSST ISR AMPOFFSET PEDESTAL {ampName}"
@@ -1720,6 +1756,28 @@ class PhotonTransferCurveExtractPairTask(PhotonTransferCurveExtractTaskBase):
             expTime,
         )
 
+        if self.config.doOutputBinnedImages:
+            binned = bin_flat(
+                partialPtcDataset,
+                exp1,
+                bin_factor=self.config.outputBinnedImagesBinFactor,
+                amp_boundary=self.config.numEdgeSuspect,
+                apply_gains=False,
+            )
+            binned2 = bin_flat(
+                partialPtcDataset,
+                exp2,
+                bin_factor=self.config.outputBinnedImagesBinFactor,
+                amp_boundary=self.config.numEdgeSuspect,
+                apply_gains=False,
+            )
+            # Combine the two tables; these will have the same
+            # binning and therefore can be simply concatenated this way.
+            binned.rename_column("value", "value1")
+            binned["value2"] = binned2["value"]
+        else:
+            binned = None
+
         partialPtcDataset.updateMetadataFromExposures([exp1, exp2])
         partialPtcDataset.updateMetadata(setDate=True, detector=detector)
 
@@ -1733,4 +1791,5 @@ class PhotonTransferCurveExtractPairTask(PhotonTransferCurveExtractTaskBase):
 
         return pipeBase.Struct(
             outputCovariance=partialPtcDataset,
+            outputBinnedImages=binned,
         )
