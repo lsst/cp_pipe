@@ -1,4 +1,4 @@
-pipelineYaml: "${CP_PIPE_DIR}/pipelines/${INSTRUMENT}/cpCti.yaml"
+pipelineYaml: "${CP_PIPE_DIR}/pipelines/${INSTRUMENT}/cpCti.yaml#cpCtiSolve"
 
 project: "${TICKET}"
 campaign: "${TICKET}"
@@ -15,5 +15,5 @@ payload:
   payloadName: "${INSTRUMENT}_${TICKET}_cti"
   output: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET}/${TAG}/ctiGen.${RERUN}"
   butlerConfig: "${REPO}"
-  inCollection: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET},${RAW_COLLECTION},${CALIB_COLLECTIONS}"
+  inCollection: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET},u/abrought/LSSTCam/calib/DM-49847/3s_v1/ctiGen.20250819a/20250819T202737Z,LSSTCam/calib/DM-51897/3s_v1/linearizerGen.20250808a,${RAW_COLLECTION},${CALIB_COLLECTIONS}"
   dataQuery: "${SELECTION_PTC_CTI}"
