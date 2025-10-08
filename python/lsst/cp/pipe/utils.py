@@ -317,8 +317,7 @@ def fitLeastSq(initialParams, dataX, dataY, function, weightsY=None):
     Parameters
     ----------
     initialParams : `list` [`float`]
-        initial values for fit parameters. For ptcFitType=POLYNOMIAL,
-        its length determines the degree of the polynomial.
+        initial values for fit parameters.
     dataX : `numpy.array`, (N,)
         Data in the abscissa axis.
     dataY : `numpy.array`, (N,)
@@ -377,8 +376,7 @@ def fitBootstrap(initialParams, dataX, dataY, function, weightsY=None, confidenc
     Parameters
     ----------
     initialParams : `list` [`float`]
-        initial values for fit parameters. For ptcFitType=POLYNOMIAL,
-        its length determines the degree of the polynomial.
+        initial values for fit parameters.
     dataX : `numpy.array`, (N,)
         Data in the abscissa axis.
     dataY : `numpy.array`, (N,)
@@ -457,6 +455,11 @@ def funcAstier(pars, x):
     """Single brighter-fatter parameter model for PTC; Equation 16 of
     Astier+19.
 
+    Model:
+
+    C_{00}(mu) = frac{1}{2 a_{00} g**2} * [exp(2 a_{00} mu g ) - 1]
+                 + n_{00} / g**2
+
     Parameters
     ----------
     params : `list`
@@ -472,6 +475,63 @@ def funcAstier(pars, x):
     """
     a00, gain, noiseSquared = pars
     return 0.5/(a00*gain*gain)*(np.exp(2*a00*x*gain)-1) + noiseSquared/(gain*gain)  # C_00
+
+
+def ptcRolloffModel(params, mu):
+    """Piece-wise exponential saturation roll-off model of the PTC.
+
+    Parameters
+    ----------
+    params : `list`
+        Parameters of the model: muTurnoff (adu), tau (rolloff sharpness).
+    mu : `numpy.array`, (N,)
+        Signal mu (ADU).
+
+    Returns
+    -------
+    y : `numpy.array`, (N,)
+        Difference in variance in ADU^2.
+    """
+    muTurnoff, tau = params
+    return np.where(mu < muTurnoff, 0, np.exp(-(mu - muTurnoff) / tau) - 1)
+
+
+def funcAstierWithRolloff(pars, x):
+    """Single brighter-fatter parameter model for PTC; Equation 16 of
+    Astier+19 with an piece-wise exponential model for the PTC roll-off
+    of the PTC caused by saturation.
+
+    The nominal turnoff is calculated beforehand, and we extend the PTC
+    fit to include signal values up to 5% above the nominally computed
+    turnoff.
+
+    Model:
+
+    C_{00}(mu) = funcAstier - np.where(
+        x < muTurnoff,
+        0,
+        np.exp(-(x - muTurnoff) / tau) - 1,
+    )
+
+    Parameters
+    ----------
+    params : `list`
+        Parameters of the model: a00 (brightter-fatter), gain (e/ADU),
+        and noise (e^2), muTurnoff (adu), tau (rolloff sharpness).
+    x : `numpy.array`, (N,)
+        Signal mu (ADU).
+
+    Returns
+    -------
+    y : `numpy.array`, (N,)
+        C_00 (variance) in ADU^2.
+    """
+    # Initial computation of Astier+19 (Eqn 19).
+    originalModelPars = pars[:-2]
+    ptcRolloffModelPars = pars[-2:]
+    model = funcAstier(originalModelPars, x)
+
+    return model - ptcRolloffModel(ptcRolloffModelPars, x)  # C_00
 
 
 def arrangeFlatsByExpTime(exposureList, exposureIdList, log=None):
@@ -551,9 +611,10 @@ def arrangeFlatsByExpFlux(exposureList, exposureIdList, fluxKeyword, log=None):
 def arrangeFlatsByExpId(exposureList, exposureIdList):
     """Arrange exposures by exposure ID.
 
-    There is no guarantee that this will properly group exposures, but
-    allows a sequence of flats that have different illumination
-    (despite having the same exposure time) to be processed.
+    There is no guarantee that this will properly group exposures,
+    but allows a sequence of flats that have different
+    illumination (despite having the same exposure time) to be
+    processed.
 
     Parameters
     ----------
