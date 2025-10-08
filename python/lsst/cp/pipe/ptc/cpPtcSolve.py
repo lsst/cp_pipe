@@ -1380,7 +1380,11 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
                 pars = res.x
                 newMask = mask.copy()
             else:
-                newMask = (mask & (meanVecSorted <= maxADUInitialPtcOutlierFit))
+                newMask = (
+                    mask
+                    & (meanVecSorted <= maxADUInitialPtcOutlierFit)
+                    & (varVecSorted <= maxADUInitialPtcOutlierFit)
+                )
 
                 converged = False
                 count = 0
