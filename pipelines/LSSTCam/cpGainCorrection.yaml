@@ -1,0 +1,6 @@
+description: LSSTCam GainCorrection calibration for LSST isr task
+instrument: lsst.obs.lsst.LsstCam
+imports:
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpGainCorrectionLSST.yaml
+
+
