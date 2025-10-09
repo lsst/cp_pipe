@@ -1,0 +1,21 @@
+description: cp_pipe GainCorrection calibration for LSST isr task
+tasks:
+  cpGainCorrectionFlatIsr:
+    class: lsst.ip.isr.IsrTaskLSST
+    config:
+      connections.ccdExposure: "raw"
+      connections.outputExposure: "cpGainCorrectionFlatIsrExp"
+      python: |
+        from lsst.cp.pipe import configureIsrTaskLSSTForCalibrations
+
+        configureIsrTaskLSSTForCalibrations(config)
+
+        config.doCrosstalk = True
+        config.crosstalk.doQuadraticCrosstalkCorrection = True
+        config.doApplyGains = True
+        config.doLinearize = True
+        config.doDeferredCharge = True
+        config.doBias = True
+        config.doDark = True
+        config.doFlat = True
+        config.doBrighterFatter = False
