@@ -18,6 +18,10 @@ tasks:
     config:
       minSignalFitLinearityTurnoff: 10000
       usePhotodiode: false
+      absoluteSplineNodeSize: 15000
+      relativeSplineLowNodeSize: 10000
+      relativeSplineMidNodeSize: 10000
+      relativeSplineHighNodeSize: 20000
   cpLinearizerNormalize1:
     class: lsst.cp.pipe.LinearityNormalizeTask
     config:
@@ -32,3 +36,7 @@ tasks:
       minSignalFitLinearityTurnoff: 10000
       usePhotodiode: false
       useFocalPlaneNormalization: false
+      absoluteSplineNodeSize: 15000
+      relativeSplineLowNodeSize: 15000
+      relativeSplineMidNodeSize: 15000
+      relativeSplineHighNodeSize: 25000
