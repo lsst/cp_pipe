@@ -21,6 +21,7 @@
 #
 import copy
 import esutil
+import logging
 import numpy as np
 from astropy.table import Table
 
@@ -202,7 +203,23 @@ class PhotonTransferCurveAdjustGainRatiosTask(lsst.pipe.base.PipelineTask):
                     break
 
             self.log.info("Fitting gain ratios on exposure %d.", exp_id)
-            gain_ratio_array[i, :] = self._compute_gain_ratios(input_ptc, exposure, fixed_amp_index)
+            if not exposure.metadata.get("LSST ISR BOOTSTRAP", True):
+                raise RuntimeError(
+                    "PhotonTransferCurveAdjustGainRatiosTask can only be run on bootstrap exposures.",
+                )
+            gain_ratio_array[i, :] = _compute_gain_ratios(
+                input_ptc,
+                exposure,
+                fixed_amp_index,
+                True,
+                bin_factor=self.config.bin_factor,
+                amp_boundary=self.config.amp_boundary,
+                do_remove_radial_gradient=self.config.do_remove_radial_gradient,
+                radial_gradient_n_spline_nodes=self.config.radial_gradient_n_spline_nodes,
+                chebyshev_gradient_order=self.config.chebyshev_gradient_order,
+                max_fractional_gain_ratio=self.config.max_fractional_gain_ratio,
+                log=self.log,
+            )
 
         output_ptc = copy.copy(input_ptc)
 
@@ -246,123 +263,152 @@ class PhotonTransferCurveAdjustGainRatiosTask(lsst.pipe.base.PipelineTask):
 
         return lsst.pipe.base.Struct(output_ptc=output_ptc, gain_adjust_summary=summary)
 
-    def _compute_gain_ratios(self, ptc, exposure, fixed_amp_index):
-        """Compute the gain ratios from a given non-gain-corrected exposure.
 
-        Parameters
-        ----------
-        ptc : `lsst.ip.isr.PhotonTransferCurveDataset`
-            PTC to correct exposure.
-        exposure : `lsst.afw.image.Exposure`
-            Exposure to measure gain ratios.
-        fixed_amp_index : `int`
-            Use this amp index as the fixed point (gain ratio == 1.0).
+def _compute_gain_ratios(
+    ptc,
+    exposure,
+    fixed_amp_index,
+    apply_gains,
+    bin_factor=8,
+    amp_boundary=20,
+    do_remove_radial_gradient=True,
+    radial_gradient_n_spline_nodes=20,
+    chebyshev_gradient_order=1,
+    max_fractional_gain_ratio=0.05,
+    log=None,
+):
+    """Compute the gain ratios from a given non-gain-corrected exposure.
 
-        Returns
-        -------
-        amp_gain_ratios : `np.ndarray`
-            Amp gain ratios, relative to fixed amp.
-        """
-        if not exposure.metadata.get("LSST ISR BOOTSTRAP", True):
-            raise RuntimeError(
-                "PhotonTransferCurveAdjustGainRatiosTask can only be run on bootstrap exposures.",
+    Parameters
+    ----------
+    ptc : `lsst.ip.isr.PhotonTransferCurveDataset`
+        PTC to correct exposure.
+    exposure : `lsst.afw.image.Exposure`
+        Exposure to measure gain ratios.
+    fixed_amp_index : `int`
+        Use this amp index as the fixed point (gain ratio == 1.0).
+    apply_gains : `bool`
+        Apply gains before measuring?
+    bin_factor : `int`, optional
+        Binning factor for measurement.
+    amp_boundary : `int`, optional
+        Amplifier boundary to ignore when computing gradients/gain
+        ratios (pixels).
+    do_remove_radial_gradient : `bool`, optional
+        Remove radial gradient before fitting amp gain ratios?
+    radial_gradient_n_spline_nodes : `int`, optional
+        Number of radial spline nodes for radial gradient.
+    chebyshev_gradient_order : `int`, optional
+        Order of chebyshev x/y polynomials to remove additional gradients.
+    max_fractional_gain_ratio : `int`, optional
+        Maximum fractional gain ratio to consider per-exposure. Any
+        amps with larger offset will be excluded from the gradient fit
+        and will have no corrections computed.
+    log : `logging.logger`, optional
+        Log object.
+
+    Returns
+    -------
+    amp_gain_ratios : `np.ndarray`
+        Amp gain ratios, relative to fixed amp.
+    """
+    log = log if log else logging.getLogger(__name__)
+
+    detector = exposure.getDetector()
+
+    binned = bin_flat(
+        ptc,
+        exposure,
+        bin_factor=bin_factor,
+        amp_boundary=amp_boundary,
+        apply_gains=apply_gains,
+    )
+
+    # Clip out non-finite and extreme values.
+    # We need to be careful about unmasked defects, so we take
+    # a tighter percentile and expand.
+    lo, hi = np.nanpercentile(binned["value"], [5.0, 95.0])
+    lo *= 0.8
+    hi *= 1.2
+    use = (np.isfinite(binned["value"]) & (binned["value"] >= lo) & (binned["value"] <= hi))
+    binned = binned[use]
+
+    # We iterate up to 8x to look for any bad amps (that have a gain offset
+    # fit greater than max_fractional_gain_ratio) and reject them
+    # from the fits.
+    bad_amps_converged = False
+    n_iter = 0
+    value_uncorrected = binned["value"].copy()
+    while not bad_amps_converged and n_iter < len(ptc.ampNames) // 2:
+        # If configured, fit the radial gradient.
+        if do_remove_radial_gradient:
+            transform = detector.getTransform(
+                lsst.afw.cameraGeom.PIXELS,
+                lsst.afw.cameraGeom.FOCAL_PLANE,
+            )
+            xy = np.vstack((binned["xd"], binned["yd"]))
+            xf, yf = np.vsplit(transform.getMapping().applyForward(xy), 2)
+            xf = xf.ravel()
+            yf = yf.ravel()
+            radius = np.sqrt(xf**2. + yf**2.)
+
+            nodes = np.linspace(
+                np.min(radius),
+                np.max(radius),
+                radial_gradient_n_spline_nodes,
             )
 
-        detector = exposure.getDetector()
+            # Put in a normalization for fitting.
+            norm = np.nanpercentile(binned["value"], 95.0)
 
-        binned = bin_flat(
-            ptc,
-            exposure,
-            bin_factor=self.config.bin_factor,
-            amp_boundary=self.config.amp_boundary,
-            apply_gains=True,
+            fitter = FlatGradientFitter(
+                nodes,
+                xf,
+                yf,
+                binned["value"]/norm,
+                np.array([]),
+                constrain_zero=False,
+                fit_centroid=False,
+                fit_gradient=False,
+                fp_centroid_x=0.0,
+                fp_centroid_y=0.0,
+            )
+            p0 = fitter.compute_p0()
+            pars = fitter.fit(p0)
+
+            binned["value"] /= fitter.compute_model(pars)
+
+        # Fit gain ratios.
+        fitter = FlatGainRatioFitter(
+            exposure.getBBox(),
+            chebyshev_gradient_order,
+            binned["xd"],
+            binned["yd"],
+            binned["amp_index"],
+            binned["value"],
+            np.arange(len(ptc.ampNames)),
+            fixed_amp_index,
         )
+        pars = fitter.fit()
+        amp_pars = pars[fitter.indices["amp_pars"]]
 
-        # Clip out non-finite and extreme values.
-        # We need to be careful about unmasked defects, so we take
-        # a tighter percentile and expand.
-        lo, hi = np.nanpercentile(binned["value"], [5.0, 95.0])
-        lo *= 0.8
-        hi *= 1.2
-        use = (np.isfinite(binned["value"]) & (binned["value"] >= lo) & (binned["value"] <= hi))
-        binned = binned[use]
+        fractional_gain_ratio = np.abs(amp_pars - 1.0)
+        max_ratio_ind = np.argmax(fractional_gain_ratio)
 
-        # We iterate up to 8x to look for any bad amps (that have a gain offset
-        # fit greater than config.max_fractional_gain_ratio) and reject them
-        # from the fits.
-        bad_amps_converged = False
-        n_iter = 0
-        value_uncorrected = binned["value"].copy()
-        while not bad_amps_converged and n_iter < len(ptc.ampNames) // 2:
-            # If configured, fit the radial gradient.
-            if self.config.do_remove_radial_gradient:
-                transform = detector.getTransform(
-                    lsst.afw.cameraGeom.PIXELS,
-                    lsst.afw.cameraGeom.FOCAL_PLANE,
-                )
-                xy = np.vstack((binned["xd"], binned["yd"]))
-                xf, yf = np.vsplit(transform.getMapping().applyForward(xy), 2)
-                xf = xf.ravel()
-                yf = yf.ravel()
-                radius = np.sqrt(xf**2. + yf**2.)
-
-                nodes = np.linspace(
-                    np.min(radius),
-                    np.max(radius),
-                    self.config.radial_gradient_n_spline_nodes,
-                )
-
-                # Put in a normalization for fitting.
-                norm = np.nanpercentile(binned["value"], 95.0)
-
-                fitter = FlatGradientFitter(
-                    nodes,
-                    xf,
-                    yf,
-                    binned["value"]/norm,
-                    np.array([]),
-                    constrain_zero=False,
-                    fit_centroid=False,
-                    fit_gradient=False,
-                    fp_centroid_x=0.0,
-                    fp_centroid_y=0.0,
-                )
-                p0 = fitter.compute_p0()
-                pars = fitter.fit(p0)
-
-                binned["value"] /= fitter.compute_model(pars)
-
-            # Fit gain ratios.
-            fitter = FlatGainRatioFitter(
-                exposure.getBBox(),
-                self.config.chebyshev_gradient_order,
-                binned["xd"],
-                binned["yd"],
-                binned["amp_index"],
-                binned["value"],
-                np.arange(len(ptc.ampNames)),
-                fixed_amp_index,
+        if fractional_gain_ratio[max_ratio_ind] > max_fractional_gain_ratio:
+            log.warning(
+                "Found bad amp %s with offset parameter %.2f",
+                ptc.ampNames[max_ratio_ind],
+                amp_pars[max_ratio_ind],
             )
-            pars = fitter.fit()
-            amp_pars = pars[fitter.indices["amp_pars"]]
+            good = (binned["amp_index"] != max_ratio_ind)
+            binned = binned[good]
+            binned["value"] = value_uncorrected[good]
 
-            fractional_gain_ratio = np.abs(amp_pars - 1.0)
-            max_ratio_ind = np.argmax(fractional_gain_ratio)
+            value_uncorrected = binned["value"].copy()
+        else:
+            bad_amps_converged = True
 
-            if fractional_gain_ratio[max_ratio_ind] > self.config.max_fractional_gain_ratio:
-                self.log.warning(
-                    "Found bad amp %s with offset parameter %.2f",
-                    ptc.ampNames[max_ratio_ind],
-                    amp_pars[max_ratio_ind],
-                )
-                good = (binned["amp_index"] != max_ratio_ind)
-                binned = binned[good]
-                binned["value"] = value_uncorrected[good]
+        n_iter += 1
 
-                value_uncorrected = binned["value"].copy()
-            else:
-                bad_amps_converged = True
-
-            n_iter += 1
-
-        return amp_pars
+    return amp_pars
