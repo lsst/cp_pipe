@@ -33,6 +33,7 @@ import lsst.utils.tests
 import lsst.afw.cameraGeom
 from lsst.afw.image import ExposureF
 from lsst.cp.pipe.ptc import PhotonTransferCurveAdjustGainRatiosTask
+from lsst.cp.pipe.ptc.cpPtcAdjustGainRatios import _compute_gain_ratios
 from lsst.ip.isr import IsrMockLSST, PhotonTransferCurveDataset
 from lsst.pipe.base import InMemoryDatasetHandle
 
@@ -188,15 +189,16 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
             ptc.gain[amp_name] = gain_biased[amp_name]
             ptc.gainUnadjusted[amp_name] = gain_biased[amp_name]
 
-        config = PhotonTransferCurveAdjustGainRatiosTask.ConfigClass()
-        config.bin_factor = 2
-        config.n_flat = 10
-        config.amp_boundary = 0
-        config.radial_gradient_n_spline_nodes = 3
-
-        task = PhotonTransferCurveAdjustGainRatiosTask(config=config)
         with self.assertNoLogs(level=logging.WARNING):
-            adjust_ratios = task._compute_gain_ratios(ptc, flat.clone(), fixed_amp_num)
+            adjust_ratios = _compute_gain_ratios(
+                ptc,
+                flat.clone(),
+                fixed_amp_num,
+                True,
+                bin_factor=2,
+                amp_boundary=0,
+                radial_gradient_n_spline_nodes=3,
+            )
 
         # Make two flats with the old adjustment and the new adjustment.
         flat_biased, flat_debiased = self._gain_correct_flat(flat, ptc, adjust_ratios)
@@ -237,15 +239,16 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
             ptc.gain[amp_name] = gain_biased[amp_name]
             ptc.gainUnadjusted[amp_name] = gain_biased[amp_name]
 
-        config = PhotonTransferCurveAdjustGainRatiosTask.ConfigClass()
-        config.bin_factor = 2
-        config.n_flat = 10
-        config.amp_boundary = 0
-        config.radial_gradient_n_spline_nodes = 3
-
-        task = PhotonTransferCurveAdjustGainRatiosTask(config=config)
         with self.assertNoLogs(level=logging.WARNING):
-            adjust_ratios = task._compute_gain_ratios(ptc, flat.clone(), fixed_amp_num)
+            adjust_ratios = _compute_gain_ratios(
+                ptc,
+                flat.clone(),
+                fixed_amp_num,
+                True,
+                bin_factor=2,
+                amp_boundary=0,
+                radial_gradient_n_spline_nodes=3,
+            )
 
         # Make two flats with the old adjustment and the new adjustment.
         flat_biased, flat_debiased = self._gain_correct_flat(flat, ptc, adjust_ratios)
@@ -287,15 +290,16 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
             ptc.gain[amp_name] = gain_biased[amp_name]
             ptc.gainUnadjusted[amp_name] = gain_biased[amp_name]
 
-        config = PhotonTransferCurveAdjustGainRatiosTask.ConfigClass()
-        config.bin_factor = 2
-        config.n_flat = 10
-        config.amp_boundary = 0
-        config.radial_gradient_n_spline_nodes = 3
-
-        task = PhotonTransferCurveAdjustGainRatiosTask(config=config)
         with self.assertNoLogs(level=logging.WARNING):
-            adjust_ratios = task._compute_gain_ratios(ptc, flat.clone(), fixed_amp_num)
+            adjust_ratios = _compute_gain_ratios(
+                ptc,
+                flat.clone(),
+                fixed_amp_num,
+                True,
+                bin_factor=2,
+                amp_boundary=0,
+                radial_gradient_n_spline_nodes=3,
+            )
 
         # Make two flats with the old adjustment and the new adjustment.
         flat_biased, flat_debiased = self._gain_correct_flat(flat, ptc, adjust_ratios)
@@ -339,18 +343,21 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
             ptc.gain[amp_name] = gain_biased[amp_name]
             ptc.gainUnadjusted[amp_name] = gain_biased[amp_name]
 
-        config = PhotonTransferCurveAdjustGainRatiosTask.ConfigClass()
-        config.bin_factor = 2
-        config.n_flat = 10
-        config.amp_boundary = 0
-        config.radial_gradient_n_spline_nodes = 3
-
-        task = PhotonTransferCurveAdjustGainRatiosTask(config=config)
+        max_fractional_gain_ratio = 0.05
         with self.assertLogs(level=logging.WARNING) as cm:
-            adjust_ratios = task._compute_gain_ratios(ptc, flat.clone(), fixed_amp_num)
+            adjust_ratios = _compute_gain_ratios(
+                ptc,
+                flat.clone(),
+                fixed_amp_num,
+                True,
+                bin_factor=2,
+                amp_boundary=0,
+                radial_gradient_n_spline_nodes=3,
+                max_fractional_gain_ratio=max_fractional_gain_ratio
+            )
         self.assertIn("Found bad amp", cm.output[0])
 
-        np.testing.assert_array_less(np.abs(adjust_ratios - 1.0), config.max_fractional_gain_ratio)
+        np.testing.assert_array_less(np.abs(adjust_ratios - 1.0), max_fractional_gain_ratio)
 
         # Make two flats with the old adjustment and the new adjustment.
         flat_biased, flat_debiased = self._gain_correct_flat(flat, ptc, adjust_ratios)
