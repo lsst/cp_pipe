@@ -29,6 +29,7 @@ import numpy as np
 import copy
 import tempfile
 import logging
+import warnings
 
 import lsst.log
 import lsst.utils
@@ -922,6 +923,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
     def test_ampOffsetGainRatioFixup(self):
         """Test the ampOffsetGainRatioFixup code via
         PhotonTransferCurveFixupGainRatiosTask."""
+        # TODO DM-52883: Remove tests for deprecated task.
         rng = np.random.RandomState(12345)
 
         gainsTruth = rng.normal(loc=1.7, scale=0.05, size=len(self.ampNames))
@@ -939,10 +941,12 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
         meansElectron = gainsMedian * np.linspace(500.0, 30000.0, nFlat)
 
         # Set up the fixup task.
-        fixupConfig = cpPipe.ptc.PhotonTransferCurveFixupGainRatiosConfig()
-        fixupConfig.ampOffsetGainRatioMinAdu = 1000.0
-        fixupConfig.ampOffsetGainRatioMaxAdu = 20000.0
-        fixupTask = cpPipe.ptc.PhotonTransferCurveFixupGainRatiosTask(config=fixupConfig)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            fixupConfig = cpPipe.ptc.PhotonTransferCurveFixupGainRatiosConfig()
+            fixupConfig.ampOffsetGainRatioMinAdu = 1000.0
+            fixupConfig.ampOffsetGainRatioMaxAdu = 20000.0
+            fixupTask = cpPipe.ptc.PhotonTransferCurveFixupGainRatiosTask(config=fixupConfig)
 
         for testMode in ["full", "badamp"]:
             badAmp = None
