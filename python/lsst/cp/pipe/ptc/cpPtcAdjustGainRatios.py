@@ -101,6 +101,11 @@ class PhotonTransferCurveAdjustGainRatiosConfig(
         doc="Maximum number of adu for an exposure to use in gain ratio calculation.",
         default=20000.0,
     )
+    max_noise_reference = lsst.pex.config.Field(
+        dtype=float,
+        doc="Maximum read noise (e-) in the PTC for an amp to be considered as a reference",
+        default=12.0,
+    )
     n_flat = lsst.pex.config.Field(
         dtype=int,
         doc="Number of flats (from min_adu to max_adu) to use in gain ratio calculation.",
@@ -180,6 +185,15 @@ class PhotonTransferCurveAdjustGainRatiosTask(lsst.pipe.base.PipelineTask):
         gain_array = np.zeros(len(input_ptc.ampNames))
         for i, amp_name in enumerate(input_ptc.ampNames):
             gain_array[i] = input_ptc.gain[amp_name]
+            # Do not consider any amplifier with high noise
+            # as a reference amplifier.
+            if input_ptc.noise[amp_name] > self.config.max_noise_reference:
+                self.log.info(
+                    "Excluding amplifier %s as a possible reference amplifier due to high noise (%.2f)",
+                    amp_name,
+                    input_ptc.noise[amp_name],
+                )
+                gain_array[i] = np.nan
         good, = np.where(np.isfinite(gain_array))
 
         if len(good) <= 1:
