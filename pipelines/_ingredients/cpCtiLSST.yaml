@@ -4,6 +4,7 @@ tasks:
     class: lsst.ip.isr.IsrTaskLSST
     config:
       connections.ccdExposure: "raw"
+      connections.ptc: "linearizerPtc"
       connections.outputExposure: "cpCtiIsrExp"
       connections.outputStatistics: "cpCtiStatistics"
       python: |
@@ -24,6 +25,8 @@ tasks:
     class: lsst.cp.pipe.CpCtiSolveTask
     config:
       connections.inputMeasurements: "cpCtiStatistics"
+      connections.inputPtc: "linearizerPtc"
       connections.outputCalib: "cti"
 contracts:
   - cpCtiSolve.connections.inputMeasurements == cpCtiIsr.connections.outputStatistics
+  - cpCtiIsr.connections.ptc == cpCtiSolve.connections.inputPtc
