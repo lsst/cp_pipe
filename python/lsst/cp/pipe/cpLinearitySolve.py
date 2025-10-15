@@ -1555,7 +1555,7 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
         # This is a possibly redundant check to make sure that a bad amp is
         # not chosen as a reference amp.
         for i, ampName in enumerate(inputPtc.ampNames):
-            if ampName in inputPtc.badAmps or not np.isfinite(inputPtc.ptcTurnoff[ampName]) or ampName=="C10":
+            if ampName in inputPtc.badAmps or not np.isfinite(inputPtc.ptcTurnoff[ampName]):
                 turnoffArray[i] = np.nan
 
         if np.all(~np.isfinite(turnoffArray)):

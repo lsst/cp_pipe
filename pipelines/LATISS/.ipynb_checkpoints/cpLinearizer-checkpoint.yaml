@@ -1,0 +1,42 @@
+description: cp_pipe LATISS linearizer calibration construction.
+instrument: lsst.obs.lsst.Latiss
+imports:
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpLinearizerLSST.yaml
+    exclude:
+      - cpLinearizerUnnormalizedSolve2
+      - cpLinearizerNormalize2
+tasks:
+  cpLinearizerPtcExtractPair:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractPairTask
+    config:
+      efdSalIndex: 201
+      useEfdPhotodiodeData: false
+      doExtractPhotodiodeData: true
+  # Leave the normalizer in to exercise the code and have a record.
+  cpLinearizerUnnormalizedSolve1:
+    class: lsst.cp.pipe.LinearityDoubleSplineSolveTask
+    config:
+      minSignalFitLinearityTurnoff: 10000
+      usePhotodiode: false
+      absoluteSplineNodeSize: 15000
+      relativeSplineLowNodeSize: 10000
+      relativeSplineMidNodeSize: 10000
+      relativeSplineHighNodeSize: 20000
+  cpLinearizerNormalize1:
+    class: lsst.cp.pipe.LinearityNormalizeTask
+    config:
+      normalizeDetectors: [0]
+      referenceDetector: 0
+  # But turn off the normalization because one detector
+  # is not enough to run it reliably.
+  cpLinearizerSolve:
+    class: lsst.cp.pipe.LinearityDoubleSplineSolveTask
+    config:
+      connections.inputNormalization: "cpLinearizerNormalization1"
+      minSignalFitLinearityTurnoff: 10000
+      usePhotodiode: false
+      useFocalPlaneNormalization: false
+      absoluteSplineNodeSize: 15000
+      relativeSplineLowNodeSize: 15000
+      relativeSplineMidNodeSize: 15000
+      relativeSplineHighNodeSize: 25000

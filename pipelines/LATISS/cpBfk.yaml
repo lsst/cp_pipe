@@ -10,6 +10,8 @@ tasks:
       # PTC run for LATISS.
       maximumRangeCovariancesAstier: 8
       efdSalIndex: 201
+      useEfdPhotodiodeData: false
+      doExtractPhotodiodeData: true
   cpBfkPtcSolve:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
     config:
