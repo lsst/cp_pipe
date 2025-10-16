@@ -186,31 +186,15 @@ class PhotonTransferCurveAdjustGainRatiosTask(lsst.pipe.base.PipelineTask):
             exp_ids = rng.choice(exp_ids, size=self.config.n_flat, replace=False)
         exp_ids = np.sort(exp_ids)
 
-        # Figure out the reference amplifier.
-        gain_array = np.zeros(len(input_ptc.ampNames))
-        turnoff_array = np.zeros(len(input_ptc.ampNames))
-        for i, amp_name in enumerate(input_ptc.ampNames):
-            gain_array[i] = input_ptc.gain[amp_name]
-            turnoff_array[i] = input_ptc.ptcTurnoff[amp_name]
-            # Do not consider any amplifier with high noise
-            # as a reference amplifier.
-            if input_ptc.noise[amp_name] > self.config.max_noise_reference:
-                self.log.info(
-                    "Excluding amplifier %s as a possible reference amplifier due to high noise (%.2f)",
-                    amp_name,
-                    input_ptc.noise[amp_name],
-                )
-                gain_array[i] = np.nan
-        turnoff_threshold = np.nanpercentile(turnoff_array, self.config.turnoff_percentile_reference)
-        gain_array[turnoff_array < turnoff_threshold] = np.nan
-        good, = np.where(np.isfinite(gain_array))
+        fixed_amp_index = _choose_reference_amplifier(
+            input_ptc,
+            self.config.max_noise_reference,
+            self.config.turnoff_percentile_reference,
+        )
 
-        if len(good) <= 1:
-            self.log.warning("Insufficient good amplifiers for PTC gain adjustment.")
+        if fixed_amp_index < 0:
             return lsst.pipe.base.Struct(output_ptc=input_ptc, gain_adjust_summary=Table())
 
-        st = np.argsort(np.nan_to_num(gain_array[good]))
-        fixed_amp_index = good[st[int(0.5*len(good))]]
         self.log.info(
             "Using amplifier %d (%s) as fixed reference amplifier.",
             fixed_amp_index,
@@ -285,6 +269,62 @@ class PhotonTransferCurveAdjustGainRatiosTask(lsst.pipe.base.PipelineTask):
             output_ptc.gain[amp_name] = new_gain
 
         return lsst.pipe.base.Struct(output_ptc=output_ptc, gain_adjust_summary=summary)
+
+
+def _choose_reference_amplifier(
+    ptc,
+    max_noise_reference,
+    turnoff_percentile_reference,
+    log=None,
+):
+    """Choose a reference amplifier from a PTC.
+
+    Parameters
+    ----------
+    ptc : `lsst.ip.isr.PhotonTransferCurveDataset`
+        Input PTC.
+    max_noise_reference : `float`
+        Maximum read noise (e-) in the PTC for an amp to be considered.
+    turnoff_percentile_reference : `float`
+        Percentile threshold for sorting PTC turnoff for an amp to be
+        considered.
+    log : `logging.logger`, optional
+        Log object.
+
+    Returns
+    -------
+    reference_amp_index : `int`
+        Index of the reference amplifier.
+    """
+    log = log if log else logging.getLogger(__name__)
+
+    gain_array = np.zeros(len(ptc.ampNames))
+    turnoff_array = np.zeros(len(ptc.ampNames))
+    for i, amp_name in enumerate(ptc.ampNames):
+        gain_array[i] = ptc.gain[amp_name]
+        turnoff_array[i] = ptc.ptcTurnoff[amp_name]
+        # Do not consider any amplifier with high noise
+        # as a reference amplifier.
+        if ptc.noise[amp_name] > max_noise_reference:
+            log.info(
+                "Excluding amplifier %s as a possible reference amplifier due to high noise (%.2f)",
+                amp_name,
+                ptc.noise[amp_name],
+            )
+            gain_array[i] = np.nan
+
+    turnoff_threshold = np.nanpercentile(turnoff_array, turnoff_percentile_reference)
+    gain_array[turnoff_array < turnoff_threshold] = np.nan
+    good, = np.where(np.isfinite(gain_array))
+
+    if len(good) <= 1:
+        log.warning("Insufficient good amplifiers for PTC gain adjustment.")
+        return -1
+
+    st = np.argsort(np.nan_to_num(gain_array[good]))
+    ref_amp_index = good[st[int(0.5*len(good))]]
+
+    return ref_amp_index
 
 
 def _compute_gain_ratios(
