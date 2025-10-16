@@ -189,6 +189,7 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
             ptc.gain[amp_name] = gain_biased[amp_name]
             ptc.gainUnadjusted[amp_name] = gain_biased[amp_name]
             ptc.noise[amp_name] = 10.0
+            ptc.ptcTurnoff[amp_name] = 50000.0
 
         with self.assertNoLogs(level=logging.WARNING):
             adjust_ratios = _compute_gain_ratios(
@@ -240,6 +241,7 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
             ptc.gain[amp_name] = gain_biased[amp_name]
             ptc.gainUnadjusted[amp_name] = gain_biased[amp_name]
             ptc.noise[amp_name] = 10.0
+            ptc.ptcTurnoff[amp_name] = 50000.0
 
         with self.assertNoLogs(level=logging.WARNING):
             adjust_ratios = _compute_gain_ratios(
@@ -292,6 +294,7 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
             ptc.gain[amp_name] = gain_biased[amp_name]
             ptc.gainUnadjusted[amp_name] = gain_biased[amp_name]
             ptc.noise[amp_name] = 10.0
+            ptc.ptcTurnoff[amp_name] = 50000.0
 
         with self.assertNoLogs(level=logging.WARNING):
             adjust_ratios = _compute_gain_ratios(
@@ -346,6 +349,7 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
             ptc.gain[amp_name] = gain_biased[amp_name]
             ptc.gainUnadjusted[amp_name] = gain_biased[amp_name]
             ptc.noise[amp_name] = 10.0
+            ptc.ptcTurnoff[amp_name] = 50000.0
 
         max_fractional_gain_ratio = 0.05
         with self.assertLogs(level=logging.WARNING) as cm:
@@ -422,6 +426,7 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
             ptc.gain[amp_name] = gain_biased[amp_name]
             ptc.gainUnadjusted[amp_name] = gain_biased[amp_name]
             ptc.noise[amp_name] = 10.0
+            ptc.ptcTurnoff[amp_name] = 50000.0
 
             ptc.rawMeans[amp_name] = levels
             ptc.finalMeans[amp_name] = levels
@@ -431,6 +436,8 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
         # Add in one noisy amp which will not be considered
         # to be the reference amp.
         ptc.noise[self.amp_names[-1]] = 15.0
+        # And add in one low turnoff amp.
+        ptc.ptcTurnoff[self.amp_names[-2]] = 10000.0
 
         config = PhotonTransferCurveAdjustGainRatiosTask.ConfigClass()
         config.bin_factor = 2
@@ -528,6 +535,7 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
             ptc.gain[amp_name] = gain_biased[amp_name]
             ptc.gainUnadjusted[amp_name] = gain_biased[amp_name]
             ptc.noise[amp_name] = 10.0
+            ptc.ptcTurnoff[amp_name] = 50000.0
 
             ptc.rawMeans[amp_name] = levels
             ptc.finalMeans[amp_name] = levels
