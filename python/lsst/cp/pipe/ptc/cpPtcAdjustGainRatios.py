@@ -106,6 +106,11 @@ class PhotonTransferCurveAdjustGainRatiosConfig(
         doc="Maximum read noise (e-) in the PTC for an amp to be considered as a reference",
         default=12.0,
     )
+    turnoff_percentile_reference = lsst.pex.config.Field(
+        dtype=float,
+        doc="Percentile threshold for sorting PTC turnoff for an amp to be considered as a reference",
+        default=25.0,
+    )
     n_flat = lsst.pex.config.Field(
         dtype=int,
         doc="Number of flats (from min_adu to max_adu) to use in gain ratio calculation.",
@@ -183,8 +188,10 @@ class PhotonTransferCurveAdjustGainRatiosTask(lsst.pipe.base.PipelineTask):
 
         # Figure out the reference amplifier.
         gain_array = np.zeros(len(input_ptc.ampNames))
+        turnoff_array = np.zeros(len(input_ptc.ampNames))
         for i, amp_name in enumerate(input_ptc.ampNames):
             gain_array[i] = input_ptc.gain[amp_name]
+            turnoff_array[i] = input_ptc.ptcTurnoff[amp_name]
             # Do not consider any amplifier with high noise
             # as a reference amplifier.
             if input_ptc.noise[amp_name] > self.config.max_noise_reference:
@@ -194,13 +201,15 @@ class PhotonTransferCurveAdjustGainRatiosTask(lsst.pipe.base.PipelineTask):
                     input_ptc.noise[amp_name],
                 )
                 gain_array[i] = np.nan
+        turnoff_threshold = np.nanpercentile(turnoff_array, self.config.turnoff_percentile_reference)
+        gain_array[turnoff_array < turnoff_threshold] = np.nan
         good, = np.where(np.isfinite(gain_array))
 
         if len(good) <= 1:
             self.log.warning("Insufficient good amplifiers for PTC gain adjustment.")
-            return lsst.pipe.base.Struct(output_ptc=input_ptc)
+            return lsst.pipe.base.Struct(output_ptc=input_ptc, gain_adjust_summary=Table())
 
-        st = np.argsort(gain_array[good])
+        st = np.argsort(np.nan_to_num(gain_array[good]))
         fixed_amp_index = good[st[int(0.5*len(good))]]
         self.log.info(
             "Using amplifier %d (%s) as fixed reference amplifier.",
