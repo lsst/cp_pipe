@@ -34,6 +34,7 @@ import lsst.afw.cameraGeom
 from lsst.afw.image import ExposureF
 from lsst.cp.pipe.ptc import PhotonTransferCurveAdjustGainRatiosTask
 from lsst.cp.pipe.ptc.cpPtcAdjustGainRatios import _compute_gain_ratios
+from lsst.cp.pipe.utils import bin_flat
 from lsst.ip.isr import IsrMockLSST, PhotonTransferCurveDataset
 from lsst.pipe.base import InMemoryDatasetHandle
 
@@ -192,13 +193,17 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
             ptc.ptcTurnoff[amp_name] = 50000.0
 
         with self.assertNoLogs(level=logging.WARNING):
+            binned = bin_flat(ptc, flat.clone(), bin_factor=2, amp_boundary=0, apply_gains=True)
+            lo, hi = np.nanpercentile(binned["value"], [5.0, 95.0])
+            lo *= 0.8
+            hi *= 1.2
+            use = (np.isfinite(binned["value"]) & (binned["value"] >= lo) & (binned["value"] <= hi))
+            binned = binned[use]
+
             adjust_ratios = _compute_gain_ratios(
-                ptc,
-                flat.clone(),
+                flat.getDetector(),
+                binned,
                 fixed_amp_num,
-                True,
-                bin_factor=2,
-                amp_boundary=0,
                 radial_gradient_n_spline_nodes=3,
             )
 
@@ -244,13 +249,17 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
             ptc.ptcTurnoff[amp_name] = 50000.0
 
         with self.assertNoLogs(level=logging.WARNING):
+            binned = bin_flat(ptc, flat.clone(), bin_factor=2, amp_boundary=0, apply_gains=True)
+            lo, hi = np.nanpercentile(binned["value"], [5.0, 95.0])
+            lo *= 0.8
+            hi *= 1.2
+            use = (np.isfinite(binned["value"]) & (binned["value"] >= lo) & (binned["value"] <= hi))
+            binned = binned[use]
+
             adjust_ratios = _compute_gain_ratios(
-                ptc,
-                flat.clone(),
+                flat.getDetector(),
+                binned,
                 fixed_amp_num,
-                True,
-                bin_factor=2,
-                amp_boundary=0,
                 radial_gradient_n_spline_nodes=3,
             )
 
@@ -297,13 +306,17 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
             ptc.ptcTurnoff[amp_name] = 50000.0
 
         with self.assertNoLogs(level=logging.WARNING):
+            binned = bin_flat(ptc, flat.clone(), bin_factor=2, amp_boundary=0, apply_gains=True)
+            lo, hi = np.nanpercentile(binned["value"], [5.0, 95.0])
+            lo *= 0.8
+            hi *= 1.2
+            use = (np.isfinite(binned["value"]) & (binned["value"] >= lo) & (binned["value"] <= hi))
+            binned = binned[use]
+
             adjust_ratios = _compute_gain_ratios(
-                ptc,
-                flat.clone(),
+                flat.getDetector(),
+                binned,
                 fixed_amp_num,
-                True,
-                bin_factor=2,
-                amp_boundary=0,
                 radial_gradient_n_spline_nodes=3,
             )
 
@@ -353,15 +366,19 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
 
         max_fractional_gain_ratio = 0.05
         with self.assertLogs(level=logging.WARNING) as cm:
+            binned = bin_flat(ptc, flat.clone(), bin_factor=2, amp_boundary=0, apply_gains=True)
+            lo, hi = np.nanpercentile(binned["value"], [5.0, 95.0])
+            lo *= 0.8
+            hi *= 1.2
+            use = (np.isfinite(binned["value"]) & (binned["value"] >= lo) & (binned["value"] <= hi))
+            binned = binned[use]
+
             adjust_ratios = _compute_gain_ratios(
-                ptc,
-                flat.clone(),
+                flat.getDetector(),
+                binned,
                 fixed_amp_num,
-                True,
-                bin_factor=2,
-                amp_boundary=0,
                 radial_gradient_n_spline_nodes=3,
-                max_fractional_gain_ratio=max_fractional_gain_ratio
+                max_fractional_gain_ratio=max_fractional_gain_ratio,
             )
         self.assertIn("Found bad amp", cm.output[0])
 
