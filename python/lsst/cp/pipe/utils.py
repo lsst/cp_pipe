@@ -2373,9 +2373,8 @@ class ElectrostaticFit():
         minner = Minimizer(
             self.computeWeightedResidual,
             self.params,
-            method=self.fitMethod,
         )
-        result = minner.minimize()
+        result = minner.minimize(method=self.fitMethod)
         return result
 
     def getParamsDict(self):
@@ -2467,9 +2466,9 @@ class ElectrostaticFit():
         BoundaryShifts
             The computed boundary shifts for the pixel.
         """
-        zf = self.params["thickness"].full[0]
-        zsh = self.params["zsh"].full[0]
-        zsv = self.params["zsv"].full[0]
+        zf = self.params["thickness"].value
+        zsh = self.params["zsh"].value
+        zsv = self.params["zsv"].value
         if conversionWeights is None:
             conversionWeights = (np.array([0.0]), np.array([1.0]))
 
@@ -2543,18 +2542,18 @@ class BoundaryShifts:
         self.aE = np.zeros_like(self.aN)
         self.aW = np.zeros_like(self.aN)
         self.ath = np.zeros_like(self.aN)
-        alpha = electrostaticFit.params['alpha'].full[0]
-        beta = electrostaticFit.params['beta'].full[0]
+        alpha = electrostaticFit.params['alpha'].value
+        beta = electrostaticFit.params['beta'].value
 
         # alpha*rawModel+beta is the description of the measurements
         # We should not apply beta to the outcome, because beta is meant to
         # accomodate some long-range contamination (non-electrostatic)
         # of the covariance measurements.
-        for (i, j) in zip(ii, jj):
-            self.aN[i, j] = -alpha * c.integrateEyFieldFast(i, j, 1, zf=zf)
-            self.aS[i, j] = -alpha * c.integrateEyFieldFast(i, j, -1, zf=zf)
-            self.aW[i, j] = -alpha * c.integrateExFieldFast(i, j, -1, zf=zf)
-            self.aE[i, j] = -alpha * c.integrateExFieldFast(i, j, 1, zf=zf)
+        iMax, jMax = fr, fr
+        self.aN = -alpha * c.integrateEyFieldFast(iMax, jMax, 1, zf=zf)
+        self.aS = -alpha * c.integrateEyFieldFast(iMax, jMax, -1, zf=zf)
+        self.aW = -alpha * c.integrateExFieldFast(iMax, jMax, -1, zf=zf)
+        self.aE = -alpha * c.integrateExFieldFast(iMax, jMax, 1, zf=zf)
         self.ath = alpha * c.evalAreaChangeSidesFast(fr, zf=zf) + beta
 
         self.athMinusBeta = self.ath - beta
@@ -2600,7 +2599,7 @@ def calcEFieldCoulomb(xv, xqv):
 
 
 class ElectrostaticCcdGeom():
-    def __init__(self, zq, zsh, zsv, a, b, thickness, pixelSize):
+    def __init__(self, zq, zsh, zsv, a, b, thickness, pixelsize):
         """
         parameters :  (all in microns)
         zq : altitude of the burried channel (microns)
@@ -2608,7 +2607,7 @@ class ElectrostaticCcdGeom():
         zsv : vertex altitude for vertical boundaries
         a, b : size of the rectangular charge source
         thickness : thickness
-        pixelSize : pixel size
+        pixelsize : pixel size
         """
         self.zq = zq
         self.zsh = zsh
@@ -2616,7 +2615,7 @@ class ElectrostaticCcdGeom():
         self.b = np.fabs(b)
         self.a = np.fabs(a)
         self.thickness = np.fabs(thickness)
-        self.pixelSize = pixelSize
+        self.pixelsize = pixelsize
         self.nStepsZ = 100
         self.nStepsXY = 20
 
@@ -2628,8 +2627,8 @@ class ElectrostaticCcdGeom():
         x, w = leggauss(self.nStepsXY)
         self.integrationWeights = w*0.5
 
-        # Abcissa refer to [-1, 1], we want [0, self.pixelSize]
-        self.xyOffsets = (x+1) * 0.5 * self.pixelSize
+        # Abcissa refer to [-1, 1], we want [0, self.pixelsize]
+        self.xyOffsets = (x+1) * 0.5 * self.pixelsize
 
     def calcEFieldCoulombChargeSheet(self, xv, xqv):
         """
@@ -2850,8 +2849,8 @@ class ElectrostaticCcdGeom():
         zf = self.thickness if zf is None else zf
         assert zf > self.zsv
         ii, jj = np.indices((iMax, jMax))
-        yy = (jj - 0.5)[:, :, np.newaxis] * self.pixelSize + self.xyOffsets[np.newaxis, np.newaxis, :]
-        xx = (ii + 0.5 * leftOrRight) * self.pixelSize
+        yy = (jj - 0.5)[:, :, np.newaxis] * self.pixelsize + self.xyOffsets[np.newaxis, np.newaxis, :]
+        xx = (ii + 0.5 * leftOrRight) * self.pixelsize
         xx = np.broadcast_to(xx[..., None], yy.shape)
         xv = np.stack([xx, yy], axis=-1)
 
@@ -2863,7 +2862,7 @@ class ElectrostaticCcdGeom():
                                      nImageChargePairs=nImageChargePairs),
             axis=2,
         )
-        return leftOrRight * integral/self.pixelSize
+        return leftOrRight * integral/self.pixelsize
 
     def integrateEyFieldFast(self, iMax, jMax, topOrBottom, zf=None, nImageChargePairs=11):
         """
@@ -2874,8 +2873,8 @@ class ElectrostaticCcdGeom():
         zf = self.thickness if zf is None else zf
         assert zf > self.zsh
         ii, jj = np.indices((iMax, jMax))
-        xx = (ii - 0.5)[:, :, np.newaxis] * self.pixelSize + self.xyOffsets[np.newaxis, np.newaxis, :]
-        yy = (jj + 0.5*topOrBottom) * self.pixelSize
+        xx = (ii - 0.5)[:, :, np.newaxis] * self.pixelsize + self.xyOffsets[np.newaxis, np.newaxis, :]
+        yy = (jj + 0.5*topOrBottom) * self.pixelsize
         yy = np.broadcast_to(yy[..., None], xx.shape)
         xv = np.stack([xx, yy], axis=-1)
 
@@ -2888,7 +2887,7 @@ class ElectrostaticCcdGeom():
                                      nImageChargePairs=nImageChargePairs),
             axis=2,
         )
-        return topOrBottom * integral / self.pixelSize
+        return topOrBottom * integral / self.pixelsize
 
     def eFieldTransverseToHorizontalPixelEdgeGrid(self, i, j, topOrBottom, zf=None):
         """
@@ -2905,13 +2904,13 @@ class ElectrostaticCcdGeom():
 
         # by definition of zsh, we  integrate from zsh to zf:
         zStep = (zf - self.zsh) / self.nStepsZ
-        xyStep = self.pixelSize / self.nStepsXY
+        xyStep = self.pixelsize / self.nStepsXY
 
         z = self.zsh + (np.linspace(0, self.nStepsZ - 1, num=self.nStepsZ) + 0.5) * zStep
-        x = (i - 0.5)*self.pixelSize + (np.linspace(0, self.nStepsXY - 1, self.nStepsXY) + 0.5) * xyStep
+        x = (i - 0.5)*self.pixelsize + (np.linspace(0, self.nStepsXY - 1, self.nStepsXY) + 0.5) * xyStep
 
         xx, zz = np.meshgrid(x, z)
-        yy = np.ones(xx.shape) * (j + 0.5*topOrBottom) * self.pixelSize
+        yy = np.ones(xx.shape) * (j + 0.5*topOrBottom) * self.pixelsize
         xv = np.array([xx, yy, zz]).T
 
         return self.eField(xv) * zStep * xyStep
@@ -2924,7 +2923,7 @@ class ElectrostaticCcdGeom():
         # we want the integral over z and the average over x,
         # divided by the pixel size, with a sign that defines
         # if in moves inside or outside. Here is it:
-        return sum * (topOrBottom / (self.pixelSize**2))
+        return sum * (topOrBottom / (self.pixelsize**2))
 
     def corner_shift_h2(self, i, j, topOrBottom, zf=None):  # Do we even need this??
         E = self.eFieldTransverseToHorizontalPixelEdgeGrid(i, j, topOrBottom, zf)[..., 1]
@@ -2946,13 +2945,13 @@ class ElectrostaticCcdGeom():
 
         # The source charge is at x,y=0
         zStep = (zf-self.zsv) / (self.nStepsZ)
-        xyStep = self.pixelSize / (self.nStepsXY)
+        xyStep = self.pixelsize / (self.nStepsXY)
 
         z = self.zsv + (np.linspace(0, self.nStepsZ - 1, self.nStepsZ) + 0.5) * zStep
-        y = (j - 0.5)*self.pixelSize + (np.linspace(0, self.nStepsXY - 1, self.nStepsXY) + 0.5) * xyStep
+        y = (j - 0.5)*self.pixelsize + (np.linspace(0, self.nStepsXY - 1, self.nStepsXY) + 0.5) * xyStep
 
         yy, zz = np.meshgrid(y, z)
-        xx = np.ones(yy.shape) * (i + 0.5*leftOrRight) * self.pixelSize
+        xx = np.ones(yy.shape) * (i + 0.5*leftOrRight) * self.pixelsize
         xv = np.array([xx, yy, zz]).T
 
         return self.eField(xv) * zStep * xyStep
@@ -2965,7 +2964,7 @@ class ElectrostaticCcdGeom():
         # we want the integral over z and the average over x,
         # divided by the pixel size, with a sign that defines
         # if in moves inside or outside. Here is it:
-        return sum * (leftOrRight / (self.pixelSize**2))
+        return sum * (leftOrRight / (self.pixelsize**2))
 
     def dxdy(self, iMax, zf=None):
         """
