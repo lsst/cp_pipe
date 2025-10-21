@@ -152,7 +152,7 @@ class CpMeasureGainCorrectionTask(lsst.pipe.base.PipelineTask):
             return lsst.pipe.base.Struct(output_gain_correction=gain_correction)
 
         ratio = input_flat.clone()
-        ratio.image /= input_reference_flat.clone()
+        ratio.image /= input_reference_flat.image
 
         binned_ref = bin_flat(input_reference_ptc, input_reference_flat, apply_gains=False)
         binned_flat = bin_flat(input_reference_ptc, input_flat, apply_gains=False)
@@ -178,6 +178,7 @@ class CpMeasureGainCorrectionTask(lsst.pipe.base.PipelineTask):
         gain_ratios = _compute_gain_ratios(
             input_flat.getDetector(),
             binned,
+            fixed_amp_index,
             do_remove_radial_gradient=self.config.do_remove_radial_gradient,
             radial_gradient_n_spline_nodes=self.config.radial_gradient_n_spline_nodes,
             chebyshev_gradient_order=self.config.chebyshev_gradient_order,
