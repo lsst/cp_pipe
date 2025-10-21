@@ -23,6 +23,7 @@ import numpy as np
 import lsst.pipe.base
 from lsst.ip.isr import GainCorrection
 import lsst.pex.config
+from lsst.utils.plotting import make_figure
 
 from .ptc.cpPtcAdjustGainRatios import _choose_reference_amplifier, _compute_gain_ratios
 from .utils import bin_flat
@@ -62,7 +63,12 @@ class CpMeasureGainCorrectionConnections(
         dimensions=("instrument", "detector"),
         isCalibration=True,
     )
-    # Possible QA plots.
+    output_flat_ratio_plot = lsst.pipe.base.connectionTypes.Output(
+        name="gain_correction_flat_ratio_plot",
+        doc="Gain correction flat ratio plot.",
+        storageClass="Plot",
+        dimensions=("instrument", "detector"),
+    )
 
 
 class CpMeasureGainCorrectionConfig(
@@ -136,6 +142,7 @@ class CpMeasureGainCorrectionTask(lsst.pipe.base.PipelineTask):
         result : `lsst.pipe.base.Struct`
             Result struct containing:
                 ``output_gain_correction`` : `lsst.ip.isr.GainCorrection`
+                ``output_flat_ratio_plot`` : `matplotlib.Figure`
         """
         gain_correction = GainCorrection(
             ampNames=input_reference_ptc.ampNames,
@@ -188,4 +195,37 @@ class CpMeasureGainCorrectionTask(lsst.pipe.base.PipelineTask):
 
         gain_correction.gainAdjustments[:] = gain_ratios
 
-        return lsst.pipe.base.Struct(output_gain_correction=gain_correction)
+        value2 = binned["value"].copy()
+        for ind in range(len(input_reference_ptc.ampNames)):
+            value2[binned["amp_index"] == ind] /= gain_ratios[ind]
+
+        vmin, vmax = np.nanpercentile(binned["value"], [10, 90])
+
+        fig = make_figure(figsize=(16, 6))
+
+        ax1 = fig.add_subplot(121)
+
+        im1 = ax1.hexbin(binned["xd"], binned["yd"], C=binned["value"], vmin=vmin, vmax=vmax)
+
+        ax1.set_xlabel("Detector x (pix)")
+        ax1.set_ylabel("Detector y (pix)")
+        ax1.set_aspect("equal")
+        ax1.set_title("Flat Ratio (uncorrected)")
+
+        fig.colorbar(im1, ax=ax1)
+
+        ax2 = fig.add_subplot(122)
+
+        im2 = ax2.hexbin(binned["xd"], binned["yd"], C=value2, vmin=vmin, vmax=vmax)
+
+        ax2.set_xlabel("Detector x (pix)")
+        ax2.set_ylabel("Detector y (pix)")
+        ax2.set_aspect("equal")
+        ax2.set_title("Flat Ratio (corrected)")
+
+        fig.colorbar(im2, ax=ax2)
+
+        return lsst.pipe.base.Struct(
+            output_gain_correction=gain_correction,
+            output_flat_ratio_plot=fig,
+        )
