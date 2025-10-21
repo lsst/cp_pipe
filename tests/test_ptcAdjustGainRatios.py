@@ -20,7 +20,7 @@
 # the GNU General Public License along with this program.  If not,
 # see <https://www.lsstcorp.org/LegalNotices/>.
 #
-"""Test cases for cp_pipe gain adjustment code."""
+"""Test cases for cp_pipe PTC gain adjustment code."""
 
 import copy
 import logging
@@ -46,93 +46,11 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
         self.detector = self.camera[20]
         self.amp_names = [amp.getName() for amp in self.detector]
 
-        self.n_radial_nodes = 10
-
         rng = np.random.RandomState(seed=12345)
 
         self.gain_true = {}
         for amp_name in self.amp_names:
             self.gain_true[amp_name] = float(rng.normal(loc=1.5, scale=0.05, size=1)[0])
-
-    def _get_adjusted_flat(
-        self,
-        normalization,
-        radial_gradient_outer_value,
-        planar_gradient_x,
-        planar_gradient_y,
-        bad_amps=[],
-        weird_amps=[],
-    ):
-        """Get an adjusted flat.
-
-        Parameters
-        ----------
-        normalization : `float`
-            Normalization value.
-        radial_gradient_outer_value : `float`
-            Value at max radius (should be < 1.0).
-        planar_gradient_x : `float`
-            Planar gradient x slope.
-        planar_gradient_y : `float`
-            Planar gradient y slope.
-        bad_amps : `list` [`str`], optional
-            List of bad amp names.
-
-        Returns
-        -------
-        flat : `lsst.afw.image.Exposure`
-            Flat image generated.
-        radial_gradient : `np.ndarray`
-            Radial gradient image applied.
-        planar_gradient : `np.ndarray`
-            Planar gradient image applied.
-        """
-        flat = ExposureF(self.detector.getBBox())
-        flat.setDetector(self.detector)
-
-        xx = np.arange(flat.image.array.shape[1], dtype=np.float64)
-        yy = np.arange(flat.image.array.shape[0], dtype=np.float64)
-        x, y = np.meshgrid(xx, yy)
-        x = x.ravel()
-        y = y.ravel()
-
-        transform = self.detector.getTransform(lsst.afw.cameraGeom.PIXELS, lsst.afw.cameraGeom.FOCAL_PLANE)
-        xy = np.vstack((x, y))
-        xf, yf = np.vsplit(transform.getMapping().applyForward(xy), 2)
-        xf = xf.ravel()
-        yf = yf.ravel()
-
-        radius = np.sqrt(xf**2. + yf**2.)
-
-        nodes = np.linspace(radius.min(), radius.max(), self.n_radial_nodes)
-        spline_values = np.linspace(1.0, 0.98, self.n_radial_nodes)
-
-        spl = Akima1DInterpolator(nodes, spline_values, method="akima")
-        radial_gradient = spl(radius).reshape(flat.image.array.shape)
-        flat.image.array[:, :] = radial_gradient.copy()
-
-        # This will be a parameter
-        normalization = 10000.0
-
-        flat.image.array[:, :] *= normalization
-
-        # Add a bit of a planar gradient; approx +/- 1%.
-        planar_gradient = (
-            1
-            - 0.00005 * (x - self.detector.getBBox().getCenter().getX())
-            + 0.00001 * (y - self.detector.getBBox().getCenter().getY())
-        ).reshape(flat.image.array.shape)
-
-        flat.image.array[:, :] *= planar_gradient
-
-        for amp_name in self.amp_names:
-            flat.image[self.detector[amp_name].getBBox()].array[:, :] /= self.gain_true[amp_name]
-
-        # Make the bad amps goofy.
-        for bad_amp in bad_amps:
-            flat.image[self.detector[bad_amp].getBBox()].array[:, :] *= 0.1
-
-        return flat, radial_gradient, planar_gradient
 
     def _gain_correct_flat(self, flat, ptc, adjust_ratios):
         """Gain correct a flat to a biased and debiased version.
@@ -170,7 +88,9 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
     def test_compute_gain_ratios_small_gradient(self):
         fixed_amp_num = 2
 
-        flat, radial_gradient, planar_gradient = self._get_adjusted_flat(
+        flat, radial_gradient, planar_gradient = _get_adjusted_flat(
+            self.detector,
+            self.gain_true,
             10000.0,
             0.98,
             -0.00005,
@@ -226,7 +146,9 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
     def test_compute_gain_ratios_large_gradient(self):
         fixed_amp_num = 2
 
-        flat, radial_gradient, planar_gradient = self._get_adjusted_flat(
+        flat, radial_gradient, planar_gradient = _get_adjusted_flat(
+            self.detector,
+            self.gain_true,
             10000.0,
             0.6,
             -0.00005,
@@ -282,7 +204,9 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
     def test_compute_gain_ratios_bad_amp(self):
         fixed_amp_num = 2
 
-        flat, radial_gradient, planar_gradient = self._get_adjusted_flat(
+        flat, radial_gradient, planar_gradient = _get_adjusted_flat(
+            self.detector,
+            self.gain_true,
             10000.0,
             0.6,
             -0.00005,
@@ -342,7 +266,9 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
 
         # The weird amps have a large offset but are not known
         # as bad.
-        flat, radial_gradient, planar_gradient = self._get_adjusted_flat(
+        flat, radial_gradient, planar_gradient = _get_adjusted_flat(
+            self.detector,
+            self.gain_true,
             10000.0,
             0.6,
             -0.00005,
@@ -419,7 +345,9 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
                 "exposure": exp_id_2,
             }
 
-            flat, radial_gradient, planar_gradient = self._get_adjusted_flat(
+            flat, radial_gradient, planar_gradient = _get_adjusted_flat(
+                self.detector,
+                self.gain_true,
                 levels[i],
                 0.6,
                 -0.00005,
@@ -527,7 +455,9 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
                 "exposure": exp_id_2,
             }
 
-            flat, radial_gradient, planar_gradient = self._get_adjusted_flat(
+            flat, radial_gradient, planar_gradient = _get_adjusted_flat(
+                self.detector,
+                self.gain_true,
                 levels[i],
                 0.6,
                 -0.00005,
@@ -610,6 +540,95 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
             np.nanstd(flat_debiased.image.array.ravel()),
             np.nanstd(flat_biased.image.array.ravel()),
         )
+
+
+def _get_adjusted_flat(
+    detector,
+    gain_dict,
+    normalization,
+    radial_gradient_outer_value,
+    planar_gradient_x,
+    planar_gradient_y,
+    bad_amps=[],
+    weird_amps=[],
+    n_radial_nodes=10,
+):
+    """Get an adjusted flat.
+
+    Parameters
+    ----------
+    detector : `lsst.afw.cameraGeom.Detector`
+        Detector object.
+    gain_dict : `dict` [`float`]
+        Dictionary of amp names to gains.
+    normalization : `float`
+        Normalization value.
+    radial_gradient_outer_value : `float`
+        Value at max radius (should be < 1.0).
+    planar_gradient_x : `float`
+        Planar gradient x slope.
+    planar_gradient_y : `float`
+        Planar gradient y slope.
+    bad_amps : `list` [`str`], optional
+        List of bad amp names.
+    n_radial_nodes : `int`, optional
+        Number of radial nodes.
+
+    Returns
+    -------
+    flat : `lsst.afw.image.Exposure`
+        Flat image generated.
+    radial_gradient : `np.ndarray`
+        Radial gradient image applied.
+    planar_gradient : `np.ndarray`
+        Planar gradient image applied.
+    """
+    flat = ExposureF(detector.getBBox())
+    flat.setDetector(detector)
+
+    xx = np.arange(flat.image.array.shape[1], dtype=np.float64)
+    yy = np.arange(flat.image.array.shape[0], dtype=np.float64)
+    x, y = np.meshgrid(xx, yy)
+    x = x.ravel()
+    y = y.ravel()
+
+    transform = detector.getTransform(lsst.afw.cameraGeom.PIXELS, lsst.afw.cameraGeom.FOCAL_PLANE)
+    xy = np.vstack((x, y))
+    xf, yf = np.vsplit(transform.getMapping().applyForward(xy), 2)
+    xf = xf.ravel()
+    yf = yf.ravel()
+
+    radius = np.sqrt(xf**2. + yf**2.)
+
+    nodes = np.linspace(radius.min(), radius.max(), n_radial_nodes)
+    spline_values = np.linspace(1.0, 0.98, n_radial_nodes)
+
+    spl = Akima1DInterpolator(nodes, spline_values, method="akima")
+    radial_gradient = spl(radius).reshape(flat.image.array.shape)
+    flat.image.array[:, :] = radial_gradient.copy()
+
+    # This will be a parameter
+    normalization = 10000.0
+
+    flat.image.array[:, :] *= normalization
+
+    # Add a bit of a planar gradient; approx +/- 1%.
+    planar_gradient = (
+        1
+        - 0.00005 * (x - detector.getBBox().getCenter().getX())
+        + 0.00001 * (y - detector.getBBox().getCenter().getY())
+    ).reshape(flat.image.array.shape)
+
+    flat.image.array[:, :] *= planar_gradient
+
+    for amp in detector:
+        flat.image[amp.getBBox()].array[:, :] /= gain_dict[amp.getName()]
+
+    # Make the bad amps goofy.
+    for bad_amp in bad_amps:
+        flat.image[detector[bad_amp].getBBox()].array[:, :] *= 0.1
+
+    return flat, radial_gradient, planar_gradient
 
 
 class TestMemory(lsst.utils.tests.MemoryTestCase):
