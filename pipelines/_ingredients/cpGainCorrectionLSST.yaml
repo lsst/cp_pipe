@@ -1,10 +1,17 @@
 description: cp_pipe GainCorrection calibration for LSST isr task
+imports:
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpFlatCorrectedLSST.yaml
+    exclude:
+      - cpFlatBin8
+      - cpFlatBin64
+      - cpFlatMosaic8
+      - cpFlatMosaic64
 tasks:
-  cpGainCorrectionFlatIsr:
+  cpFlatIsr:
     class: lsst.ip.isr.IsrTaskLSST
     config:
       connections.ccdExposure: "raw"
-      connections.outputExposure: "cpGainCorrectionFlatIsrExp"
+      connections.outputExposure: "cpFlatIsrExp"
       python: |
         from lsst.cp.pipe import configureIsrTaskLSSTForCalibrations
 
@@ -17,5 +24,24 @@ tasks:
         config.doDeferredCharge = True
         config.doBias = True
         config.doDark = True
-        config.doFlat = True
+        config.doDefect = True
+        # TODO DM-50363: Investigate if this can be turned on, looking
+        # at performance and quality of the BF correction.
         config.doBrighterFatter = False
+  cpFlatApplyGradients:
+    class: lsst.cp.pipe.CpFlatApplyGradientsTask
+    config:
+      connections.output_flat: "flat_gain_correction"
+  cpMeasureGainCorrection:
+    class: lsst.cp.pipe.CpMeasureGainCorrectionTask
+contracts:
+  - cpFlatIsr.doFlat == False
+  - cpFlatIsr.doBootstrap == False
+  - cpFlatCombine.calibrationType == "flat"
+  - cpFlatCombine.exposureScaling == "InputList"
+  - cpFlatMeasure.connections.inputExp == cpFlatIsr.connections.outputExposure
+  - cpFlatNormalize.connections.inputMDs == cpFlatMeasure.connections.outputStats
+  - cpFlatCombine.connections.inputExpHandles == cpFlatIsr.connections.outputExposure
+  - cpFlatCombine.connections.inputScales == cpFlatNormalize.connections.outputScales
+  - cpFlatFitGradients.connections.input_flats == cpFlatCombine.connections.outputData
+  - cpMeasureGainCorrection.connections.input_flat == cpFlatApplyGradients.connections.output_flat
