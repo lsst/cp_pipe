@@ -601,7 +601,7 @@ def _get_adjusted_flat(
     radius = np.sqrt(xf**2. + yf**2.)
 
     nodes = np.linspace(radius.min(), radius.max(), n_radial_nodes)
-    spline_values = np.linspace(1.0, 0.98, n_radial_nodes)
+    spline_values = np.linspace(1.0, radial_gradient_outer_value, n_radial_nodes)
 
     spl = Akima1DInterpolator(nodes, spline_values, method="akima")
     radial_gradient = spl(radius).reshape(flat.image.array.shape)
