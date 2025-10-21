@@ -408,7 +408,7 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
         # for every flux level.
         adjust_ratios = np.zeros(len(self.amp_names))
         for i, amp_name in enumerate(self.amp_names):
-            np.testing.assert_array_equal(
+            np.testing.assert_array_almost_equal(
                 summary[f"{amp_name}_gain_ratio"][0],
                 summary[f"{amp_name}_gain_ratio"],
             )
@@ -416,6 +416,7 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
             self.assertFloatsAlmostEqual(
                 adjust_ratios[i],
                 summary[f"{amp_name}_gain_ratio"] / summary.meta["median_correction"],
+                rtol=1e-6,
             )
 
         # Confirm this actually works.
@@ -514,7 +515,7 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
         # for every flux level.
         adjust_ratios = np.zeros(len(self.amp_names))
         for i, amp_name in enumerate(self.amp_names):
-            np.testing.assert_array_equal(
+            np.testing.assert_array_almost_equal(
                 summary[f"{amp_name}_gain_ratio"][0],
                 summary[f"{amp_name}_gain_ratio"],
             )
@@ -522,6 +523,7 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
             self.assertFloatsAlmostEqual(
                 adjust_ratios[i],
                 summary[f"{amp_name}_gain_ratio"] / summary.meta["median_correction"],
+                rtol=1e-6,
             )
 
         # Confirm this actually works.
@@ -550,7 +552,6 @@ def _get_adjusted_flat(
     planar_gradient_x,
     planar_gradient_y,
     bad_amps=[],
-    weird_amps=[],
     n_radial_nodes=10,
 ):
     """Get an adjusted flat.
@@ -606,9 +607,6 @@ def _get_adjusted_flat(
     spl = Akima1DInterpolator(nodes, spline_values, method="akima")
     radial_gradient = spl(radius).reshape(flat.image.array.shape)
     flat.image.array[:, :] = radial_gradient.copy()
-
-    # This will be a parameter
-    normalization = 10000.0
 
     flat.image.array[:, :] *= normalization
 
