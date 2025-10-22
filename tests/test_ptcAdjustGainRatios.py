@@ -32,6 +32,7 @@ import lsst.utils.tests
 
 import lsst.afw.cameraGeom
 from lsst.afw.image import ExposureF
+from lsst.cp.pipe import CpMeasureGainCorrectionTask
 from lsst.cp.pipe.ptc import PhotonTransferCurveAdjustGainRatiosTask
 from lsst.cp.pipe.ptc.cpPtcAdjustGainRatios import _compute_gain_ratios
 from lsst.cp.pipe.utils import bin_flat
@@ -542,6 +543,306 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
             np.nanstd(flat_debiased.image.array.ravel()),
             np.nanstd(flat_biased.image.array.ravel()),
         )
+
+
+class MeasureGainCorrectionTestCase(lsst.utils.tests.TestCase):
+    def setUp(self):
+        mock = IsrMockLSST()
+        self.camera = mock.getCamera()
+        self.detector = self.camera[20]
+        self.amp_names = [amp.getName() for amp in self.detector]
+
+        self.n_radial_nodes = 10
+
+        self.gain_ref = {}
+        for amp_name in self.amp_names:
+            self.gain_ref[amp_name] = 1.0
+
+        self.ptc = PhotonTransferCurveDataset()
+        self.ptc.ampNames = self.amp_names
+        self.ptc.badAmps = []
+
+        for amp_name in self.amp_names:
+            self.ptc.gain[amp_name] = self.gain_ref[amp_name]
+            self.ptc.noise[amp_name] = 10.0
+            self.ptc.ptcTurnoff[amp_name] = 50000.0
+
+    def _check_corrected_ratios(self, ref_flat, input_flat, gain_correction, check_sig_corr=False):
+        """
+        Check corrected ratio images for uniformity.
+
+        Parameters
+        ----------
+        ref_flat : `lsst.afw.image.Exposure`
+            Reference flat.
+        input_flat : `lsst.afw.image.Exposure`
+            Input flat.
+        gain_correction : `lsst.ip.isr.GainCorrection`
+            Gain correction object.
+        check_sig_corr : `bool`, optional
+            Check the value of the corrected ratio sigma?
+        """
+        ratio = input_flat.image.array / ref_flat.image.array
+
+        flat_corr = input_flat.clone()
+        for i, amp in enumerate(self.detector):
+            flat_corr[amp.getBBox()].image.array /= gain_correction.gainAdjustments[i]
+
+        ratio_corr = flat_corr.image.array / ref_flat.image.array
+
+        self.assertLess(np.nanstd(ratio_corr), np.nanstd(ratio))
+
+        if check_sig_corr:
+            self.assertLess(np.std(ratio_corr), 1e-6)
+
+    def test_task_run_matched_gradient(self):
+        # This test shows what happens if we have matched
+        # gradients between the reference flat and the
+        # input flat.
+
+        ref_flat, _, _ = _get_adjusted_flat(
+            self.detector,
+            self.gain_ref,
+            1.0,
+            0.98,
+            0.0002,
+            -0.0002,
+        )
+
+        gain_adj = copy.copy(self.gain_ref)
+        gain_adj[self.amp_names[3]] = 1.002
+        gain_adj[self.amp_names[6]] = 0.998
+
+        input_flat, _, _ = _get_adjusted_flat(
+            self.detector,
+            gain_adj,
+            1.0,
+            0.98,
+            0.0002,
+            -0.0002,
+        )
+
+        # Do the first fit with no additional gradient fitting.
+        config = CpMeasureGainCorrectionTask.ConfigClass()
+        config.radial_gradient_n_spline_nodes = 3
+        config.bin_factor = 2
+        config.amp_boundary = 0
+        config.chebyshev_gradient_order = 0
+        config.do_remove_radial_gradient = False
+
+        task = CpMeasureGainCorrectionTask(config=config)
+        struct = task.run(
+            input_reference_flat=ref_flat,
+            input_reference_ptc=self.ptc,
+            input_flat=input_flat,
+        )
+
+        self._check_corrected_ratios(ref_flat, input_flat, struct.output_gain_correction, check_sig_corr=True)
+
+        # Second fit with defaults.
+        config = CpMeasureGainCorrectionTask.ConfigClass()
+        config.radial_gradient_n_spline_nodes = 3
+        config.bin_factor = 2
+        config.amp_boundary = 0
+        config.chebyshev_gradient_order = 1
+        config.do_remove_radial_gradient = True
+
+        task = CpMeasureGainCorrectionTask(config=config)
+        struct = task.run(
+            input_reference_flat=ref_flat,
+            input_reference_ptc=self.ptc,
+            input_flat=input_flat,
+        )
+
+        self._check_corrected_ratios(ref_flat, input_flat, struct.output_gain_correction)
+
+    def test_task_run_mismatched_spline(self):
+        # test_task_run_mismatched_gradient
+        # test_task_run_bad_amp
+        # What we do is the following...
+
+        # Generate a reference flat... adjust spline limits!
+        # Generate a daily flat with ...
+        #  - The same spline limits, same gradient. DONE
+        #  - Different spline limits, same gradient.
+        #  - Same spline limits, different gradient.
+        #  - And a bad amp!
+
+        # This test shows what happens if we have matched
+        # gradients but different spline between the reference flat and the
+        # input flat.
+
+        ref_flat, _, _ = _get_adjusted_flat(
+            self.detector,
+            self.gain_ref,
+            1.0,
+            0.98,
+            0.0002,
+            -0.0002,
+        )
+
+        gain_adj = copy.copy(self.gain_ref)
+        gain_adj[self.amp_names[3]] = 1.002
+        gain_adj[self.amp_names[6]] = 0.998
+
+        input_flat, _, _ = _get_adjusted_flat(
+            self.detector,
+            gain_adj,
+            1.0,
+            0.97,
+            0.0002,
+            -0.0002,
+        )
+
+        # Fit with defaults.
+        config = CpMeasureGainCorrectionTask.ConfigClass()
+        config.radial_gradient_n_spline_nodes = 3
+        config.bin_factor = 2
+        config.amp_boundary = 0
+        config.chebyshev_gradient_order = 1
+        config.do_remove_radial_gradient = True
+
+        task = CpMeasureGainCorrectionTask(config=config)
+        struct = task.run(
+            input_reference_flat=ref_flat,
+            input_reference_ptc=self.ptc,
+            input_flat=input_flat,
+        )
+
+        self._check_corrected_ratios(ref_flat, input_flat, struct.output_gain_correction)
+
+    def test_task_run_mismatched_gradient(self):
+        # This test shows what happens if we have matched
+        # spline but different gradient between the reference flat and the
+        # input flat.
+
+        ref_flat, _, _ = _get_adjusted_flat(
+            self.detector,
+            self.gain_ref,
+            1.0,
+            0.98,
+            0.0002,
+            -0.0002,
+        )
+
+        gain_adj = copy.copy(self.gain_ref)
+        gain_adj[self.amp_names[3]] = 1.002
+        gain_adj[self.amp_names[6]] = 0.998
+
+        input_flat, _, _ = _get_adjusted_flat(
+            self.detector,
+            gain_adj,
+            1.0,
+            0.98,
+            0.0004,
+            -0.0003,
+        )
+
+        # Fit with defaults.
+        config = CpMeasureGainCorrectionTask.ConfigClass()
+        config.radial_gradient_n_spline_nodes = 3
+        config.bin_factor = 2
+        config.amp_boundary = 0
+        config.chebyshev_gradient_order = 1
+        config.do_remove_radial_gradient = True
+
+        task = CpMeasureGainCorrectionTask(config=config)
+        struct = task.run(
+            input_reference_flat=ref_flat,
+            input_reference_ptc=self.ptc,
+            input_flat=input_flat,
+        )
+
+        self._check_corrected_ratios(ref_flat, input_flat, struct.output_gain_correction)
+
+    def test_task_run_mismatched_both(self):
+        # This test shows what happens if we have matched
+        # spline and different gradient between the reference flat and the
+        # input flat.
+
+        ref_flat, _, _ = _get_adjusted_flat(
+            self.detector,
+            self.gain_ref,
+            1.0,
+            0.98,
+            0.0002,
+            -0.0002,
+        )
+
+        gain_adj = copy.copy(self.gain_ref)
+        gain_adj[self.amp_names[3]] = 1.002
+        gain_adj[self.amp_names[6]] = 0.998
+
+        input_flat, _, _ = _get_adjusted_flat(
+            self.detector,
+            gain_adj,
+            1.0,
+            0.97,
+            0.0004,
+            -0.0003,
+        )
+
+        # Fit with defaults.
+        config = CpMeasureGainCorrectionTask.ConfigClass()
+        config.radial_gradient_n_spline_nodes = 3
+        config.bin_factor = 2
+        config.amp_boundary = 0
+        config.chebyshev_gradient_order = 1
+        config.do_remove_radial_gradient = True
+
+        task = CpMeasureGainCorrectionTask(config=config)
+        struct = task.run(
+            input_reference_flat=ref_flat,
+            input_reference_ptc=self.ptc,
+            input_flat=input_flat,
+        )
+
+        self._check_corrected_ratios(ref_flat, input_flat, struct.output_gain_correction)
+
+    def test_task_run_mismatched_both_bad_amp(self):
+        # This test shows what happens if we have matched
+        # spline and different gradient between the reference flat and the
+        # input flat.
+
+        ref_flat, _, _ = _get_adjusted_flat(
+            self.detector,
+            self.gain_ref,
+            1.0,
+            0.98,
+            0.0002,
+            -0.0002,
+        )
+
+        gain_adj = copy.copy(self.gain_ref)
+        gain_adj[self.amp_names[3]] = 1.002
+        gain_adj[self.amp_names[6]] = 0.998
+        gain_adj[self.amp_names[0]] = np.nan
+
+        input_flat, _, _ = _get_adjusted_flat(
+            self.detector,
+            gain_adj,
+            1.0,
+            0.97,
+            0.0004,
+            -0.0003,
+        )
+
+        # Fit with defaults.
+        config = CpMeasureGainCorrectionTask.ConfigClass()
+        config.radial_gradient_n_spline_nodes = 3
+        config.bin_factor = 2
+        config.amp_boundary = 0
+        config.chebyshev_gradient_order = 1
+        config.do_remove_radial_gradient = True
+
+        task = CpMeasureGainCorrectionTask(config=config)
+        struct = task.run(
+            input_reference_flat=ref_flat,
+            input_reference_ptc=self.ptc,
+            input_flat=input_flat,
+        )
+
+        self._check_corrected_ratios(ref_flat, input_flat, struct.output_gain_correction)
 
 
 def _get_adjusted_flat(
