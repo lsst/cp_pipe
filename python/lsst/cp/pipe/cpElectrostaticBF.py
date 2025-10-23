@@ -19,7 +19,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Calculation of brighter-fatter effect correlations and kernels."""
+"""Computation of electrostatic solution of brighter-fatter effect impact
+on pixel distortions"""
 
 __all__ = ['ElectrostaticBrighterFatterSolveTask',
            'ElectrostaticBrighterFatterSolveConfig']
@@ -37,7 +38,7 @@ from .utils import (
 from .cpLinearitySolve import ptcLookup
 from lsst.ip.isr.isrFunctions import symmetrize
 from lsst.ip.isr import ElectrostaticBrighterFatter
-from lmfit import Parameters
+from lmfit import Parameters, report_fit
 
 
 class ElectrostaticBrighterFatterSolveConnections(pipeBase.PipelineTaskConnections,
@@ -57,9 +58,9 @@ class ElectrostaticBrighterFatterSolveConnections(pipeBase.PipelineTaskConnectio
         isCalibration=True,
         lookupFunction=ptcLookup,
     )
-    inputBfkPtc = cT.Input(
-        name="bfkPtc",
-        doc="Input BFK PTC dataset.",
+    inputBfPtc = cT.Input(
+        name="bfPtc",
+        doc="Input BF PTC dataset.",
         storageClass="PhotonTransferCurveDataset",
         dimensions=("instrument", "detector"),
         isCalibration=True,
@@ -74,7 +75,7 @@ class ElectrostaticBrighterFatterSolveConnections(pipeBase.PipelineTaskConnectio
     )
 
     def __init__(self, *, config=None):
-        if config.useBfkPtc:
+        if config.useBfPtc:
             del self.inputPtc
             del self.dummy
         else:
@@ -94,33 +95,28 @@ class ElectrostaticBrighterFatterSolveConfig(pipeBase.PipelineTaskConfig,
         doc="Minimization technique to fit the electrostatic solution. "
             "Should be one of the available fitting methods in "
             "`lmfit.minimizer.Minimizer.minimize`. For list of all possible "
-            "methods see the documentation. Default: 'leastsq'.",
+            "methods see the documentation.",
         default="leastsq",
     )
     doNormalizeElectrostaticModel = pexConfig.Field(
         dtype=bool,
         doc="Do you want apply a final normalization to the modeled "
-            "aMatrix? Default: False.",
+            "aMatrix?",
         default=False,
     )
-    doFitOffset = pexConfig.Field(
+    doFitNormalizationOffset = pexConfig.Field(
         dtype=bool,
         doc="Do you want to fit an offset to the a matrix? This caused "
-            "by long range correlations in the data. Default: False.",
-        default=False,
+            "by long range correlations in the data. Only used if "
+            "doNormalizeElectrostaticModel.",
+        default=True,
     )
     nImageChargePairs = pexConfig.Field(
         dtype=int,
         doc="Number of image charge pairs to use when computing "
             "Gauss's law. The larger number, the better, and an "
-            "odd number is preferred. Default: 11.",
+            "odd number is preferred.",
         default=11,
-    )
-    doCheckValidity = pexConfig.Field(
-        dtype=bool,
-        doc="Check the AMP kernels for basic validity criteria? "
-            "Will set electrostaticBfCalib.valid for each amp.",
-        default=True,
     )
     initialParametersDict = pexConfig.DictField(
         keytype=str,
@@ -164,7 +160,7 @@ class ElectrostaticBrighterFatterSolveConfig(pipeBase.PipelineTaskConfig,
 
 
 class ElectrostaticBrighterFatterSolveTask(pipeBase.PipelineTask):
-    """Measure appropriate Brighter-Fatter Kernel from the PTC dataset.
+    """Find the complete electrostatic solution to the given PTC.
     """
 
     ConfigClass = ElectrostaticBrighterFatterSolveConfig
@@ -187,10 +183,10 @@ class ElectrostaticBrighterFatterSolveTask(pipeBase.PipelineTask):
         # Use the dimensions to set
         # electrostaticBfCalib/provenance
         # information.
-        if self.config.useBfkPtc:
-            inputs["inputDims"] = dict(inputRefs.inputBfkPtc.dataId.required)
-            inputs["inputPtc"] = inputs["inputBfkPtc"]
-            del inputs["inputBfkPtc"]
+        if self.config.useBfPtc:
+            inputs["inputDims"] = dict(inputRefs.inputBfPtc.dataId.required)
+            inputs["inputPtc"] = inputs["inputBfPtc"]
+            del inputs["inputBfPtc"]
         else:
             inputs["inputDims"] = dict(inputRefs.inputPtc.dataId.required)
 
@@ -219,8 +215,8 @@ class ElectrostaticBrighterFatterSolveTask(pipeBase.PipelineTask):
         butlerQC.put(outputs, outputRefs)
 
     def run(self, inputPtc, camera, inputDims):
-        """Combine covariance information from PTC into brighter-fatter
-        kernels.
+        """Fit the PTC A MATRIX into a vectorized a matrix form
+        based on a complete electrostatic solution.
 
         Parameters
         ----------
@@ -236,24 +232,23 @@ class ElectrostaticBrighterFatterSolveTask(pipeBase.PipelineTask):
         results : `lsst.pipe.base.Struct`
             The resulst struct containing:
 
-            ``output``
-                Resulting Brighter-Fatter Kernel
-                (`lsst.ip.isr.BrighterFatterKernel`).
+            ``outputBF``
+                Resulting Brighter-Fatter electrostatic solution
+                (`lsst.ip.isr.ElectrostaticBrighterFatter`).
         """
         detector = camera[inputDims['detector']]
-        detName = detector.getName()
 
-        inputRange = inputPtc.covMatrixSide
-        fitRange = self.config.fitRange
+        inputRange = int(inputPtc.covMatrixSide)
+        fitRange = int(self.config.fitRange)
 
         if not inputPtc.ptcFitType.startswith("FULLCOVARIANCE"):
             raise ValueError(
-            "ptcFitType must be FULLCOVARIANCE* to solve for electrostatic solution."
+                "ptcFitType must be FULLCOVARIANCE* to solve for electrostatic solution."
             )
         if self.config.fitRange > inputPtc.covMatrixSide:
             raise ValueError(
-            "Cannot compute the electrostatic solution if "
-            "int(inputPtc.covMatrixSide) < fitRange."
+                "Cannot compute the electrostatic solution if "
+                "int(inputPtc.covMatrixSide) < fitRange."
             )
 
         # Initialize the output calibration
@@ -264,19 +259,20 @@ class ElectrostaticBrighterFatterSolveTask(pipeBase.PipelineTask):
             fitRange=fitRange,
         )
 
+        # Inherit data + metadata
+        electrostaticBfCalib.updateMetadataFromExposures([inputPtc])
+
         badAmps = inputPtc.badAmps
         electrostaticBfCalib.badAmps = badAmps
         electrostaticBfCalib.gain = inputPtc.gain
 
         aMatrixDict = inputPtc.aMatrix
-        aMatrixSigmaDict = {amp: np.nan for amp in aMatrixDict.keys()}  # inputPtc.aMatrixError
         aMatrixList = [m for _, m in aMatrixDict.items() if _ not in badAmps]
-
 
         nGoodAmps = len(detector.getAmplifiers()) - len(badAmps)
         if nGoodAmps == 0:
             self.log.warning("The entire detector is bad and cannot generate a "
-                                "detector solution.")
+                             "detector solution.")
             return pipeBase.Struct(
                 outputBF=electrostaticBfCalib,
             )
@@ -295,28 +291,29 @@ class ElectrostaticBrighterFatterSolveTask(pipeBase.PipelineTask):
                              "to confidently solve. Setting aMatrixSigma "
                              "to default.")
             aMatrix = np.mean(aMatrixList, axis=0)
-            aMatrixSigma = np.ones_like(aMatrix)
-            aMatrixSigma[0, :] = 2
-            aMatrixSigma[:, 0] = 2
+            aMatrixSigma = np.ones_like(aMatrix, dtype=np.float64)
+            aMatrixSigma[0, :] = 2.0
+            aMatrixSigma[:, 0] = 2.0
             aMatrixSigma[0, 0] = np.sqrt(32)
 
         else:
             aMatrix = np.mean(aMatrixList, axis=0)
             aMatrixSigma = np.std(aMatrixList, axis=0)
 
-
-        electrostaticBfCalib.updateMetadataFromExposures([inputPtc])
+        # Ensure we have numpy arrays in 64-bit float precision
+        aMatrix = np.asarray(aMatrix, dtype=np.float64)
+        aMatrixSigma = np.asarray(aMatrixSigma, dtype=np.float64)
 
         # Set initial parameters using config
-        thickness = self.config.initialParametersDict['thickness']
-        pixelsize = self.config.initialParametersDict['pixelsize']
-        zq = self.config.initialParametersDict['zq']
-        zsh = self.config.initialParametersDict['zsh']
-        zsv = self.config.initialParametersDict['zsv']
-        a = self.config.initialParametersDict['a']
-        b = self.config.initialParametersDict['b']
-        alpha = self.config.initialParametersDict['alpha']
-        beta = self.config.initialParametersDict['beta']
+        thickness = np.float64(self.config.initialParametersDict['thickness'])
+        pixelsize = np.float64(self.config.initialParametersDict['pixelsize'])
+        zq = np.float64(self.config.initialParametersDict['zq'])
+        zsh = np.float64(self.config.initialParametersDict['zsh'])
+        zsv = np.float64(self.config.initialParametersDict['zsv'])
+        a = np.float64(self.config.initialParametersDict['a'])
+        b = np.float64(self.config.initialParametersDict['b'])
+        alpha = np.float64(self.config.initialParametersDict['alpha'])
+        beta = np.float64(self.config.initialParametersDict['beta'])
 
         initialParams = Parameters()
         initialParams.add(
@@ -333,50 +330,66 @@ class ElectrostaticBrighterFatterSolveTask(pipeBase.PipelineTask):
             "zq",
             value=zq,
             vary=self.config.parametersToVary["zq"],
-            min=0,
-            max=0.25*thickness,
+            min=0.0,
+            max=0.5*thickness,
+        )
+        # These nuisance parameters ensure that
+        # (zsh > zq) & (zsv > zq)
+        initialParams.add(
+            "zsh_minus_zq",
+            value=zsh - zq,
+            vary=self.config.parametersToVary["zsh"],
+            min=1.0e-12,
+            max=0.1*thickness,
         )
         initialParams.add(
             "zsh",
-            value=zsh,
             vary=self.config.parametersToVary["zsh"],
-            min=0,
-            max=0.25*thickness,
+            min=0.0,
+            max=0.5*thickness,
+            expr="zq + zsh_minus_zq" if self.config.parametersToVary["zsh"] else f"{zsh}",
+        )
+        initialParams.add(
+            "zsv_minus_zq",
+            value=zsv - zq,
+            vary=self.config.parametersToVary["zsv"],
+            min=1.0e-12,
+            max=0.1*thickness,
         )
         initialParams.add(
             "zsv",
-            value=zsv,
             vary=self.config.parametersToVary["zsv"],
-            min=0,
-            max=0.25*thickness,
+            min=0.0,
+            max=0.5*thickness,
+            expr="zq + zsv_minus_zq" if self.config.parametersToVary["zsv"] else f"{zsv}",
         )
         initialParams.add(
             "a",
             value=a,
             vary=self.config.parametersToVary["a"],
-            min=0,
-            max=pixelsize,
+            min=1.0e-5,
+            max=0.35*pixelsize,
         )
         initialParams.add(
             "b",
             value=b,
             vary=self.config.parametersToVary["b"],
-            min=0,
-            max=pixelsize,
+            min=1.0e-5,
+            max=0.35*pixelsize,
         )
         initialParams.add(
             "alpha",
             value=alpha,
             vary=self.config.parametersToVary["alpha"],
-            min=-10,
-            max=10,
+            min=-10.0,
+            max=10.0,
         )
         initialParams.add(
             "beta",
             value=beta,
             vary=self.config.parametersToVary["beta"],
-            min=-10,
-            max=10,
+            min=-10.0,
+            max=10.0,
         )
 
         # Compute the electrostatic fit
@@ -386,7 +399,7 @@ class ElectrostaticBrighterFatterSolveTask(pipeBase.PipelineTask):
             aMatrix=aMatrix,
             aMatrixSigma=aMatrixSigma,
             fitRange=fitRange,
-            doFitOffset=self.config.doFitOffset,
+            doFitNormalizationOffset=self.config.doFitNormalizationOffset,
             nImageChargePairs=self.config.nImageChargePairs,
         )
 
@@ -416,6 +429,8 @@ class ElectrostaticBrighterFatterSolveTask(pipeBase.PipelineTask):
         # Compute the final model
         aMatrixModel = electrostaticFit.model(result.params)
 
+        # Optional:
+        # Perform the final model normalization
         modelNormalization = [1, 0]
         if self.config.doNormalizeElectrostaticModel:
             m, o = electrostaticFit.normalizeModel(aMatrixModel)
@@ -434,28 +449,7 @@ class ElectrostaticBrighterFatterSolveTask(pipeBase.PipelineTask):
         electrostaticBfCalib.modelNormalization = modelNormalization
 
         # Fit result information
-        self.log.info(
-            '%s a,b (microns): %f %f',
-            detName,
-            round(finalParams['a'].value, 3),
-            round(finalParams['b'].value, 3)
-        )
-        self.log.info(
-            '%s Reduced Chi2: %g',
-            detName,
-            finalParams
-        )
-        self.log.info(
-            finalParams.pretty_print(
-                columns=['value', 'min', 'max', 'stderr', 'vary']
-            )
-        )
-        self.log.info(
-            '%s Sum: data %g model %g',
-            detName,
-            symmetrize(aMatrix).sum(),
-            symmetrize(aMatrixModel).sum()
-        )
+        self.log.info(report_fit(result))
 
         # TODO: add conversion depth probability distribution
         # for each band/wavelength. Compute boundary shifts
@@ -476,10 +470,10 @@ class ElectrostaticBrighterFatterSolveTask(pipeBase.PipelineTask):
         electrostaticBfCalib.aE = aE
         electrostaticBfCalib.aW = aW
 
-        # Check for validity
-        if self.config.doCheckValidity:
-            # Todo:
-            pass
+        # Optional: Check for validity
+        # if self.config.doCheckValidity:
+        #     # Todo:
+        #     pass
 
         return pipeBase.Struct(
             outputBF=electrostaticBfCalib,
