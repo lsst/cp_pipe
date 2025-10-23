@@ -2307,7 +2307,7 @@ class ElectrostaticFit():
         Range of pixels to fit.
     inputRange : int
         Range of input data.
-    doFitOffset : bool
+    doFitNormalizationOffset : bool
         Whether to fit an offset parameter.
     nImageChargePairs : int
         Number of image charge pairs used in the electrostatic calculation.
@@ -2330,7 +2330,7 @@ class ElectrostaticFit():
         aMatrix,
         aMatrixSigma,
         fitRange,
-        doFitOffset,
+        doFitNormalizationOffset,
         nImageChargePairs,
     ):
         """
@@ -2348,14 +2348,14 @@ class ElectrostaticFit():
             Uncertainty matrix for area changes.
         fitRange : int
             Range of pixels to fit.
-        doFitOffset : bool
+        doFitNormalizationOffset : bool
             Whether to fit an offset parameter.
         nImageChargePairs : int
             Number of image charge pairs for electrostatic calculation.
         """
         self.fitRange = fitRange
         self.inputRange = aMatrix.shape[0]
-        self.doFitOffset = False
+        self.doFitNormalizationOffset = doFitNormalizationOffset
         self.nImageChargePairs = nImageChargePairs
         self.fitMethod = fitMethod
 
@@ -2365,7 +2365,7 @@ class ElectrostaticFit():
 
         self.aMatrix = aMatrix[0:fitRange, 0:fitRange]
         self.aMatrixSigma = aMatrixSigma[0:fitRange, 0:fitRange]
-        self.sqrtWeights = 1 / aMatrixSigma
+        self.sqrtWeights = 1.0 / aMatrixSigma
 
         self.params = initialParams
 
@@ -2374,7 +2374,16 @@ class ElectrostaticFit():
             self.computeWeightedResidual,
             self.params,
         )
-        result = minner.minimize(method=self.fitMethod)
+
+        result = minner.minimize(
+            method=self.fitMethod,
+            max_nfev=20000,
+            epsfcn=1.0e-8,
+            ftol=1.0e-8,
+            xtol=1.0e-8,
+            gtol=0.0,
+        )
+
         return result
 
     def getParamsDict(self):
@@ -2384,9 +2393,10 @@ class ElectrostaticFit():
         return self.params.valuesdict()
 
     def computeWeightedResidual(self, params=None):
+        self.params = params
         m = self.model(params)
-        w = self.sqrtWeights
-        y = self.aMatrix
+        w = self.sqrtWeights[:self.fitRange, :self.fitRange]
+        y = self.aMatrix[:self.fitRange, :self.fitRange]
         # Multiply two 2-d arrays term by term:
         weightedResiduals = (w * (m - y))
         # The result has the same size as both of them.
@@ -2403,9 +2413,11 @@ class ElectrostaticFit():
         parameterDict = self.getParamsDict()
         del parameterDict['alpha']
         del parameterDict['beta']
+        del parameterDict['zsh_minus_zq']
+        del parameterDict['zsv_minus_zq']
 
         # Push them into the electrostatic calculator
-        c = ElectrostaticCcdGeom(**parameterDict)
+        c = ElectrostaticCcdGeom(parameterDict)
 
         # Compute the observables:
         # If you change the routine called here, also
@@ -2430,7 +2442,7 @@ class ElectrostaticFit():
         sqrtw = self.sqrtWeights[:fr, :fr]
         w = sqrtw ** 2
         y = self.aMatrix[:fr, :fr]
-        if self.doFitOffset:
+        if self.doFitNormalizationOffset:
             sxx = (w * m * m).sum()
             sx = (w * m).sum()
             s1 = w.sum()
@@ -2439,7 +2451,6 @@ class ElectrostaticFit():
             d = sxx * s1 - sx * sx
             a = (s1 * sxy - sx * sy) / d
             b = (-sx * sxy + sxx * sy) / d
-            return a * m + b
         else:
             # Just scale
             a = (w * y * m).sum() / (w * m * m).sum()
@@ -2532,7 +2543,10 @@ class BoundaryShifts:
         paramDict = electrostaticFit.getParamsDict()
         del paramDict['alpha']
         del paramDict['beta']
-        c = ElectrostaticCcdGeom(**paramDict)
+        del paramDict['zsh_minus_zq']
+        del paramDict['zsv_minus_zq']
+
+        c = ElectrostaticCcdGeom(paramDict)
         fr = electrostaticFit.fitRange
         ii, jj = np.meshgrid(list(range(fr)), list(range(fr)))
         ii = ii.flatten()
@@ -2599,8 +2613,9 @@ def calcEFieldCoulomb(xv, xqv):
 
 
 class ElectrostaticCcdGeom():
-    def __init__(self, zq, zsh, zsv, a, b, thickness, pixelsize):
+    def __init__(self, paramDict):
         """
+        Dictionary of parameters containing the following keys:
         parameters :  (all in microns)
         zq : altitude of the burried channel (microns)
         zsh : vertex altitude for horizontal boundaries
@@ -2609,13 +2624,22 @@ class ElectrostaticCcdGeom():
         thickness : thickness
         pixelsize : pixel size
         """
-        self.zq = zq
-        self.zsh = zsh
-        self.zsv = zsv
+        zq = paramDict['zq']
+        zsh = paramDict['zsh']
+        zsv = paramDict['zsv']
+        a = paramDict['a']
+        b = paramDict['b']
+        thickness = paramDict['thickness']
+        pixelsize = paramDict['pixelsize']
+
+        self.zq = np.fabs(zq)
+        self.zsh = np.fabs(zsh)
+        self.zsv = np.fabs(zsv)
         self.b = np.fabs(b)
         self.a = np.fabs(a)
         self.thickness = np.fabs(thickness)
         self.pixelsize = pixelsize
+
         self.nStepsZ = 100
         self.nStepsXY = 20
 
@@ -2762,7 +2786,7 @@ class ElectrostaticCcdGeom():
         # = 55.26958
         # eps_r_Si = 12, so eps = 55.27*12 = 663.23 el/V/um
         # This routine hence returns the field sourced by -1 electron
-        result *= 1 / (4*np.pi*663.23)
+        result *= 1 / (4*np.pi*660)
 
         return result
 
@@ -2836,7 +2860,7 @@ class ElectrostaticCcdGeom():
         # = 55.26958
         # eps_r_Si = 12, so eps = 55.27*12 = 663.23 el/V/um
         # This routine hence returns the field sourced by -1 electron
-        eField *= 1 / (4*np.pi*663.23)
+        eField *= 1 / (4*np.pi*660)
 
         return eField
 
@@ -2871,7 +2895,7 @@ class ElectrostaticCcdGeom():
         2d [0:iMax, 0:jMax].
         """
         zf = self.thickness if zf is None else zf
-        assert zf > self.zsh
+        # assert zf > self.zsh
         ii, jj = np.indices((iMax, jMax))
         xx = (ii - 0.5)[:, :, np.newaxis] * self.pixelsize + self.xyOffsets[np.newaxis, np.newaxis, :]
         yy = (jj + 0.5*topOrBottom) * self.pixelsize
