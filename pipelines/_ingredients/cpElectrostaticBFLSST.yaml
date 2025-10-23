@@ -1,0 +1,88 @@
+description: cp_pipe brighter-fatter kernel calibration construction.
+tasks:
+  cpBfIsr:
+    class: lsst.ip.isr.IsrTaskLSST
+    config:
+      connections.ccdExposure: "raw"
+      connections.outputExposure: "cpBfIsrExp"
+      python: |
+        from lsst.cp.pipe import configureIsrTaskLSSTForCalibrations
+
+        configureIsrTaskLSSTForCalibrations(config)
+
+        config.doBootstrap = True
+        config.doCrosstalk = True
+        config.crosstalk.doQuadraticCrosstalkCorrection = False
+        config.doLinearize = True
+        # TODO DM-46426: Add cpCtiLSST pipeline so that this can be True.
+        config.doDeferredCharge = False
+        config.doDefect = True
+        config.doAmpOffset = True
+        config.ampOffset.ampEdgeMaxOffset = 100000.0
+        config.ampOffset.ampEdgeInset = 10
+        config.ampOffset.doBackground = False
+        config.ampOffset.doDetection = False
+        config.ampOffset.doApplyAmpOffset = False
+  cpBfPtcExtractPair:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractPairTask
+    config:
+      connections.inputExp: "cpBfIsrExp"
+      connections.outputCovariance: "cpBfPtcPartial"
+      maximumRangeCovariancesAstier: 15
+      numEdgeSuspect: 20
+      edgeMaskLevel: "AMP"
+      useEfdPhotodiodeData: true
+      auxiliaryHeaderKeys: ["TEMP6"]
+  cpBfPtcSolve:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveSolveTask
+    config:
+      connections.inputCovariances: "cpBfPtcPartial"
+      connections.outputPtcDataset: "bfPtcUnadjusted"
+      ptcFitType: "FULLCOVARIANCE"
+      maximumRangeCovariancesAstier: 15
+      maximumRangeCovariancesAstierFullCovFit: 15
+  cpBfPtcAdjustGainRatios:
+    class: lsst.cp.pipe.ptc.PhotonTransferCurveAdjustGainRatiosTask
+    config:
+      connections.exposures: "cpBfIsrExp"
+      connections.input_ptc: "bfPtcUnadjusted"
+      connections.output_ptc: "bfPtc"
+  # TODO DM-46439: This can be renamed back to cpBfSolve when repos
+  # are cleaned up for the previous dimensionality error.
+  cpBfSolveX:
+    class: lsst.cp.pipe.ElectrostaticBrighterFatterSolveTask
+    config:
+      useBfPtc: true
+      connections.inputPtc: bfPtc
+      connections.outputBFK: ebf
+      python: |
+        config.initialParametersDict = {
+          'thickness': 100.0,
+          'pixelsize': 10.0,
+          'zq': 1.0,
+          'zsh': 2.0,
+          'zsv': 3.0,
+          'a': 2.0,
+          'b': 2.0,
+          'alpha': 1.0,
+          'beta': 0.0,
+        }
+        config.parametersToVary = {
+            'zq': True,
+            'zsh': True,
+            'zsv': True,
+            'a': True,
+            'b': True,
+            'alpha': True,
+            'beta': False,
+        }
+
+contracts:
+  - cpBfIsr.doBootstrap == True
+  - cpBfPtcExtractPair.connections.inputExp == cpBfIsr.connections.outputExposure
+  - cpBfPtcSolve.binSize == cpBfPtcExtractPair.binSize
+  - cpBfPtcSolve.maximumRangeCovariancesAstier == cpBfPtcExtractPair.maximumRangeCovariancesAstier
+  - cpBfPtcSolve.connections.inputCovariances == cpBfPtcExtractPair.connections.outputCovariance
+  - cpBfSolveX.connections.inputPtc == cpBfPtcAdjustGainRatios.connections.output_ptc
+  - cpBfPtcAdjustGainRatios.connections.exposures == cpBfIsr.connections.outputExposure
+  - cpBfPtcAdjustGainRatios.connections.input_ptc == cpBfPtcSolve.connections.outputPtcDataset
