@@ -149,31 +149,89 @@ class ElectrostaticBrighterFatterSolveTaskTestCase(lsst.utils.tests.TestCase):
 
         # This is empirically determined from the above parameters.
         self.expectationN = np.array([
-            [-9.63074863e-07, -1.83533755e-07, -6.82742854e-08],
-            [-1.67887612e-07, -1.11711275e-07, -5.49232536e-08],
-            [-2.61332932e-08, -4.24786799e-08, -3.24952712e-08],
+            [-9.6043345444233e-07, -1.834928531884573e-07,
+             -6.829002404001458e-08, -3.395009268910933e-08,
+             -1.938577698271509e-08],
+            [-1.67723647873235e-07, -1.1170727096154204e-07,
+             -5.4937837964336995e-08, -3.0054681985728955e-08,
+             -1.7905956667356382e-08],
+            [-2.613505487141988e-08, -4.248790474354675e-08,
+             -3.250610285914959e-08, -2.175383668678412e-08,
+             -1.435793965095469e-08],
+            [-7.800476053427953e-09, -1.7070646760313933e-08,
+             -1.7368487910271676e-08, -1.4026417648212689e-08,
+             -1.0402838396107904e-08],
+            [-3.16126749248584e-09, -7.815752671871989e-09,
+             -9.321812906402283e-09, -8.633007891598854e-09,
+             -7.093969018463969e-09]
         ])
-        self.expectationS = self.expectationN
+
+        self.expectationS = np.array([
+            [-9.604334544423303e-07, 9.6043345444233e-07,
+             1.834928531884573e-07, 6.829002404001458e-08,
+             3.395009268910933e-08],
+            [-1.67723647873235e-07, 1.67723647873235e-07,
+             1.1170727096154204e-07, 5.4937837964336995e-08,
+             3.0054681985728955e-08],
+            [-2.6135054871419876e-08, 2.613505487141988e-08,
+             4.248790474354675e-08, 3.250610285914959e-08,
+             2.175383668678412e-08],
+            [-7.800476053427953e-09, 7.800476053427953e-09,
+             1.7070646760313933e-08, 1.7368487910271676e-08,
+             1.4026417648212689e-08],
+            [-3.16126749248584e-09, 3.16126749248584e-09,
+             7.815752671871989e-09, 9.321812906402283e-09,
+             8.633007891598854e-09]
+        ])
 
         self.expectationE = np.array([
-            [-6.78238572e-07, -1.82999671e-07, -2.77419497e-08],
-            [-1.66240036e-07, -1.07364730e-07, -4.28616924e-08],
-            [-6.54927788e-08, -5.34029295e-08, -3.22502537e-08],
+            [-6.749744427777267e-07, -1.8250339728555552e-07,
+             -2.7729149854620917e-08, -8.035079968351e-09,
+             -3.2184346783570578e-09],
+            [-1.6610528501534137e-07, -1.0730697633591896e-07,
+             -4.285764296461245e-08, -1.7319955895167644e-08,
+             -7.91199524741906e-09],
+            [-6.549057579118752e-08, -5.3404306350449054e-08,
+             -3.225504115994437e-08, -1.7412759905918106e-08,
+             -9.374909613003027e-09],
+            [-3.3172336024330024e-08, -2.949619795693681e-08,
+             -2.153854786613826e-08, -1.3986334903747361e-08,
+             -8.642359667681748e-09],
+            [-1.9093161370773104e-08, -1.766815256291286e-08,
+             -1.4227394294305891e-08, -1.03532572194309e-08,
+             -7.0831579167455315e-09]
         ])
-        self.expectationW = self.expectationE
+
+        self.expectationW = np.array([
+            [-6.749744427777267e-07, -1.8250339728555552e-07,
+             -2.7729149854620917e-08, -8.035079968351e-09,
+             -3.2184346783570578e-09],
+            [6.749744427777267e-07, 1.8250339728555552e-07,
+             2.7729149854620917e-08, 8.035079968351e-09,
+             3.2184346783570578e-09],
+            [1.6610528501534137e-07, 1.0730697633591896e-07,
+             4.285764296461245e-08, 1.7319955895167644e-08,
+             7.91199524741906e-09],
+            [6.549057579118752e-08, 5.3404306350449054e-08,
+             3.225504115994437e-08, 1.7412759905918106e-08,
+             9.374909613003027e-09],
+            [3.3172336024330024e-08, 2.949619795693681e-08,
+             2.153854786613826e-08, 1.3986334903747361e-08,
+             8.642359667681748e-09]
+        ])
 
         self.expectationFitParams = {
             "thickness": 100.0,
             "pixelsize": 10.0,
-            "zq": 2.88749,
-            "zsh_minus_zq": 0.0,
-            "zsh": 2.88749,
-            "zsv_minus_zq": 1.08651,
-            "zsv": 3.974,
-            "a": 0.0005,
+            "zq": 2.90316973,
+            "zsh_minus_zq": 8.2469e-07,
+            "zsh": 2.90317056,
+            "zsv_minus_zq": 1.09756267,
+            "zsv": 4.00073241,
+            "a": 0.00191671,
             "b": 3.5,
-            "alpha": 0.64823,
-            "beta": 0.0,
+            "alpha": 0.64506325,
+            "beta": 7.2694e-10,
         }
 
     def test_average(self):
@@ -183,59 +241,61 @@ class ElectrostaticBrighterFatterSolveTaskTestCase(lsst.utils.tests.TestCase):
         config.fitRange = 3
         task = cpPipe.ElectrostaticBrighterFatterSolveTask(config=config)
 
-        results = task.run(self.ptc, self.camera, {'detector': 1})
+        results = task.run(self.ptc, dummy=['this is a dummy exposure'],
+                           camera=self.camera, inputDims={'detector': 1})
 
-        ebf = results.outputBF
+        electroBfDistortionMatrix = results.output
 
         self.assertFloatsAlmostEqual(
-            ebf.aMatrix, self.aMatrixMean,
+            electroBfDistortionMatrix.aMatrix, self.aMatrixMean,
             atol=3*self.aMatrixSigma,
         )
         self.assertFloatsAlmostEqual(
-            ebf.aMatrixSigma, self.aMatrixSigma,
+            electroBfDistortionMatrix.aMatrixSigma, self.aMatrixSigma,
             atol=3*self.aMatrixSigma/np.sqrt(8)
         )
 
         for key, value in self.sequencerMetadata.items():
-            self.assertEqual(ebf.metadata[key], value)
+            self.assertEqual(electroBfDistortionMatrix.metadata[key], value)
 
-        self.assertEqual(ebf.metadata["INSTRUME"], self.camera.getName())
-        self.assertEqual(ebf.metadata["DETECTOR"], self.detector.getId())
-        self.assertEqual(ebf.metadata["DET_NAME"], self.detector.getName())
-        self.assertEqual(ebf.metadata["DET_SER"], self.detector.getSerial())
+        self.assertEqual(electroBfDistortionMatrix.metadata["INSTRUME"], self.camera.getName())
+        self.assertEqual(electroBfDistortionMatrix.metadata["DETECTOR"], self.detector.getId())
+        self.assertEqual(electroBfDistortionMatrix.metadata["DET_NAME"], self.detector.getName())
+        self.assertEqual(electroBfDistortionMatrix.metadata["DET_SER"], self.detector.getSerial())
 
     def test_electrostaticSolution(self):
         """Test the full electrostatic solution.
         """
         config = cpPipe.ElectrostaticBrighterFatterSolveTask().ConfigClass()
-        config.fitRange = 3
+        config.fitRange = 5
         task = cpPipe.ElectrostaticBrighterFatterSolveTask(config=config)
 
-        results = task.run(self.ptc, self.camera, {'detector': 1})
-        ebf = results.outputBF
+        results = task.run(self.ptc, dummy=['this is a dummy exposure'],
+                           camera=self.camera, inputDims={'detector': 1})
+        electroBfDistortionMatrix = results.output
 
-        for n in ebf.fitParamNames:
+        for n in electroBfDistortionMatrix.fitParamNames:
             self.assertFloatsAlmostEqual(
-                ebf.fitParams[n],
+                electroBfDistortionMatrix.fitParams[n],
                 self.expectationFitParams[n],
                 atol=1e-3,
             )
 
         d = 1
         self.assertFloatsAlmostEqual(
-            ebf.aN[:d, :d], self.expectationN[:d, :d],
+            electroBfDistortionMatrix.aN[:d, :d], self.expectationN[:d, :d],
             rtol=1e-3,
         )
         self.assertFloatsAlmostEqual(
-            ebf.aS[:d, :d], self.expectationS[:d, :d],
+            electroBfDistortionMatrix.aS[:d, :d], self.expectationS[:d, :d],
             rtol=1e-3,
         )
         self.assertFloatsAlmostEqual(
-            ebf.aE[:d, :d], self.expectationE[:d, :d],
+            electroBfDistortionMatrix.aE[:d, :d], self.expectationE[:d, :d],
             rtol=1e-3,
         )
         self.assertFloatsAlmostEqual(
-            ebf.aW[:d, :d], self.expectationW[:d, :d],
+            electroBfDistortionMatrix.aW[:d, :d], self.expectationW[:d, :d],
             rtol=1e-3,
         )
 
