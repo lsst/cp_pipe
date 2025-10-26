@@ -49,13 +49,14 @@ tasks:
       connections.output_ptc: "bfPtc"
   # TODO DM-46439: This can be renamed back to cpBfSolve when repos
   # are cleaned up for the previous dimensionality error.
-  cpBfSolveX:
+  cpBfSolve:
     class: lsst.cp.pipe.ElectrostaticBrighterFatterSolveTask
     config:
       useBfPtc: true
       connections.inputPtc: bfPtc
-      connections.outputBFK: ebf
+      connections.output: electroBfDistortionMatrix
       python: |
+        config.fitRange = 8
         config.initialParametersDict = {
           'thickness': 100.0,
           'pixelsize': 10.0,
@@ -68,6 +69,8 @@ tasks:
           'beta': 0.0,
         }
         config.parametersToVary = {
+            'thickness': False,
+            'pixelsize': False,
             'zq': True,
             'zsh': True,
             'zsv': True,
@@ -83,6 +86,6 @@ contracts:
   - cpBfPtcSolve.binSize == cpBfPtcExtractPair.binSize
   - cpBfPtcSolve.maximumRangeCovariancesAstier == cpBfPtcExtractPair.maximumRangeCovariancesAstier
   - cpBfPtcSolve.connections.inputCovariances == cpBfPtcExtractPair.connections.outputCovariance
-  - cpBfSolveX.connections.inputPtc == cpBfPtcAdjustGainRatios.connections.output_ptc
+  - cpBfSolve.connections.inputPtc == cpBfPtcAdjustGainRatios.connections.output_ptc
   - cpBfPtcAdjustGainRatios.connections.exposures == cpBfIsr.connections.outputExposure
   - cpBfPtcAdjustGainRatios.connections.input_ptc == cpBfPtcSolve.connections.outputPtcDataset
