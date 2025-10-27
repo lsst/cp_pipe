@@ -755,7 +755,7 @@ class CrosstalkSolveTask(pipeBase.PipelineTask):
                 calib.coeffs[ss][tt] = np.mean(values)
                 polyfit = np.polyfit(myfluxes, values, 1)
 
-                if self.config.fitOrder == 1:
+                if self.config.fluxOrder == 1:
                     # substitute polyfit solution.
                     calib.coeffs[ss][tt] = polyfit[0]
                     calib.coeffsSqr[ss][tt] = polyfit[1]
@@ -763,7 +763,7 @@ class CrosstalkSolveTask(pipeBase.PipelineTask):
                 if self.config.rejectNegativeSolutions and calib.coeffs[ss][tt] < 0.0:
                     calib.coeffs[ss][tt] = 0.0
 
-                if calib.coeffNum[ss][tt] == 1:
+                if calib.coeffNum[ss][tt] <= 1:
                     calib.coeffErr[ss][tt] = np.nan
                     calib.coeffSqr[ss][tt] = np.nan
                     calib.coeffValid[ss][tt] = False
