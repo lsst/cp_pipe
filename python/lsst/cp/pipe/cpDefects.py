@@ -41,8 +41,11 @@ import lsst.afw.display as afwDisplay
 from lsst.afw import cameraGeom
 from lsst.geom import Box2I, Point2I, Extent2I
 from lsst.meas.algorithms import SourceDetectionTask
-from lsst.ip.isr import Defects, countMaskedPixels
+from lsst.ip.isr import Defects, countMaskedPixels, PhotonTransferCurveDataset
 from lsst.pex.exceptions import InvalidParameterError
+
+from .utils import bin_flat, FlatGradientFitter
+
 
 
 class MeasureDefectsConnections(pipeBase.PipelineTaskConnections,
@@ -83,6 +86,11 @@ class MeasureDefectsTaskConfig(pipeBase.PipelineTaskConfig,
         default='STDEV',
         allowed={'STDEV': "Use a multiple of the image standard deviation to determine detection threshold.",
                  'VALUE': "Use pixel value to determine detection threshold."},
+    )
+    fitAmpGradient = pexConfig.Field(
+        dtype=bool,
+        doc=("Fit out the radial gradient per amplifier."),
+        default=False,
     )
     doVampirePixels = pexConfig.Field(
         dtype=bool,
@@ -365,6 +373,82 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
 
         hotPixelCount = {}
         coldPixelCount = {}
+
+        detector = exp.getDetector()
+
+        if self.config.fitAmpGradient:
+            # 1. bin flat
+            # instantiate empty ptc just to use bin_flat
+            import IPython
+            IPython.embed()
+            ptcForGradientFit = PhotonTransferCurveDataset()
+            # xd and yd in the output table are in pixels in the detector
+            binnedExp = bin_flat(ptcForGradientFit,
+                                 exp,
+                                 bin_factor=8,
+                                 amp_boundary=20,
+                                 apply_gains=False
+                                 )
+
+            # 2. call the fitter
+            transform = detector.getTransform(
+                cameraGeom.PIXELS,
+                cameraGeom.FOCAL_PLANE,
+                )
+            xy = np.vstack((binnedExp["xd"], binnedExp["yd"]))
+            # we get x and y in focal plane coordinates
+            xf, yf = np.vsplit(transform.getMapping().applyForward(xy), 2)
+            xf = xf.ravel()
+            yf = yf.ravel()
+            radius = np.sqrt(xf**2. + yf**2.)
+
+            # we apply the fitting amp by amp
+            for i, amp in enumerate(exp.getDetector()):
+                # select x, y, radius that are in the amp
+
+
+                nodes = np.linspace(
+                    np.min(radius),
+                    np.max(radius),
+                    4
+                    )
+
+            # Put in a normalization for fitting.
+            norm = np.nanpercentile(binnedExp["value"], 95.0)
+
+            fitter = FlatGradientFitter(
+                nodes,
+                xf,
+                yf,
+                binnedExp["value"]/norm,
+                np.array([]),
+                constrain_zero=False,
+                fit_centroid=False,
+                fit_gradient=False,
+                fp_centroid_x=0.0,
+                fp_centroid_y=0.0,
+            )
+            p0 = fitter.compute_p0()
+            pars = fitter.fit(p0)
+
+            binned["value"] /= fitter.compute_model(pars)
+
+            # for i, amp in enumerate(exp.getDetector()):
+            #     fitter = FlatGradientFitter(
+            #         nodes,
+            #         xAmp,
+            #         yAmp,
+            #         binned["value"]/norm,
+            #         np.array([]),
+            #         constrain_zero=False,
+            #         fit_centroid=False,
+            #         fit_gradient=False,
+            #         fp_centroid_x=0.0,
+            #         fp_centroid_y=0.0,
+            #     )
+            # 3. divide out gradient from the unbinned flat
+
+
 
         for amp in exp.getDetector():
             ampName = amp.getName()
