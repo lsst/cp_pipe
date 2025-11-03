@@ -163,6 +163,8 @@ class PhotonTransferCurveAdjustGainRatiosTask(lsst.pipe.base.PipelineTask):
 
             ``output_ptc``
                 The output modified PTC.
+            ``output_adjust_summary``
+                The summary of adjustments.
         """
         # Choose the exposures that will be used.
         # For simplicity, we always use the first of a PTC pair.
@@ -193,7 +195,7 @@ class PhotonTransferCurveAdjustGainRatiosTask(lsst.pipe.base.PipelineTask):
         )
 
         if fixed_amp_index < 0:
-            return lsst.pipe.base.Struct(output_ptc=input_ptc, gain_adjust_summary=Table())
+            return lsst.pipe.base.Struct(output_ptc=input_ptc, output_adjust_summary=Table())
 
         self.log.info(
             "Using amplifier %d (%s) as fixed reference amplifier.",
@@ -283,7 +285,7 @@ class PhotonTransferCurveAdjustGainRatiosTask(lsst.pipe.base.PipelineTask):
             )
             output_ptc.gain[amp_name] = new_gain
 
-        return lsst.pipe.base.Struct(output_ptc=output_ptc, gain_adjust_summary=summary)
+        return lsst.pipe.base.Struct(output_ptc=output_ptc, output_adjust_summary=summary)
 
 
 def _choose_reference_amplifier(

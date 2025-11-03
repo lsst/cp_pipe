@@ -396,7 +396,7 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
         struct = task.run(exposures=flat_handles, input_ptc=ptc)
 
         output_ptc = struct.output_ptc
-        summary = struct.gain_adjust_summary
+        summary = struct.output_adjust_summary
 
         self.assertGreater(summary["mean_adu"].min(), config.min_adu)
         self.assertLess(summary["mean_adu"].max(), config.max_adu)
@@ -503,7 +503,7 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
         struct = task.run(exposures=flat_handles, input_ptc=ptc)
 
         output_ptc = struct.output_ptc
-        summary = struct.gain_adjust_summary
+        summary = struct.output_adjust_summary
 
         self.assertGreater(summary["mean_adu"].min(), config.min_adu)
         self.assertLess(summary["mean_adu"].max(), config.max_adu)
