@@ -1,4 +1,5 @@
 description: cp_pipe ptc renaming (LSSTCam).
+# TODO DM-52883: Remove deprecated pipelines.
 instrument: lsst.obs.lsst.LsstCam
 imports:
   - location: $CP_PIPE_DIR/pipelines/_ingredients/cpPtcRename.yaml

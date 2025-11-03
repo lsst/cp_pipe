@@ -77,6 +77,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
             "cpDarkBootstrap.yaml",
             "cpFlatBootstrap.yaml",
             "cpSpectroFlat.yaml",
+            # TODO DM-52883: Remove cpPtcFixupGainRatios and cpPtcRename.
             "cpPtcFixupGainRatios.yaml",
             "cpPtcRename.yaml",
             "cpIlluminationCorrection.yaml",
