@@ -567,7 +567,15 @@ class MeasureGainCorrectionTestCase(lsst.utils.tests.TestCase):
             self.ptc.noise[amp_name] = 10.0
             self.ptc.ptcTurnoff[amp_name] = 50000.0
 
-    def _check_corrected_ratios(self, ref_flat, input_flat, gain_correction, check_sig_corr=False):
+    def _check_corrected_ratios(
+        self,
+        ref_flat,
+        input_flat,
+        gain_adjust_truth,
+        gain_correction,
+        check_sig_corr=False,
+        gain_adjust_atol=1e-5,
+    ):
         """
         Check corrected ratio images for uniformity.
 
@@ -577,10 +585,14 @@ class MeasureGainCorrectionTestCase(lsst.utils.tests.TestCase):
             Reference flat.
         input_flat : `lsst.afw.image.Exposure`
             Input flat.
+        gain_adjust_truth : `dict` [`str`, `float`]
+            Dictionary of gains used; adjustment is relative to gain_ref.
         gain_correction : `lsst.ip.isr.GainCorrection`
             Gain correction object.
         check_sig_corr : `bool`, optional
             Check the value of the corrected ratio sigma?
+        gain_adjust_atol : `float`, optional
+            Tolerance for testing gain adjustments.
         """
         ratio = input_flat.image.array / ref_flat.image.array
 
@@ -594,6 +606,17 @@ class MeasureGainCorrectionTestCase(lsst.utils.tests.TestCase):
 
         if check_sig_corr:
             self.assertLess(np.std(ratio_corr), 1e-6)
+
+        gain_adjustments_truth = np.asarray(
+            [self.gain_ref[amp.getName()] / gain_adjust_truth[amp.getName()] for amp in self.detector]
+        )
+
+        finite = np.isfinite(gain_adjustments_truth)
+        self.assertFloatsAlmostEqual(
+            gain_correction.gainAdjustments[finite],
+            gain_adjustments_truth[finite],
+            atol=gain_adjust_atol,
+        )
 
     def test_task_run_matched_gradient(self):
         # This test shows what happens if we have matched
@@ -637,7 +660,13 @@ class MeasureGainCorrectionTestCase(lsst.utils.tests.TestCase):
             input_flat=input_flat,
         )
 
-        self._check_corrected_ratios(ref_flat, input_flat, struct.output_gain_correction, check_sig_corr=True)
+        self._check_corrected_ratios(
+            ref_flat,
+            input_flat,
+            gain_adj,
+            struct.output_gain_correction,
+            check_sig_corr=True,
+        )
 
         # Second fit with defaults.
         config = CpMeasureGainCorrectionTask.ConfigClass()
@@ -654,20 +683,15 @@ class MeasureGainCorrectionTestCase(lsst.utils.tests.TestCase):
             input_flat=input_flat,
         )
 
-        self._check_corrected_ratios(ref_flat, input_flat, struct.output_gain_correction)
+        self._check_corrected_ratios(
+            ref_flat,
+            input_flat,
+            gain_adj,
+            struct.output_gain_correction,
+            gain_adjust_atol=3e-3,
+        )
 
     def test_task_run_mismatched_spline(self):
-        # test_task_run_mismatched_gradient
-        # test_task_run_bad_amp
-        # What we do is the following...
-
-        # Generate a reference flat... adjust spline limits!
-        # Generate a daily flat with ...
-        #  - The same spline limits, same gradient. DONE
-        #  - Different spline limits, same gradient.
-        #  - Same spline limits, different gradient.
-        #  - And a bad amp!
-
         # This test shows what happens if we have matched
         # gradients but different spline between the reference flat and the
         # input flat.
@@ -709,7 +733,13 @@ class MeasureGainCorrectionTestCase(lsst.utils.tests.TestCase):
             input_flat=input_flat,
         )
 
-        self._check_corrected_ratios(ref_flat, input_flat, struct.output_gain_correction)
+        self._check_corrected_ratios(
+            ref_flat,
+            input_flat,
+            gain_adj,
+            struct.output_gain_correction,
+            gain_adjust_atol=3e-3,
+        )
 
     def test_task_run_mismatched_gradient(self):
         # This test shows what happens if we have matched
@@ -753,7 +783,13 @@ class MeasureGainCorrectionTestCase(lsst.utils.tests.TestCase):
             input_flat=input_flat,
         )
 
-        self._check_corrected_ratios(ref_flat, input_flat, struct.output_gain_correction)
+        self._check_corrected_ratios(
+            ref_flat,
+            input_flat,
+            gain_adj,
+            struct.output_gain_correction,
+            gain_adjust_atol=3e-3,
+        )
 
     def test_task_run_mismatched_both(self):
         # This test shows what happens if we have matched
@@ -797,7 +833,13 @@ class MeasureGainCorrectionTestCase(lsst.utils.tests.TestCase):
             input_flat=input_flat,
         )
 
-        self._check_corrected_ratios(ref_flat, input_flat, struct.output_gain_correction)
+        self._check_corrected_ratios(
+            ref_flat,
+            input_flat,
+            gain_adj,
+            struct.output_gain_correction,
+            gain_adjust_atol=3e-3,
+        )
 
     def test_task_run_mismatched_both_bad_amp(self):
         # This test shows what happens if we have matched
@@ -842,7 +884,13 @@ class MeasureGainCorrectionTestCase(lsst.utils.tests.TestCase):
             input_flat=input_flat,
         )
 
-        self._check_corrected_ratios(ref_flat, input_flat, struct.output_gain_correction)
+        self._check_corrected_ratios(
+            ref_flat,
+            input_flat,
+            gain_adj,
+            struct.output_gain_correction,
+            gain_adjust_atol=3e-3,
+        )
 
 
 def _get_adjusted_flat(
