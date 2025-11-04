@@ -200,12 +200,17 @@ class CpMeasureGainCorrectionTask(lsst.pipe.base.PipelineTask):
         lo_flat, hi_flat = np.nanpercentile(binned_flat["value"], [5.0, 95.0])
         lo_flat *= 0.8
         hi_flat *= 1.2
+        lo_ratio, hi_ratio = np.nanpercentile(binned_ratio["value"], [5.0, 95.0])
+        lo_ratio *= 0.8
+        hi_ratio *= 1.2
         use = (
             np.isfinite(binned_ratio["value"])
             & (binned_ref["value"] >= lo_ref)
             & (binned_ref["value"] <= hi_ref)
             & (binned_flat["value"] >= lo_flat)
             & (binned_flat["value"] <= hi_flat)
+            & (binned_ratio["value"] >= lo_ratio)
+            & (binned_ratio["value"] <= hi_ratio)
         )
         binned = binned_ratio[use]
 
