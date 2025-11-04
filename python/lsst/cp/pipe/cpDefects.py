@@ -45,7 +45,7 @@ from lsst.ip.isr import Defects, countMaskedPixels, PhotonTransferCurveDataset
 from lsst.pex.exceptions import InvalidParameterError
 
 from .utils import bin_flat, FlatGradientFitter
-
+from scipy.interpolate import Akima1DInterpolator
 
 
 class MeasureDefectsConnections(pipeBase.PipelineTaskConnections,
@@ -379,13 +379,11 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
         if self.config.fitAmpGradient:
             # 1. bin flat
             # instantiate empty ptc just to use bin_flat
-            import IPython
-            IPython.embed()
             ptcForGradientFit = PhotonTransferCurveDataset()
             # xd and yd in the output table are in pixels in the detector
             binnedExp = bin_flat(ptcForGradientFit,
                                  exp,
-                                 bin_factor=8,
+                                 bin_factor=8, #make them configs
                                  amp_boundary=20,
                                  apply_gains=False
                                  )
@@ -395,59 +393,70 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
                 cameraGeom.PIXELS,
                 cameraGeom.FOCAL_PLANE,
                 )
-            xy = np.vstack((binnedExp["xd"], binnedExp["yd"]))
-            # we get x and y in focal plane coordinates
-            xf, yf = np.vsplit(transform.getMapping().applyForward(xy), 2)
-            xf = xf.ravel()
-            yf = yf.ravel()
-            radius = np.sqrt(xf**2. + yf**2.)
+
+            # focal plane for all detector and then in the loop select the amp
 
             # we apply the fitting amp by amp
-            for i, amp in enumerate(exp.getDetector()):
+            for i, amp in enumerate(detector):
                 # select x, y, radius that are in the amp
-
+                binnedExpInAmp = binnedExp[binnedExp["amp_index"] == i]
+                # detector level coordinate (on unbinned image)
+                xy = np.vstack((binnedExpInAmp["xd"], binnedExpInAmp["yd"]))
+                # we get x and y in focal plane coordinates
+                xf, yf = np.vsplit(transform.getMapping().applyForward(xy), 2)
+                xf = xf.ravel()
+                yf = yf.ravel()
+                radiusBinned = np.sqrt(xf**2. + yf**2.)
 
                 nodes = np.linspace(
-                    np.min(radius),
-                    np.max(radius),
-                    4
+                    np.min(radiusBinned),
+                    np.max(radiusBinned),
+                    4 #make it a config
                     )
 
-            # Put in a normalization for fitting.
-            norm = np.nanpercentile(binnedExp["value"], 95.0)
+                # Normalize for fit
+                norm = np.nanpercentile(binnedExpInAmp["value"], 95.0)
 
-            fitter = FlatGradientFitter(
-                nodes,
-                xf,
-                yf,
-                binnedExp["value"]/norm,
-                np.array([]),
-                constrain_zero=False,
-                fit_centroid=False,
-                fit_gradient=False,
-                fp_centroid_x=0.0,
-                fp_centroid_y=0.0,
-            )
-            p0 = fitter.compute_p0()
-            pars = fitter.fit(p0)
+                fitter = FlatGradientFitter(
+                    nodes,
+                    xf,
+                    yf,
+                    binnedExpInAmp["value"]/norm,
+                    np.array([]),
+                    constrain_zero=False,
+                    fit_centroid=False,
+                    fit_gradient=False,
+                    fp_centroid_x=0.0,
+                    fp_centroid_y=0.0,
+                )
+                p0 = fitter.compute_p0()
+                pars = fitter.fit(p0)
 
-            binned["value"] /= fitter.compute_model(pars)
+                modelBinned = fitter.compute_model(pars)
 
-            # for i, amp in enumerate(exp.getDetector()):
-            #     fitter = FlatGradientFitter(
-            #         nodes,
-            #         xAmp,
-            #         yAmp,
-            #         binned["value"]/norm,
-            #         np.array([]),
-            #         constrain_zero=False,
-            #         fit_centroid=False,
-            #         fit_gradient=False,
-            #         fp_centroid_x=0.0,
-            #         fp_centroid_y=0.0,
-            #     )
+            import IPython
+            IPython.embed()
             # 3. divide out gradient from the unbinned flat
 
+            # application on unbinned amp by amp
+            # get x, y in FP coordinate in the amp
+            xx = np.arange(exp.image.array.shape[1], dtype=np.int64)
+            yy = np.arange(exp.image.array.shape[0], dtype=np.int64)
+            x, y = np.meshgrid(xx, yy)
+            x = x.ravel()
+            y = y.ravel()
+
+            xy = np.vstack((x, y))
+            xf, yf = np.vsplit(transform.getMapping().applyForward(xy.astype(np.float64)), 2)
+            xf = xf.ravel()
+            yf = yf.ravel()
+
+            for amp in detector:
+                pixelsInAmp = amp.getBBox().contains(x, y)
+                radius = np.sqrt(xf[pixelsInAmp]**2. + yf[pixelsInAmp]**2.)
+                spl = Akima1DInterpolator(radiusBinned, modelBinned)
+                fullModel = spl(np.clip(radius, nodes[0], nodes[-1]))
+                exp.image.array[y, x] /= fullModel
 
 
         for amp in exp.getDetector():
