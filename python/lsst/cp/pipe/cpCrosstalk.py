@@ -757,8 +757,8 @@ class CrosstalkSolveTask(pipeBase.PipelineTask):
 
                 if self.config.fluxOrder == 1:
                     # substitute polyfit solution.
-                    calib.coeffs[ss][tt] = polyfit[0]
-                    calib.coeffsSqr[ss][tt] = polyfit[1]
+                    calib.coeffs[ss][tt] = polyfit[1]
+                    calib.coeffsSqr[ss][tt] = polyfit[0]
 
                 if self.config.rejectNegativeSolutions and calib.coeffs[ss][tt] < 0.0:
                     calib.coeffs[ss][tt] = 0.0
