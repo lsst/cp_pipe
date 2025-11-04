@@ -100,6 +100,11 @@ class CpMeasureGainCorrectionConfig(
         doc="Order of chebyshev x/y polynomials to remove additional gradients.",
         default=1,
     )
+    chebyshev_gradient_nsig_clip = lsst.pex.config.Field(
+        dtype=float,
+        doc="Number of sigma to clip gain ratios when fitting the Chebyshev gradient.",
+        default=5.0,
+    )
     bin_factor = lsst.pex.config.Field(
         dtype=int,
         doc="Binning factor to compute gradients/gain ratios (pixels).",
@@ -190,6 +195,7 @@ class CpMeasureGainCorrectionTask(lsst.pipe.base.PipelineTask):
             radial_gradient_n_spline_nodes=self.config.radial_gradient_n_spline_nodes,
             chebyshev_gradient_order=self.config.chebyshev_gradient_order,
             max_fractional_gain_ratio=self.config.max_fractional_gain_ratio,
+            nsig_clip=self.config.chebyshev_gradient_nsig_clip,
             log=self.log,
         )
 

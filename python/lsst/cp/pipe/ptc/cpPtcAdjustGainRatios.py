@@ -352,6 +352,7 @@ def _compute_gain_ratios(
     radial_gradient_n_spline_nodes=20,
     chebyshev_gradient_order=1,
     max_fractional_gain_ratio=0.05,
+    nsig_clip=5.0,
     log=None,
 ):
     """Compute the gain ratios from a given non-gain-corrected exposure.
@@ -376,6 +377,9 @@ def _compute_gain_ratios(
         Maximum fractional gain ratio to consider per-exposure. Any
         amps with larger offset will be excluded from the gradient fit
         and will have no corrections computed.
+    nsig_clip : `float`, optional
+        Number of sigma on distribution of gain ratios to clip when fitting
+        out Chebyshev gradient.
     log : `logging.logger`, optional
         Log object.
 
@@ -445,7 +449,7 @@ def _compute_gain_ratios(
             np.arange(n_amp),
             fixed_amp_index,
         )
-        pars = fitter.fit()
+        pars = fitter.fit(nsig_clip=nsig_clip)
         amp_pars = pars[fitter.indices["amp_pars"]]
 
         fractional_gain_ratio = np.abs(amp_pars - 1.0)

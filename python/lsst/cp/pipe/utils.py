@@ -1917,11 +1917,19 @@ class FlatGainRatioFitter:
             amp_index = self._amps[i]
             self._amp_indices[amp_index] = (self._amp_index == amp_index)
 
-    def fit(self, n_iter=10, nsig_cut=5.0):
+    def fit(self, n_iter=10, nsig_clip=5.0):
         """Fit the amp ratio parameters.
 
         This uses an iterative fit, where it fits a Chebyshev gradient,
         computes amp ratios, and re-fits the gradient.
+
+        Parameters
+        ----------
+        n_iter : `int`, optional
+            Number of iterations for fit.
+        nsig_clip : `float`, optional
+            Number of sigma in gain correction distribution to clip when
+            fitting out the Chebyshev gradient.
 
         Returns
         -------
@@ -1972,7 +1980,7 @@ class FlatGainRatioFitter:
             amp_pars = pars[self.indices["amp_pars"]]
             med = np.median(amp_pars)
             sig = median_abs_deviation(amp_pars, scale="normal")
-            amp_gradient_bad, = np.where(np.abs(amp_pars - med) > nsig_cut * sig)
+            amp_gradient_bad, = np.where(np.abs(amp_pars - med) > nsig_clip * sig)
             field_use[:] = True
             for agb in amp_gradient_bad:
                 field_use[self._amp_indices[agb]] = False
