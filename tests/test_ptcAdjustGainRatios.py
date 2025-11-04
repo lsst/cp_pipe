@@ -26,6 +26,7 @@ import copy
 import logging
 import unittest
 import numpy as np
+from matplotlib.figure import Figure
 from scipy.interpolate import Akima1DInterpolator
 
 import lsst.utils.tests
@@ -690,6 +691,8 @@ class MeasureGainCorrectionTestCase(lsst.utils.tests.TestCase):
             struct.output_gain_correction,
             gain_adjust_atol=3e-3,
         )
+
+        self.assertIsInstance(struct.output_flat_ratio_plot, Figure)
 
     def test_task_run_mismatched_spline(self):
         # This test shows what happens if we have matched
