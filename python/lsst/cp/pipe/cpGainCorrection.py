@@ -70,6 +70,28 @@ class CpMeasureGainCorrectionConnections(
         dimensions=("instrument", "detector"),
     )
 
+    def adjustQuantum(self, inputs, outputs, label, dataId):
+        # We need to remove reference flats that do not match
+        # the physical filter of the input flat.
+        input_flat_ref = inputs["input_flat"][1][0]
+        physical_filter = input_flat_ref.dataId["physical_filter"]
+
+        input_reference_flat_refs = inputs["input_reference_flat"][1]
+        input_reference_flat_ref = None
+        for ref in input_reference_flat_refs:
+            if ref.dataId["physical_filter"] == physical_filter:
+                input_reference_flat_ref = ref
+                break
+
+        if input_reference_flat_ref is None:
+            raise lsst.pipe.base.NoWorkFound(
+                f"No matched input flat with physical filter {physical_filter}.",
+            )
+
+        inputs["input_reference_flat"] = (inputs["input_reference_flat"][0], (input_reference_flat_ref,))
+
+        return inputs, outputs
+
 
 class CpMeasureGainCorrectionConfig(
     lsst.pipe.base.PipelineTaskConfig,
