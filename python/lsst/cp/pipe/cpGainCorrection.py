@@ -219,6 +219,12 @@ class CpMeasureGainCorrectionTask(lsst.pipe.base.PipelineTask):
         )
         binned = binned_ratio[use]
 
+        self.log.info(
+            "Using amplifier %d (%s) as fixed reference amplifier in fit.",
+            fixed_amp_index,
+            input_reference_ptc.ampNames[fixed_amp_index],
+        )
+
         gain_ratios = _compute_gain_ratios(
             input_flat.getDetector(),
             binned,
@@ -229,6 +235,17 @@ class CpMeasureGainCorrectionTask(lsst.pipe.base.PipelineTask):
             max_fractional_gain_ratio=self.config.max_fractional_gain_ratio,
             nsig_clip=self.config.chebyshev_gradient_nsig_clip,
             log=self.log,
+        )
+
+        st = np.argsort(gain_ratios)
+        fixed_amp_index2 = st[int(0.5 * len(st))]
+
+        gain_ratios /= gain_ratios[fixed_amp_index2]
+
+        self.log.info(
+            "Adjusting to amplifier %d (%s) as fixed reference amplifier after fit.",
+            fixed_amp_index2,
+            input_reference_ptc.ampNames[fixed_amp_index2],
         )
 
         gain_correction.gainAdjustments[:] = gain_ratios
