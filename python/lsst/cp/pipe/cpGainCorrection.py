@@ -194,13 +194,18 @@ class CpMeasureGainCorrectionTask(lsst.pipe.base.PipelineTask):
 
         # Clip out non-finite and extreme values from both the input flat
         # and the reference flat.
-        lo_ref, hi_ref = np.nanpercentile(binned_ref["value"], [5.0, 95.0])
+        ok = (
+            np.isfinite(binned_ref["value"])
+            & np.isfinite(binned_flat["value"])
+            & np.isfinite(binned_ratio["value"])
+        )
+        lo_ref, hi_ref = np.percentile(binned_ref["value"][ok], [5.0, 95.0])
         lo_ref *= 0.8
         hi_ref *= 1.2
-        lo_flat, hi_flat = np.nanpercentile(binned_flat["value"], [5.0, 95.0])
+        lo_flat, hi_flat = np.percentile(binned_flat["value"][ok], [5.0, 95.0])
         lo_flat *= 0.8
         hi_flat *= 1.2
-        lo_ratio, hi_ratio = np.nanpercentile(binned_ratio["value"], [5.0, 95.0])
+        lo_ratio, hi_ratio = np.percentile(binned_ratio["value"][ok], [5.0, 95.0])
         lo_ratio *= 0.8
         hi_ratio *= 1.2
         use = (
