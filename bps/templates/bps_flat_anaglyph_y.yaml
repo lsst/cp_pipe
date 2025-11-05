@@ -18,4 +18,4 @@ payload:
   inCollection: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET},${RAW_COLLECTION},${CALIB_COLLECTIONS}"
   dataQuery: "${SELECTION_FLAT_y} and band='y'"
 
-extraQgraphOptions: "--config cpFlatBlueNormalize:downSelectionValue=single_led_flat_m940l3 --config cpFlatRedNormalize:downSelectionValue=single_led_flat_m970l4 --config cpFlatRedBlueCombine:weightOne=0.520"
+extraQgraphOptions: "--config cpFlatBlueNormalize:downSelectionValue=single_led_flat_m940l3 --config cpFlatRedNormalize:downSelectionValue=single_led_flat_m1050l4 --config cpFlatRedBlueCombine:weightOne=0.468"
