@@ -364,7 +364,6 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
             The defects found in the image.
         """
         self._setEdgeBits(exp)
-        maskedIm = exp.maskedImage
 
         # the detection polarity for afwDetection, True for positive,
         # False for negative, and therefore True for darks as they only have
@@ -405,14 +404,12 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
             xf = xf.ravel()
             yf = yf.ravel()
 
-            originExp = exp.image.array.copy()
 
             # we apply the fitting amp by amp
             for i, amp in enumerate(detector):
+                pixelsInAmp = amp.getBBox().contains(x, y)
                 # select x, y, radius that are in the amp
                 binnedExpInAmp = binnedExp[binnedExp["amp_index"] == i]
-                # detector level coordinate (on unbinned image)
-                xy = np.vstack((binnedExpInAmp["xd"], binnedExpInAmp["yd"]))
                 # we get x and y in focal plane coordinates
                 xfamp, yfamp = np.vsplit(transform.getMapping().applyForward(xy), 2)
                 xfamp = xfamp.ravel()
@@ -436,7 +433,7 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
                     np.array([]),
                     constrain_zero=False,
                     fit_centroid=False,
-                    fit_gradient=True,
+                    fit_gradient=False,
                     fp_centroid_x=0.0,
                     fp_centroid_y=0.0,
                 )
@@ -446,7 +443,6 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
                 # 3. Get full model and correct flat from gradient
 
                 gradient = FlatGradient()
-                gradient_x, gradient_y = pars[fitter.indices["gradient"]]
                 gradient.setParameters(
                     radialSplineNodes=nodes,
                     radialSplineValues=pars[fitter.indices["spline"]],
@@ -455,18 +451,19 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
                     centroidY=0,
                     centroidDeltaX=0,
                     centroidDeltaY=0,
-                    gradientX=gradient_x,
-                    gradientY=gradient_y,
+                    gradientX=0,
+                    gradientY=0,
                     normalizationFactor=1.0,
                 )
 
-                pixelsInAmp = amp.getBBox().contains(x, y)
-#                gradientValues = gradient.computeGradientModel(xf[pixelsInAmp], yf[pixelsInAmp])
+
                 radius = np.sqrt(xf[pixelsInAmp]**2. + yf[pixelsInAmp]**2.)
                 spl = Akima1DInterpolator(gradient.radialSplineNodes, gradient.radialSplineValues)
-                fullModel = spl(np.clip(radius, gradient.radialSplineNodes[0], gradient.radialSplineNodes[-1])) / (1 + gradient.gradientX*xf[pixelsInAmp] + gradient.gradientY*yf[pixelsInAmp])
+                fullModel = spl(np.clip(radius, gradient.radialSplineNodes[0], gradient.radialSplineNodes[-1]))
                 exp.image.array[y[pixelsInAmp], x[pixelsInAmp]] /= fullModel
 
+
+        maskedIm = exp.maskedImage
 
         for amp in exp.getDetector():
             ampName = amp.getName()
