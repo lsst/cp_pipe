@@ -237,6 +237,11 @@ class CpMeasureGainCorrectionTask(lsst.pipe.base.PipelineTask):
             log=self.log,
         )
 
+        # Sort ratios to find the approximate midpoint. The goal is
+        # to have one amplifier exactly 1.0 correction, and if there
+        # are an even number of amps simply taking the median will
+        # interpolate between two ratios. In addition, this allows
+        # us to explicitly log the new reference amplifier.
         st = np.argsort(gain_ratios)
         fixed_amp_index2 = st[int(0.5 * len(st))]
 
