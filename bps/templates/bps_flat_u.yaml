@@ -7,9 +7,9 @@ submitPath: "${SCRATCH}/submit/{outputRun}"
 # Necessary to cluster by exposure if there are many input exposures
 clusterAlgorithm: lsst.ctrl.bps.quantum_clustering_funcs.dimension_clustering
 cluster:
-  cpFlatIsrByExposure:
+  cpFlatIsrByDetector:
     pipetasks: cpFlatIsr,cpFlatMeasure
-    dimensions: exposure
+    dimensions: detector
 
 payload:
   payloadName: "${INSTRUMENT}_${TICKET}_flat_u"
