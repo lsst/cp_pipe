@@ -2073,28 +2073,28 @@ def bin_focal_plane(
 
         detector = None
         for exposure_handle in exposure_handle_dict[det]:
-            exp = exposure_handle.get()
+            flat = exposure_handle.get()
 
             # Mask out defects if we have them.
             if defects is not None:
                 for defect in defects:
-                    exp.image[defect.getBBox()].array[:, :] = np.nan
+                    flat.image[defect.getBBox()].array[:, :] = np.nan
 
             if detector is None:
                 # This is the first exposure.
-                detector = exp.getDetector()
+                detector = flat.getDetector()
 
-                arr = exp.image.array
+                arr = flat.image.array
                 n_stack = 1
             else:
-                arr += exp.image.array
+                arr += flat.image.array
                 n_stack += 1
 
         arr /= n_stack
 
         # Mask NO_DATA pixels if we have them.
         no_data = ((flat.mask.array[:, :] & flat.mask.getPlaneBitMask("NO_DATA")) > 0)
-        flat.image.array[no_data] = np.nan
+        arr[no_data] = np.nan
 
         # Bin the image, avoiding the boundary and the masked pixels.
         # We also make sure we are using an integral number of
