@@ -48,6 +48,7 @@ from .utils import bin_flat, FlatGradientFitter
 from scipy.interpolate import Akima1DInterpolator
 from lsst.ip.isr import FlatGradient
 
+
 class MeasureDefectsConnections(pipeBase.PipelineTaskConnections,
                                 dimensions=("instrument", "exposure", "detector")):
     inputExp = cT.Input(
@@ -212,6 +213,21 @@ class MeasureDefectsTaskConfig(pipeBase.PipelineTaskConfig,
             "NEVERMASK": "Never mask the E2V midline break, no matter the flat values.",
             "MASK": "Always mask the E2V midline break.",
         },
+    )
+    ampGradientBinFactor = pexConfig.Field(
+        dtype=int,
+        doc="Binning factor used for per-amp gradient fits.",
+        default=8,
+    )
+    ampGradientBoundarySize = pexConfig.Field(
+        dtype=int,
+        doc="Amp boundary exclusion size.",
+        default=20,
+    )
+    ampGradientNodes = pexConfig.Field(
+        dtype=int,
+        doc="Number of gradient spline nodes.",
+        default=4,
     )
 
     def validate(self):
@@ -382,8 +398,8 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
             # xd and yd in the output table are in pixels in the detector
             binnedExp = bin_flat(ptcForGradientFit,
                                  exp,
-                                 bin_factor=8, #make them configs
-                                 amp_boundary=20,
+                                 bin_factor=self.config.ampGradientBinFactor,
+                                 amp_boundary=self.config.ampGradientBoundarySize,
                                  apply_gains=False
                                  )
 
@@ -391,7 +407,7 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
             transform = detector.getTransform(
                 cameraGeom.PIXELS,
                 cameraGeom.FOCAL_PLANE,
-                )
+            )
 
             xx = np.arange(exp.image.array.shape[1], dtype=np.int64)
             yy = np.arange(exp.image.array.shape[0], dtype=np.int64)
@@ -403,7 +419,6 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
             xf, yf = np.vsplit(transform.getMapping().applyForward(xy.astype(np.float64)), 2)
             xf = xf.ravel()
             yf = yf.ravel()
-
 
             # we apply the fitting amp by amp
             for i, amp in enumerate(detector):
@@ -419,8 +434,8 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
                 nodes = np.linspace(
                     np.min(radiusBinned),
                     np.max(radiusBinned),
-                    4 #make it a config
-                    )
+                    self.config.ampGradientNodes
+                )
 
                 # Normalize for fit
                 norm = np.nanpercentile(binnedExpInAmp["value"], 95.0)
@@ -456,12 +471,12 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
                     normalizationFactor=1.0,
                 )
 
-
                 radius = np.sqrt(xf[pixelsInAmp]**2. + yf[pixelsInAmp]**2.)
                 spl = Akima1DInterpolator(gradient.radialSplineNodes, gradient.radialSplineValues)
-                fullModel = spl(np.clip(radius, gradient.radialSplineNodes[0], gradient.radialSplineNodes[-1]))
+                fullModel = spl(np.clip(radius,
+                                        gradient.radialSplineNodes[0],
+                                        gradient.radialSplineNodes[-1]))
                 exp.image.array[y[pixelsInAmp], x[pixelsInAmp]] /= fullModel
-
 
         maskedIm = exp.maskedImage
 
