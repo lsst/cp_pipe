@@ -45,7 +45,6 @@ from lsst.ip.isr import Defects, countMaskedPixels, PhotonTransferCurveDataset
 from lsst.pex.exceptions import InvalidParameterError
 
 from .utils import bin_flat, FlatGradientFitter
-from scipy.interpolate import Akima1DInterpolator
 from lsst.ip.isr import FlatGradient
 
 
@@ -90,7 +89,7 @@ class MeasureDefectsTaskConfig(pipeBase.PipelineTaskConfig,
     )
     fitAmpGradient = pexConfig.Field(
         dtype=bool,
-        doc=("Fit out the radial gradient per amplifier."),
+        doc="Fit out the focal plane radial gradient per amplifier.",
         default=False,
     )
     doVampirePixels = pexConfig.Field(
@@ -216,17 +215,17 @@ class MeasureDefectsTaskConfig(pipeBase.PipelineTaskConfig,
     )
     ampGradientBinFactor = pexConfig.Field(
         dtype=int,
-        doc="Binning factor used for per-amp gradient fits.",
+        doc="Binning factor used for fitting per-amp focal plane gradient.",
         default=8,
     )
     ampGradientBoundarySize = pexConfig.Field(
         dtype=int,
-        doc="Amp boundary exclusion size.",
+        doc="Amp boundary exclusion size for fitting per-amp focal plane gradient.",
         default=20,
     )
     ampGradientNodes = pexConfig.Field(
         dtype=int,
-        doc="Number of gradient spline nodes.",
+        doc="Number of spline nodes for per-amp focal plane gradient.",
         default=4,
     )
 
@@ -392,23 +391,32 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
         detector = exp.getDetector()
 
         if self.config.fitAmpGradient:
-            # 1. bin flat
-            # instantiate empty ptc just to use bin_flat
-            ptcForGradientFit = PhotonTransferCurveDataset()
-            # xd and yd in the output table are in pixels in the detector
-            binnedExp = bin_flat(ptcForGradientFit,
-                                 exp,
-                                 bin_factor=self.config.ampGradientBinFactor,
-                                 amp_boundary=self.config.ampGradientBoundarySize,
-                                 apply_gains=False
-                                 )
+            # 1. Bin flat.
+            binnedExp = bin_flat(
+                PhotonTransferCurveDataset(),
+                exp,
+                bin_factor=self.config.ampGradientBinFactor,
+                amp_boundary=self.config.ampGradientBoundarySize,
+                apply_gains=False,
+            )
 
-            # 2. call the fitter
+            # 2. Prepare transformations.
             transform = detector.getTransform(
                 cameraGeom.PIXELS,
                 cameraGeom.FOCAL_PLANE,
             )
 
+            # 2a. Do transformation for binned coordinates.
+            binnedXy = np.vstack((binnedExp["xd"], binnedExp["yd"]))
+            binnedXf, binnedYf = np.vsplit(
+                transform.getMapping().applyForward(binnedXy.astype(np.float64)),
+                2,
+            )
+            binnedXf = binnedXf.ravel()
+            binnedYf = binnedYf.ravel()
+            binnedRadius = np.sqrt(binnedXf**2. + binnedYf**2.)
+
+            # 2b. Do transformation for full detector coordinates.
             xx = np.arange(exp.image.array.shape[1], dtype=np.int64)
             yy = np.arange(exp.image.array.shape[0], dtype=np.int64)
             x, y = np.meshgrid(xx, yy)
@@ -420,63 +428,43 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
             xf = xf.ravel()
             yf = yf.ravel()
 
-            # we apply the fitting amp by amp
+            # Measure the focal plane gradient on the binned image and remove
+            # on the full image, amp by amp.
             for i, amp in enumerate(detector):
-                pixelsInAmp = amp.getBBox().contains(x, y)
-                # select x, y, radius that are in the amp
-                binnedExpInAmp = binnedExp[binnedExp["amp_index"] == i]
-                # we get x and y in focal plane coordinates
-                xfamp, yfamp = np.vsplit(transform.getMapping().applyForward(xy), 2)
-                xfamp = xfamp.ravel()
-                yfamp = yfamp.ravel()
-                radiusBinned = np.sqrt(xfamp**2. + yfamp**2.)
+                # Fit the focal plane radial gradient in the binned image.
+                binnedInAmp = (binnedExp["amp_index"] == i)
 
                 nodes = np.linspace(
-                    np.min(radiusBinned),
-                    np.max(radiusBinned),
-                    self.config.ampGradientNodes
+                    np.min(binnedRadius[binnedInAmp]),
+                    np.max(binnedRadius[binnedInAmp]),
+                    self.config.ampGradientNodes,
                 )
 
-                # Normalize for fit
-                norm = np.nanpercentile(binnedExpInAmp["value"], 95.0)
+                norm = np.nanpercentile(binnedExp["value"][binnedInAmp], 95.0)
 
                 fitter = FlatGradientFitter(
                     nodes,
-                    xfamp,
-                    yfamp,
-                    binnedExpInAmp["value"]/norm,
+                    binnedXf[binnedInAmp],
+                    binnedYf[binnedInAmp],
+                    binnedExp["value"][binnedInAmp]/norm,
                     np.array([]),
                     constrain_zero=False,
-                    fit_centroid=False,
-                    fit_gradient=False,
-                    fp_centroid_x=0.0,
-                    fp_centroid_y=0.0,
                 )
                 p0 = fitter.compute_p0()
                 pars = fitter.fit(p0)
-
-                # 3. Get full model and correct flat from gradient
 
                 gradient = FlatGradient()
                 gradient.setParameters(
                     radialSplineNodes=nodes,
                     radialSplineValues=pars[fitter.indices["spline"]],
-                    itlRatio=1.0,
-                    centroidX=0,
-                    centroidY=0,
-                    centroidDeltaX=0,
-                    centroidDeltaY=0,
-                    gradientX=0,
-                    gradientY=0,
-                    normalizationFactor=1.0,
                 )
 
-                radius = np.sqrt(xf[pixelsInAmp]**2. + yf[pixelsInAmp]**2.)
-                spl = Akima1DInterpolator(gradient.radialSplineNodes, gradient.radialSplineValues)
-                fullModel = spl(np.clip(radius,
-                                        gradient.radialSplineNodes[0],
-                                        gradient.radialSplineNodes[-1]))
-                exp.image.array[y[pixelsInAmp], x[pixelsInAmp]] /= fullModel
+                # Apply the focal plane gradient to the full image.
+                pixelsInAmp = amp.getBBox().contains(x, y)
+
+                model = gradient.computeRadialSplineModelXY(xf[pixelsInAmp], yf[pixelsInAmp])
+
+                exp.image.array[y[pixelsInAmp], x[pixelsInAmp]] /= model
 
         maskedIm = exp.maskedImage
 
