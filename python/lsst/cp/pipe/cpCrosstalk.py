@@ -23,6 +23,7 @@ import numpy as np
 
 from collections import defaultdict
 from copy import copy
+from scipy.stats import median_abs_deviation
 
 import lsst.pipe.base as pipeBase
 import lsst.pipe.base.connectionTypes as cT
@@ -32,12 +33,13 @@ from lsst.afw.cameraGeom import ReadoutCorner
 from lsst.afw.detection import FootprintSet, Threshold
 from lsst.afw.display import getDisplay
 from lsst.pex.config import ConfigurableField, Field, ListField
-from lsst.ip.isr import CrosstalkCalib, IsrProvenance
+from lsst.ip.isr import CrosstalkCalib, IsrProvenance, growMasks
 from lsst.cp.pipe.utils import (ddict2dict, sigmaClipCorrection)
 from lsst.meas.algorithms import SubtractBackgroundTask
 
 __all__ = ["CrosstalkExtractConfig", "CrosstalkExtractTask",
-           "CrosstalkSolveTask", "CrosstalkSolveConfig"]
+           "CrosstalkSolveTask", "CrosstalkSolveConfig",
+           "CrosstalkFilterTask", "CrosstalkFilterConfig"]
 
 
 class CrosstalkExtractConnections(pipeBase.PipelineTaskConnections,
@@ -113,6 +115,11 @@ class CrosstalkExtractConfig(pipeBase.PipelineTaskConfig,
     background = ConfigurableField(
         target=SubtractBackgroundTask,
         doc="Background estimation task.",
+    )
+    growMaskRadius = Field(
+        dtype=int,
+        default=0,
+        doc="Radius to grow CT_TEMP masks prior to background estimation."
     )
 
     def setDefaults(self):
@@ -225,6 +232,9 @@ class CrosstalkExtractTask(pipeBase.PipelineTask):
                 flippedMask = self._flipMask(newMask, amp, ampToMask)
 
                 extractedAmp.mask.array[:, :] |= flippedMask
+        # Optionally dilate these masks by some amount:
+        growMasks(inputExp.mask, radius=self.config.growMaskRadius,
+                  maskNameList=["CT_TEMP"], maskValue="CT_TEMP")
 
         # We've now masked the source pixels, and any potential CT
         # pixels, so this should be just the
@@ -443,7 +453,7 @@ class CrosstalkSolveConnections(pipeBase.PipelineTaskConnections,
     )
 
     outputCrosstalk = cT.Output(
-        name="crosstalk",
+        name="crosstalkProposal",
         doc="Output proposed crosstalk calibration.",
         storageClass="CrosstalkCalib",
         dimensions=("instrument", "detector"),
@@ -884,3 +894,332 @@ class CrosstalkSolveTask(pipeBase.PipelineTask):
                     import pdb
                     pdb.set_trace()
             plt.close()
+
+
+class CrosstalkFilterConnections(pipeBase.PipelineTaskConnections,
+                                 dimensions=("instrument", )):
+    inputCrosstalk = cT.Input(
+        name="crosstalkProposal",
+        doc="Input crosstalk calibrations as measured by CrosstalkSolveTask.",
+        storageClass="IsrCalib",
+        dimensions=("instrument", "detector"),
+        isCalibration=True,
+        multiple=True,
+    )
+
+    camera = cT.PrerequisiteInput(
+        name="camera",
+        doc="Camera containing cameraGeom information.",
+        storageClass="Camera",
+        dimensions=("instrument", ),
+        isCalibration=True,
+    )
+
+    outputCrosstalk = cT.Output(
+        name="crosstalk",
+        doc="Filtered crosstalk solutions.",
+        storageClass="CrosstalkCalib",
+        dimensions=("instrument", "detector"),
+        isCalibration=True,
+        multiple=True,
+    )
+
+
+class CrosstalkFilterConfig(pipeBase.PipelineTaskConfig,
+                            pipelineConnections=CrosstalkFilterConnections):
+    """Configuration for the filtering of measured crosstalk solutions."""
+    doFiltering = Field(
+        dtype=bool,
+        default=True,
+        doc="Do filtering?  If false, then this task acts as a pass-through to rename dataset types.",
+    )
+
+    nSigmaCoeffClip = Field(
+        dtype=float,
+        default=3.0,
+        doc="Coefficient outlier clipping significance.",
+    )
+    nSigmaCoeffSqrClip = Field(
+        dtype=float,
+        default=6.0,
+        doc="Squared-term coefficient outlier clipping significance.",
+    )
+
+
+class CrosstalkFilterTask(pipeBase.PipelineTask):
+    """Task to compare crosstalk solutions between detectors, to identify
+    and remove outliers.
+    """
+
+    ConfigClass = CrosstalkFilterConfig
+    _DefaultName = 'cpCrosstalkFilter'
+
+    def runQuantum(self, butlerQC, inputRefs, outputRefs):
+        """Ensure that the input and output dimensions are passed along.
+
+        Parameters
+        ----------
+        butlerQC : `lsst.daf.butler.QuantumContext`
+            Butler to operate on.
+        inputRefs : `lsst.pipe.base.InputQuantizedConnection`
+            Input data refs to load.
+        ouptutRefs : `lsst.pipe.base.OutputQuantizedConnection`
+            Output data refs to persist.
+        """
+        inputs = butlerQC.get(inputRefs)
+
+        # Use the dimensions to set calib/provenance information.
+        inputs['inputDims'] = [dict(inCT.dataId.required) for inCT in inputRefs.inputCrosstalk]
+        inputs['outputDims'] = [dict(outCT.dataId.required) for outCT in outputRefs.outputCrosstalk]
+
+        outputs = self.run(**inputs)
+        butlerQC.put(outputs, outputRefs)
+
+    def run(self, inputCrosstalk, camera, inputDims, outputDims):
+        """Compare crosstalk solutions to produce filtered crosstalk
+        calibrations.
+
+        Parameters
+        ----------
+        inputCrosstalk : `list` [`lsst.ip.isr.CrosstalkCalib`]
+            List of crosstalk solutions to filter.
+        camera : `lsst.afw.cameraGeom.Camera`
+            Input camera.
+                inputDims : `list` [`lsst.daf.butler.DataCoordinate`]
+            DataIds to use to construct provenance.
+        outputDims : `list` [`lsst.daf.butler.DataCoordinate`]
+            DataIds to use to populate the output calibration.
+
+        Returns
+        -------
+        results : `lsst.pipe.base.Struct`
+            The results struct containing:
+
+            ``outputCrosstalk``
+                Final crosstalk calibration
+                (`lsst.ip.isr.CrosstalkCalib`).
+
+        Raises
+        ------
+        RuntimeError
+            Raised if something goes bad.  CZW/Fix me.
+        """
+        # These will hold all of the input data.
+        itl_c0 = []
+        e2v_c0 = []
+        itl_c1 = []
+        e2v_c1 = []
+        detector_map = {}
+        itl_counter = 0
+        e2v_counter = 0
+        for inputCT, inputDim in zip(inputCrosstalk, inputDims):
+            detId = inputDim['detector']
+            detector = camera[detId]
+
+            if detector.getPhysicalType() == 'ITL':
+                itl_c0.append(inputCT.coeffs)
+                itl_c1.append(inputCT.coeffsSqr)
+
+                detector_map[detId] = itl_counter
+                itl_counter += 1
+
+            elif detector.getPhysicalType() == 'E2V':
+                e2v_c0.append(inputCT.coeffs)
+                e2v_c1.append(inputCT.coeffsSqr)
+
+                detector_map[detId] = e2v_counter
+                e2v_counter += 1
+            else:
+                # This is a wavefront sensor, and we don't want to
+                # filter those.
+                pass
+
+        itl_c0 = np.array(itl_c0)
+        itl_c1 = np.array(itl_c1)
+        e2v_c0 = np.array(e2v_c0)
+        e2v_c1 = np.array(e2v_c1)
+
+        itl_outliers = self.find_outliers(itl_c0, itl_c1)
+        e2v_outliers = self.find_outliers(e2v_c0, e2v_c1)
+
+        if self.config.doFiltering:
+            itl_final = self.replace_outliers(itl_c0, itl_c1,
+                                              itl_outliers.isBad, itl_outliers.median0, itl_outliers.median1)
+            e2v_final = self.replace_outliers(e2v_c0, e2v_c1,
+                                              e2v_outliers.isBad, e2v_outliers.median0, e2v_outliers.median1)
+        outputCrosstalkList = []
+        for inputCT, inputDim, outputDim in zip(inputCrosstalk, inputDims, outputDims):
+            if inputDim['detector'] != outputDim['detector']:
+                raise RuntimeError("Inconsistent dimension records")
+
+            detId = inputDim['detector']
+            detector = camera[detId]
+
+            outputCT = copy(inputCT)
+
+            if detector.getPhysicalType() == 'ITL':
+                itl_index = detector_map[detId]
+                if (np.any(itl_final.new_matrix0[itl_index] != outputCT.coeffs)
+                        or np.any(itl_final.new_matrix1[itl_index] != outputCT.coeffsSqr)):
+                    outputCT.coeffs = itl_final.new_matrix0[itl_index]
+                    outputCT.coeffsSqr = itl_final.new_matrix1[itl_index]
+            elif detector.getPhysicalType() == 'E2V':
+                e2v_index = detector_map[detId]
+                if (np.any(e2v_final.new_matrix0[e2v_index] != outputCT.coeffs)
+                        or np.any(e2v_final.new_matrix1[e2v_index] != outputCT.coeffsSqr)):
+                    outputCT.coeffs = e2v_final.new_matrix0[e2v_index]
+                    outputCT.coeffsSqr = e2v_final.new_matrix1[e2v_index]
+
+            outputCT.updateMetadata(
+                camera=camera,
+                detector=camera[detId],
+                setCalibId=True,
+                setCalibInfo=True,
+                setDate=True,
+            )
+            outputCrosstalkList.append(outputCT)
+        return pipeBase.Struct(
+            outputCrosstalk=outputCrosstalkList,
+        )
+
+    def find_outliers(self, matrix0, matrix1):
+        """Do checks to see if an element of the matrix is out-of-family.
+
+        Parameters
+        ----------
+        matrix0 : `np.array`, (Ndet, Namp, Namp)
+            Matrix holding the 0th-order terms.
+        matrix1 : `np.array`, (Ndet, Namp, Namp)
+            Matrix holding the 1st-order terms.
+
+        Returns
+        -------
+        results : `lsst.pipe.base.Struct`
+            Results struct containing
+
+            ``median0``
+                Median in-family value (`np.array` (Namp, Namp)).
+            ``stdev0``
+                MAD effective sigma in-family value (`np.array` (Namp, Namp)).
+            ``median1``
+                Median in-family value (`np.array` (Namp, Namp)).
+            ``stdev1``
+                MAD effective sigma in-family value (`np.array` (Namp, Namp)).
+            ``isBad``
+                Boolean indicator that an element has been replaced
+                (`np.array` (Ndet, Namp, Namp)).
+
+        Raises
+        ------
+        ValueError :
+            Raised if the inputs have a mismatch in size.
+        """
+        if matrix0.shape != matrix1.shape:
+            raise ValueError("Shape disagreement!")
+        if matrix0.shape[1] != matrix0.shape[2]:
+            raise ValueError("Shape disagreement!")
+
+        nAmp = matrix0.shape[1]
+
+        median0 = np.nanmedian(matrix0, axis=0)
+        median1 = np.nanmedian(matrix1, axis=0)
+
+        stdev0 = median_abs_deviation(matrix0, axis=0,
+                                      center=np.nanmedian, scale="normal", nan_policy="omit")
+        stdev1 = median_abs_deviation(matrix1, axis=0,
+                                      center=np.nanmedian, scale="normal", nan_policy="omit")
+
+        isBad = np.full_like(matrix0, False, dtype=bool)
+
+        for i in range(nAmp):
+            for j in range(nAmp):
+                m0 = median0[i][j]
+                m1 = median1[i][j]
+                s0 = stdev0[i][j]
+                s1 = stdev1[i][j]
+
+                min0 = m0 - self.config.nSigmaCoeffClip * s0
+                max0 = m0 + self.config.nSigmaCoeffClip * s0
+
+                min1 = m1 - self.config.nSigmaCoeffSqrClip * s1
+                max1 = m1 + self.config.nSigmaCoeffSqrClip * s1
+
+                bad, = np.where(
+                    (matrix0[:, i, j] < min0)
+                    | (matrix0[:, i, j] > max0)
+                    | (matrix1[:, i, j] < min1)
+                    | (matrix1[:, i, j] > max1)
+                )
+
+                if len(bad) > 0:
+                    for detIdx in bad:
+                        isBad[detIdx, i, j] = True
+        return pipeBase.Struct(
+            median0=median0,
+            median1=median1,
+            stdev0=stdev0,
+            stdev1=stdev1,
+            isBad=isBad
+        )
+
+    def replace_outliers(self, matrix0, matrix1, isBad, median0, median1):
+        """Do checks to see if an element of the matrix is out-of-family.
+
+        Parameters
+        ----------
+        matrix0 : `np.array`, (Ndet, Namp, Namp)
+            Matrix holding the 0th-order terms.
+        matrix1 : `np.array`, (Ndet, Namp, Namp)
+            Matrix holding the 1st-order terms.
+        isBad : `np.array`, (Ndet, Namp, Namp)
+            Matrix holding the boolean "is bad".
+        median0 : `np.array`, (Namp, Namp)
+            Matrix of median 0th-order terms.
+        median1 : `np.array`, (Namp, Namp)
+            Matrix of median 1st-order terms.
+
+        Returns
+        -------
+        results : `lsst.pipe.base.Struct`
+            Results struct containing
+
+            ``new_matrix0``
+                Replacement matrix0, with median substitutions.
+                (`np.array` (Ndet, Namp, Namp)).
+            ``new_matrix1``
+                Replacement matrix1, with median substitutions.
+                (`np.array` (Ndet, Namp, Namp)).
+
+        Raises
+        ------
+        ValueError :
+            Raised if the inputs have a mismatch in size.
+        """
+        if matrix0.shape != matrix1.shape:
+            raise ValueError("Shape disagreement!")
+        if matrix0.shape != isBad.shape:
+            raise ValueError("Shape disagreement!")
+        if median0.shape != median1.shape:
+            raise ValueError("Shape disagreement!")
+
+        out0 = np.full_like(matrix0, 0.0)
+        out1 = np.full_like(matrix1, 0.0)
+
+        for detIdx in range(matrix0.shape[0]):
+            for srcIdx in range(matrix0.shape[1]):
+                for tgtIdx in range(matrix0.shape[2]):
+                    if isBad[detIdx, srcIdx, tgtIdx]:
+                        self.log.info(f"Setting {detIdx} {srcIdx} {tgtIdx} from "
+                                      f"{matrix0[detIdx, srcIdx, tgtIdx]} to "
+                                      f"{median0[srcIdx, tgtIdx]} and "
+                                      f"{matrix1[detIdx, srcIdx, tgtIdx]} to "
+                                      f"{median1[srcIdx, tgtIdx]}")
+                        out0[detIdx, srcIdx, tgtIdx] = median0[srcIdx, tgtIdx]
+                        out1[detIdx, srcIdx, tgtIdx] = median1[srcIdx, tgtIdx]
+                    else:
+                        out0[detIdx, srcIdx, tgtIdx] = matrix0[detIdx, srcIdx, tgtIdx]
+                        out1[detIdx, srcIdx, tgtIdx] = matrix1[detIdx, srcIdx, tgtIdx]
+        return pipeBase.Struct(
+            new_matrix0=out0,
+            new_matrix1=out1,
+        )

@@ -9,6 +9,8 @@ tasks:
       doDefect: true
   cpCrosstalkExtract:
     class: lsst.cp.pipe.CrosstalkExtractTask
+    config:
+      growMaskRadius: 20
   cpCrosstalkSolve:
     class: lsst.cp.pipe.CrosstalkSolveTask
     config:
