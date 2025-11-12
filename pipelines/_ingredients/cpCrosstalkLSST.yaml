@@ -20,8 +20,13 @@ tasks:
     class: lsst.cp.pipe.CrosstalkSolveTask
     config:
       connections.inputRatios: "cpCrosstalkRatio"
-      connections.outputCrosstalk: "crosstalk"
+      connections.outputCrosstalk: "crosstalkProposal"
       rejectNegativeSolutions: false
+  cpCrosstalkFilter:
+    class: lsst.cp.pipe.CrosstalkFilterTask
+    config:
+      connections.inputCrosstalk: "crosstalkProposal"
+      connections.outputCrosstalk: "crosstalk"
 subsets:
   cpCrosstalk:
     subset:
@@ -36,3 +41,4 @@ subsets:
 contracts:
   - cpCrosstalkExtract.connections.inputExp == cpCrosstalkIsr.connections.outputExposure
   - cpCrosstalkSolve.connections.inputRatios == cpCrosstalkExtract.connections.outputRatios
+  - cpCrosstalkSolve.connections.outputCrosstalk == cpCrosstalkFilter.connections.inputCrosstalk
