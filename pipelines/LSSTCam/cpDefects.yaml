@@ -23,6 +23,7 @@ tasks:
       thresholdType: "VALUE"
       fracThresholdFlat: 0.9
       badPixelsToFillColumnThreshold: 1000
+      fitAmpGradient: true
   cpMergeDefects:
     class: lsst.cp.pipe.MergeDefectsCombinedTask
     config:

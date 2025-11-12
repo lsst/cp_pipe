@@ -41,8 +41,11 @@ import lsst.afw.display as afwDisplay
 from lsst.afw import cameraGeom
 from lsst.geom import Box2I, Point2I, Extent2I
 from lsst.meas.algorithms import SourceDetectionTask
-from lsst.ip.isr import Defects, countMaskedPixels
+from lsst.ip.isr import Defects, countMaskedPixels, PhotonTransferCurveDataset
 from lsst.pex.exceptions import InvalidParameterError
+
+from .utils import bin_flat, FlatGradientFitter
+from lsst.ip.isr import FlatGradient
 
 
 class MeasureDefectsConnections(pipeBase.PipelineTaskConnections,
@@ -83,6 +86,11 @@ class MeasureDefectsTaskConfig(pipeBase.PipelineTaskConfig,
         default='STDEV',
         allowed={'STDEV': "Use a multiple of the image standard deviation to determine detection threshold.",
                  'VALUE': "Use pixel value to determine detection threshold."},
+    )
+    fitAmpGradient = pexConfig.Field(
+        dtype=bool,
+        doc="Fit out the focal plane radial gradient per amplifier.",
+        default=False,
     )
     doVampirePixels = pexConfig.Field(
         dtype=bool,
@@ -204,6 +212,21 @@ class MeasureDefectsTaskConfig(pipeBase.PipelineTaskConfig,
             "NEVERMASK": "Never mask the E2V midline break, no matter the flat values.",
             "MASK": "Always mask the E2V midline break.",
         },
+    )
+    ampGradientBinFactor = pexConfig.Field(
+        dtype=int,
+        doc="Binning factor used for fitting per-amp focal plane gradient.",
+        default=8,
+    )
+    ampGradientBoundarySize = pexConfig.Field(
+        dtype=int,
+        doc="Amp boundary exclusion size for fitting per-amp focal plane gradient.",
+        default=20,
+    )
+    ampGradientNodes = pexConfig.Field(
+        dtype=int,
+        doc="Number of spline nodes for per-amp focal plane gradient.",
+        default=4,
     )
 
     def validate(self):
@@ -356,7 +379,6 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
             The defects found in the image.
         """
         self._setEdgeBits(exp)
-        maskedIm = exp.maskedImage
 
         # the detection polarity for afwDetection, True for positive,
         # False for negative, and therefore True for darks as they only have
@@ -365,6 +387,86 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
 
         hotPixelCount = {}
         coldPixelCount = {}
+
+        detector = exp.getDetector()
+
+        if self.config.fitAmpGradient:
+            # 1. Bin flat.
+            binnedExp = bin_flat(
+                PhotonTransferCurveDataset(),
+                exp,
+                bin_factor=self.config.ampGradientBinFactor,
+                amp_boundary=self.config.ampGradientBoundarySize,
+                apply_gains=False,
+            )
+
+            # 2. Prepare transformations.
+            transform = detector.getTransform(
+                cameraGeom.PIXELS,
+                cameraGeom.FOCAL_PLANE,
+            )
+
+            # 2a. Do transformation for binned coordinates.
+            binnedXy = np.vstack((binnedExp["xd"], binnedExp["yd"]))
+            binnedXf, binnedYf = np.vsplit(
+                transform.getMapping().applyForward(binnedXy.astype(np.float64)),
+                2,
+            )
+            binnedXf = binnedXf.ravel()
+            binnedYf = binnedYf.ravel()
+            binnedRadius = np.sqrt(binnedXf**2. + binnedYf**2.)
+
+            # 2b. Do transformation for full detector coordinates.
+            xx = np.arange(exp.image.array.shape[1], dtype=np.int64)
+            yy = np.arange(exp.image.array.shape[0], dtype=np.int64)
+            x, y = np.meshgrid(xx, yy)
+            x = x.ravel()
+            y = y.ravel()
+
+            xy = np.vstack((x, y))
+            xf, yf = np.vsplit(transform.getMapping().applyForward(xy.astype(np.float64)), 2)
+            xf = xf.ravel()
+            yf = yf.ravel()
+
+            # Measure the focal plane gradient on the binned image and remove
+            # on the full image, amp by amp.
+            for i, amp in enumerate(detector):
+                # Fit the focal plane radial gradient in the binned image.
+                binnedInAmp = (binnedExp["amp_index"] == i)
+
+                nodes = np.linspace(
+                    np.min(binnedRadius[binnedInAmp]),
+                    np.max(binnedRadius[binnedInAmp]),
+                    self.config.ampGradientNodes,
+                )
+
+                norm = np.nanpercentile(binnedExp["value"][binnedInAmp], 95.0)
+
+                fitter = FlatGradientFitter(
+                    nodes,
+                    binnedXf[binnedInAmp],
+                    binnedYf[binnedInAmp],
+                    binnedExp["value"][binnedInAmp]/norm,
+                    np.array([]),
+                    constrain_zero=False,
+                )
+                p0 = fitter.compute_p0()
+                pars = fitter.fit(p0)
+
+                gradient = FlatGradient()
+                gradient.setParameters(
+                    radialSplineNodes=nodes,
+                    radialSplineValues=pars[fitter.indices["spline"]],
+                )
+
+                # Apply the focal plane gradient to the full image.
+                pixelsInAmp = amp.getBBox().contains(x, y)
+
+                model = gradient.computeRadialSplineModelXY(xf[pixelsInAmp], yf[pixelsInAmp])
+
+                exp.image.array[y[pixelsInAmp], x[pixelsInAmp]] /= model
+
+        maskedIm = exp.maskedImage
 
         for amp in exp.getDetector():
             ampName = amp.getName()

@@ -25,6 +25,7 @@
 import unittest
 import numpy as np
 import copy
+from scipy.interpolate import Akima1DInterpolator
 
 import lsst.utils
 import lsst.utils.tests
@@ -1070,6 +1071,72 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
 
         np.testing.assert_array_equal(flat.mask.array[2001, :], 1)
         np.testing.assert_array_equal(flat.mask.array[2002, :], 1)
+
+    def test_flatGradient(self):
+        """Test handling of a strong gradient."""
+        mock = ipIsr.IsrMockLSST()
+        camera = mock.getCamera()
+        detector = camera[10]
+
+        # Create a flat with a strong gradient.
+        flat = afwImage.ExposureF(detector.getBBox())
+        flat.setDetector(detector)
+
+        xx = np.arange(flat.image.array.shape[1], dtype=np.float64)
+        yy = np.arange(flat.image.array.shape[0], dtype=np.float64)
+        x, y = np.meshgrid(xx, yy)
+        x = x.ravel()
+        y = y.ravel()
+
+        transform = detector.getTransform(lsst.afw.cameraGeom.PIXELS, lsst.afw.cameraGeom.FOCAL_PLANE)
+        xy = np.vstack((x, y))
+        xf, yf = np.vsplit(transform.getMapping().applyForward(xy), 2)
+        xf = xf.ravel()
+        yf = yf.ravel()
+
+        radius = np.sqrt(xf**2. + yf**2.)
+        radialNodes = np.linspace(radius.min(), radius.max(), 4)
+        radialValues = [1.0, 0.8, 0.5, 0.3]
+        spl = Akima1DInterpolator(radialNodes, radialValues, method="akima")
+
+        value = spl(np.clip(radius, radialNodes[0], radialNodes[-1]))
+        flat.image.array[:, :] = value.reshape(flat.image.array.shape)
+
+        visitInfo = afwImage.VisitInfo(exposureTime=10.0, darkTime=10.0)
+        flat.info.setVisitInfo(visitInfo)
+
+        # Change all the gains.
+        rng = np.random.RandomState(seed=12345)
+        gains = rng.uniform(low=1.5, high=2.5, size=len(detector))
+
+        for i, amp in enumerate(detector):
+            flat[amp.getBBox()].image.array /= gains[i]
+
+        # Look for defects with default settings; there should be some
+        # (which we don't want).
+
+        config = cpPipe.MeasureDefectsTask.ConfigClass()
+        config.thresholdType = "VALUE"
+        config.fracThresholdFlat = 0.9
+
+        task1 = cpPipe.MeasureDefectsTask(config=config)
+        defects1 = task1.run(flat, camera).outputDefects
+
+        # There are almost 200 defects here, but we're just checking that
+        # there are some false defects.
+        self.assertGreater(len(defects1), 10)
+
+        # Turn on amp gradient fitting with special configs for small
+        # test amplifiers.
+        config.fitAmpGradient = True
+        config.ampGradientBinFactor = 2
+        config.ampGradientBoundarySize = 0
+
+        task2 = cpPipe.MeasureDefectsTask(config=config)
+        defects2 = task2.run(flat, camera).outputDefects
+
+        # Check that there are no false defects.
+        self.assertEqual(len(defects2), 0)
 
 
 class TestMemory(lsst.utils.tests.MemoryTestCase):
