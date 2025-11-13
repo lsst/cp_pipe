@@ -513,6 +513,10 @@ class LinearitySolveTask(pipeBase.PipelineTask):
 
         for i, amp in enumerate(detector):
             ampName = amp.getName()
+
+            # Save the input gains
+            linearizer.inputGain[ampName] = inputPtc.gain[ampName]
+
             if ampName in inputPtc.badAmps:
                 linearizer = self.fillBadAmp(linearizer, fitOrder, inputPtc, amp)
                 self.log.warning("Amp %s in detector %s has no usable PTC information. Skipping!",
@@ -1427,6 +1431,7 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
         for amp in detector:
             ampName = amp.getName()
 
+            linearizer.inputGain[ampName] = inputPtc.gain[ampName]
             linearizer.linearityType[ampName] = "None"
             linearizer.linearityCoeffs[ampName] = np.zeros(1)
             # This is not used; kept for compatibility.
