@@ -77,12 +77,14 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
             "cpDarkBootstrap.yaml",
             "cpFlatBootstrap.yaml",
             "cpSpectroFlat.yaml",
+            # TODO DM-52883: Remove cpPtcFixupGainRatios and cpPtcRename.
             "cpPtcFixupGainRatios.yaml",
             "cpPtcRename.yaml",
             "cpIlluminationCorrection.yaml",
             "cpFlatAnaglyph.yaml",
             "cpFlatGradientReference.yaml",
             "cpQuadNotch.yaml",
+            "cpGainCorrection.yaml",
         }
 
         for ex in exclude:
@@ -124,6 +126,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
         expected.discard("cpIlluminationCorrection.yaml")
         expected.discard("cpFlatAnaglyph.yaml")
         expected.discard("cpFlatGradientReference.yaml")
+        expected.discard("cpGainCorrection.yaml")
         self.assertEqual(ingredients, expected)
 
     def test_cameras(self):
@@ -157,6 +160,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 "cpIlluminationCorrection.yaml",
                 "cpFlatAnaglyph.yaml",
                 "cpFlatGradientReference.yaml",
+                "cpGainCorrection.yaml",
                 # The following tasks will be added in the future.
                 "cpCrosstalk.yaml",
                 "cpFringe.yaml",
@@ -207,6 +211,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 "cpFlatAnaglyph.yaml",
                 "cpFlatGradientReference.yaml",
                 "cpQuadNotch.yaml",
+                "cpGainCorrection.yaml",
         ]):
             self._check_pipeline(os.path.join(self.pipeline_path, "LSSTCam-imSim", pipeline))
 
@@ -225,6 +230,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 "cpFlatAnaglyph.yaml",
                 "cpFlatGradientReference.yaml",
                 "cpQuadNotch.yaml",
+                "cpGainCorrection.yaml",
                 # TODO: DM-46426
                 "cpCti.yaml",
         ]):
@@ -250,6 +256,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 "cpFlatAnaglyph.yaml",
                 "cpFlatGradientReference.yaml",
                 "cpQuadNotch.yaml",
+                "cpGainCorrection.yaml",
         ]):
             self._check_pipeline(os.path.join(self.pipeline_path, "LSSTComCamSim", pipeline))
 
@@ -268,6 +275,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 "cpFlatAnaglyph.yaml",
                 "cpFlatGradientReference.yaml",
                 "cpQuadNotch.yaml",
+                "cpGainCorrection.yaml",
         ]):
             self._check_pipeline(os.path.join(self.pipeline_path, "LSST-TS8", pipeline))
 
@@ -287,6 +295,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 "cpFlatAnaglyph.yaml",
                 "cpFlatGradientReference.yaml",
                 "cpQuadNotch.yaml",
+                "cpGainCorrection.yaml",
         ]):
             self._check_pipeline(os.path.join(self.pipeline_path, "DECam", pipeline))
 
@@ -306,6 +315,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 "cpFlatAnaglyph.yaml",
                 "cpFlatGradientReference.yaml",
                 "cpQuadNotch.yaml",
+                "cpGainCorrection.yaml",
         ]):
             self._check_pipeline(os.path.join(self.pipeline_path, "HSC", pipeline))
 

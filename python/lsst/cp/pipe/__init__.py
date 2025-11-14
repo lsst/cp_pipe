@@ -31,6 +31,7 @@ from .cpFilterScan import *
 from .cpFlatMeasure import *
 from .cpFlatGradients import *
 from .cpFringe import *
+from .cpGainCorrection import *
 from .cpLinearitySolve import *
 from .cpLinearityNormalize import *
 from .cpPhotodiodeCorrection import *

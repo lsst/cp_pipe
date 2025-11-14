@@ -1,0 +1,22 @@
+pipelineYaml: "${CP_PIPE_DIR}/pipelines/${INSTRUMENT}/cpGainCorrection.yaml"
+
+project: "${TICKET}"
+campaign: "${TICKET}"
+submitPath: "${SCRATCH}/submit/{outputRun}"
+
+# Cluster by detector
+clusterAlgorithm: lsst.ctrl.bps.quantum_clustering_funcs.dimension_clustering
+cluster:
+  cpFlatIsrByDetector:
+    pipetasks: cpFlatIsr
+    dimensions: detector
+  cpFlatMeasureByDetector:
+    pipetasks: cpFlatMeasure
+    dimensions: detector
+
+payload:
+  payloadName: "${INSTRUMENT}_${TICKET}_gainCorrection"
+  output: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET}/${TAG}/gainCorrectionGen.${RERUN}"
+  butlerConfig: "${REPO}"
+  inCollection: "${RAW_COLLECTION},${CALIB_COLLECTIONS}"
+  dataQuery: "${SELECTION_GAIN_CORRECTION_FLAT}"

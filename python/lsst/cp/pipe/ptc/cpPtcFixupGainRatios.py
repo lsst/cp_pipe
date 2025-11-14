@@ -27,6 +27,8 @@ import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 import lsst.pipe.base.connectionTypes as cT
 
+from deprecated.sphinx import deprecated
+
 from ..utils import ampOffsetGainRatioFixup
 
 
@@ -38,6 +40,10 @@ __all__ = [
 ]
 
 
+# TODO DM-52883: Remove deprecated tasks.
+@deprecated(reason="PhotonTransferCurveFixupGainRatiosTask is no longer used. "
+                   "This Task will be removed after v30.",
+            version="v30.0", category=FutureWarning)
 class PhotonTransferCurveFixupGainRatiosConnections(
     pipeBase.PipelineTaskConnections,
     dimensions=("instrument", "detector")
@@ -66,6 +72,10 @@ class PhotonTransferCurveFixupGainRatiosConnections(
     )
 
 
+# TODO DM-52883: Remove deprecated tasks.
+@deprecated(reason="PhotonTransferCurveFixupGainRatiosTask is no longer used. "
+                   "This Task will be removed after v30.",
+            version="v30.0", category=FutureWarning)
 class PhotonTransferCurveFixupGainRatiosConfig(
     pipeBase.PipelineTaskConfig,
     pipelineConnections=PhotonTransferCurveFixupGainRatiosConnections,
@@ -82,6 +92,10 @@ class PhotonTransferCurveFixupGainRatiosConfig(
     )
 
 
+# TODO DM-52883: Remove deprecated tasks.
+@deprecated(reason="PhotonTransferCurveFixupGainRatiosTask is no longer used. "
+                   "This Task will be removed after v30.",
+            version="v30.0", category=FutureWarning)
 class PhotonTransferCurveFixupGainRatiosTask(pipeBase.PipelineTask):
     """Task to use on-sky amp ratios to fix up gain ratios in a PTC.
 
@@ -178,6 +192,10 @@ class PhotonTransferCurveFixupGainRatiosTask(pipeBase.PipelineTask):
         )
 
 
+# TODO DM-52883: Remove deprecated tasks.
+@deprecated(reason="PhotonTransferCurveRenameTask is no longer used. "
+                   "This Task will be removed after v30.",
+            version="v30.0", category=FutureWarning)
 class PhotonTransferCurveRenameConnections(
     pipeBase.PipelineTaskConnections,
     dimensions=("instrument", "detector")
@@ -199,6 +217,10 @@ class PhotonTransferCurveRenameConnections(
     )
 
 
+# TODO DM-52883: Remove deprecated tasks.
+@deprecated(reason="PhotonTransferCurveRenameTask is no longer used. "
+                   "This Task will be removed after v30.",
+            version="v30.0", category=FutureWarning)
 class PhotonTransferCurveRenameConfig(
     pipeBase.PipelineTaskConfig,
     pipelineConnections=PhotonTransferCurveRenameConnections,
@@ -206,6 +228,10 @@ class PhotonTransferCurveRenameConfig(
     pass
 
 
+# TODO DM-52883: Remove deprecated tasks.
+@deprecated(reason="PhotonTransferCurveRenameTask is no longer used. "
+                   "This Task will be removed after v30.",
+            version="v30.0", category=FutureWarning)
 class PhotonTransferCurveRenameTask(pipeBase.PipelineTask):
     """Task to rename a ptcFixed into a ptc."""
     ConfigClass = PhotonTransferCurveRenameConfig

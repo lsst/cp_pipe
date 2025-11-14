@@ -1109,6 +1109,11 @@ class LinearityDoubleSplineSolveConfig(
         doc="Minimum signal to compute raw linearity slope for linearityTurnoff.",
         default=1000.0,
     )
+    maxNoiseReference = pexConfig.Field(
+        dtype=float,
+        doc="Maximum read noise (e-) in the PTC for an amp to be considered as a reference.",
+        default=12.0,
+    )
     usePhotodiode = pexConfig.Field(
         dtype=bool,
         doc="Use the photodiode info instead of the raw expTimes?",
@@ -1558,9 +1563,12 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
         # finite for this amplifier.
         turnoffArray = np.asarray([linearizer.linearityTurnoff[ampName] for ampName in inputPtc.ampNames])
         # This is a possibly redundant check to make sure that a bad amp is
-        # not chosen as a reference amp.
+        # not chosen as a reference amp. We also check that a high noise
+        # amp is not chosen as the reference amp.
         for i, ampName in enumerate(inputPtc.ampNames):
-            if ampName in inputPtc.badAmps or not np.isfinite(inputPtc.ptcTurnoff[ampName]):
+            if ampName in inputPtc.badAmps \
+               or not np.isfinite(inputPtc.ptcTurnoff[ampName]) \
+               or inputPtc.noise[ampName] > self.config.maxNoiseReference:
                 turnoffArray[i] = np.nan
 
         if np.all(~np.isfinite(turnoffArray)):

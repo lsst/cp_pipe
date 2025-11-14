@@ -1,4 +1,5 @@
 description: cp_pipe ptc renaming.
+# TODO DM-52883: Remove deprecated pipelines.
 tasks:
   cpPtcRename:
     class: lsst.cp.pipe.PhotonTransferCurveRenameTask

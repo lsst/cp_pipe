@@ -20,19 +20,23 @@
 # the GNU General Public License along with this program.  If not,
 # see <https://www.lsstcorp.org/LegalNotices/>.
 #
-"""Test cases for cp_pipe gain adjustment code."""
+"""Test cases for cp_pipe PTC gain adjustment code."""
 
 import copy
 import logging
 import unittest
 import numpy as np
+from matplotlib.figure import Figure
 from scipy.interpolate import Akima1DInterpolator
 
 import lsst.utils.tests
 
 import lsst.afw.cameraGeom
 from lsst.afw.image import ExposureF
+from lsst.cp.pipe import CpMeasureGainCorrectionTask
 from lsst.cp.pipe.ptc import PhotonTransferCurveAdjustGainRatiosTask
+from lsst.cp.pipe.ptc.cpPtcAdjustGainRatios import _compute_gain_ratios
+from lsst.cp.pipe.utils import bin_flat
 from lsst.ip.isr import IsrMockLSST, PhotonTransferCurveDataset
 from lsst.pipe.base import InMemoryDatasetHandle
 
@@ -44,93 +48,11 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
         self.detector = self.camera[20]
         self.amp_names = [amp.getName() for amp in self.detector]
 
-        self.n_radial_nodes = 10
-
         rng = np.random.RandomState(seed=12345)
 
         self.gain_true = {}
         for amp_name in self.amp_names:
             self.gain_true[amp_name] = float(rng.normal(loc=1.5, scale=0.05, size=1)[0])
-
-    def _get_adjusted_flat(
-        self,
-        normalization,
-        radial_gradient_outer_value,
-        planar_gradient_x,
-        planar_gradient_y,
-        bad_amps=[],
-        weird_amps=[],
-    ):
-        """Get an adjusted flat.
-
-        Parameters
-        ----------
-        normalization : `float`
-            Normalization value.
-        radial_gradient_outer_value : `float`
-            Value at max radius (should be < 1.0).
-        planar_gradient_x : `float`
-            Planar gradient x slope.
-        planar_gradient_y : `float`
-            Planar gradient y slope.
-        bad_amps : `list` [`str`], optional
-            List of bad amp names.
-
-        Returns
-        -------
-        flat : `lsst.afw.image.Exposure`
-            Flat image generated.
-        radial_gradient : `np.ndarray`
-            Radial gradient image applied.
-        planar_gradient : `np.ndarray`
-            Planar gradient image applied.
-        """
-        flat = ExposureF(self.detector.getBBox())
-        flat.setDetector(self.detector)
-
-        xx = np.arange(flat.image.array.shape[1], dtype=np.float64)
-        yy = np.arange(flat.image.array.shape[0], dtype=np.float64)
-        x, y = np.meshgrid(xx, yy)
-        x = x.ravel()
-        y = y.ravel()
-
-        transform = self.detector.getTransform(lsst.afw.cameraGeom.PIXELS, lsst.afw.cameraGeom.FOCAL_PLANE)
-        xy = np.vstack((x, y))
-        xf, yf = np.vsplit(transform.getMapping().applyForward(xy), 2)
-        xf = xf.ravel()
-        yf = yf.ravel()
-
-        radius = np.sqrt(xf**2. + yf**2.)
-
-        nodes = np.linspace(radius.min(), radius.max(), self.n_radial_nodes)
-        spline_values = np.linspace(1.0, 0.98, self.n_radial_nodes)
-
-        spl = Akima1DInterpolator(nodes, spline_values, method="akima")
-        radial_gradient = spl(radius).reshape(flat.image.array.shape)
-        flat.image.array[:, :] = radial_gradient.copy()
-
-        # This will be a parameter
-        normalization = 10000.0
-
-        flat.image.array[:, :] *= normalization
-
-        # Add a bit of a planar gradient; approx +/- 1%.
-        planar_gradient = (
-            1
-            - 0.00005 * (x - self.detector.getBBox().getCenter().getX())
-            + 0.00001 * (y - self.detector.getBBox().getCenter().getY())
-        ).reshape(flat.image.array.shape)
-
-        flat.image.array[:, :] *= planar_gradient
-
-        for amp_name in self.amp_names:
-            flat.image[self.detector[amp_name].getBBox()].array[:, :] /= self.gain_true[amp_name]
-
-        # Make the bad amps goofy.
-        for bad_amp in bad_amps:
-            flat.image[self.detector[bad_amp].getBBox()].array[:, :] *= 0.1
-
-        return flat, radial_gradient, planar_gradient
 
     def _gain_correct_flat(self, flat, ptc, adjust_ratios):
         """Gain correct a flat to a biased and debiased version.
@@ -168,7 +90,9 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
     def test_compute_gain_ratios_small_gradient(self):
         fixed_amp_num = 2
 
-        flat, radial_gradient, planar_gradient = self._get_adjusted_flat(
+        flat, radial_gradient, planar_gradient = _get_adjusted_flat(
+            self.detector,
+            self.gain_true,
             10000.0,
             0.98,
             -0.00005,
@@ -187,16 +111,23 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
         for amp_name in self.amp_names:
             ptc.gain[amp_name] = gain_biased[amp_name]
             ptc.gainUnadjusted[amp_name] = gain_biased[amp_name]
+            ptc.noise[amp_name] = 10.0
+            ptc.ptcTurnoff[amp_name] = 50000.0
 
-        config = PhotonTransferCurveAdjustGainRatiosTask.ConfigClass()
-        config.bin_factor = 2
-        config.n_flat = 10
-        config.amp_boundary = 0
-        config.radial_gradient_n_spline_nodes = 3
-
-        task = PhotonTransferCurveAdjustGainRatiosTask(config=config)
         with self.assertNoLogs(level=logging.WARNING):
-            adjust_ratios = task._compute_gain_ratios(ptc, flat.clone(), fixed_amp_num)
+            binned = bin_flat(ptc, flat.clone(), bin_factor=2, amp_boundary=0, apply_gains=True)
+            lo, hi = np.nanpercentile(binned["value"], [5.0, 95.0])
+            lo *= 0.8
+            hi *= 1.2
+            use = (np.isfinite(binned["value"]) & (binned["value"] >= lo) & (binned["value"] <= hi))
+            binned = binned[use]
+
+            adjust_ratios = _compute_gain_ratios(
+                flat.getDetector(),
+                binned,
+                fixed_amp_num,
+                radial_gradient_n_spline_nodes=3,
+            )
 
         # Make two flats with the old adjustment and the new adjustment.
         flat_biased, flat_debiased = self._gain_correct_flat(flat, ptc, adjust_ratios)
@@ -217,7 +148,9 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
     def test_compute_gain_ratios_large_gradient(self):
         fixed_amp_num = 2
 
-        flat, radial_gradient, planar_gradient = self._get_adjusted_flat(
+        flat, radial_gradient, planar_gradient = _get_adjusted_flat(
+            self.detector,
+            self.gain_true,
             10000.0,
             0.6,
             -0.00005,
@@ -236,16 +169,23 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
         for amp_name in self.amp_names:
             ptc.gain[amp_name] = gain_biased[amp_name]
             ptc.gainUnadjusted[amp_name] = gain_biased[amp_name]
+            ptc.noise[amp_name] = 10.0
+            ptc.ptcTurnoff[amp_name] = 50000.0
 
-        config = PhotonTransferCurveAdjustGainRatiosTask.ConfigClass()
-        config.bin_factor = 2
-        config.n_flat = 10
-        config.amp_boundary = 0
-        config.radial_gradient_n_spline_nodes = 3
-
-        task = PhotonTransferCurveAdjustGainRatiosTask(config=config)
         with self.assertNoLogs(level=logging.WARNING):
-            adjust_ratios = task._compute_gain_ratios(ptc, flat.clone(), fixed_amp_num)
+            binned = bin_flat(ptc, flat.clone(), bin_factor=2, amp_boundary=0, apply_gains=True)
+            lo, hi = np.nanpercentile(binned["value"], [5.0, 95.0])
+            lo *= 0.8
+            hi *= 1.2
+            use = (np.isfinite(binned["value"]) & (binned["value"] >= lo) & (binned["value"] <= hi))
+            binned = binned[use]
+
+            adjust_ratios = _compute_gain_ratios(
+                flat.getDetector(),
+                binned,
+                fixed_amp_num,
+                radial_gradient_n_spline_nodes=3,
+            )
 
         # Make two flats with the old adjustment and the new adjustment.
         flat_biased, flat_debiased = self._gain_correct_flat(flat, ptc, adjust_ratios)
@@ -266,7 +206,9 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
     def test_compute_gain_ratios_bad_amp(self):
         fixed_amp_num = 2
 
-        flat, radial_gradient, planar_gradient = self._get_adjusted_flat(
+        flat, radial_gradient, planar_gradient = _get_adjusted_flat(
+            self.detector,
+            self.gain_true,
             10000.0,
             0.6,
             -0.00005,
@@ -286,16 +228,23 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
         for amp_name in self.amp_names:
             ptc.gain[amp_name] = gain_biased[amp_name]
             ptc.gainUnadjusted[amp_name] = gain_biased[amp_name]
+            ptc.noise[amp_name] = 10.0
+            ptc.ptcTurnoff[amp_name] = 50000.0
 
-        config = PhotonTransferCurveAdjustGainRatiosTask.ConfigClass()
-        config.bin_factor = 2
-        config.n_flat = 10
-        config.amp_boundary = 0
-        config.radial_gradient_n_spline_nodes = 3
-
-        task = PhotonTransferCurveAdjustGainRatiosTask(config=config)
         with self.assertNoLogs(level=logging.WARNING):
-            adjust_ratios = task._compute_gain_ratios(ptc, flat.clone(), fixed_amp_num)
+            binned = bin_flat(ptc, flat.clone(), bin_factor=2, amp_boundary=0, apply_gains=True)
+            lo, hi = np.nanpercentile(binned["value"], [5.0, 95.0])
+            lo *= 0.8
+            hi *= 1.2
+            use = (np.isfinite(binned["value"]) & (binned["value"] >= lo) & (binned["value"] <= hi))
+            binned = binned[use]
+
+            adjust_ratios = _compute_gain_ratios(
+                flat.getDetector(),
+                binned,
+                fixed_amp_num,
+                radial_gradient_n_spline_nodes=3,
+            )
 
         # Make two flats with the old adjustment and the new adjustment.
         flat_biased, flat_debiased = self._gain_correct_flat(flat, ptc, adjust_ratios)
@@ -319,7 +268,9 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
 
         # The weird amps have a large offset but are not known
         # as bad.
-        flat, radial_gradient, planar_gradient = self._get_adjusted_flat(
+        flat, radial_gradient, planar_gradient = _get_adjusted_flat(
+            self.detector,
+            self.gain_true,
             10000.0,
             0.6,
             -0.00005,
@@ -338,19 +289,28 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
         for amp_name in self.amp_names:
             ptc.gain[amp_name] = gain_biased[amp_name]
             ptc.gainUnadjusted[amp_name] = gain_biased[amp_name]
+            ptc.noise[amp_name] = 10.0
+            ptc.ptcTurnoff[amp_name] = 50000.0
 
-        config = PhotonTransferCurveAdjustGainRatiosTask.ConfigClass()
-        config.bin_factor = 2
-        config.n_flat = 10
-        config.amp_boundary = 0
-        config.radial_gradient_n_spline_nodes = 3
-
-        task = PhotonTransferCurveAdjustGainRatiosTask(config=config)
+        max_fractional_gain_ratio = 0.05
         with self.assertLogs(level=logging.WARNING) as cm:
-            adjust_ratios = task._compute_gain_ratios(ptc, flat.clone(), fixed_amp_num)
+            binned = bin_flat(ptc, flat.clone(), bin_factor=2, amp_boundary=0, apply_gains=True)
+            lo, hi = np.nanpercentile(binned["value"], [5.0, 95.0])
+            lo *= 0.8
+            hi *= 1.2
+            use = (np.isfinite(binned["value"]) & (binned["value"] >= lo) & (binned["value"] <= hi))
+            binned = binned[use]
+
+            adjust_ratios = _compute_gain_ratios(
+                flat.getDetector(),
+                binned,
+                fixed_amp_num,
+                radial_gradient_n_spline_nodes=3,
+                max_fractional_gain_ratio=max_fractional_gain_ratio,
+            )
         self.assertIn("Found bad amp", cm.output[0])
 
-        np.testing.assert_array_less(np.abs(adjust_ratios - 1.0), config.max_fractional_gain_ratio)
+        np.testing.assert_array_less(np.abs(adjust_ratios - 1.0), max_fractional_gain_ratio)
 
         # Make two flats with the old adjustment and the new adjustment.
         flat_biased, flat_debiased = self._gain_correct_flat(flat, ptc, adjust_ratios)
@@ -387,7 +347,9 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
                 "exposure": exp_id_2,
             }
 
-            flat, radial_gradient, planar_gradient = self._get_adjusted_flat(
+            flat, radial_gradient, planar_gradient = _get_adjusted_flat(
+                self.detector,
+                self.gain_true,
                 levels[i],
                 0.6,
                 -0.00005,
@@ -410,11 +372,19 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
         for amp_name in self.amp_names:
             ptc.gain[amp_name] = gain_biased[amp_name]
             ptc.gainUnadjusted[amp_name] = gain_biased[amp_name]
+            ptc.noise[amp_name] = 10.0
+            ptc.ptcTurnoff[amp_name] = 50000.0
 
             ptc.rawMeans[amp_name] = levels
             ptc.finalMeans[amp_name] = levels
 
             ptc.inputExpIdPairs[amp_name] = exp_id_pairs
+
+        # Add in one noisy amp which will not be considered
+        # to be the reference amp.
+        ptc.noise[self.amp_names[-1]] = 15.0
+        # And add in one low turnoff amp.
+        ptc.ptcTurnoff[self.amp_names[-2]] = 10000.0
 
         config = PhotonTransferCurveAdjustGainRatiosTask.ConfigClass()
         config.bin_factor = 2
@@ -427,7 +397,7 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
         struct = task.run(exposures=flat_handles, input_ptc=ptc)
 
         output_ptc = struct.output_ptc
-        summary = struct.gain_adjust_summary
+        summary = struct.output_adjust_summary
 
         self.assertGreater(summary["mean_adu"].min(), config.min_adu)
         self.assertLess(summary["mean_adu"].max(), config.max_adu)
@@ -440,7 +410,7 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
         # for every flux level.
         adjust_ratios = np.zeros(len(self.amp_names))
         for i, amp_name in enumerate(self.amp_names):
-            np.testing.assert_array_equal(
+            np.testing.assert_array_almost_equal(
                 summary[f"{amp_name}_gain_ratio"][0],
                 summary[f"{amp_name}_gain_ratio"],
             )
@@ -448,6 +418,7 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
             self.assertFloatsAlmostEqual(
                 adjust_ratios[i],
                 summary[f"{amp_name}_gain_ratio"] / summary.meta["median_correction"],
+                rtol=1e-6,
             )
 
         # Confirm this actually works.
@@ -487,7 +458,9 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
                 "exposure": exp_id_2,
             }
 
-            flat, radial_gradient, planar_gradient = self._get_adjusted_flat(
+            flat, radial_gradient, planar_gradient = _get_adjusted_flat(
+                self.detector,
+                self.gain_true,
                 levels[i],
                 0.6,
                 -0.00005,
@@ -511,6 +484,8 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
         for amp_name in self.amp_names:
             ptc.gain[amp_name] = gain_biased[amp_name]
             ptc.gainUnadjusted[amp_name] = gain_biased[amp_name]
+            ptc.noise[amp_name] = 10.0
+            ptc.ptcTurnoff[amp_name] = 50000.0
 
             ptc.rawMeans[amp_name] = levels
             ptc.finalMeans[amp_name] = levels
@@ -529,7 +504,7 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
         struct = task.run(exposures=flat_handles, input_ptc=ptc)
 
         output_ptc = struct.output_ptc
-        summary = struct.gain_adjust_summary
+        summary = struct.output_adjust_summary
 
         self.assertGreater(summary["mean_adu"].min(), config.min_adu)
         self.assertLess(summary["mean_adu"].max(), config.max_adu)
@@ -542,7 +517,7 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
         # for every flux level.
         adjust_ratios = np.zeros(len(self.amp_names))
         for i, amp_name in enumerate(self.amp_names):
-            np.testing.assert_array_equal(
+            np.testing.assert_array_almost_equal(
                 summary[f"{amp_name}_gain_ratio"][0],
                 summary[f"{amp_name}_gain_ratio"],
             )
@@ -550,6 +525,7 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
             self.assertFloatsAlmostEqual(
                 adjust_ratios[i],
                 summary[f"{amp_name}_gain_ratio"] / summary.meta["median_correction"],
+                rtol=1e-6,
             )
 
         # Confirm this actually works.
@@ -568,6 +544,441 @@ class PtcAdjustGainRatiosTestCase(lsst.utils.tests.TestCase):
             np.nanstd(flat_debiased.image.array.ravel()),
             np.nanstd(flat_biased.image.array.ravel()),
         )
+
+
+class MeasureGainCorrectionTestCase(lsst.utils.tests.TestCase):
+    def setUp(self):
+        mock = IsrMockLSST()
+        self.camera = mock.getCamera()
+        self.detector = self.camera[20]
+        self.amp_names = [amp.getName() for amp in self.detector]
+
+        self.n_radial_nodes = 10
+
+        self.gain_ref = {}
+        for amp_name in self.amp_names:
+            self.gain_ref[amp_name] = 1.0
+
+        self.ptc = PhotonTransferCurveDataset()
+        self.ptc.ampNames = self.amp_names
+        self.ptc.badAmps = []
+
+        for amp_name in self.amp_names:
+            self.ptc.gain[amp_name] = self.gain_ref[amp_name]
+            self.ptc.noise[amp_name] = 10.0
+            self.ptc.ptcTurnoff[amp_name] = 50000.0
+
+    def _check_corrected_ratios(
+        self,
+        ref_flat,
+        input_flat,
+        gain_adjust_truth,
+        gain_correction,
+        check_sig_corr=False,
+        gain_adjust_atol=1e-5,
+    ):
+        """
+        Check corrected ratio images for uniformity.
+
+        Parameters
+        ----------
+        ref_flat : `lsst.afw.image.Exposure`
+            Reference flat.
+        input_flat : `lsst.afw.image.Exposure`
+            Input flat.
+        gain_adjust_truth : `dict` [`str`, `float`]
+            Dictionary of gains used; adjustment is relative to gain_ref.
+        gain_correction : `lsst.ip.isr.GainCorrection`
+            Gain correction object.
+        check_sig_corr : `bool`, optional
+            Check the value of the corrected ratio sigma?
+        gain_adjust_atol : `float`, optional
+            Tolerance for testing gain adjustments.
+        """
+        ratio = input_flat.image.array / ref_flat.image.array
+
+        flat_corr = input_flat.clone()
+        for i, amp in enumerate(self.detector):
+            flat_corr[amp.getBBox()].image.array /= gain_correction.gainAdjustments[i]
+
+        ratio_corr = flat_corr.image.array / ref_flat.image.array
+
+        self.assertLess(np.nanstd(ratio_corr), np.nanstd(ratio))
+
+        if check_sig_corr:
+            self.assertLess(np.std(ratio_corr), 1e-6)
+
+        gain_adjustments_truth = np.asarray(
+            [self.gain_ref[amp.getName()] / gain_adjust_truth[amp.getName()] for amp in self.detector]
+        )
+
+        finite = np.isfinite(gain_adjustments_truth)
+        self.assertFloatsAlmostEqual(
+            gain_correction.gainAdjustments[finite],
+            gain_adjustments_truth[finite],
+            atol=gain_adjust_atol,
+        )
+
+    def test_task_run_matched_gradient(self):
+        # This test shows what happens if we have matched
+        # gradients between the reference flat and the
+        # input flat.
+
+        ref_flat, _, _ = _get_adjusted_flat(
+            self.detector,
+            self.gain_ref,
+            1.0,
+            0.98,
+            0.0002,
+            -0.0002,
+        )
+
+        gain_adj = copy.copy(self.gain_ref)
+        gain_adj[self.amp_names[3]] = 1.002
+        gain_adj[self.amp_names[6]] = 0.998
+
+        input_flat, _, _ = _get_adjusted_flat(
+            self.detector,
+            gain_adj,
+            1.0,
+            0.98,
+            0.0002,
+            -0.0002,
+        )
+
+        # Do the first fit with no additional gradient fitting.
+        config = CpMeasureGainCorrectionTask.ConfigClass()
+        config.radial_gradient_n_spline_nodes = 3
+        config.bin_factor = 2
+        config.amp_boundary = 0
+        config.chebyshev_gradient_order = 0
+        config.do_remove_radial_gradient = False
+
+        task = CpMeasureGainCorrectionTask(config=config)
+        struct = task.run(
+            input_reference_flat=ref_flat,
+            input_reference_ptc=self.ptc,
+            input_flat=input_flat,
+        )
+
+        self._check_corrected_ratios(
+            ref_flat,
+            input_flat,
+            gain_adj,
+            struct.output_gain_correction,
+            check_sig_corr=True,
+        )
+
+        # Second fit with defaults.
+        config = CpMeasureGainCorrectionTask.ConfigClass()
+        config.radial_gradient_n_spline_nodes = 3
+        config.bin_factor = 2
+        config.amp_boundary = 0
+        config.chebyshev_gradient_order = 1
+        config.do_remove_radial_gradient = True
+
+        task = CpMeasureGainCorrectionTask(config=config)
+        struct = task.run(
+            input_reference_flat=ref_flat,
+            input_reference_ptc=self.ptc,
+            input_flat=input_flat,
+        )
+
+        self._check_corrected_ratios(
+            ref_flat,
+            input_flat,
+            gain_adj,
+            struct.output_gain_correction,
+            gain_adjust_atol=3e-3,
+        )
+
+        self.assertIsInstance(struct.output_flat_ratio_plot, Figure)
+
+    def test_task_run_mismatched_spline(self):
+        # This test shows what happens if we have matched
+        # gradients but different spline between the reference flat and the
+        # input flat.
+
+        ref_flat, _, _ = _get_adjusted_flat(
+            self.detector,
+            self.gain_ref,
+            1.0,
+            0.98,
+            0.0002,
+            -0.0002,
+        )
+
+        gain_adj = copy.copy(self.gain_ref)
+        gain_adj[self.amp_names[3]] = 1.002
+        gain_adj[self.amp_names[6]] = 0.998
+
+        input_flat, _, _ = _get_adjusted_flat(
+            self.detector,
+            gain_adj,
+            1.0,
+            0.97,
+            0.0002,
+            -0.0002,
+        )
+
+        # Fit with defaults.
+        config = CpMeasureGainCorrectionTask.ConfigClass()
+        config.radial_gradient_n_spline_nodes = 3
+        config.bin_factor = 2
+        config.amp_boundary = 0
+        config.chebyshev_gradient_order = 1
+        config.do_remove_radial_gradient = True
+
+        task = CpMeasureGainCorrectionTask(config=config)
+        struct = task.run(
+            input_reference_flat=ref_flat,
+            input_reference_ptc=self.ptc,
+            input_flat=input_flat,
+        )
+
+        self._check_corrected_ratios(
+            ref_flat,
+            input_flat,
+            gain_adj,
+            struct.output_gain_correction,
+            gain_adjust_atol=3e-3,
+        )
+
+    def test_task_run_mismatched_gradient(self):
+        # This test shows what happens if we have matched
+        # spline but different gradient between the reference flat and the
+        # input flat.
+
+        ref_flat, _, _ = _get_adjusted_flat(
+            self.detector,
+            self.gain_ref,
+            1.0,
+            0.98,
+            0.0002,
+            -0.0002,
+        )
+
+        gain_adj = copy.copy(self.gain_ref)
+        gain_adj[self.amp_names[3]] = 1.002
+        gain_adj[self.amp_names[6]] = 0.998
+
+        input_flat, _, _ = _get_adjusted_flat(
+            self.detector,
+            gain_adj,
+            1.0,
+            0.98,
+            0.0004,
+            -0.0003,
+        )
+
+        # Fit with defaults.
+        config = CpMeasureGainCorrectionTask.ConfigClass()
+        config.radial_gradient_n_spline_nodes = 3
+        config.bin_factor = 2
+        config.amp_boundary = 0
+        config.chebyshev_gradient_order = 1
+        config.do_remove_radial_gradient = True
+
+        task = CpMeasureGainCorrectionTask(config=config)
+        struct = task.run(
+            input_reference_flat=ref_flat,
+            input_reference_ptc=self.ptc,
+            input_flat=input_flat,
+        )
+
+        self._check_corrected_ratios(
+            ref_flat,
+            input_flat,
+            gain_adj,
+            struct.output_gain_correction,
+            gain_adjust_atol=3e-3,
+        )
+
+    def test_task_run_mismatched_both(self):
+        # This test shows what happens if we have matched
+        # spline and different gradient between the reference flat and the
+        # input flat.
+
+        ref_flat, _, _ = _get_adjusted_flat(
+            self.detector,
+            self.gain_ref,
+            1.0,
+            0.98,
+            0.0002,
+            -0.0002,
+        )
+
+        gain_adj = copy.copy(self.gain_ref)
+        gain_adj[self.amp_names[3]] = 1.002
+        gain_adj[self.amp_names[6]] = 0.998
+
+        input_flat, _, _ = _get_adjusted_flat(
+            self.detector,
+            gain_adj,
+            1.0,
+            0.97,
+            0.0004,
+            -0.0003,
+        )
+
+        # Fit with defaults.
+        config = CpMeasureGainCorrectionTask.ConfigClass()
+        config.radial_gradient_n_spline_nodes = 3
+        config.bin_factor = 2
+        config.amp_boundary = 0
+        config.chebyshev_gradient_order = 1
+        config.do_remove_radial_gradient = True
+
+        task = CpMeasureGainCorrectionTask(config=config)
+        struct = task.run(
+            input_reference_flat=ref_flat,
+            input_reference_ptc=self.ptc,
+            input_flat=input_flat,
+        )
+
+        self._check_corrected_ratios(
+            ref_flat,
+            input_flat,
+            gain_adj,
+            struct.output_gain_correction,
+            gain_adjust_atol=3e-3,
+        )
+
+    def test_task_run_mismatched_both_bad_amp(self):
+        # This test shows what happens if we have matched
+        # spline and different gradient between the reference flat and the
+        # input flat.
+
+        ref_flat, _, _ = _get_adjusted_flat(
+            self.detector,
+            self.gain_ref,
+            1.0,
+            0.98,
+            0.0002,
+            -0.0002,
+        )
+
+        gain_adj = copy.copy(self.gain_ref)
+        gain_adj[self.amp_names[3]] = 1.002
+        gain_adj[self.amp_names[6]] = 0.998
+        gain_adj[self.amp_names[0]] = np.nan
+
+        input_flat, _, _ = _get_adjusted_flat(
+            self.detector,
+            gain_adj,
+            1.0,
+            0.97,
+            0.0004,
+            -0.0003,
+        )
+
+        # Fit with defaults.
+        config = CpMeasureGainCorrectionTask.ConfigClass()
+        config.radial_gradient_n_spline_nodes = 3
+        config.bin_factor = 2
+        config.amp_boundary = 0
+        config.chebyshev_gradient_order = 1
+        config.do_remove_radial_gradient = True
+
+        task = CpMeasureGainCorrectionTask(config=config)
+        struct = task.run(
+            input_reference_flat=ref_flat,
+            input_reference_ptc=self.ptc,
+            input_flat=input_flat,
+        )
+
+        self._check_corrected_ratios(
+            ref_flat,
+            input_flat,
+            gain_adj,
+            struct.output_gain_correction,
+            gain_adjust_atol=3e-3,
+        )
+
+
+def _get_adjusted_flat(
+    detector,
+    gain_dict,
+    normalization,
+    radial_gradient_outer_value,
+    planar_gradient_x,
+    planar_gradient_y,
+    bad_amps=[],
+    n_radial_nodes=10,
+):
+    """Get an adjusted flat.
+
+    Parameters
+    ----------
+    detector : `lsst.afw.cameraGeom.Detector`
+        Detector object.
+    gain_dict : `dict` [`float`]
+        Dictionary of amp names to gains.
+    normalization : `float`
+        Normalization value.
+    radial_gradient_outer_value : `float`
+        Value at max radius (should be < 1.0).
+    planar_gradient_x : `float`
+        Planar gradient x slope.
+    planar_gradient_y : `float`
+        Planar gradient y slope.
+    bad_amps : `list` [`str`], optional
+        List of bad amp names.
+    n_radial_nodes : `int`, optional
+        Number of radial nodes.
+
+    Returns
+    -------
+    flat : `lsst.afw.image.Exposure`
+        Flat image generated.
+    radial_gradient : `np.ndarray`
+        Radial gradient image applied.
+    planar_gradient : `np.ndarray`
+        Planar gradient image applied.
+    """
+    flat = ExposureF(detector.getBBox())
+    flat.setDetector(detector)
+
+    xx = np.arange(flat.image.array.shape[1], dtype=np.float64)
+    yy = np.arange(flat.image.array.shape[0], dtype=np.float64)
+    x, y = np.meshgrid(xx, yy)
+    x = x.ravel()
+    y = y.ravel()
+
+    transform = detector.getTransform(lsst.afw.cameraGeom.PIXELS, lsst.afw.cameraGeom.FOCAL_PLANE)
+    xy = np.vstack((x, y))
+    xf, yf = np.vsplit(transform.getMapping().applyForward(xy), 2)
+    xf = xf.ravel()
+    yf = yf.ravel()
+
+    radius = np.sqrt(xf**2. + yf**2.)
+
+    nodes = np.linspace(radius.min(), radius.max(), n_radial_nodes)
+    spline_values = np.linspace(1.0, radial_gradient_outer_value, n_radial_nodes)
+
+    spl = Akima1DInterpolator(nodes, spline_values, method="akima")
+    radial_gradient = spl(radius).reshape(flat.image.array.shape)
+    flat.image.array[:, :] = radial_gradient.copy()
+
+    flat.image.array[:, :] *= normalization
+
+    # Add a bit of a planar gradient; approx +/- 1%.
+    planar_gradient = (
+        1
+        - 0.00005 * (x - detector.getBBox().getCenter().getX())
+        + 0.00001 * (y - detector.getBBox().getCenter().getY())
+    ).reshape(flat.image.array.shape)
+
+    flat.image.array[:, :] *= planar_gradient
+
+    for amp in detector:
+        flat.image[amp.getBBox()].array[:, :] /= gain_dict[amp.getName()]
+
+    # Make the bad amps goofy.
+    for bad_amp in bad_amps:
+        flat.image[detector[bad_amp].getBBox()].array[:, :] *= 0.1
+
+    return flat, radial_gradient, planar_gradient
 
 
 class TestMemory(lsst.utils.tests.MemoryTestCase):

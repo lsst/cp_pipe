@@ -1,4 +1,5 @@
 description: cp_pipe ptc fixup.
+# TODO DM-52883: Remove deprecated pipelines.
 tasks:
   cpPtcFixupGainRatiosIsr:
     class: lsst.ip.isr.IsrTaskLSST
