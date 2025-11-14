@@ -215,7 +215,6 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask):
         inputs = butlerQC.get(inputRefs)
 
         # Use the dimensions to set calib/provenance information.
-
         if self.config.useBfkPtc:
             inputs["inputDims"] = dict(inputRefs.inputBfkPtc.dataId.required)
             inputs["inputPtc"] = inputs["inputBfkPtc"]
