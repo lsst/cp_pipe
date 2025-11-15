@@ -1199,6 +1199,10 @@ class AstierSplineLinearityFitter:
             mu = self._mu[indices][mask]
             pd = self._pd[indices][mask]
             to_fit = (mu < self._max_signal_nearly_linear)
+            # If we have no points (low PTC turnoff) then
+            # we just use the first half for our initial value.
+            if to_fit.sum() == 0:
+                to_fit = (mu < np.median(mu))
             linfit = np.polyfit(pd[to_fit], mu[to_fit], 1)
             p0[self.par_indices["groups"][i]] = linfit[0]
 
