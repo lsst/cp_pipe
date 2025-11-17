@@ -37,9 +37,11 @@ These are the environment variables that must be used. Examples are substituted 
 * `export RERUN=20250122a`: The rerun name to indicate when the calibrations were generated.
 * `export BOOTSTRAP_RUN_NUMBER=1`: The bootstrap run number ensures that the bootstrap run collections are unique in case of an initial mistake. (Because the run name for bootstraps are deterministic without a timestamp they cannot be rerun into the same collection). Note that all bootstrap calibs assume the same run number in the templates; if you modify just the dark (for example) you will need to edit the template.
 
-* `export SELECTION_BIAS="instrument='LSSTComCam' and selection_string"`: The selection of raws to make the bootstrapBias and bias frames.
-* `export SELECTION_DARK="instrument='LSSTComCam' and selection_string"`: The selection of raws to make the bootstrapDark and dark frames.
+* `export SELECTION_BIAS_BOOTSTRAP="instrument='LSSTComCam' and selection_string"`: The selection of raws to make the bootstrapBias.
+* `export SELECTION_DARK_BOOTSTRAP="instrument='LSSTComCam' and selection_string"`: The selection of raws to make the bootstrapDark.
 * `export SELECTION_FLAT_BOOTSTRAP="instrument='LSSTComCam' and selection_string"`: The selection of raws to make the bootstrapFlat.
+* `export SELECTION_BIAS="instrument='LSSTComCam' and selection_string"`: The selection of raws to make the bias frames.
+* `export SELECTION_DARK="instrument='LSSTComCam' and selection_string"`: The selection of raws to make the dark frames.
 * `export SELECTION_PTC="instrument='LSSTComCam' and selection_string"`: The selection of raws to generate the PTC.
 * `export SELECTION_PTC_LINEARIZER=$SELECTION_PTC`: The selection of raws to generate the linearizer; usually will be the same as the PTC selection.
 * `export SELECTION_PTC_BFK=$SELECTION_PTC`: The selection of raws to generate the brighter-fatter kernel; usually will be the same as the PTC selection.
