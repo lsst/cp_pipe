@@ -89,3 +89,4 @@ contracts:
   - cpBfSolve.connections.inputPtc == cpBfPtcAdjustGainRatios.connections.output_ptc
   - cpBfPtcAdjustGainRatios.connections.exposures == cpBfIsr.connections.outputExposure
   - cpBfPtcAdjustGainRatios.connections.input_ptc == cpBfPtcSolve.connections.outputPtcDataset
+

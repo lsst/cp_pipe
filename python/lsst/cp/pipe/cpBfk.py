@@ -300,9 +300,17 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask):
         # are scaled before the kernel is generated, which performs
         # the conversion.  The input covariances are in (x, y) index
         # ordering, as is the aMatrix.
-        bfk.rawXcorrs = inputPtc.covariances  # ADU^2
         bfk.badAmps = inputPtc.badAmps
-        bfk.shape = (inputPtc.covMatrixSide*2 + 1, inputPtc.covMatrixSide*2 + 1)
+        matrixSide = int(inputPtc.covMatrixSide)
+        if self.config.useAmatrix:
+            matrixSide = inputPtc.covMatrixSideFullCovFit
+        bfk.shape = (matrixSide*2 + 1, matrixSide*2 + 1)
+        # if useAmatrix is true and the fit side is smaller
+        # than the side used to calculate the covariances
+        # we will need to trim this.
+        for amp in detector:
+            ampName = amp.getName()
+            bfk.rawXcorrs[ampName] = inputPtc.covariances[ampName][:, :matrixSide, :matrixSide]
         bfk.gain = inputPtc.gain
         bfk.noise = inputPtc.noise
         bfk.meanXcorrs = dict()
@@ -320,7 +328,7 @@ class BrighterFatterKernelSolveTask(pipeBase.PipelineTask):
                                  ampName, gain)
                 bfk.meanXcorrs[ampName] = np.zeros(bfk.shape)
                 bfk.ampKernels[ampName] = np.zeros(bfk.shape)
-                bfk.rawXcorrs[ampName] = np.zeros((len(mask), inputPtc.covMatrixSide, inputPtc.covMatrixSide))
+                bfk.rawXcorrs[ampName] = np.zeros((len(mask), matrixSide, matrixSide))
                 bfk.valid[ampName] = False
                 continue
 

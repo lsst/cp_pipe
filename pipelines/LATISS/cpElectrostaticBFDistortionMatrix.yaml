@@ -2,3 +2,4 @@ description: cp_pipe electrostatic brighter-fatter distortion matrix calibration
 instrument: lsst.obs.lsst.Latiss
 imports:
   - location: $CP_PIPE_DIR/pipelines/_ingredients/cpElectrostaticBFDistortionMatrixLSST.yaml
+

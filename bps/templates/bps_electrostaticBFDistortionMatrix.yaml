@@ -20,3 +20,4 @@ payload:
   butlerConfig: "${REPO}"
   inCollection: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET},${RAW_COLLECTION},${CALIB_COLLECTIONS}"
   dataQuery: "${SELECTION_PTC_BF}"
+
