@@ -25,4 +25,4 @@ bin/
 pytest_session.txt
 python/*.dist-info/
 *~
-.ipynb_checkpoints/
+*.ipynb_checkpoints/

@@ -256,14 +256,14 @@ class ElectrostaticBrighterFatterSolveTask(pipeBase.PipelineTask):
         """
         detector = camera[inputDims['detector']]
 
-        inputRange = int(inputPtc.covMatrixSide)
+        inputRange = int(inputPtc.covMatrixSideFullCovFit)
         fitRange = int(self.config.fitRange)
 
         if not inputPtc.ptcFitType.startswith("FULLCOVARIANCE"):
             raise ValueError(
                 "ptcFitType must be FULLCOVARIANCE* to solve for electrostatic solution."
             )
-        if self.config.fitRange > inputPtc.covMatrixSide:
+        if fitRange > inputRange:
             raise ValueError(
                 "Cannot compute the electrostatic solution if "
                 "int(inputPtc.covMatrixSide) < fitRange."

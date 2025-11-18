@@ -58,10 +58,13 @@ class BfkSolveTaskTestCase(lsst.utils.tests.TestCase):
         self.ptc.covariances['amp 1'] = []
         for mean, variance in zip(self.ptc.rawMeans['amp 1'], self.ptc.rawVars['amp 1']):
             residual = mean - variance
-            covariance = [[variance, 0.5 * residual, 0.1 * residual],
-                          [0.2 * residual, 0.1 * residual, 0.05 * residual],
-                          [0.025 * residual, 0.015 * residual, 0.01 * residual]]
+            covariance = np.array([[variance, 0.5 * residual, 0.1 * residual],
+                                   [0.2 * residual, 0.1 * residual, 0.05 * residual],
+                                   [0.025 * residual, 0.015 * residual, 0.01 * residual]])
             self.ptc.covariances['amp 1'].append(covariance)
+
+        # The covariances must be a numpy array
+        self.ptc.covariances['amp 1'] = np.array(self.ptc.covariances['amp 1'])
 
         self.ptc.covariancesModel = self.ptc.covariances
         self.ptc.gain['amp 1'] = 1.0
@@ -185,6 +188,9 @@ class BfkSolveTaskTestCase(lsst.utils.tests.TestCase):
                           [0.2 * residual, 0.1 * residual, 0.05 * residual],
                           [0.025 * residual, 0.015 * residual, 0.01 * residual]]
             ptc.covariances['amp 1'].append(covariance)
+
+        # The covariances must be a numpy array
+        ptc.covariances['amp 1'] = np.array(ptc.covariances['amp 1'])
 
         ptc.gain['amp 1'] = 1.0
         ptc.noise['amp 1'] = 5.0
