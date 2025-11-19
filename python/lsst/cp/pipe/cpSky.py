@@ -23,20 +23,31 @@ import numpy as np
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 import lsst.pipe.base.connectionTypes as cT
-
-from lsst.pipe.tasks.background import (FocalPlaneBackground, MaskObjectsTask, SkyMeasurementTask,
-                                        FocalPlaneBackgroundConfig)
 from lsst.daf.base import PropertyList
+from lsst.pipe.tasks.background import (
+    FocalPlaneBackground,
+    FocalPlaneBackgroundConfig,
+    MaskObjectsTask,
+    SkyMeasurementTask,
+)
+
 from .cpCombine import CalibCombineTask
 
-__all__ = ['CpSkyImageTask', 'CpSkyImageConfig',
-           'CpSkyScaleMeasureTask', 'CpSkyScaleMeasureConfig',
-           'CpSkySubtractBackgroundTask', 'CpSkySubtractBackgroundConfig',
-           'CpSkyCombineTask', 'CpSkyCombineConfig']
+__all__ = [
+    "CpSkyImageTask",
+    "CpSkyImageConfig",
+    "CpSkyScaleMeasureTask",
+    "CpSkyScaleMeasureConfig",
+    "CpSkySubtractBackgroundTask",
+    "CpSkySubtractBackgroundConfig",
+    "CpSkyCombineTask",
+    "CpSkyCombineConfig",
+]
 
 
-class CpSkyImageConnections(pipeBase.PipelineTaskConnections,
-                            dimensions=("instrument", "physical_filter", "exposure", "detector")):
+class CpSkyImageConnections(
+    pipeBase.PipelineTaskConnections, dimensions=("instrument", "physical_filter", "exposure", "detector")
+):
     inputExp = cT.Input(
         name="cpSkyIsrExp",
         doc="Input pre-processed exposures to combine.",
@@ -65,8 +76,7 @@ class CpSkyImageConnections(pipeBase.PipelineTaskConnections,
     )
 
 
-class CpSkyImageConfig(pipeBase.PipelineTaskConfig,
-                       pipelineConnections=CpSkyImageConnections):
+class CpSkyImageConfig(pipeBase.PipelineTaskConfig, pipelineConnections=CpSkyImageConnections):
     maskTask = pexConfig.ConfigurableField(
         target=MaskObjectsTask,
         doc="Object masker to use.",
@@ -147,14 +157,15 @@ class CpSkyImageTask(pipeBase.PipelineTask):
         )
 
 
-class CpSkyScaleMeasureConnections(pipeBase.PipelineTaskConnections,
-                                   dimensions=("instrument", "physical_filter", "exposure")):
+class CpSkyScaleMeasureConnections(
+    pipeBase.PipelineTaskConnections, dimensions=("instrument", "physical_filter", "exposure")
+):
     inputBkgs = cT.Input(
         name="cpSkyDetectorBackground",
         doc="Initial background model from one exposure/detector",
         storageClass="FocalPlaneBackground",
         dimensions=("instrument", "exposure", "detector"),
-        multiple=True
+        multiple=True,
     )
 
     outputBkg = cT.Output(
@@ -171,8 +182,7 @@ class CpSkyScaleMeasureConnections(pipeBase.PipelineTaskConnections,
     )
 
 
-class CpSkyScaleMeasureConfig(pipeBase.PipelineTaskConfig,
-                              pipelineConnections=CpSkyScaleMeasureConnections):
+class CpSkyScaleMeasureConfig(pipeBase.PipelineTaskConfig, pipelineConnections=CpSkyScaleMeasureConnections):
     # There are no configurable parameters here.
     pass
 
@@ -215,9 +225,12 @@ class CpSkyScaleMeasureTask(pipeBase.PipelineTask):
             background.merge(bg)
 
         backgroundPixels = background.getStatsImage().getArray()
-        self.log.info("Background model min/max: %f %f.  Scale %f",
-                      np.min(backgroundPixels), np.max(backgroundPixels),
-                      np.median(backgroundPixels))
+        self.log.info(
+            "Background model min/max: %f %f.  Scale %f",
+            np.min(backgroundPixels),
+            np.max(backgroundPixels),
+            np.median(backgroundPixels),
+        )
 
         # A property list is overkill, but FocalPlaneBackground
         # doesn't have a metadata object that this can be stored in.
@@ -231,9 +244,9 @@ class CpSkyScaleMeasureTask(pipeBase.PipelineTask):
         )
 
 
-class CpSkySubtractBackgroundConnections(pipeBase.PipelineTaskConnections,
-                                         dimensions=("instrument", "physical_filter",
-                                                     "exposure", "detector")):
+class CpSkySubtractBackgroundConnections(
+    pipeBase.PipelineTaskConnections, dimensions=("instrument", "physical_filter", "exposure", "detector")
+):
     inputExp = cT.Input(
         name="cpSkyMaskedIsrExp",
         doc="Masked post-ISR image.",
@@ -261,8 +274,9 @@ class CpSkySubtractBackgroundConnections(pipeBase.PipelineTaskConnections,
     )
 
 
-class CpSkySubtractBackgroundConfig(pipeBase.PipelineTaskConfig,
-                                    pipelineConnections=CpSkySubtractBackgroundConnections):
+class CpSkySubtractBackgroundConfig(
+    pipeBase.PipelineTaskConfig, pipelineConnections=CpSkySubtractBackgroundConnections
+):
     sky = pexConfig.ConfigurableField(
         target=SkyMeasurementTask,
         doc="Sky measurement",
@@ -316,19 +330,18 @@ class CpSkySubtractBackgroundTask(pipeBase.PipelineTask):
         detector = inputExp.getDetector()
         bbox = image.getBBox()
 
-        scale = inputScale.get('scale')
+        scale = inputScale.get("scale")
         background = inputBkg.toCcdBackground(detector, bbox)
         image -= background.getImage()
         image /= scale
 
         newBackground = self.sky.measureBackground(image)
-        return pipeBase.Struct(
-            outputBkg=newBackground
-        )
+        return pipeBase.Struct(outputBkg=newBackground)
 
 
-class CpSkyCombineConnections(pipeBase.PipelineTaskConnections,
-                              dimensions=("instrument", "physical_filter", "detector")):
+class CpSkyCombineConnections(
+    pipeBase.PipelineTaskConnections, dimensions=("instrument", "physical_filter", "detector")
+):
     inputBkgs = cT.Input(
         name="cpSkyExpResidualBackground",
         doc="Normalized, static background.",
@@ -354,8 +367,7 @@ class CpSkyCombineConnections(pipeBase.PipelineTaskConnections,
     )
 
 
-class CpSkyCombineConfig(pipeBase.PipelineTaskConfig,
-                         pipelineConnections=CpSkyCombineConnections):
+class CpSkyCombineConfig(pipeBase.PipelineTaskConfig, pipelineConnections=CpSkyCombineConnections):
     sky = pexConfig.ConfigurableField(
         target=SkyMeasurementTask,
         doc="Sky measurement",
@@ -398,10 +410,10 @@ class CpSkyCombineTask(pipeBase.PipelineTask):
                 The final sky calibration product.
         """
         skyCalib = self.sky.averageBackgrounds(inputBkgs)
-        skyCalib.setDetector(inputExpHandles[0].get(component='detector'))
-        skyCalib.setFilter(inputExpHandles[0].get(component='filter'))
+        skyCalib.setDetector(inputExpHandles[0].get(component="detector"))
+        skyCalib.setFilter(inputExpHandles[0].get(component="filter"))
 
-        CalibCombineTask().combineHeaders(inputExpHandles, skyCalib, calibType='SKY')
+        CalibCombineTask().combineHeaders(inputExpHandles, skyCalib, calibType="SKY")
 
         return pipeBase.Struct(
             outputCalib=skyCalib,
