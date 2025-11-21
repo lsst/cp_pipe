@@ -1055,8 +1055,10 @@ class AstierSplineLinearityFitter:
         Fit for temporal scaling?
     mjd_scaled : `np.ndarray` (M,), optional
         Input scaled mjd values (mjd - mjd_ref).
-    max_correction : `float`, optional
+    max_frac_correction : `float`, optional
         Maximum fractional correction.
+    max_correction : `float`, optional
+        Maximum correction (unscaled).
     """
     def __init__(
         self,
@@ -1074,7 +1076,8 @@ class AstierSplineLinearityFitter:
         max_signal_nearly_linear=None,
         fit_temporal=False,
         mjd_scaled=None,
-        max_correction=0.25,
+        max_frac_correction=0.25,
+        max_correction=np.inf,
     ):
         self._pd = pd
         self._mu = mu
@@ -1085,6 +1088,7 @@ class AstierSplineLinearityFitter:
         self._weight_pars_start = weight_pars_start
         self._fit_temperature = fit_temperature
         self._fit_temporal = fit_temporal
+        self._max_frac_correction = max_frac_correction
         self._max_correction = max_correction
 
         self._nodes = nodes
@@ -1458,7 +1462,8 @@ class AstierSplineLinearityFitter:
 
         # Don't let it get to >5% correction.
         values = pars[self.par_indices["values"]]
-        if np.abs(values[-1])/self._nodes[-1] > self._max_correction:
+        if np.abs(values[-1])/self._nodes[-1] > self._max_frac_correction \
+           or np.abs(values[-1]) > self._max_correction:
             extra_constraint = 1e10
         else:
             extra_constraint = 0

@@ -1722,8 +1722,9 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
                 fit_temperature=False,
                 max_signal_nearly_linear=ptcTurnoff,
                 fit_temporal=False,
-                # Turn off max correction clipping.
-                max_correction=np.inf,
+                # Put a cap on the maximum correction in absolute value.
+                max_frac_correction=np.inf,
+                max_correction=20_000.0,
             )
             p0 = fitter.estimate_p0()
             pars = fitter.fit(
