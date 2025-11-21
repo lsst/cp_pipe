@@ -501,7 +501,7 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
             self.debugView(ampName, signal, test)
 
             params = Parameters()
-            params.add('ctiexp', value=-6, min=-8, max=-5, vary=True)
+            params.add('ctiexp', value=-6, min=-12, max=-5, vary=True)
             params.add('trapsize', value=5.0 if testResult else 0.0, min=0.0, max=30.,
                        vary=True if testResult else False)
             params.add('scaling', value=0.08, min=0.0, max=1.0,
@@ -518,20 +518,17 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
             result = minner.minimize()
 
             # Warn if the global CTI has hit the upper bound of the fit range.
-            if np.isclose(10**result.params["ctiexp"].value, 10**(-5), rtol=.01):
+            if np.isclose(10**result.params["ctiexp"].value, 10**(-5), atol=10**(-5)):
                 self.log.warning(f"Global CTI for detector {detector.getId()} ({amp.getName()}) is "
                                  "has hit the fitter's upper bound (10^-5).")
 
             # Only the global CTI term is retained from this fit.
-            # If the CTI is within 1% of the lower bound, just set
-            # the CTI to zero and don't perform a global CTI
-            # correction.
-            if np.isclose(10**result.params["ctiexp"].value, 1e-8, rtol=0.01):
+            # If the CTI is within 1% of the lower bound.
+            if np.isclose(10**result.params["ctiexp"].value, 1e-12, atol=1e-12):
                 self.log.info(f"Global CTI for detector {detector.getId()} ({amp.getName()}) has "
-                              "hit the fitter's lower bound; setting globalCti to 0.")
-                calib.globalCti[ampName] = 0.0
-            else:
-                calib.globalCti[ampName] = 10**result.params['ctiexp'].value
+                              "hit the fitter's lower bound.")
+
+            calib.globalCti[ampName] = 10**result.params['ctiexp'].value
 
             self.log.info("CTI Global Cti %s: cti: %g decayTime: %g driftScale %g",
                           ampName, calib.globalCti[ampName], calib.decayTime[ampName],
