@@ -1573,6 +1573,8 @@ class DoubleSplineLinearityTestCase(lsst.utils.tests.TestCase):
         self.assertGreater(nodes[-1] - nodes[-2], 2000.0)
 
         # Test no "high turnoff"
+        # This includes when the ptc turnoff is above the linearity
+        # turnoff.
         low = 5000.0
         high = mid - 1.0
         nodes = _noderator(low, mid, high, 50.0, 750.0, 5000.0, 2000.0)

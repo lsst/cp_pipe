@@ -1683,7 +1683,13 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
             else:
                 lowThreshold = self.config.relativeSplineLowThreshold
 
-            # Need to check what happens if these are the same (corner dets).
+            relAbscissa = data["ref_counts"] * ampScalings[i]
+            relOrdinate = data["ref_counts"] * data["gain_ratio"][:, i] * ampScalings[i]
+
+            # Make sure that the linearity turnoff used here does not
+            # go beyond the max value of the relOrdinate
+            linearityTurnoff = min(linearityTurnoff, relOrdinate.max())
+
             relNodes = _noderator(
                 lowThreshold,
                 ptcTurnoff,
@@ -1696,11 +1702,9 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
 
             self.log.info("Relative linearity for amplifier %s using %d nodes.", ampName, len(relNodes))
 
+            # Update the number of relative nodes to concatenation.
             if len(relNodes) > maxRelNodes:
                 maxRelNodes = len(relNodes)
-
-            relAbscissa = data["ref_counts"] * ampScalings[i]
-            relOrdinate = data["ref_counts"] * data["gain_ratio"][:, i] * ampScalings[i]
 
             # The mask here must exclude everything beyond the turnoff.
             relMask = postTurnoffMasks[ampName] & np.isfinite(relAbscissa) & np.isfinite(relOrdinate)
