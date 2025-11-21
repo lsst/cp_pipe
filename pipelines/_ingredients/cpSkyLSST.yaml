@@ -21,8 +21,21 @@ tasks:
 contracts:
   - cpSkyImage.connections.inputExp == cpSkyIsr.connections.outputExposure
   - cpSkyScaleMeasure.connections.inputBkgs == cpSkyImage.connections.maskedBkg
+  - cpSkyScaleMeasure.includeAlternateBackground == cpSkySubtractBackground.includeAlternateBackground
   - cpSkySubtractBackground.connections.inputExp == cpSkyImage.connections.maskedExp
   - cpSkySubtractBackground.connections.inputBkg == cpSkyScaleMeasure.connections.outputBkg
   - cpSkySubtractBackground.connections.inputScale == cpSkyScaleMeasure.connections.outputScale
   - cpSkyCombine.connections.inputBkgs == cpSkySubtractBackground.connections.outputBkg
   - cpSkyCombine.connections.inputExpHandles == cpSkyImage.connections.maskedExp
+subsets:
+  step1:
+    subset:
+      - cpSkyIsr
+      - cpSkyImage
+  step2:
+    subset:
+      - cpSkyScaleMeasure
+      - cpSkySubtractBackground
+  step3:
+    subset:
+      - cpSkyCombine

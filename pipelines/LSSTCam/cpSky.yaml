@@ -9,15 +9,11 @@ tasks:
       largeScaleBackground.xSize: 40.96  # in mm
       largeScaleBackground.ySize: 40.96  # in mm
       largeScaleBackground.pixelSize: 0.01  # in mm per pixel
-subsets:
-  step1:
-    subset:
-      - cpSkyIsr
-      - cpSkyImage
-  step2:
-    subset:
-      - cpSkyScaleMeasure
-      - cpSkySubtractBackground
-  step3:
-    subset:
-      - cpSkyCombine
+  cpSkyScaleMeasure:
+    class: lsst.cp.pipe.CpSkyScaleMeasureTask
+    config:
+      includeAlternateBackground: true
+  cpSkySubtractBackground:
+    class: lsst.cp.pipe.CpSkySubtractBackgroundTask
+    config:
+      includeAlternateBackground: true
