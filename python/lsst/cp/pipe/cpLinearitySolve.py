@@ -1686,9 +1686,15 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
             relAbscissa = data["ref_counts"] * ampScalings[i]
             relOrdinate = data["ref_counts"] * data["gain_ratio"][:, i] * ampScalings[i]
 
+            # The mask here must exclude everything beyond the turnoff.
+            # Note that we need to do this before we use the actual
+            # turnoff to compute the nodes to avoid nodes going past the
+            # data domain.
+            relMask = postTurnoffMasks[ampName] & np.isfinite(relAbscissa) & np.isfinite(relOrdinate)
+
             # Make sure that the linearity turnoff used here does not
             # go beyond the max value of the relOrdinate
-            linearityTurnoff = min(linearityTurnoff, np.max(relOrdinate[np.isfinite(relOrdinate)]))
+            linearityTurnoff = min(linearityTurnoff, np.max(relOrdinate[relMask]))
 
             relNodes = _noderator(
                 lowThreshold,
@@ -1705,9 +1711,6 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
             # Update the number of relative nodes to concatenation.
             if len(relNodes) > maxRelNodes:
                 maxRelNodes = len(relNodes)
-
-            # The mask here must exclude everything beyond the turnoff.
-            relMask = postTurnoffMasks[ampName] & np.isfinite(relAbscissa) & np.isfinite(relOrdinate)
 
             linearizer.inputMask[ampName] = relMask.copy()
             linearizer.inputAbscissa[ampName] = relAbscissa.copy()
@@ -1728,7 +1731,7 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
                 fit_temporal=False,
                 # Put a cap on the maximum correction in absolute value.
                 max_frac_correction=np.inf,
-                max_correction=20_000.0,
+                max_correction=10_000.0,
             )
             p0 = fitter.estimate_p0()
             pars = fitter.fit(
@@ -1829,15 +1832,18 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
         absPtcTurnoff = inputPtc.ptcTurnoff[refAmpName]
         absLinearityTurnoff = linearizer.linearityTurnoff[refAmpName]
 
-        absLinearityTurnoff = min(absLinearityTurnoff, np.max(absOrdinate[np.isfinite(absOrdinate)]))
-
         if absPtcTurnoff < self.config.absoluteSplineLowThreshold:
             lowThreshold = 0.0
         else:
             lowThreshold = self.config.absoluteSplineLowThreshold
 
         # The mask here must exclude everything beyond the turnoff.
+        # Note that we need to do this before we use the actual
+        # turnoff to compute the nodes to avoid nodes going past the
+        # data domain.
         absMask = postTurnoffMasks[refAmpName] & np.isfinite(absAbscissa) & np.isfinite(absOrdinate)
+
+        absLinearityTurnoff = min(absLinearityTurnoff, np.max(absOrdinate[absMask]))
 
         absNodes = _noderator(
             lowThreshold,
