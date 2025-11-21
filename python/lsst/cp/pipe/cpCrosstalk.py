@@ -511,6 +511,12 @@ class CrosstalkSolveConfig(pipeBase.PipelineTaskConfig,
         doc="Filter generated crosstalk to remove marginal measurements?",
     )
 
+    unitsAreElectrons = Field(
+        dtype=bool,
+        default=True,
+        doc="Crosstalk measurements have been done in electrons.",
+    )
+
 
 class CrosstalkSolveTask(pipeBase.PipelineTask):
     """Task to solve crosstalk from pixel ratios.
@@ -667,9 +673,14 @@ class CrosstalkSolveTask(pipeBase.PipelineTask):
         # Populate the remainder of the calibration information.
         calib.hasCrosstalk = True
         calib.interChip = {}
-
-        calib.updateMetadata(camera=camera, detector=calibDetector)
-        calib.updateMetadata(setCalibId=True, setDate=True)
+        calib.crosstalkRatiosUnits = 'electron' if self.config.unitsAreElectrons else 'adu'
+        calib.updateMetadata(
+            camera=camera,
+            detector=calibDetector,
+            setCalibId=True,
+            setCalibInfo=True,
+            setDate=True,
+        )
 
         # Make an IsrProvenance().
         provenance = IsrProvenance(calibType="CROSSTALK")
@@ -944,6 +955,11 @@ class CrosstalkFilterConfig(pipeBase.PipelineTaskConfig,
         default=6.0,
         doc="Squared-term coefficient outlier clipping significance.",
     )
+    unitsAreElectrons = Field(
+        dtype=bool,
+        default=True,
+        doc="Crosstalk measurements have been done in electrons.",
+    )
 
 
 class CrosstalkFilterTask(pipeBase.PipelineTask):
@@ -1070,6 +1086,7 @@ class CrosstalkFilterTask(pipeBase.PipelineTask):
                     outputCT.coeffs = e2v_final.new_matrix0[e2v_index]
                     outputCT.coeffsSqr = e2v_final.new_matrix1[e2v_index]
 
+            outputCT.crosstalkRatiosUnits = 'electron' if self.config.unitsAreElectrons else 'adu'
             outputCT.updateMetadata(
                 camera=camera,
                 detector=camera[detId],
