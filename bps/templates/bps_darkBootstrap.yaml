@@ -21,4 +21,4 @@ payload:
   outputRun: "{darkBootstrapRun}"
   butlerConfig: "${REPO}"
   inCollection: "{biasBootstrapRun},${RAW_COLLECTION},${CALIB_COLLECTIONS}"
-  dataQuery: "${SELECTION_DARK}"
+  dataQuery: "${SELECTION_DARK_BOOTSTRAP}"

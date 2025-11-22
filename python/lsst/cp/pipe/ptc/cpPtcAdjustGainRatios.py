@@ -173,13 +173,14 @@ class PhotonTransferCurveAdjustGainRatiosTask(lsst.pipe.base.PipelineTask):
         exp_ids_first = np.asarray(input_ptc.inputExpIdPairs[input_ptc.ampNames[0]])[:, 0]
 
         avg = np.zeros(len(exp_ids_first))
-        n_amp = 0
+        n_amp = np.zeros(len(exp_ids_first), dtype=np.int64)
         for amp_name in input_ptc.ampNames:
             if amp_name in input_ptc.badAmps:
                 continue
 
-            avg[:] += input_ptc.finalMeans[amp_name]
-            n_amp += 1
+            finite = np.isfinite(input_ptc.finalMeans[amp_name])
+            avg[finite] += input_ptc.finalMeans[amp_name][finite]
+            n_amp[finite] += 1
 
         avg /= n_amp
 

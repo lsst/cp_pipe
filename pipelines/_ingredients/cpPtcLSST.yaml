@@ -27,7 +27,7 @@ tasks:
     config:
       connections.inputExp: "cpPtcIsrExp"
       connections.outputCovariance: "cpPtcPartial"
-      maximumRangeCovariancesAstier: 8
+      maximumRangeCovariancesAstier: 10
       numEdgeSuspect: 20
       edgeMaskLevel: "AMP"
       useEfdPhotodiodeData: true
@@ -38,8 +38,8 @@ tasks:
       connections.inputCovariances: "cpPtcPartial"
       connections.outputPtcDataset: "ptcUnadjusted"
       ptcFitType: "FULLCOVARIANCE"
-      maximumRangeCovariancesAstier: 8
-      maximumRangeCovariancesAstierFullCovFit: 8
+      maximumRangeCovariancesAstier: 10
+      maximumRangeCovariancesAstierFullCovFit: 10
   cpPtcAdjustGainRatios:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveAdjustGainRatiosTask
 subsets:

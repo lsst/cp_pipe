@@ -239,7 +239,7 @@ class LinearityNormalizeTask(pipeBase.PipelineTask):
             if len(ptcExposures) != len(exposures):
                 self.log.warning(
                     "PTC for detector %d has %d pairs, fewer than expected %d.",
-                    ptc.dataId["detector"],
+                    ptcHandle.dataId["detector"],
                     len(ptcExposures),
                     len(exposures),
                 )
@@ -248,7 +248,7 @@ class LinearityNormalizeTask(pipeBase.PipelineTask):
             if len(a) == 0:
                 self.log.warning(
                     "PTC for detector %d has no exposure matches to the reference!",
-                    ptc.dataId["detector"],
+                    ptcHandle.dataId["detector"],
                 )
                 continue
 
