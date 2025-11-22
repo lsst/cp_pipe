@@ -1750,6 +1750,15 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
                                    "be consistent with zero.")
             relValues[0] = 0.0
 
+            if np.any(np.abs(pars[fitter.par_indices["values"]]) > 10_000.0):
+                self.log.warning("Unconstrained nodes escaped containment; clipping.")
+                lo = (pars[fitter.par_indices["values"]] < -10_000.0)
+                if np.sum(lo) > 0:
+                    pars[fitter.par_indices["values"][lo]] = -10_000.0
+                hi = (pars[fitter.par_indices["values"]] > 10_000.0)
+                if np.sum(hi) > 0:
+                    pars[fitter.par_indices["values"][hi]] = 10_000.0
+
             # We adjust the node values according to the slope of the
             # group with the largest amplitude.  This removes a degeneracy
             # in the normalization and ensures that the overall linearized
