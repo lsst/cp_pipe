@@ -19,6 +19,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import numpy as np
+from scipy.stats import median_abs_deviation
 
 import lsst.pipe.base
 from lsst.ip.isr import GainCorrection
@@ -144,6 +145,11 @@ class CpMeasureGainCorrectionConfig(
             "computed.",
         default=0.05,
     )
+    ratio_outlier_nsig_clip = lsst.pex.config.Field(
+        dtype=float,
+        doc="Number of sigma to clip in ratio image.",
+        default=5.0,
+    )
 
 
 class CpMeasureGainCorrectionTask(lsst.pipe.base.PipelineTask):
@@ -205,9 +211,15 @@ class CpMeasureGainCorrectionTask(lsst.pipe.base.PipelineTask):
         lo_flat, hi_flat = np.percentile(binned_flat["value"][ok], [5.0, 95.0])
         lo_flat *= 0.8
         hi_flat *= 1.2
-        lo_ratio, hi_ratio = np.percentile(binned_ratio["value"][ok], [5.0, 95.0])
-        lo_ratio *= 0.8
-        hi_ratio *= 1.2
+        med_ratio = np.median(binned_ratio["value"][ok])
+        # Make sure this is non-zero for noise-free tests in particular.
+        sig_ratio = np.clip(
+            median_abs_deviation(binned_ratio["value"][ok], scale="normal"),
+            0.01,
+            None,
+        )
+        lo_ratio = med_ratio - self.config.ratio_outlier_nsig_clip * sig_ratio
+        hi_ratio = med_ratio + self.config.ratio_outlier_nsig_clip * sig_ratio
         use = (
             np.isfinite(binned_ratio["value"])
             & (binned_ref["value"] >= lo_ref)

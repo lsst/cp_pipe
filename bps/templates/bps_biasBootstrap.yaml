@@ -20,4 +20,4 @@ payload:
   outputRun: "{biasBootstrapRun}"
   butlerConfig: "${REPO}"
   inCollection: "${RAW_COLLECTION},${CALIB_COLLECTIONS}"
-  dataQuery: "${SELECTION_BIAS}"
+  dataQuery: "${SELECTION_BIAS_BOOTSTRAP}"

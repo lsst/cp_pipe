@@ -15,5 +15,8 @@ tasks:
     config:
       sigmaCutPtcOutliers: 3.0
       maxDeltaInitialPtcOutlierFit: 1_000
-      maxSignalInitialPtcOutlierFit: 30_000
+      maxSignalInitialPtcOutlierFit: 20_000
       scaleMaxSignalInitialPtcOutlierFit: False
+      extendRollofSearchMaskSizeAdu: 5_000
+      doModelPtcRolloff: True
+      maxPtcRolloffDeviation: 0.005
