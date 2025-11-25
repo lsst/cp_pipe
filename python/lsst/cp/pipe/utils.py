@@ -256,7 +256,7 @@ def irlsFit(initialParams, dataX, dataY, function, weightsY=None, weightType='Ca
     chiSq : `float`
         Reduced chi squared.
     weightsY : `list` [`float`]
-        Final weights fitMask for each point.
+        Final weights used for each point.
 
     Raises
     ------
@@ -750,7 +750,7 @@ class CovFastFourierTransform:
         0.5*(cov1+cov2): `float`
             Covariance at (dx, dy) lag
         npix1+npix2 : `int`
-            Number of pixels fitMask in covariance calculation.
+            Number of pixels used in covariance calculation.
 
         Raises
         ------
@@ -1052,14 +1052,14 @@ class AstierSplineLinearityFitter:
         Fit for the weight parameters?
     weight_pars_start : `list` [ `float` ]
         Iterable of 2 weight parameters for weighed fit. These will
-        be fitMask as input if the weight parameters are not fit.
+        be used as input if the weight parameters are not fit.
     fit_temperature : `bool`, optional
         Fit for temperature scaling?
     temperature_scaled : `np.ndarray` (M,), optional
         Input scaled temperature values (T - T_ref).
     max_signal_nearly_linear : `float`, optional
         Maximum signal that we are confident the input is nearly
-        linear. This is fitMask both for regularization, and for
+        linear. This is used both for regularization, and for
         fitting the raw slope. Usually set to the ptc turnoff,
         above which we allow the spline to significantly deviate
         and do not demand the deviation to average to zero.

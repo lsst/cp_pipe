@@ -2,11 +2,3 @@ description: cp_pipe electrostatic brighter-fatter distortion matrix calibration
 instrument: lsst.obs.lsst.LsstCam
 imports:
   - location: $CP_PIPE_DIR/pipelines/_ingredients/cpElectrostaticBFDistortionMatrixLSST.yaml
-tasks:
-  cpBfSolve:
-    class: lsst.cp.pipe.ElectrostaticBrighterFatterSolveTask
-    config:
-      useBfPtc: false
-      connections.inputPtc: ptc
-      fitRange: 8
-

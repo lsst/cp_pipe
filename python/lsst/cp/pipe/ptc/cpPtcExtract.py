@@ -293,7 +293,7 @@ class PhotonTransferCurveExtractConfigBase(
     maximumRangeCovariancesAstier = pexConfig.Field(
         dtype=int,
         doc="Maximum range of covariances as in Astier+19",
-        default=8,
+        default=10,
     )
     binSize = pexConfig.Field(
         dtype=int,

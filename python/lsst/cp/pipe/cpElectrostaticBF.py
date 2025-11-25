@@ -492,10 +492,10 @@ class ElectrostaticBrighterFatterSolveTask(pipeBase.PipelineTask):
         aN, aS, aE, aW = (pd.aN, pd.aS, pd.aE, pd.aW)
         ath = pd.ath
         athMinusBeta = pd.athMinusBeta
-        fitMask = np.zeros_like(aN, dtype=bool)
-        fitMask[:fitRange, :fitRange] = True
+        usedPixels = np.zeros_like(aN, dtype=bool)
+        usedPixels[:fitRange, :fitRange] = True
 
-        electroBfDistortionMatrix.fitMask = fitMask
+        electroBfDistortionMatrix.usedPixels = usedPixels
         electroBfDistortionMatrix.ath = ath
         electroBfDistortionMatrix.athMinusBeta = athMinusBeta
         electroBfDistortionMatrix.aN = aN

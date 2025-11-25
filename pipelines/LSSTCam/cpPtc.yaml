@@ -12,6 +12,7 @@ tasks:
       auxiliaryHeaderKeys: ["TEMPAVG", "BSSVBS"]
       matchExposuresType: TIME
       doVignetteFunctionRegionSelection: true
+      maximumRangeCovariancesAstier: 10
       python: |
          config.vignetteFunctionPolynomialCoeffs = [
              -2.04748298e+12,
@@ -41,3 +42,5 @@ tasks:
       scaleMaxSignalInitialPtcOutlierFit: False
       doModelPtcRolloff: True
       maxPtcRolloffDeviation: 0.005
+      maximumRangeCovariancesAstier: 10
+      maximumRangeCovariancesAstierFullCovFit: 10
