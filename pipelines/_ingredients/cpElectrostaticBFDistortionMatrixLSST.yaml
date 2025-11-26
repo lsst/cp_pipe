@@ -1,0 +1,34 @@
+description: cp_pipe brighter-fatter kernel calibration construction.
+tasks:
+  cpBfSolve:
+    class: lsst.cp.pipe.ElectrostaticBrighterFatterSolveTask
+    config:
+      useBfPtc: false
+      connections.inputPtc: ptc
+      connections.output: electroBfDistortionMatrix
+      python: |
+        config.fitRange = 10
+        config.initialParametersDict = {
+          'thickness': 100.0,
+          'pixelsize': 10.0,
+          'zq': 1.0,
+          'zsh': 2.0,
+          'zsv': 3.0,
+          'a': 2.0,
+          'b': 2.0,
+          'alpha': 1.0,
+          'beta': 0.0,
+        }
+        config.parametersToVary = {
+            'thickness': False,
+            'pixelsize': False,
+            'zq': True,
+            'zsh': True,
+            'zsv': True,
+            'a': True,
+            'b': True,
+            'alpha': True,
+            'beta': False,
+        }
+
+

@@ -1,0 +1,23 @@
+pipelineYaml: "${CP_PIPE_DIR}/pipelines/${INSTRUMENT}/cpElectrostaticBFDistortionMatrix.yaml"
+
+# Necessary to cluster by exposure if there are many input exposures
+clusterAlgorithm: lsst.ctrl.bps.quantum_clustering_funcs.dimension_clustering
+cluster:
+  cpBfkIsrByExposure:
+    pipetasks: cpBfkIsr
+    dimensions: exposure
+  cpBfkPtcExtractPairByExposure:
+    pipetasks: cpBfkPtcExtractPair
+    dimensions: exposure
+
+project: "${TICKET}"
+campaign: "${TICKET}"
+submitPath: "${SCRATCH}/submit/{outputRun}"
+
+payload:
+  payloadName: "${INSTRUMENT}_${TICKET}_bf_distortion_matrix"
+  output: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET}/${TAG}/electroBFDistortionMatrixGen.${RERUN}"
+  butlerConfig: "${REPO}"
+  inCollection: "${USER_CALIB_PREFIX}${INSTRUMENT}/calib/${TICKET},${RAW_COLLECTION},${CALIB_COLLECTIONS}"
+  dataQuery: "${SELECTION_PTC_BF}"
+

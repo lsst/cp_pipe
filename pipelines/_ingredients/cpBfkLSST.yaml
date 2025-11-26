@@ -14,7 +14,6 @@ tasks:
         config.doCrosstalk = True
         config.crosstalk.doQuadraticCrosstalkCorrection = False
         config.doLinearize = True
-        # TODO DM-46426: Add cpCtiLSST pipeline so that this can be True.
         config.doDeferredCharge = True
         config.doDefect = True
         config.doAmpOffset = True
@@ -28,7 +27,7 @@ tasks:
     config:
       connections.inputExp: "cpBfkIsrExp"
       connections.outputCovariance: "cpBfkPtcPartial"
-      maximumRangeCovariancesAstier: 15
+      maximumRangeCovariancesAstier: 10
       numEdgeSuspect: 20
       edgeMaskLevel: "AMP"
       useEfdPhotodiodeData: true
@@ -39,8 +38,8 @@ tasks:
       connections.inputCovariances: "cpBfkPtcPartial"
       connections.outputPtcDataset: "bfkPtcUnadjusted"
       ptcFitType: "FULLCOVARIANCE"
-      maximumRangeCovariancesAstier: 15
-      maximumRangeCovariancesAstierFullCovFit: 15
+      maximumRangeCovariancesAstier: 10
+      maximumRangeCovariancesAstierFullCovFit: 10
   cpBfkPtcAdjustGainRatios:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveAdjustGainRatiosTask
     config:

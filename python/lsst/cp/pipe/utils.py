@@ -20,9 +20,18 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 
-__all__ = ['ddict2dict', 'CovFastFourierTransform', 'getReadNoise', 'ampOffsetGainRatioFixup']
+__all__ = [
+    "ddict2dict",
+    "CovFastFourierTransform",
+    "getReadNoise",
+    "ampOffsetGainRatioFixup",
+    "ElectrostaticFit",
+    "BoundaryShifts",
+    "ElectrostaticCcdGeom",
+]
 
 from astropy.table import Table
+import copy
 import galsim
 import logging
 import numpy as np
@@ -33,11 +42,14 @@ import warnings
 from scipy.interpolate import Akima1DInterpolator
 from scipy.optimize import leastsq, minimize
 from scipy.stats import median_abs_deviation, norm
+from lmfit import Minimizer
 
 from lsst.ip.isr import isrMock
 import lsst.afw.cameraGeom
 import lsst.afw.image
 import lsst.afw.math
+
+from numpy.polynomial.legendre import leggauss
 
 
 def sigmaClipCorrection(nSigClip):
@@ -735,7 +747,7 @@ class CovFastFourierTransform:
 
         Returns
         -------
-        0.5*(cov1+cov2) : `float`
+        0.5*(cov1+cov2): `float`
             Covariance at (dx, dy) lag
         npix1+npix2 : `int`
             Number of pixels used in covariance calculation.
@@ -2277,3 +2289,764 @@ def bin_flat(ptc, exposure, bin_factor=8, amp_boundary=20, apply_gains=True, gai
     binned["amp_index"] = amp_index
 
     return Table(data=binned)
+
+
+class ElectrostaticFit():
+    """
+    Class to handle the electrostatic fit of area coefficients.
+
+    This class manages the fitting of electrostatic model parameters to
+    measured area change coefficients. The actual electrostatic calculations
+    are performed by the ElectrostaticCcdGeom class. The fit is performed
+    using the lmfit Minimizer, and the model includes normalization
+    parameters (alpha, beta) as well as physical CCD parameters.
+
+    Attributes
+    ----------
+    fitRange : int
+        Range of pixels to fit.
+    inputRange : int
+        Range of input data.
+    doFitNormalizationOffset : bool
+        Whether to fit an offset parameter.
+    nImageChargePairs : int
+        Number of image charge pairs used in the electrostatic calculation.
+    fitMethod : str
+        Minimization method used by lmfit.
+    aMatrix : np.ndarray
+        Measured area change matrix.
+    aMatrixSigma : np.ndarray
+        Uncertainty matrix for area changes.
+    sqrtWeights : np.ndarray
+        Weights for fitting, inverse of aMatrixSigma.
+    params : lmfit.Parameters
+        Fit parameters.
+    """
+
+    def __init__(
+        self,
+        initialParams,
+        fitMethod,
+        aMatrix,
+        aMatrixSigma,
+        fitRange,
+        doFitNormalizationOffset,
+        nImageChargePairs,
+    ):
+        """
+        Initialize the ElectrostaticFit class.
+
+        Parameters
+        ----------
+        initialParams : lmfit.Parameters
+            Initial fit parameters.
+        fitMethod : str
+            Minimization method for lmfit.
+        aMatrix : np.ndarray
+            Measured area change matrix.
+        aMatrixSigma : np.ndarray
+            Uncertainty matrix for area changes.
+        fitRange : int
+            Range of pixels to fit.
+        doFitNormalizationOffset : bool
+            Whether to fit an offset parameter.
+        nImageChargePairs : int
+            Number of image charge pairs for electrostatic calculation.
+        """
+        self.fitRange = fitRange
+        self.inputRange = aMatrix.shape[0]
+        self.doFitNormalizationOffset = doFitNormalizationOffset
+        self.nImageChargePairs = nImageChargePairs
+        self.fitMethod = fitMethod
+
+        if self.fitRange != 0 and self.inputRange < self.fitRange:
+            print("INFO : truncating input data at %d" % self.inputRange)
+            self.fitRange = self.inputRange
+
+        self.aMatrix = aMatrix[0:fitRange, 0:fitRange]
+        self.aMatrixSigma = aMatrixSigma[0:fitRange, 0:fitRange]
+        self.sqrtWeights = 1.0 / aMatrixSigma
+
+        self.params = initialParams
+
+    def fit(self):
+        minner = Minimizer(
+            self.computeWeightedResidual,
+            self.params,
+        )
+
+        result = minner.minimize(
+            method=self.fitMethod,
+            max_nfev=20000,
+            epsfcn=1.0e-8,
+            ftol=1.0e-8,
+            xtol=1.0e-8,
+            gtol=0.0,
+        )
+
+        return result
+
+    def getParamsDict(self):
+        """
+        Return a copy of the free parameters vector as a dictionary.
+        """
+        return self.params.valuesdict()
+
+    def computeWeightedResidual(self, params=None):
+        self.params = params
+        m = self.model(params)
+        w = self.sqrtWeights[:self.fitRange, :self.fitRange]
+        y = self.aMatrix[:self.fitRange, :self.fitRange]
+        # Multiply two 2-d arrays term by term:
+        weightedResiduals = (w * (m - y))
+        # The result has the same size as both of them.
+        return weightedResiduals
+
+    def model(self, params):
+        m = self.rawModel(params)
+        alpha = params['alpha']
+        beta = params['beta']
+        return alpha * m + beta
+
+    def rawModel(self, params):
+        # Get all parameters as a dictionary:
+        parameterDict = self.getParamsDict()
+        del parameterDict['alpha']
+        del parameterDict['beta']
+        del parameterDict['zsh_minus_zq']
+        del parameterDict['zsv_minus_zq']
+
+        # Push them into the electrostatic calculator
+        c = ElectrostaticCcdGeom(parameterDict)
+
+        # Compute the observables:
+        # If you change the routine called here, also
+        # change it in BoundaryShifts.__init__()
+        m = c.evalAreaChangeSidesFast(
+            self.fitRange,
+            nImageChargePairs=self.nImageChargePairs,
+        )
+        m = m[:self.fitRange, :self.fitRange]
+
+        return m
+
+    def normalizeModel(self, m):
+        """
+        Compute optimal normalization and offset for the model.
+
+        The overall normalization is a linear parameter. This
+        method computes the optimal value given the other
+        parameters.
+        """
+        fr = m.shape[0]
+        sqrtw = self.sqrtWeights[:fr, :fr]
+        w = sqrtw ** 2
+        y = self.aMatrix[:fr, :fr]
+        if self.doFitNormalizationOffset:
+            sxx = (w * m * m).sum()
+            sx = (w * m).sum()
+            s1 = w.sum()
+            sxy = (w * m * y).sum()
+            sy = (w * y).sum()
+            d = sxx * s1 - sx * sx
+            a = (s1 * sxy - sx * sy) / d
+            b = (-sx * sxy + sxx * sy) / d
+        else:
+            # Just scale
+            a = (w * y * m).sum() / (w * m * m).sum()
+            b = 0
+        return a, b
+
+    def computePixelDistortions(self, conversionWeights=None):
+        """
+        Compute pixel distortions using a probability distribution of
+        conversion depths.
+
+        If provided, conversionWeights is expected to be a tuple of
+        (depth, probability). The routine computes the model corresponding
+        to this probability distribution. If conversionWeights is not
+        provided, then [(0, 1.)] is used as the distribution.
+
+        Parameters
+        ----------
+        conversionWeights : tuple of (np.ndarray, np.ndarray), optional
+            Tuple containing depths and their associated probabilities.
+
+        Returns
+        -------
+        BoundaryShifts
+            The computed boundary shifts for the pixel.
+        """
+        zf = self.params["thickness"].value
+        zsh = self.params["zsh"].value
+        zsv = self.params["zsv"].value
+        if conversionWeights is None:
+            conversionWeights = (np.array([0.0]), np.array([1.0]))
+
+        r = None
+        (d, p) = conversionWeights
+
+        # Zero depths lower than the end of drift
+        too_low = ((zf - d) < zsh) | ((zf - d) < zsv)
+        p[too_low] = 0
+        p /= p.sum()  # Normalize to 1.
+        for (depth, prob) in zip(d, p):
+            if prob == 0:
+                continue
+            if r is None:
+                r = prob * BoundaryShifts(
+                    electrostaticFit=self,
+                    zf=zf - depth
+                )
+            else:
+                r = r + prob * BoundaryShifts(
+                    electrostaticFit=self,
+                    zf=zf - depth
+                )
+
+        return r
+
+
+class BoundaryShifts:
+    """
+    Class to compute and store boundary shift values for CCD pixels based on
+    electrostatic field models.
+
+    This class calculates the shifts at the North, South, East, and West
+    boundaries of each pixel, as well as the area change at the pixel sides,
+    using parameters from an electrostatic fit and a specified integration
+    depth `zf`. The shifts are computed using fast integration methods from
+    the ElectrostaticCcdGeom model.
+
+    Attributes
+    ----------
+    aN : np.ndarray
+        Array of North boundary shifts for each pixel.
+    aS : np.ndarray
+        Array of South boundary shifts for each pixel.
+    aE : np.ndarray
+        Array of East boundary shifts for each pixel.
+    aW : np.ndarray
+        Array of West boundary shifts for each pixel.
+    ath : np.ndarray
+        Array of area changes at the pixel sides, including beta.
+    athMinusBeta : np.ndarray
+        Array of area changes at the pixel sides, excluding beta.
+    """
+
+    def __init__(self, electrostaticFit, zf):
+        if zf <= 0:
+            raise RuntimeError(
+                f"Cannot integrate below the bottom of the pixel, zf={zf}."
+            )
+
+        paramDict = electrostaticFit.getParamsDict()
+        del paramDict['alpha']
+        del paramDict['beta']
+        del paramDict['zsh_minus_zq']
+        del paramDict['zsv_minus_zq']
+
+        c = ElectrostaticCcdGeom(paramDict)
+        fr = electrostaticFit.fitRange
+        ii, jj = np.meshgrid(list(range(fr)), list(range(fr)))
+        ii = ii.flatten()
+        jj = jj.flatten()
+        self.aN = np.ndarray((fr, fr))
+        self.aS = np.zeros_like(self.aN)
+        self.aE = np.zeros_like(self.aN)
+        self.aW = np.zeros_like(self.aN)
+        self.ath = np.zeros_like(self.aN)
+        alpha = electrostaticFit.params['alpha'].value
+        beta = electrostaticFit.params['beta'].value
+
+        # alpha*rawModel+beta is the description of the measurements
+        # We should not apply beta to the outcome, because beta is meant to
+        # accomodate some long-range contamination (non-electrostatic)
+        # of the covariance measurements.
+        iMax, jMax = fr, fr
+        self.aN = -alpha * c.integrateEyFieldFast(iMax, jMax, 1, zf=zf)
+        self.aS = -alpha * c.integrateEyFieldFast(iMax, jMax, -1, zf=zf)
+        self.aW = -alpha * c.integrateExFieldFast(iMax, jMax, -1, zf=zf)
+        self.aE = -alpha * c.integrateExFieldFast(iMax, jMax, 1, zf=zf)
+        self.ath = alpha * c.evalAreaChangeSidesFast(fr, zf=zf) + beta
+
+        self.athMinusBeta = self.ath - beta
+
+    def __rmul__(self, factor):
+        """
+        """
+        res = copy.deepcopy(self)
+        res.aN *= factor
+        res.aS *= factor
+        res.aE *= factor
+        res.aW *= factor
+        res.ath *= factor
+        res.athMinusBeta *= factor
+        return res
+
+    def __add__(self, other):
+        """
+        """
+        res = copy.deepcopy(self)
+        res.aN += other.aN
+        res.aS += other.aS
+        res.aE += other.aE
+        res.aW += other.aW
+        res.ath += other.ath
+        res.athMinusBeta += other.athMinusBeta
+        return res
+
+
+def calcEFieldCoulomb(xv, xqv):
+    """
+    xv = where, xqv = charge location.
+    both should be numpy arrays.
+    if qv is multi-d, the routine assumes that the
+    physical coordinates (x,y,z) are patrolled by
+    the last index
+    """
+    d = xv - xqv
+    r3 = np.power((d**2).sum(axis=-1), 1.5)
+    # anything more clever ?
+    # of course d/r3 does not work
+    return (d.T / r3.T).T
+
+
+class ElectrostaticCcdGeom():
+    def __init__(self, paramDict):
+        """
+        Dictionary of parameters containing the following keys:
+        parameters :  (all in microns)
+        zq : altitude of the burried channel (microns)
+        zsh : vertex altitude for horizontal boundaries
+        zsv : vertex altitude for vertical boundaries
+        a, b : size of the rectangular charge source
+        thickness : thickness
+        pixelsize : pixel size
+        """
+        zq = paramDict['zq']
+        zsh = paramDict['zsh']
+        zsv = paramDict['zsv']
+        a = paramDict['a']
+        b = paramDict['b']
+        thickness = paramDict['thickness']
+        pixelsize = paramDict['pixelsize']
+
+        self.zq = np.fabs(zq)
+        self.zsh = np.fabs(zsh)
+        self.zsv = np.fabs(zsv)
+        self.b = np.fabs(b)
+        self.a = np.fabs(a)
+        self.thickness = np.fabs(thickness)
+        self.pixelsize = pixelsize
+
+        self.nStepsZ = 100
+        self.nStepsXY = 20
+
+        # yields a ~ 1% precision of the field at z~10
+        # if compared to the uniform sheet model (eField
+        self.nChargeElements = 3
+
+        # Set up weights
+        x, w = leggauss(self.nStepsXY)
+        self.integrationWeights = w*0.5
+
+        # Abcissa refer to [-1, 1], we want [0, self.pixelsize]
+        self.xyOffsets = (x+1) * 0.5 * self.pixelsize
+
+    def calcEFieldCoulombChargeSheet(self, xv, xqv):
+        """
+        xv = where (the last index should address x,y,z.
+        xqv = charge location
+        Both Should be numpy arrays.
+        if xv is multi-d, the routine assumes
+        that the physical coordinates (x,y,z) are patrolled by the last index.
+        Returns the electric field from a unitely charged horizontal rectangle
+        centered at x_q of size 2a * 2b.
+        The returned electric field assumes 4*pi*epsilon=1.
+        """
+        # Use Durand page 244 tome 1
+        # four corners :
+        x1 = xqv + np.array([self.a, self.b, 0])
+        x2 = xqv + np.array([-self.a, self.b, 0])
+        x3 = xqv + np.array([-self.a, -self.b, 0])
+        x4 = xqv + np.array([self.a, -self.b, 0])
+
+        # Distances to the four corners
+        d1 = np.sqrt(((xv-x1)**2).sum(axis=-1))
+        d2 = np.sqrt(((xv-x2)**2).sum(axis=-1))
+        d3 = np.sqrt(((xv-x3)**2).sum(axis=-1))
+        d4 = np.sqrt(((xv-x4)**2).sum(axis=-1))
+
+        # Reserve the returned array
+        r = np.ndarray(xv.shape)
+        xvOffset = xv[..., 0] - xqv[0]
+        yvOffset = xv[..., 1] - xqv[1]
+
+        # Ex
+        # note : if a or b goes to 0, the log is 0 and the denominator (last
+        # line) is zero as well. So some expansion would be required
+        ao = yvOffset + self.b
+        bo = yvOffset - self.b
+        co = xvOffset + self.a
+        do = xvOffset - self.a
+        # Ex (eq 105)
+        r[..., 0] = np.log((d4+ao) * (d2+bo) / (d3+ao) / (d1+bo))
+        # Ey (eq 106)
+        r[..., 1] = np.log((d2+co) * (d4+do) / (d3+co) / (d1+do))
+        # point source approximation
+        # ret[...,2] = (4*self.a*self.b)*calcEFieldCoulomb(X,X_q)[...,2]
+        # full expression for ez : p 244
+        # ez (eq 111 is only valid if the x and y are "inside")
+        # there is a discussion of the general case around Fig VI-18.
+        z = xv[..., 2] - xqv[2]
+        # it ressembles equation 111 but I flipped two signs
+        r[..., 2] = (np.arctan(do * bo / z / d1)
+                     - np.arctan(bo * co / z / d2)
+                     + np.arctan(co * ao / z / d3)
+                     - np.arctan(ao * do / z / d4))
+
+        # seems OK both "inside" and "outside"
+        return r / (4 * self.a * self.b)
+
+    def integrateEField(self, xv, component, z0, zf, nImageChargePairs=11):
+        """
+        Integrate transverse E Field along Z at point X (2 coordinates, last
+        index). The coordinate of the field is given by component (0,
+        or 1). at point X from the point charge The computation uses
+        the dipole series trick. The number of dipoles is an optional
+        argument. Odd numbers are better for what we are doing here.
+
+        """
+        # The integral of the field (x/r^3 dz from z1 to z2) reads
+        # x/rho**2*(z2/r2-z1/r1) with rho2 = x**2+y**2
+        # x/rho2 does not change when going through image sources
+        # so we use them as arguments, dz1 and dz2 z{begin,end}--Xq[2]
+        # just for test: if z0==zf, then return the field value
+        if z0 != zf:
+            def integral(rho2, x, dz1, dz2):
+                r1 = np.sqrt(rho2 + dz1**2)
+                r2 = np.sqrt(rho2 + dz2**2)
+                return x * (dz2/r2 - dz1/r1) / rho2
+        else:  # see the comment above: return the value, not the integral.
+            def integral(rho2, x, dz1, dz2):
+                """
+                x/r**3
+                """
+                r = np.sqrt(rho2 + dz1**2)
+                vals = x / r**3
+                return vals
+
+        # Check validity
+        if component not in [0, 1]:
+            raise RuntimeError("Can only integrate electric field along component 0 or 1, "
+                               f"not {component}.")
+
+        # Reserve the result array
+        result = np.zeros(xv.shape[:-1])
+        zqp = self.zq
+        zqm = -zqp
+
+        # 1st dipole
+        # Generate a set of point charges to emulate
+        # an extended distribution (size 2a*2b)
+        xStep = (2 * self.a) / self.nChargeElements
+        yStep = (2 * self.b) / self.nChargeElements
+        xqs = -self.a + (np.linspace(0, self.nChargeElements-1, self.nChargeElements) + 0.5) * xStep
+        yqs = -self.b + (np.linspace(0, self.nChargeElements-1, self.nChargeElements) + 0.5) * yStep
+        for xq in xqs:
+            for yq in yqs:
+                dx = xv[..., 0] - xq
+                dy = xv[..., 1] - yq
+                dxv = [dx, dy]
+                rho2 = dx**2 + dy**2
+                result += integral(rho2, dxv[component], z0 - zqp, zf - zqp)
+                # Construct image charge, change sign of z and q
+                result -= integral(rho2, dxv[component], z0 - zqm, zf - zqm)
+        result /= (self.nChargeElements * self.nChargeElements)
+
+        # Remaining dipoles : no more extended charge
+        # The (x,y) charge coordinates are 0, and common to all images:
+        rho2 = xv[..., 0]**2 + xv[..., 1]**2
+        xi = xv[..., component]
+        for i in range(1, nImageChargePairs):
+            odd = i%2
+            if odd:
+                ztmp = (2*self.thickness) - zqm
+                zqm = (2*self.thickness) - zqp
+                zqp = ztmp
+            else:
+                ztmp = -zqm
+                zqm = -zqp
+                zqp = ztmp
+            result += integral(rho2, xi, z0 - zqp, zf - zqp)
+            result -= integral(rho2, xi, z0 - zqm, zf - zqm)
+
+        # 8.85418781e-12 (F/m) * 1e-6 (microns/m)  / 1.602e-19 (C/electron)
+        # = 55.26958
+        # eps_r_Si = 12, so eps = 55.27*12 = 663.23 el/V/um
+        # This routine hence returns the field sourced by -1 electron
+        result *= 1 / (4*np.pi*660)
+
+        return result
+
+    def eField(self, xv, nImageChargePairs=11):
+        """
+        Field at point xv from the point charge
+        if xv is multi-dimensional, x,y,z should be represented
+        by the last index ([0:3]).
+        The computation uses the dipole series trick. The number
+        of dipoles is an optional argument. Odd numbers are better
+        for what we are doing here.
+        """
+        # Put the center of the source pixel at (x, y) = (0, 0)
+        # This assumption is relied on in Eval_Eth and Eval_Etv
+        xqv = np.array([0, 0, self.zq])
+
+        # Image charge w.r.t. the parallel clock lines
+        xqvImage = np.array([xqv[0], xqv[1], -xqv[2]])
+
+        # Split the calculation in 2 parts: approximation
+        # when far from the source, image method when near.
+        rho = np.sqrt(xv[..., 0]**2 + xv[..., 1]**2)
+
+        # Field near the charge cloud
+        # First dipole
+        # The points lower than half the thickness of the pixel
+        # are considered "close"
+        pointsNearChargeCloudIdxs = (rho/self.thickness < 2)
+        xvNear = xv[pointsNearChargeCloudIdxs]
+        eFieldNear = self.calcEFieldCoulombChargeSheet(xvNear, xqv)
+        eFieldNear -= self.calcEFieldCoulombChargeSheet(xvNear, xqvImage)
+
+        # Next dipoles
+        for i in range(1, nImageChargePairs):
+            if (i % 2):  # Is odd?
+                xqv[2] = 2 * self.thickness - xqv[2]
+                xqvImage[2] = 2 * self.thickness - xqvImage[2]
+                eFieldNear += calcEFieldCoulomb(xvNear, xqvImage)
+                eFieldNear -= calcEFieldCoulomb(xvNear, xqv)
+            else:
+                xqv[2] = -xqv[2]
+                xqvImage[2] = -xqvImage[2]
+                eFieldNear += calcEFieldCoulomb(xvNear, xqv)
+                eFieldNear -= calcEFieldCoulomb(xvNear, xqvImage)
+
+        # Field far from the charge cloud
+        xvFar = xv[~pointsNearChargeCloudIdxs]
+        rhoFar = rho[~pointsNearChargeCloudIdxs]
+
+        # Jon Pumplin, Am. Jour. Phys. 37,7 (1969), eq 7
+        # When changing coordinate system (shift along z), cos -> sin.
+        # And since this only applies far from the source, the latter
+        # can be regarded as point-like.
+        # I checked the continuity over the separation point.
+        factor = -np.sin(np.pi * self.zq / self.thickness)
+        factor *= np.sin(np.pi * xvFar[..., 2] / self.thickness)
+        factor *= np.exp(-np.pi * rhoFar / self.thickness)
+        factor *= np.sqrt(8 / rhoFar / self.thickness)
+        factor *= (-np.pi / self.thickness - 0.5/rhoFar)
+        eFieldFar = np.zeros_like(xvFar)
+        eFieldFar[..., 0] = xvFar[..., 0] / (rhoFar*factor)
+        eFieldFar[..., 1] = xvFar[..., 1] / (rhoFar*factor)
+
+        # aggregate the results
+        eField = np.zeros_like(xv)
+        eField[pointsNearChargeCloudIdxs] = eFieldNear
+        eField[~pointsNearChargeCloudIdxs] = eFieldFar
+
+        # epsilon0 = 55 el/V/micron
+        # 8.85418781e-12 (F/m) * 1e-6 (microns/m) / 1.602e-19 (C/electron)
+        # = 55.26958
+        # eps_r_Si = 12, so eps = 55.27*12 = 663.23 el/V/um
+        # This routine hence returns the field sourced by -1 electron
+        eField *= 1 / (4*np.pi*660)
+
+        return eField
+
+    def integrateExFieldFast(self, iMax, jMax, leftOrRight, zf=None, nImageChargePairs=11):
+        """
+        Computes the integrals of Ex along z from
+        self.zsh to zf. The returned array is 2d of
+        shape (iMax, jMax).
+        """
+        zf = self.thickness if zf is None else zf
+        assert zf > self.zsv
+        ii, jj = np.indices((iMax, jMax))
+        yy = (jj - 0.5)[:, :, np.newaxis] * self.pixelsize + self.xyOffsets[np.newaxis, np.newaxis, :]
+        xx = (ii + 0.5 * leftOrRight) * self.pixelsize
+        xx = np.broadcast_to(xx[..., None], yy.shape)
+        xv = np.stack([xx, yy], axis=-1)
+
+        # By definition of zsh, we  integrate from zsv to zf,
+        # and divide by the pixel size to be consistent with Eval_ET{v,h}
+        w = np.broadcast_to(self.integrationWeights, yy.shape)
+        integral = np.sum(
+            w * self.integrateEField(xv, 0, self.zsv, zf,
+                                     nImageChargePairs=nImageChargePairs),
+            axis=2,
+        )
+        return leftOrRight * integral/self.pixelsize
+
+    def integrateEyFieldFast(self, iMax, jMax, topOrBottom, zf=None, nImageChargePairs=11):
+        """
+        Computes the integral of Ey along z from
+        self.zsh to zf. The returned array is
+        2d [0:iMax, 0:jMax].
+        """
+        zf = self.thickness if zf is None else zf
+        # assert zf > self.zsh
+        ii, jj = np.indices((iMax, jMax))
+        xx = (ii - 0.5)[:, :, np.newaxis] * self.pixelsize + self.xyOffsets[np.newaxis, np.newaxis, :]
+        yy = (jj + 0.5*topOrBottom) * self.pixelsize
+        yy = np.broadcast_to(yy[..., None], xx.shape)
+        xv = np.stack([xx, yy], axis=-1)
+
+        # By definition of zsh, we integrate from zsh to zf,
+        # and divide by the pixel size to be consistent with Eval_ET{v,h}
+        # integrate
+        w = np.broadcast_to(self.integrationWeights, yy.shape)  # Add leading dimensions
+        integral = np.sum(
+            w * self.integrateEField(xv, 1, self.zsh, zf,
+                                     nImageChargePairs=nImageChargePairs),
+            axis=2,
+        )
+        return topOrBottom * integral / self.pixelsize
+
+    def eFieldTransverseToHorizontalPixelEdgeGrid(self, i, j, topOrBottom, zf=None):
+        """
+        Returns the field transverse to the horizontal pixel boundary.
+        return a 2d array of shifts at evenly spaced points in x and z.
+        normalized in units of pixel size, for a unit charge.
+        The returned array has 3 indices:
+        [along the pixel side, along the drift,E-field coordinate].
+        The resutl is multiplied by the z- and x- steps, so that the
+        sum is the averge over x, divided by the pixel size.
+        """
+        assert np.abs(topOrBottom) == 1
+        zf = self.thickness if zf is None else zf
+
+        # by definition of zsh, we  integrate from zsh to zf:
+        zStep = (zf - self.zsh) / self.nStepsZ
+        xyStep = self.pixelsize / self.nStepsXY
+
+        z = self.zsh + (np.linspace(0, self.nStepsZ - 1, num=self.nStepsZ) + 0.5) * zStep
+        x = (i - 0.5)*self.pixelsize + (np.linspace(0, self.nStepsXY - 1, self.nStepsXY) + 0.5) * xyStep
+
+        xx, zz = np.meshgrid(x, z)
+        yy = np.ones(xx.shape) * (j + 0.5*topOrBottom) * self.pixelsize
+        xv = np.array([xx, yy, zz]).T
+
+        return self.eField(xv) * zStep * xyStep
+
+    def averageHorizontalBoundaryShift(self, i, j, topOrBottom, zf=None):
+        """
+        Integrate the field transverse to the horizontal pixel boundary
+        """
+        sum = self.eFieldTransverseToHorizontalPixelEdgeGrid(i, j, topOrBottom, zf)[..., 1].sum()
+        # we want the integral over z and the average over x,
+        # divided by the pixel size, with a sign that defines
+        # if in moves inside or outside. Here is it:
+        return sum * (topOrBottom / (self.pixelsize**2))
+
+    def corner_shift_h2(self, i, j, topOrBottom, zf=None):  # Do we even need this??
+        E = self.eFieldTransverseToHorizontalPixelEdgeGrid(i, j, topOrBottom, zf)[..., 1]
+        # Integrate over z (multiplication by the
+        # step done in the calling routine)
+        intz = E.sum(axis=1)
+        x = range(intz.shape[0])
+        p = np.polyfit(x, intz, 1)
+        return p[0] * -0.5 + p[1], p[0] * (x[-1] + 0.5) + p[1]
+
+    def eFieldTransverseToVerticalPixelEdgeGrid(self, i, j, leftOrRight, zf=None):
+        """
+        Returns the field transverse to the vertical pixel boundary.
+        return a 3d array of shifts at evenly spaced points in y and z.
+        Ex,y,z is indexed by the last index.
+        """
+        # Determine the depth of the photon conversion
+        zf = self.thickness if zf is None else zf
+
+        # The source charge is at x,y=0
+        zStep = (zf-self.zsv) / (self.nStepsZ)
+        xyStep = self.pixelsize / (self.nStepsXY)
+
+        z = self.zsv + (np.linspace(0, self.nStepsZ - 1, self.nStepsZ) + 0.5) * zStep
+        y = (j - 0.5)*self.pixelsize + (np.linspace(0, self.nStepsXY - 1, self.nStepsXY) + 0.5) * xyStep
+
+        yy, zz = np.meshgrid(y, z)
+        xx = np.ones(yy.shape) * (i + 0.5*leftOrRight) * self.pixelsize
+        xv = np.array([xx, yy, zz]).T
+
+        return self.eField(xv) * zStep * xyStep
+
+    def averageVerticalBoundaryShift(self, i, j, leftOrRight, zf=None):
+        """
+        Average shift of the vertical boundary of pixel (i j).
+        """
+        sum = self.eFieldTransverseToVerticalPixelEdgeGrid(i, j, leftOrRight, zf)[..., 0].sum()
+        # we want the integral over z and the average over x,
+        # divided by the pixel size, with a sign that defines
+        # if in moves inside or outside. Here is it:
+        return sum * (leftOrRight / (self.pixelsize**2))
+
+    def dxdy(self, iMax, zf=None):
+        """
+        corner shifts calculations.  The returned array are larger by 1
+        than iMax, because there are more corners than pixels
+        """
+        horiztonalShifts = np.ndarray((iMax, iMax))
+        verticalShifts = np.ndarray((iMax, iMax))
+        for i in range(iMax):
+            for j in range(iMax):
+                horiztonalShifts[i, j] = self.averageHorizontalBoundaryShift(i + 0.5, j, 1, zf)
+                verticalShifts[i, j] = self.averageVerticalBoundaryShift(i, j + 0.5, 1, zf)
+
+        # Parametrize the corner shifts of iMax pixels: iMax+1
+        # corners in each direction
+        dx = np.zeros((iMax+1, iMax+1))
+        dy = dx + 0.
+        dx[1:, 1:] = verticalShifts
+        dx[0, 1:] = -verticalShifts[0, :]  # leftmost  column
+        dx[:, 0] = dx[:, 1]  # bottom row
+        dy[1:, 1:] = horiztonalShifts
+        dy[1:, 0] = -horiztonalShifts[:, 0]  # bottom row
+        dy[0, :] = dy[1, :]  # leftmost column
+
+        return dx, dy
+
+    def evalAreaChangeCorners(self, iMax, zf=None):
+        """
+        pixel area alterations computed through corner shifts
+        """
+        dx, dy = self.dxdy(iMax, zf)
+        areaChange = dx[1:, 1:] - dx[:-1, 1:] + dx[1:, :-1] - dx[:-1, :-1]
+        areaChange += dy[1:, 1:] - dy[1:, :-1] + dy[:-1, 1:] - dy[:-1, :-1]
+        return -0.5*areaChange
+
+    def evalAreaChangeSidesFast(self, iMax, zf=None, nImageChargePairs=11):
+        """
+        Same as EvalAreaChangeSides, but uses direct integration.
+        it evaluates the divergence of the discrete boundary
+        displacement field.
+        This routine groups the calls to the field computing routines.
+        """
+        horiztonalShifts = np.ndarray((iMax, iMax+1))
+        verticalShifts = np.zeros_like(horiztonalShifts.T)
+        horiztonalShifts[:, 1:] = self.integrateEyFieldFast(iMax, iMax, 1, zf,
+                                                            nImageChargePairs=nImageChargePairs)
+        verticalShifts[1:, :] = self.integrateExFieldFast(iMax, iMax, 1, zf,
+                                                          nImageChargePairs=nImageChargePairs)
+
+        # special case for [0,j] and [i,0] (they have two opposite values)
+        horiztonalShifts[:, 0] = -horiztonalShifts[:, 1]
+        verticalShifts[0, :] = -verticalShifts[1, :]
+
+        # the divergence
+        areaChange = verticalShifts[1:, :]
+        areaChange -= verticalShifts[:-1, :]
+        areaChange += horiztonalShifts[:, 1:]
+        areaChange -= horiztonalShifts[:, :-1]
+        areaChange *= -1  # Pixel area is decreased
+
+        return areaChange

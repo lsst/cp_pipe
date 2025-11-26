@@ -103,7 +103,7 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
     maximumRangeCovariancesAstier = pexConfig.Field(
         dtype=int,
         doc="Maximum range of measured covariances as in Astier+19",
-        default=8,
+        default=10,
     )
     maximumRangeCovariancesAstierFullCovFit = pexConfig.Field(
         dtype=int,
@@ -114,7 +114,7 @@ class PhotonTransferCurveSolveConfig(pipeBase.PipelineTaskConfig,
             "The number of parameters for this model is "
             "3*maximumRangeCovariancesAstierFullCovFit^2 + 1, so increase with care "
             "so that the fit is not too slow.",
-        default=8,
+        default=10,
     )
     doSubtractLongRangeCovariances = pexConfig.Field(
         dtype=bool,
