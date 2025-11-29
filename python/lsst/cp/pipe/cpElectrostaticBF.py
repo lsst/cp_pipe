@@ -285,7 +285,7 @@ class ElectrostaticBrighterFatterSolveTask(pipeBase.PipelineTask):
         electroBfDistortionMatrix.gain = inputPtc.gain
 
         aMatrixDict = inputPtc.aMatrix
-        aMatrixList = [m for _, m in aMatrixDict.items() if _ not in badAmps]
+        aMatrixList = np.array([m for _, m in aMatrixDict.items() if _ not in badAmps])
 
         nGoodAmps = len(detector.getAmplifiers()) - len(badAmps)
         if nGoodAmps == 0:
@@ -315,8 +315,13 @@ class ElectrostaticBrighterFatterSolveTask(pipeBase.PipelineTask):
             aMatrixSigma[0, 0] = np.sqrt(32)
 
         else:
-            aMatrix = np.mean(aMatrixList, axis=0)
-            aMatrixSigma = np.std(aMatrixList, axis=0)
+            # Do a quick sigma-clipped mean
+            errors = aMatrixList - np.mean(aMatrixList, axis=0)
+            sigmaErrors = errors / np.std(aMatrixList, axis=0)
+            badValues = np.argwhere(np.abs(sigmaErrors) > 3)
+            aMatrixList[badValues] = np.nan
+            aMatrix = np.nanmean(aMatrixList, axis=0)
+            aMatrixSigma = np.nanstd(aMatrixList, axis=0)
 
         # Ensure we have numpy arrays in 64-bit float precision
         aMatrix = np.asarray(aMatrix, dtype=np.float64)
