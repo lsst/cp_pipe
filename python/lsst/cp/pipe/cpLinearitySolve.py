@@ -2208,7 +2208,8 @@ def _computeTurnoffAndMax(
                 ordinate[groupIndices]
 
         # Use the residuals to compute the turnoff.
-        residuals -= np.nanmedian(residuals)
+        # Only subtract off the median from the previously estimated fitMask.
+        residuals -= np.nanmedian(residuals[fitMask])
 
         goodPoints = np.abs(residuals) < maxFracLinearityDeviation
 
