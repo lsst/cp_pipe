@@ -1234,7 +1234,8 @@ class AstierSplineLinearityFitter:
             self._mjd_scaled,
         )
         # ...and adjust the linear parameters accordingly.
-        p0[self.par_indices["groups"]] *= np.median(ratio_model[self.mask])
+        ok = (self.mask & (self._mu < self._max_signal_nearly_linear))
+        p0[self.par_indices["groups"]] *= np.median(ratio_model[ok])
 
         # Re-compute the residuals.
         ratio_model2 = self.compute_ratio_model(
