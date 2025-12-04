@@ -27,13 +27,13 @@ tasks:
       doAutoGrouping: false
       minPhotodiodeCurrent: 3e-10
       groupingColumn: CCOBCURR
-      relativeSplineFitMaxIter: 40
+      relativeSplineFitMaxIter: 50
       absoluteSplineFitTemperatureColumn: TEMP6
       doAbsoluteSplineFitOffset: true
       doAbsoluteSplineFitWeights: false
       doAbsoluteSplineFitTemperature: false
       doAbsoluteSplineFitTemporal: true
-      absoluteSplineFitMaxIter: 40
+      absoluteSplineFitMaxIter: 50
       absoluteSplineFitWeightParsStart: [7.2e-5, 1e-4]
   cpLinearizerNormalize1:
     class: lsst.cp.pipe.LinearityNormalizeTask
@@ -72,13 +72,13 @@ tasks:
       doAutoGrouping: false
       minPhotodiodeCurrent: 3e-10
       groupingColumn: CCOBCURR
-      relativeSplineFitMaxIter: 40
+      relativeSplineFitMaxIter: 50
       absoluteSplineFitTemperatureColumn: TEMP6
       doAbsoluteSplineFitOffset: true
       doAbsoluteSplineFitWeights: false
       doAbsoluteSplineFitTemperature: false
       doAbsoluteSplineFitTemporal: true
-      absoluteSplineFitMaxIter: 40
+      absoluteSplineFitMaxIter: 50
       absoluteSplineFitWeightParsStart: [7.2e-5, 1e-4]
   cpLinearizerNormalize2:
     class: lsst.cp.pipe.LinearityNormalizeTask
@@ -117,11 +117,11 @@ tasks:
       doAutoGrouping: false
       minPhotodiodeCurrent: 3e-10
       groupingColumn: CCOBCURR
-      relativeSplineFitMaxIter: 40
+      relativeSplineFitMaxIter: 50
       absoluteSplineFitTemperatureColumn: TEMP6
       doAbsoluteSplineFitOffset: true
       doAbsoluteSplineFitWeights: false
       doAbsoluteSplineFitTemperature: false
       doAbsoluteSplineFitTemporal: true
-      absoluteSplineFitMaxIter: 40
+      absoluteSplineFitMaxIter: 50
       absoluteSplineFitWeightParsStart: [7.2e-5, 1e-4]
