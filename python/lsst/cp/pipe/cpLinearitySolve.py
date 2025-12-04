@@ -1689,7 +1689,7 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
             # We need to recompute the linearity turnoff based on these
             # relative values.
             relTurnoffMask = np.isfinite(relAbscissa) & np.isfinite(relOrdinate) & (relOrdinate < ptcTurnoff)
-            relTurnoffIndex, relTurnoff, relMaxSignal, _ = _computeTurnoffAndMax(
+            _, relTurnoff, _, _ = _computeTurnoffAndMax(
                 relAbscissa,
                 relOrdinate,
                 relTurnoffMask,
@@ -1700,11 +1700,25 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
                 log=self.log,
             )
 
+            if relTurnoff < ptcTurnoff:
+                self.log.warning(
+                    "Relative linearity turnoff %.1f is below PTC turnoff %.1f; setting to PTC turnoff.",
+                    relTurnoff,
+                    ptcTurnoff,
+                )
+                # Set these equal.
+                relTurnoff = ptcTurnoff
+
             # The mask here must exclude everything beyond the turnoff.
             # Note that we need to do this before we use the actual
             # turnoff to compute the nodes to avoid nodes going past the
             # data domain.
-            relMask = postTurnoffMasks[ampName] & np.isfinite(relAbscissa) & np.isfinite(relOrdinate)
+            relMask = (
+                postTurnoffMasks[ampName]
+                & np.isfinite(relAbscissa)
+                & np.isfinite(relOrdinate)
+                & (relOrdinate < relTurnoff)
+            )
 
             # Make sure that the linearity turnoff used here does not
             # go beyond the max value of the relOrdinate
@@ -1720,7 +1734,13 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
                 self.config.relativeSplineHighNodeSize,
             )
 
-            self.log.info("Relative linearity for amplifier %s using %d nodes.", ampName, len(relNodes))
+            self.log.info(
+                "Relative linearity for amplifier %s using %d nodes from %.2f to %.2f counts.",
+                ampName,
+                len(relNodes),
+                relNodes[0],
+                relNodes[-1],
+            )
 
             # Update the number of relative nodes to concatenation.
             if len(relNodes) > maxRelNodes:
