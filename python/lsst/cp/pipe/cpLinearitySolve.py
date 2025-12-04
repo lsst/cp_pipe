@@ -1540,7 +1540,7 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
             # above the turnoff. But we only want to maintain the
             # "high end" outliers.
             postTurnoffMask = goodPoints
-            postTurnoffMask[data["raw_mean"][:, i] < np.median(data["raw_mean"][:, i])] = True
+            postTurnoffMask[data["raw_mean"][:, i] < np.median(data["raw_mean"][goodPoints, i])] = True
             postTurnoffMasks[ampName] = postTurnoffMask
 
             if np.isnan(turnoff):
