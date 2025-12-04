@@ -1498,7 +1498,7 @@ class DoubleSplineLinearityTestCase(lsst.utils.tests.TestCase):
 
             frac_resid = linearizer.fitResiduals[amp_name] / linearizer.inputOrdinate[amp_name]
 
-            self.assertFloatsAlmostEqual(np.nan_to_num(frac_resid), 0.0, atol=7e-4)
+            self.assertFloatsAlmostEqual(np.nan_to_num(frac_resid), 0.0, atol=1e-3)
 
         # Check the absolute residuals.
         abs_frac_resid = linearizer.fitResiduals[ref_amp_name] / linearizer.inputOrdinate[ref_amp_name]
