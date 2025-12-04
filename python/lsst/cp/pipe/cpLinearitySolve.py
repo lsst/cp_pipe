@@ -1686,6 +1686,20 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
             relAbscissa = data["ref_counts"] * ampScalings[i]
             relOrdinate = data["ref_counts"] * data["gain_ratio"][:, i] * ampScalings[i]
 
+            # We need to recompute the linearity turnoff based on these
+            # relative values.
+            relTurnoffMask = np.isfinite(relAbscissa) & np.isfinite(relOrdinate) & (relOrdinate < ptcTurnoff)
+            relTurnoffIndex, relTurnoff, relMaxSignal, _ = _computeTurnoffAndMax(
+                relAbscissa,
+                relOrdinate,
+                relTurnoffMask,
+                data["grouping"],
+                ampName=ampName,
+                minSignalFitLinearityTurnoff=self.config.minSignalFitLinearityTurnoff,
+                maxFracLinearityDeviation=self.config.maxFracLinearityDeviation,
+                log=self.log,
+            )
+
             # The mask here must exclude everything beyond the turnoff.
             # Note that we need to do this before we use the actual
             # turnoff to compute the nodes to avoid nodes going past the
@@ -2300,7 +2314,7 @@ def _noderator(turnoff0, turnoff1, turnoff2, minNode, lowNodeSize, midNodeSize, 
     nNodesMid = np.clip(int(np.ceil((turnoff1 - midStart) / midNodeSize)), 5, None)
     if turnoff2 > turnoff1:
         # At least 2 nodes (edges) in the high signal regime.
-        nNodesHigh = np.clip(int(np.ceil((turnoff2 - turnoff1) / highNodeSize)), 2, None)
+        nNodesHigh = np.clip(int(np.ceil((turnoff2 - turnoff1) / highNodeSize)), 3, None)
     else:
         nNodesHigh = 0
     nodesLow = np.linspace(minNode, turnoff0, nNodesLow)
