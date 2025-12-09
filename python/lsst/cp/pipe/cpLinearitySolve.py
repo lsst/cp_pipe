@@ -2215,6 +2215,7 @@ def _computeTurnoffAndMax(
 
     fitMask = initialMask.copy()
     fitMask[ordinate < minSignalFitLinearityTurnoff] = False
+    fitMask[~np.isfinite(abscissa) | ~np.isfinite(ordinate)] = False
     goodPoints = fitMask.copy()
 
     gValues = np.unique(groupingValues)
@@ -2224,6 +2225,7 @@ def _computeTurnoffAndMax(
         groupIndicesList.append(use)
 
     found = False
+    firstIteration = True
     while (fitMask.sum() >= 4) and not found:
         residuals = np.zeros_like(ordinate)
 
@@ -2232,10 +2234,23 @@ def _computeTurnoffAndMax(
         ordinateMasked = ordinate.copy()
         ordinateMasked[~fitMask] = np.nan
 
-        for groupIndices in groupIndicesList:
+        for i, groupIndices in enumerate(groupIndicesList):
             num = np.nansum(abscissaMasked[groupIndices])
             denom = np.nansum(abscissaMasked[groupIndices]**2./ordinateMasked[groupIndices])
-            aa = num / denom
+
+            if num == 0.0 or denom == 0.0:
+                if firstIteration:
+                    log.info("All points masked in linearity turnoff for group %d (first iteration).", i)
+                    # We can try to recover this.
+                    nTry = min(10, len(groupIndices))
+                    num = np.nansum(abscissa[groupIndices][0: nTry])
+                    denom = np.nansum(abscissa[groupIndices][0: nTry]**2./ordinate[groupIndices][0: nTry])
+                    aa = num / denom
+                else:
+                    log.warning("All points masked in linearity turnoff for group %d.", i)
+                    aa = np.nan
+            else:
+                aa = num / denom
 
             residuals[groupIndices] = (ordinate[groupIndices] - aa*abscissa[groupIndices]) / \
                 ordinate[groupIndices]
@@ -2256,6 +2271,8 @@ def _computeTurnoffAndMax(
             badIndex = np.argmax(np.abs(residuals)[fitMask])
             fitIndices, = np.nonzero(fitMask)
             fitMask[fitIndices[badIndex]] = False
+
+        firstIteration = False
 
     if not found:
         # Could not find any reasonable value.
