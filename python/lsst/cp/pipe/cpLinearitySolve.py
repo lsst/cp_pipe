@@ -1714,20 +1714,19 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
             # turnoff to compute the nodes to avoid nodes going past the
             # data domain.
             relMask = (
-                postTurnoffMasks[ampName]
-                & np.isfinite(relAbscissa)
+                np.isfinite(relAbscissa)
                 & np.isfinite(relOrdinate)
                 & (relOrdinate < relTurnoff)
             )
 
             # Make sure that the linearity turnoff used here does not
             # go beyond the max value of the relOrdinate
-            linearityTurnoff = min(linearityTurnoff, np.max(relOrdinate[relMask]))
+            relTurnoff = min(relTurnoff, np.max(relOrdinate[relMask]))
 
             relNodes = _noderator(
                 lowThreshold,
                 ptcTurnoff,
-                linearityTurnoff,
+                relTurnoff,
                 self.config.relativeSplineMinimumSignalNode,
                 self.config.relativeSplineLowNodeSize,
                 self.config.relativeSplineMidNodeSize,
