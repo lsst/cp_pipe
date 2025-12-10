@@ -1109,6 +1109,12 @@ class LinearityDoubleSplineSolveConfig(
         doc="Minimum signal to compute raw linearity slope for linearityTurnoff.",
         default=1000.0,
     )
+    maxLinearityTurnoffRelativeToPtcTurnoff = pexConfig.Field(
+        dtype=float,
+        doc="Maximum fractional allowed linearity turnoff relative to the PTC turnoff. Used "
+            "to keep extra-high odd values from contaminating the fit.",
+        default=1.3,
+    )
     maxNoiseReference = pexConfig.Field(
         dtype=float,
         doc="Maximum read noise (e-) in the PTC for an amp to be considered as a reference.",
@@ -1534,6 +1540,7 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
                 minSignalFitLinearityTurnoff=self.config.minSignalFitLinearityTurnoff,
                 maxFracLinearityDeviation=self.config.maxFracLinearityDeviation,
                 log=self.log,
+                maxTurnoff=inputPtc.ptcTurnoff[ampName] * self.config.maxLinearityTurnoffRelativeToPtcTurnoff,
             )
 
             # Use the goodPoints as an initial estimate of the mask
@@ -2142,6 +2149,7 @@ def _computeTurnoffAndMax(
     minSignalFitLinearityTurnoff=1000.0,
     maxFracLinearityDeviation=0.01,
     log=None,
+    maxTurnoff=np.inf,
 ):
     """Compute the turnoff and max signal.
 
@@ -2165,6 +2173,8 @@ def _computeTurnoffAndMax(
         Maximum fraction deviation from raw linearity to compute turnoff.
     log : `logging.Logger`, optional
         Log object.
+    maxTurnoff : `float`, optional
+        Maximum turnoff allowed (will be set above PTC turnoff).
 
     Returns
     -------
@@ -2192,6 +2202,7 @@ def _computeTurnoffAndMax(
 
     fitMask = initialMask.copy()
     fitMask[ordinate < minSignalFitLinearityTurnoff] = False
+    fitMask[ordinate > maxTurnoff] = False
     fitMask[~np.isfinite(abscissa) | ~np.isfinite(ordinate)] = False
     goodPoints = fitMask.copy()
 
@@ -2217,7 +2228,11 @@ def _computeTurnoffAndMax(
 
             if num == 0.0 or denom == 0.0:
                 if firstIteration:
-                    log.info("All points masked in linearity turnoff for group %d (first iteration).", i)
+                    log.info(
+                        "All points for %s were masked in linearity turnoff for group %d (first iteration).",
+                        ampName,
+                        i,
+                    )
                     # We can try to recover this.
                     nTry = min(10, len(groupIndices))
                     num = np.nansum(abscissa[groupIndices][0: nTry])
@@ -2236,7 +2251,7 @@ def _computeTurnoffAndMax(
         # Only subtract off the median from the previously estimated fitMask.
         residuals -= np.nanmedian(residuals[fitMask])
 
-        goodPoints = np.abs(residuals) < maxFracLinearityDeviation
+        goodPoints = (np.abs(residuals) < maxFracLinearityDeviation) & (ordinate < maxTurnoff)
 
         if goodPoints.sum() > 4:
             # This was an adequate fit.
