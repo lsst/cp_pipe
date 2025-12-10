@@ -1227,7 +1227,7 @@ class AstierSplineLinearityFitter:
 
         params, cov_params, _, _, _ = leastsq(
             self._group_minfunc,
-            p0,
+            p0[self.par_indices["groups"]],
             full_output=True,
             ftol=1e-5,
             maxfev=12000,
