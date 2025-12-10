@@ -1686,29 +1686,6 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
             relAbscissa = data["ref_counts"] * ampScalings[i]
             relOrdinate = data["ref_counts"] * data["gain_ratio"][:, i] * ampScalings[i]
 
-            # We need to recompute the linearity turnoff based on these
-            # relative values.
-            relTurnoffMask = np.isfinite(relAbscissa) & np.isfinite(relOrdinate) & (relOrdinate < ptcTurnoff)
-            _, relTurnoff, _, _ = _computeTurnoffAndMax(
-                relAbscissa,
-                relOrdinate,
-                relTurnoffMask,
-                data["grouping"],
-                ampName=ampName,
-                minSignalFitLinearityTurnoff=self.config.minSignalFitLinearityTurnoff,
-                maxFracLinearityDeviation=self.config.maxFracLinearityDeviation,
-                log=self.log,
-            )
-
-            if relTurnoff < ptcTurnoff:
-                self.log.warning(
-                    "Relative linearity turnoff %.1f is below PTC turnoff %.1f; setting to PTC turnoff.",
-                    relTurnoff,
-                    ptcTurnoff,
-                )
-                # Set these equal.
-                relTurnoff = ptcTurnoff
-
             # The mask here must exclude everything beyond the turnoff.
             # Note that we need to do this before we use the actual
             # turnoff to compute the nodes to avoid nodes going past the
@@ -1716,12 +1693,12 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
             relMask = (
                 np.isfinite(relAbscissa)
                 & np.isfinite(relOrdinate)
-                & (relOrdinate < relTurnoff)
+                & (relOrdinate < linearityTurnoff)
             )
 
             # Make sure that the linearity turnoff used here does not
             # go beyond the max value of the relOrdinate
-            relTurnoff = min(relTurnoff, np.max(relOrdinate[relMask]))
+            relTurnoff = min(linearityTurnoff, np.max(relOrdinate[relMask]))
 
             relNodes = _noderator(
                 lowThreshold,
