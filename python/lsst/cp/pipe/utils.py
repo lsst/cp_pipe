@@ -1215,13 +1215,17 @@ class AstierSplineLinearityFitter:
         # Do a simple linear fit for each group.
         for i, indices in enumerate(self.group_indices):
             mask = self.mask[indices]
+            if mask.sum() == 0:
+                # There are no points in this group; we can ignore it.
+                p0[self.par_indices["groups"][i]] = 1.0
+                continue
             mu = self._mu[indices][mask]
             pd = self._pd[indices][mask]
             to_fit = (mu < self._max_signal_nearly_linear)
-            # If we have no points (low PTC turnoff) then
-            # we just use the first half for our initial value.
+            # If we have no points now (low PTC turnoff) then
+            # we just use the first 25% of the points in the group.
             if to_fit.sum() == 0:
-                to_fit = (mu < np.median(mu))
+                to_fit = (mu < np.nanpercentile(mu, 25.0))
             linfit = np.polyfit(pd[to_fit], mu[to_fit], 1)
             p0[self.par_indices["groups"][i]] = linfit[0]
 
