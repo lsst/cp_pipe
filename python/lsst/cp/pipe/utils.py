@@ -1522,7 +1522,9 @@ class AstierSplineLinearityFitter:
             self._mjd_scaled,
             return_spline=False,
         )
-        return self._w*(ratio_model - 1.0)
+        wt = self._w.copy()
+        wt[self._mu > self._max_signal_nearly_linear] = 0.0
+        return wt*(ratio_model - 1.0)
 
 
 def getReadNoise(exposure, ampName, taskMetadata=None, log=None):
