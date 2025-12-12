@@ -1698,7 +1698,8 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
             # turnoff to compute the nodes to avoid nodes going past the
             # data domain.
             relMask = (
-                np.isfinite(relAbscissa)
+                postTurnoffMasks[ampName]
+                & np.isfinite(relAbscissa)
                 & np.isfinite(relOrdinate)
                 & (relOrdinate < linearityTurnoff)
             )
