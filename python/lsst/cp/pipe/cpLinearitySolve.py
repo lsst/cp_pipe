@@ -583,6 +583,7 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 minSignalFitLinearityTurnoff=self.config.minSignalFitLinearityTurnoff,
                 maxFracLinearityDeviation=self.config.maxFracLinearityDeviation,
                 log=self.log,
+                use_all_for_normalization=True,
             )
 
             if np.isnan(turnoff):
@@ -750,7 +751,7 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                     fit_temporal=self.config.doSplineFitTemporal,
                     mjd_scaled=inputMjdScaled,
                 )
-                p0 = fitter.estimate_p0()
+                p0 = fitter.estimate_p0(use_all_for_normalization=True)
                 pars = fitter.fit(
                     p0,
                     min_iter=self.config.splineFitMinIter,
@@ -2151,6 +2152,7 @@ def _computeTurnoffAndMax(
     maxFracLinearityDeviation=0.01,
     log=None,
     maxTurnoff=np.inf,
+    use_all_for_normalization=False,
 ):
     """Compute the turnoff and max signal.
 
@@ -2176,6 +2178,9 @@ def _computeTurnoffAndMax(
         Log object.
     maxTurnoff : `float`, optional
         Maximum turnoff allowed (will be set above PTC turnoff).
+    use_all_for_normalization : `bool`, optional
+        Use all the points (not just below turnoff) for normalization;
+        this is for compatibility with the old linearizer fits.
 
     Returns
     -------
@@ -2249,8 +2254,12 @@ def _computeTurnoffAndMax(
                 ordinate[groupIndices]
 
         # Use the residuals to compute the turnoff.
-        # Only subtract off the median from the previously estimated fitMask.
-        residuals -= np.nanmedian(residuals[fitMask])
+        if use_all_for_normalization:
+            residuals -= np.nanmedian(residuals)
+        else:
+            # Only subtract off the median from the previously estimated
+            # fitMask.
+            residuals -= np.nanmedian(residuals[fitMask])
 
         goodPoints = (np.abs(residuals) < maxFracLinearityDeviation) & (ordinate < maxTurnoff)
 

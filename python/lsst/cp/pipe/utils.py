@@ -1196,8 +1196,14 @@ class AstierSplineLinearityFitter:
 
         return w
 
-    def estimate_p0(self):
+    def estimate_p0(self, use_all_for_normalization=False):
         """Estimate initial fit parameters.
+
+        Parameters
+        ----------
+        use_all_for_normalization : `bool`, optional
+            Use all the points (not just below turnoff) for normalization;
+            this is for compatibility with the old linearizer fits.
 
         Returns
         -------
@@ -1229,15 +1235,18 @@ class AstierSplineLinearityFitter:
             linfit = np.polyfit(pd[to_fit], mu[to_fit], 1)
             p0[self.par_indices["groups"][i]] = linfit[0]
 
-        params, cov_params, _, _, _ = leastsq(
-            self._group_minfunc,
-            p0[self.par_indices["groups"]],
-            full_output=True,
-            ftol=1e-5,
-            maxfev=12000,
-        )
+        # This re-fit will be skipped for compatibility.
+        # if use_all_for_normalization is set.
+        if not use_all_for_normalization:
+            params, cov_params, _, _, _ = leastsq(
+                self._group_minfunc,
+                p0[self.par_indices["groups"]],
+                full_output=True,
+                ftol=1e-5,
+                maxfev=12000,
+            )
 
-        p0[self.par_indices["groups"]] = params
+            p0[self.par_indices["groups"]] = params
 
         # Look at the residuals...
         ratio_model = self.compute_ratio_model(
@@ -1251,7 +1260,10 @@ class AstierSplineLinearityFitter:
             self._mjd_scaled,
         )
         # ...and adjust the linear parameters accordingly.
-        ok = (self.mask & (self._mu < self._max_signal_nearly_linear))
+        if use_all_for_normalization:
+            ok = self.mask
+        else:
+            ok = (self.mask & (self._mu < self._max_signal_nearly_linear))
         p0[self.par_indices["groups"]] *= np.median(ratio_model[ok])
 
         # Re-compute the residuals.
