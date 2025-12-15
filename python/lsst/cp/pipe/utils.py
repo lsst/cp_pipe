@@ -1180,6 +1180,15 @@ class AstierSplineLinearityFitter:
                 + len(self.par_indices["temperature_coeff"])
             )
 
+        self._npt = (
+            len(self.par_indices["values"])
+            + len(self.par_indices["groups"])
+            + len(self.par_indices["offset"])
+            + len(self.par_indices["weight_pars"])
+            + len(self.par_indices["temperature_coeff"])
+            + len(self.par_indices["temporal_coeff"])
+        )
+
     @staticmethod
     def compute_weights(weight_pars, mu, mask):
         w = 1./np.sqrt(weight_pars[0]**2. + weight_pars[1]**2./mu)
@@ -1187,8 +1196,14 @@ class AstierSplineLinearityFitter:
 
         return w
 
-    def estimate_p0(self):
+    def estimate_p0(self, use_all_for_normalization=False):
         """Estimate initial fit parameters.
+
+        Parameters
+        ----------
+        use_all_for_normalization : `bool`, optional
+            Use all the points (not just below turnoff) for normalization;
+            this is for compatibility with the old linearizer fits.
 
         Returns
         -------
@@ -1201,26 +1216,37 @@ class AstierSplineLinearityFitter:
             set to True); and one extra for the temporal coefficient (if
             fit_temporal was set to True).
         """
-        npt = (len(self.par_indices["values"])
-               + len(self.par_indices["groups"])
-               + len(self.par_indices["offset"])
-               + len(self.par_indices["weight_pars"])
-               + len(self.par_indices["temperature_coeff"])
-               + len(self.par_indices["temporal_coeff"]))
-        p0 = np.zeros(npt)
+        p0 = np.zeros(self._npt)
 
         # Do a simple linear fit for each group.
         for i, indices in enumerate(self.group_indices):
             mask = self.mask[indices]
+            if mask.sum() == 0:
+                # There are no points in this group; we can ignore it.
+                p0[self.par_indices["groups"][i]] = 1.0
+                continue
             mu = self._mu[indices][mask]
             pd = self._pd[indices][mask]
             to_fit = (mu < self._max_signal_nearly_linear)
-            # If we have no points (low PTC turnoff) then
-            # we just use the first half for our initial value.
+            # If we have no points now (low PTC turnoff) then
+            # we just use the first 25% of the points in the group.
             if to_fit.sum() == 0:
-                to_fit = (mu < np.median(mu))
+                to_fit = (mu < np.nanpercentile(mu, 25.0))
             linfit = np.polyfit(pd[to_fit], mu[to_fit], 1)
             p0[self.par_indices["groups"][i]] = linfit[0]
+
+        # This re-fit will be skipped for compatibility.
+        # if use_all_for_normalization is set.
+        if not use_all_for_normalization:
+            params, cov_params, _, _, _ = leastsq(
+                self._group_minfunc,
+                p0[self.par_indices["groups"]],
+                full_output=True,
+                ftol=1e-5,
+                maxfev=12000,
+            )
+
+            p0[self.par_indices["groups"]] = params
 
         # Look at the residuals...
         ratio_model = self.compute_ratio_model(
@@ -1234,7 +1260,11 @@ class AstierSplineLinearityFitter:
             self._mjd_scaled,
         )
         # ...and adjust the linear parameters accordingly.
-        p0[self.par_indices["groups"]] *= np.median(ratio_model[self.mask])
+        if use_all_for_normalization:
+            ok = self.mask
+        else:
+            ok = (self.mask & (self._mu < self._max_signal_nearly_linear))
+        p0[self.par_indices["groups"]] *= np.median(ratio_model[ok])
 
         # Re-compute the residuals.
         ratio_model2 = self.compute_ratio_model(
@@ -1481,6 +1511,32 @@ class AstierSplineLinearityFitter:
             extra_constraint = 0
 
         return np.hstack([resid, constraint, extra_constraint])
+
+    def _group_minfunc(self, group_pars):
+        """Minimization function for initial group parameters.
+
+        Parameters
+        ----------
+        group_pars : `np.ndarray`
+            Array of slope parameters.
+        """
+        full_pars = np.zeros(self._npt)
+        full_pars[self.par_indices["groups"]] = group_pars
+
+        ratio_model = self.compute_ratio_model(
+            self._nodes,
+            self.group_indices,
+            self.par_indices,
+            full_pars,
+            self._pd,
+            self._mu,
+            self._temperature_scaled,
+            self._mjd_scaled,
+            return_spline=False,
+        )
+        wt = self._w.copy()
+        wt[self._mu > self._max_signal_nearly_linear] = 0.0
+        return wt*(ratio_model - 1.0)
 
 
 def getReadNoise(exposure, ampName, taskMetadata=None, log=None):

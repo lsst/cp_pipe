@@ -583,6 +583,7 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                 minSignalFitLinearityTurnoff=self.config.minSignalFitLinearityTurnoff,
                 maxFracLinearityDeviation=self.config.maxFracLinearityDeviation,
                 log=self.log,
+                use_all_for_normalization=True,
             )
 
             if np.isnan(turnoff):
@@ -750,7 +751,7 @@ class LinearitySolveTask(pipeBase.PipelineTask):
                     fit_temporal=self.config.doSplineFitTemporal,
                     mjd_scaled=inputMjdScaled,
                 )
-                p0 = fitter.estimate_p0()
+                p0 = fitter.estimate_p0(use_all_for_normalization=True)
                 pars = fitter.fit(
                     p0,
                     min_iter=self.config.splineFitMinIter,
@@ -1108,6 +1109,12 @@ class LinearityDoubleSplineSolveConfig(
         dtype=float,
         doc="Minimum signal to compute raw linearity slope for linearityTurnoff.",
         default=1000.0,
+    )
+    maxLinearityTurnoffRelativeToPtcTurnoff = pexConfig.Field(
+        dtype=float,
+        doc="Maximum fractional allowed linearity turnoff relative to the PTC turnoff. Used "
+            "to keep extra-high odd values from contaminating the fit.",
+        default=1.3,
     )
     maxNoiseReference = pexConfig.Field(
         dtype=float,
@@ -1534,13 +1541,14 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
                 minSignalFitLinearityTurnoff=self.config.minSignalFitLinearityTurnoff,
                 maxFracLinearityDeviation=self.config.maxFracLinearityDeviation,
                 log=self.log,
+                maxTurnoff=inputPtc.ptcTurnoff[ampName] * self.config.maxLinearityTurnoffRelativeToPtcTurnoff,
             )
 
             # Use the goodPoints as an initial estimate of the mask
             # above the turnoff. But we only want to maintain the
             # "high end" outliers.
             postTurnoffMask = goodPoints
-            postTurnoffMask[data["raw_mean"][:, i] < np.median(data["raw_mean"][:, i])] = True
+            postTurnoffMask[data["raw_mean"][:, i] < np.median(data["raw_mean"][goodPoints, i])] = True
             postTurnoffMasks[ampName] = postTurnoffMask
 
             if np.isnan(turnoff):
@@ -1690,23 +1698,34 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
             # Note that we need to do this before we use the actual
             # turnoff to compute the nodes to avoid nodes going past the
             # data domain.
-            relMask = postTurnoffMasks[ampName] & np.isfinite(relAbscissa) & np.isfinite(relOrdinate)
+            relMask = (
+                postTurnoffMasks[ampName]
+                & np.isfinite(relAbscissa)
+                & np.isfinite(relOrdinate)
+                & (relOrdinate < linearityTurnoff)
+            )
 
             # Make sure that the linearity turnoff used here does not
             # go beyond the max value of the relOrdinate
-            linearityTurnoff = min(linearityTurnoff, np.max(relOrdinate[relMask]))
+            relTurnoff = min(linearityTurnoff, np.max(relOrdinate[relMask]))
 
             relNodes = _noderator(
                 lowThreshold,
                 ptcTurnoff,
-                linearityTurnoff,
+                relTurnoff,
                 self.config.relativeSplineMinimumSignalNode,
                 self.config.relativeSplineLowNodeSize,
                 self.config.relativeSplineMidNodeSize,
                 self.config.relativeSplineHighNodeSize,
             )
 
-            self.log.info("Relative linearity for amplifier %s using %d nodes.", ampName, len(relNodes))
+            self.log.info(
+                "Relative linearity for amplifier %s using %d nodes from %.2f to %.2f counts.",
+                ampName,
+                len(relNodes),
+                relNodes[0],
+                relNodes[-1],
+            )
 
             # Update the number of relative nodes to concatenation.
             if len(relNodes) > maxRelNodes:
@@ -2132,6 +2151,8 @@ def _computeTurnoffAndMax(
     minSignalFitLinearityTurnoff=1000.0,
     maxFracLinearityDeviation=0.01,
     log=None,
+    maxTurnoff=np.inf,
+    use_all_for_normalization=False,
 ):
     """Compute the turnoff and max signal.
 
@@ -2155,6 +2176,11 @@ def _computeTurnoffAndMax(
         Maximum fraction deviation from raw linearity to compute turnoff.
     log : `logging.Logger`, optional
         Log object.
+    maxTurnoff : `float`, optional
+        Maximum turnoff allowed (will be set above PTC turnoff).
+    use_all_for_normalization : `bool`, optional
+        Use all the points (not just below turnoff) for normalization;
+        this is for compatibility with the old linearizer fits.
 
     Returns
     -------
@@ -2182,6 +2208,8 @@ def _computeTurnoffAndMax(
 
     fitMask = initialMask.copy()
     fitMask[ordinate < minSignalFitLinearityTurnoff] = False
+    fitMask[ordinate > maxTurnoff] = False
+    fitMask[~np.isfinite(abscissa) | ~np.isfinite(ordinate)] = False
     goodPoints = fitMask.copy()
 
     gValues = np.unique(groupingValues)
@@ -2191,6 +2219,7 @@ def _computeTurnoffAndMax(
         groupIndicesList.append(use)
 
     found = False
+    firstIteration = True
     while (fitMask.sum() >= 4) and not found:
         residuals = np.zeros_like(ordinate)
 
@@ -2199,18 +2228,40 @@ def _computeTurnoffAndMax(
         ordinateMasked = ordinate.copy()
         ordinateMasked[~fitMask] = np.nan
 
-        for groupIndices in groupIndicesList:
+        for i, groupIndices in enumerate(groupIndicesList):
             num = np.nansum(abscissaMasked[groupIndices])
             denom = np.nansum(abscissaMasked[groupIndices]**2./ordinateMasked[groupIndices])
-            aa = num / denom
+
+            if num == 0.0 or denom == 0.0:
+                if firstIteration:
+                    log.info(
+                        "All points for %s were masked in linearity turnoff for group %d (first iteration).",
+                        ampName,
+                        i,
+                    )
+                    # We can try to recover this.
+                    nTry = min(10, len(groupIndices))
+                    num = np.nansum(abscissa[groupIndices][0: nTry])
+                    denom = np.nansum(abscissa[groupIndices][0: nTry]**2./ordinate[groupIndices][0: nTry])
+                    aa = num / denom
+                else:
+                    log.warning("All points masked in linearity turnoff for group %d.", i)
+                    aa = np.nan
+            else:
+                aa = num / denom
 
             residuals[groupIndices] = (ordinate[groupIndices] - aa*abscissa[groupIndices]) / \
                 ordinate[groupIndices]
 
         # Use the residuals to compute the turnoff.
-        residuals -= np.nanmedian(residuals)
+        if use_all_for_normalization:
+            residuals -= np.nanmedian(residuals)
+        else:
+            # Only subtract off the median from the previously estimated
+            # fitMask.
+            residuals -= np.nanmedian(residuals[fitMask])
 
-        goodPoints = np.abs(residuals) < maxFracLinearityDeviation
+        goodPoints = (np.abs(residuals) < maxFracLinearityDeviation) & (ordinate < maxTurnoff)
 
         if goodPoints.sum() > 4:
             # This was an adequate fit.
@@ -2222,6 +2273,8 @@ def _computeTurnoffAndMax(
             badIndex = np.argmax(np.abs(residuals)[fitMask])
             fitIndices, = np.nonzero(fitMask)
             fitMask[fitIndices[badIndex]] = False
+
+        firstIteration = False
 
     if not found:
         # Could not find any reasonable value.
@@ -2299,7 +2352,7 @@ def _noderator(turnoff0, turnoff1, turnoff2, minNode, lowNodeSize, midNodeSize, 
     nNodesMid = np.clip(int(np.ceil((turnoff1 - midStart) / midNodeSize)), 5, None)
     if turnoff2 > turnoff1:
         # At least 2 nodes (edges) in the high signal regime.
-        nNodesHigh = np.clip(int(np.ceil((turnoff2 - turnoff1) / highNodeSize)), 2, None)
+        nNodesHigh = np.clip(int(np.ceil((turnoff2 - turnoff1) / highNodeSize)), 3, None)
     else:
         nNodesHigh = 0
     nodesLow = np.linspace(minNode, turnoff0, nNodesLow)

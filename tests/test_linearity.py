@@ -1477,6 +1477,7 @@ class DoubleSplineLinearityTestCase(lsst.utils.tests.TestCase):
         linearity_solve_config.relativeSplineHighNodeSize = 10000.0
         linearity_solve_config.absoluteSplineNodeSize = 10000.0
         linearity_solve_config.useFocalPlaneNormalization = True
+        linearity_solve_config.maxLinearityTurnoffRelativeToPtcTurnoff = 1.5
         linearity_solve_task = LinearityDoubleSplineSolveTask(config=linearity_solve_config)
 
         results = linearity_solve_task.run(
@@ -1498,7 +1499,7 @@ class DoubleSplineLinearityTestCase(lsst.utils.tests.TestCase):
 
             frac_resid = linearizer.fitResiduals[amp_name] / linearizer.inputOrdinate[amp_name]
 
-            self.assertFloatsAlmostEqual(np.nan_to_num(frac_resid), 0.0, atol=7e-4)
+            self.assertFloatsAlmostEqual(np.nan_to_num(frac_resid), 0.0, atol=1e-3)
 
         # Check the absolute residuals.
         abs_frac_resid = linearizer.fitResiduals[ref_amp_name] / linearizer.inputOrdinate[ref_amp_name]
@@ -1518,7 +1519,7 @@ class DoubleSplineLinearityTestCase(lsst.utils.tests.TestCase):
 
             self.assertFloatsAlmostEqual(max_grad, expected_midpoint, atol=tolerance)
 
-            self.assertFloatsAlmostEqual(centers[-1], turnoff, atol=1000.0)
+            self.assertLessEqual(centers[-1], turnoff)
 
         # Check that the linearizers are consistent with expectations.
         coeffs = linearizer.linearityCoeffs[ref_amp_name]

@@ -46,6 +46,7 @@ tasks:
     config:
       usePhotodiode: false
       doAutoGrouping: true
+      relativeSplineFitMaxIter: 40
       absoluteSplineFitTemperatureColumn: TEMPAVG
       doAbsoluteSplineFitWeights: false
       doAbsoluteSplineFitTemperature: false
@@ -89,6 +90,7 @@ tasks:
     config:
       usePhotodiode: false
       doAutoGrouping: true
+      relativeSplineFitMaxIter: 40
       absoluteSplineFitTemperatureColumn: TEMPAVG
       doAbsoluteSplineFitWeights: false
       doAbsoluteSplineFitTemperature: false
@@ -132,6 +134,7 @@ tasks:
     config:
       usePhotodiode: false
       doAutoGrouping: true
+      relativeSplineFitMaxIter: 40
       absoluteSplineFitTemperatureColumn: TEMPAVG
       doAbsoluteSplineFitWeights: false
       doAbsoluteSplineFitTemperature: false
