@@ -1910,7 +1910,7 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
             fit_temporal=self.config.doAbsoluteSplineFitTemporal,
             mjd_scaled=inputMjdScaled,
         )
-        p0 = fitter.estimate_p0()
+        p0 = fitter.estimate_p0(use_all_for_normalization=True)
         pars = fitter.fit(
             p0,
             min_iter=self.config.absoluteSplineFitMinIter,

@@ -141,5 +141,3 @@ tasks:
       doAbsoluteSplineFitTemporal: true
       doAbsoluteSplineFitOffset: true
       absoluteSplineFitMaxIter: 40
-      absoluteNSigmaClipLinear: 20
-      relativeNSigmaClipLinear: 20
