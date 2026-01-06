@@ -1183,9 +1183,15 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             # Set initial bounds
             bounds = self._boundsForAstier(
                 parsIniPtc,
-                lowers=[-1e-4, 0.1, 0, min(preTurnoff-20000, 0), -10000],
+                lowers=[-1e-4, 0.1, 0, min(preTurnoff - 20000, 0), -10000],
                 uppers=[0, 10.0, 2000, preTurnoff, -100],
             )
+
+            # Clip any input values to the bounds.
+            # This is needed because we have been given parsIniPtc from an
+            # unconstrained fit.
+            for index in range(len(parsIniPtc)):
+                parsIniPtc[index] = float(np.clip(parsIniPtc[index], bounds[0][index], bounds[1][index]))
 
             # Perform the fit
             res = least_squares(
