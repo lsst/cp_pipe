@@ -766,8 +766,8 @@ class PhotonTransferCurveExtractTaskBase(pipeBase.PipelineTask):
             else:
                 meanReadNoise = np.nanmean([readNoise1, readNoise2])
 
-            overscanMedianLevel1 = exp1.metadata[f'LSST ISR OVERSCAN SERIAL MEDIAN {ampName}']
-            overscanMedianLevel2 = exp2.metadata[f'LSST ISR OVERSCAN SERIAL MEDIAN {ampName}']
+            overscanMedianLevel1 = exp1.metadata.get(f'LSST ISR OVERSCAN SERIAL MEDIAN {ampName}', np.nan)
+            overscanMedianLevel2 = exp2.metadata.get(f'LSST ISR OVERSCAN SERIAL MEDIAN {ampName}', np.nan)
             if not np.isfinite(overscanMedianLevel1) and \
                not np.isfinite(overscanMedianLevel2):
                 # We allow the mean overscan median level to be nan if both
