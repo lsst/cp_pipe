@@ -474,6 +474,10 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
 
         # Initial validation of PTC fit.
         for ampName in ampNames:
+            if ampName in datasetPtc.badAmps:
+                # Do not check bad amps!
+                continue
+
             # These may be all nan (esp. in tests) and will be filtered
             # as appropriate later.
             with warnings.catch_warnings():
@@ -505,6 +509,9 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         datasetPtc.updateMetadata(setDate=True, camera=camera, detector=detector)
 
         for ampName in ampNames:
+            if ampName in datasetPtc.badAmps:
+                continue
+
             datasetPtc.overscanMedian[ampName] = np.nanmedian(
                 datasetPtc.overscanMedianLevelList[ampName][datasetPtc.expIdMask[ampName]]
             )
@@ -1566,7 +1573,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         ampName : `str`
             Amplifier name.
         """
-        dataset.badAmps.append(ampName)
+        if ampName not in dataset.badAmps:
+            dataset.badAmps.append(ampName)
         dataset.expIdMask[ampName] = np.repeat(False, len(dataset.rawExpTimes[ampName]))
         dataset.gain[ampName] = np.nan
         dataset.gainUnadjusted[ampName] = np.nan
