@@ -1218,6 +1218,11 @@ class AstierSplineLinearityFitter:
         """
         p0 = np.zeros(self._npt)
 
+        # We adjust this slightly because it increases the stability
+        # of the initialization of the fit parameters.
+        max_signal_nearly_linear = self._max_signal_nearly_linear
+        self._max_signal_nearly_linear *= 0.9
+
         # Do a simple linear fit for each group.
         for i, indices in enumerate(self.group_indices):
             mask = self.mask[indices]
@@ -1295,6 +1300,9 @@ class AstierSplineLinearityFitter:
 
         if self._fit_weights:
             p0[self.par_indices["weight_pars"]] = self._weight_pars_start
+
+        # Restore the correct value
+        self._max_signal_nearly_linear = max_signal_nearly_linear
 
         return p0
 
