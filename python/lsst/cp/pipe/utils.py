@@ -1414,7 +1414,7 @@ class AstierSplineLinearityFitter:
         """
         init_params = p0
         for j in range(n_outer_iter):
-            self.log.info("Staring outer iteration ", j)
+            self.log.info("Staring outer iteration %d", j)
             for k in range(max_iter):
                 params, cov_params, _, msg, ierr = leastsq(
                     self,
