@@ -1091,8 +1091,8 @@ class AstierSplineLinearityFitter:
         max_frac_correction=0.25,
         max_correction=np.inf,
     ):
-        self._pd = pd
-        self._mu = mu
+        self._pd = np.asarray(pd).copy()
+        self._mu = np.asarray(mu).copy()
         self._grouping_values = grouping_values
         self.log = log if log else logging.getLogger(__name__)
         self._fit_offset = fit_offset
@@ -1455,21 +1455,32 @@ class AstierSplineLinearityFitter:
             if n_outer_iter > 1:
                 if j == 0:
                     params_accum = params.copy()
-                    mu_orig = self._mu
-                    pd_orig = self._pd
+                    mu_orig = self._mu.copy()
+                    pd_orig = self._pd.copy()
                 else:
                     if self._fit_temperature:
-                        params_accum[self.par_indices["temperature_coeff"]] *= (
-                            params[self.par_indices["temperature_coeff"]]
-                        )
+                        a = params_accum[self.par_indices["temperature_coeff"]]
+                        b = params[self.par_indices["temperature_coeff"]]
+                        params_accum[self.par_indices["temperature_coeff"]] = (a + b + a * b)
+
                     if self._fit_temporal:
-                        params_accum[self.par_indices["temporal_coeff"]] *= (
-                            params[self.par_indices["temporal_coeff"]]
-                        )
-                    params_accum[self.par_indices["groups"]] *= params[self.par_indices["groups"]]
+                        a = params_accum[self.par_indices["temporal_coeff"]]
+                        b = params[self.par_indices["temporal_coeff"]]
+                        params_accum[self.par_indices["temporal_coeff"]] = (a + b + a * b)
+
+                    slope_mean = np.mean(params[self.par_indices["groups"]])
+                    adjustment = params[self.par_indices["groups"]] / slope_mean
+                    params_accum[self.par_indices["groups"]] *= adjustment
+
                     if self._fit_offset:
                         params_accum[self.par_indices["offset"]] += params[self.par_indices["offset"]]
 
+                    # The new linearizer values should simply be a replacement
+                    # because these are the better fit parameters we are
+                    # interested in.
+                    params_accum[self.par_indices["values"]] = params[self.par_indices["values"]]
+
+                # Adjust the mu and pd values according to the previous fit.
                 slope_mean = np.mean(params[self.par_indices["groups"]])
 
                 if self._fit_temperature:
@@ -1484,9 +1495,11 @@ class AstierSplineLinearityFitter:
                     self._mu -= params[self.par_indices["offset"]]
 
                 # Set parameters for next outer fit iteration.
-                init_params = params.copy()
+                init_params = self.estimate_p0(use_all_for_normalization=True)
 
         if n_outer_iter > 1:
+            # When doing multiple outer iterations, we want to return the
+            # "accumulated" parameters, and reset the input values.
             params = params_accum
 
             # Reset input values
