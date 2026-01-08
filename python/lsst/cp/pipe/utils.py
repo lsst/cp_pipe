@@ -1379,7 +1379,15 @@ class AstierSplineLinearityFitter:
         else:
             return numerator / denominator
 
-    def fit(self, p0, min_iter=3, max_iter=20, max_rejection_per_iteration=5, n_sigma_clip=5.0):
+    def fit(
+        self,
+        p0,
+        min_iter=3,
+        max_iter=20,
+        max_rejection_per_iteration=5,
+        n_sigma_clip=5.0,
+        n_outer_iter=1,
+    ):
         """
         Perform iterative fit for linear + spline model with offsets.
 
@@ -1401,43 +1409,83 @@ class AstierSplineLinearityFitter:
             Maximum number of points to reject per iteration.
         n_sigma_clip : `float`, optional
             Number of sigma to do clipping in each iteration.
+        n_outer_iter : `int`, optional
+            Number of "outer" iterations, where things are reset.
         """
         init_params = p0
-        for k in range(max_iter):
-            params, cov_params, _, msg, ierr = leastsq(
-                self,
-                init_params,
-                full_output=True,
-                ftol=1e-5,
-                maxfev=12000,
-            )
-            init_params = params.copy()
-
-            # We need to cut off the constraints at the end (there are more
-            # residuals than data points.)
-            res = self(params)[: len(self._w)]
-            std_res = median_abs_deviation(res[self.good_points], scale="normal")
-            sample = len(self.good_points)
-
-            # We don't want to reject too many outliers at once.
-            if sample > max_rejection_per_iteration:
-                sres = np.sort(np.abs(res))
-                cut = max(sres[-max_rejection_per_iteration], std_res*n_sigma_clip)
-            else:
-                cut = std_res*n_sigma_clip
-
-            outliers = np.abs(res) > cut
-            self._w[outliers] = 0
-            if outliers.sum() != 0:
-                self.log.info(
-                    "After iteration %d there are %d outliers (of %d).",
-                    k,
-                    outliers.sum(),
-                    sample,
+        for j in range(n_outer_iter):
+            self.log.info("Staring outer iteration ", j)
+            for k in range(max_iter):
+                params, cov_params, _, msg, ierr = leastsq(
+                    self,
+                    init_params,
+                    full_output=True,
+                    ftol=1e-5,
+                    maxfev=12000,
                 )
-            elif k >= min_iter:
-                self.log.info("After iteration %d there are no more outliers.", k)
-                break
+                init_params = params.copy()
+
+                # We need to cut off the constraints at the end (there are more
+                # residuals than data points.)
+                res = self(params)[: len(self._w)]
+                std_res = median_abs_deviation(res[self.good_points], scale="normal")
+                sample = len(self.good_points)
+
+                # We don't want to reject too many outliers at once.
+                if sample > max_rejection_per_iteration:
+                    sres = np.sort(np.abs(res))
+                    cut = max(sres[-max_rejection_per_iteration], std_res*n_sigma_clip)
+                else:
+                    cut = std_res*n_sigma_clip
+
+                outliers = np.abs(res) > cut
+                self._w[outliers] = 0
+                if outliers.sum() != 0:
+                    self.log.info(
+                        "After iteration %d there are %d outliers (of %d).",
+                        k,
+                        outliers.sum(),
+                        sample,
+                    )
+                elif k >= min_iter:
+                    self.log.info("After iteration %d there are no more outliers.", k)
+                    break
+
+            # Reset for next "outer" iteration, if doing them.
+            if n_outer_iter > 1:
+                if j == 0:
+                    params_accum = params.copy()
+                else:
+                    if self._fit_temperature:
+                        params_accum[self.par_indices["temperature_coeff"]] *= (
+                            params[self.par_indices["temperature_coeff"]]
+                        )
+                    if self._fit_temporal:
+                        params_accum[self.par_indices["temporal_coeff"]] *= (
+                            params[self.par_indices["temporal_coeff"]]
+                        )
+                    params_accum[self.par_indices["groups"]] *= params[self.par_indices["groups"]]
+                    if self._fit_offset:
+                        params_accum[self.par_indices["offset"]] += params[self.par_indices["offset"]]
+
+                slope_mean = np.mean(params[self.par_indices["groups"]])
+
+                if self._fit_temperature:
+                    self._mu *= (1.0
+                                 + params[self.par_indices["temperature_coeff"]] * self._temperature_scaled)
+                if self._fit_temporal:
+                    self._mu *= (1.0
+                                 + params[self.par_indices["temporal_coeff"]] * self._mjd_scaled)
+                for gi, group_index in enumerate(self.group_indices):
+                    self._pd[group_index] *= (params[self.par_indices["groups"][gi]] / slope_mean)
+                if self._fit_offset:
+                    self._mu -= params[self.par_indices["offset"]]
+
+                # Set parameters for next outer fit iteration.
+                init_params = params.copy()
+
+        if n_outer_iter > 1:
+            params = params_accum
 
         return params
 
