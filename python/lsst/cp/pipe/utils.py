@@ -1455,6 +1455,8 @@ class AstierSplineLinearityFitter:
             if n_outer_iter > 1:
                 if j == 0:
                     params_accum = params.copy()
+                    mu_orig = self._mu
+                    pd_orig = self._pd
                 else:
                     if self._fit_temperature:
                         params_accum[self.par_indices["temperature_coeff"]] *= (
@@ -1486,6 +1488,10 @@ class AstierSplineLinearityFitter:
 
         if n_outer_iter > 1:
             params = params_accum
+
+            # Reset input values
+            self._mu = mu_orig
+            self._pd = pd_orig
 
         return params
 
