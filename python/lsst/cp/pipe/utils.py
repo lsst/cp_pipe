@@ -1221,7 +1221,7 @@ class AstierSplineLinearityFitter:
         # We adjust this slightly because it increases the stability
         # of the initialization of the fit parameters.
         max_signal_nearly_linear = self._max_signal_nearly_linear
-        self._max_signal_nearly_linear *= 0.9
+        self._max_signal_nearly_linear *= 0.8
 
         # Do a simple linear fit for each group.
         for i, indices in enumerate(self.group_indices):
