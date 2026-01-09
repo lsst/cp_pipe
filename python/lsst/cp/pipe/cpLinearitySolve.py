@@ -1917,6 +1917,7 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
             max_iter=self.config.absoluteSplineFitMaxIter,
             max_rejection_per_iteration=self.config.absoluteSplineFitMaxRejectionPerIteration,
             n_sigma_clip=self.config.absoluteNSigmaClipLinear,
+            n_outer_iter=2,
         )
 
         # Confirm that the first parameter is 0, and set it to
