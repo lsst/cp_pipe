@@ -1414,7 +1414,7 @@ class AstierSplineLinearityFitter:
         """
         init_params = p0
         for j in range(n_outer_iter):
-            self.log.info("Staring outer iteration %d", j)
+            self.log.info("Starting outer iteration %d", j)
             for k in range(max_iter):
                 params, cov_params, _, msg, ierr = leastsq(
                     self,
@@ -2491,7 +2491,6 @@ class ElectrostaticFit():
         self.fitMethod = fitMethod
 
         if self.fitRange != 0 and self.inputRange < self.fitRange:
-            print("INFO : truncating input data at %d" % self.inputRange)
             self.fitRange = self.inputRange
 
         self.aMatrix = aMatrix[0:fitRange, 0:fitRange]
