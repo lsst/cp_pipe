@@ -1778,12 +1778,6 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
                 if np.sum(hi) > 0:
                     pars[fitter.par_indices["values"][hi]] = 10_000.0
 
-            # We adjust the node values according to the slope of the
-            # group with the largest amplitude.  This removes a degeneracy
-            # in the normalization and ensures that the overall linearized
-            # correction is as close to the reference as possible.
-            relValues -= (1.0 - pars[fitter.par_indices["groups"][maxAmplitudeGroup]]) * relNodes
-
             relChisq = fitter.compute_chisq_dof(pars)
 
             # Our reference fit is always 1.0 slope.
