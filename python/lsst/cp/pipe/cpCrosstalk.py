@@ -742,8 +742,13 @@ class CrosstalkSolveTask(pipeBase.PipelineTask):
                 values = np.array(ratios[ordering[tt]][ordering[ss]])
                 good_values = np.abs(values) < 1.0  # Discard unreasonable values
                 values = values[good_values]
+
                 myfluxes = np.array(fluxes[ordering[tt]][ordering[ss]])
-                myfluxes = myfluxes[good_values]
+                if len(myfluxes) != 0:
+                    myfluxes = myfluxes[good_values]
+                else:
+                    myfluxes = np.ones_like(values)
+
                 if len(values) != len(myfluxes):
                     self.log.warning(f"Flux and ratio length disagree after first filter: {len(values)} {len(myfluxes)}")  # noqa E501
 
