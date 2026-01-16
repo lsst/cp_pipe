@@ -122,6 +122,11 @@ class CpCtiSolveConfig(pipeBase.PipelineTaskConfig,
         doc="First and last parallel overscan row to use for "
             "parallel extended pixel edge response (EPER) estimate.",
     )
+    doFitTrapE2V = pexConfig.Field(
+        dtype=bool,
+        default=False,
+        doc="Fit for traps on E2V detectors?",
+    )
 
     trapColumnRange = pexConfig.ListField(
         dtype=int,
@@ -729,10 +734,20 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
         start -= 1
         stop -= 1
 
+        useEmptyTrap = False
+        if detector.getPhysicalType() == "E2V" and not self.config.doFitTrapE2V:
+            self.log.info("Using empty trap for E2V detector.")
+            useEmptyTrap = True
+            emptyTrap = SerialTrap(20000.0, 0.4, 1, "spline", np.concatenate(([0., 10.], [0., 0.])).tolist())
+
         # Loop over amps/inputs, fitting those columns from
         # "non-saturated" inputs.
         for amp in detector.getAmplifiers():
             ampName = amp.getName()
+
+            if useEmptyTrap:
+                calib.serialTraps[ampName] = emptyTrap
+                continue
 
             # Number of serial shifts.
             nCols = amp.getRawDataBBox().getWidth() + amp.getRawSerialPrescanBBox().getWidth()
