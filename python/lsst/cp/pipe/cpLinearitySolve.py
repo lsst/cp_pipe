@@ -516,6 +516,7 @@ class LinearitySolveTask(pipeBase.PipelineTask):
 
             # Save the input gains
             linearizer.inputGain[ampName] = inputPtc.gain[ampName]
+            linearizer.inputTurnoff[ampName] = inputPtc.ptcTurnoff[ampName]
 
             if ampName in inputPtc.badAmps:
                 linearizer = self.fillBadAmp(linearizer, fitOrder, inputPtc, amp)
@@ -1444,6 +1445,7 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
             ampName = amp.getName()
 
             linearizer.inputGain[ampName] = inputPtc.gain[ampName]
+            linearizer.inputTurnoff[ampName] = inputPtc.ptcTurnoff[ampName]
             linearizer.linearityType[ampName] = "None"
             linearizer.linearityCoeffs[ampName] = np.zeros(1)
             # This is not used; kept for compatibility.
