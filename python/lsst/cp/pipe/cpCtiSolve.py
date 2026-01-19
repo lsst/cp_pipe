@@ -701,6 +701,8 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
                 List of overscan column indicies (`list` [`int`]).
             ``"SERIAL_OVERSCAN_VALUES"``
                 List of overscan column means (`list` [`float`]).
+            ``"INPUT_PTCTURNOFF"``
+                Input PTC turnoff to mask out bad values.
         calib : `lsst.ip.isr.DeferredChargeCalib`
             Calibration to populate with values.
         detector : `lsst.afw.cameraGeom.Detector`
@@ -763,7 +765,8 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
             nSkipped = 0
             for exposureEntry in inputMeasurements:
                 exposureDict = exposureEntry['CTI']
-                if exposureDict[ampName]['IMAGE_MEAN'] < self.config.maxImageMean:
+                if exposureDict[ampName]['IMAGE_MEAN'] < self.config.maxImageMean and \
+                   exposureDict[ampName]['IMAGE_MEAN'] <= exposureDict[ampName]['INPUT_PTCTURNOFF']:
                     imMean = exposureDict[ampName]['IMAGE_MEAN']
                     sOverscan = exposureDict[ampName]['SERIAL_OVERSCAN_VALUES'][start: stop + 1]
                     lastColumnMean = exposureDict[ampName]['LAST_COLUMN_MEAN']
