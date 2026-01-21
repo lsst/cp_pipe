@@ -505,14 +505,12 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
 
             self.debugView(ampName, signal, test)
 
+            # The primary fit, for ctiexp, is faster and more stable.
             params = Parameters()
             params.add('ctiexp', value=-6, min=-12, max=-5, vary=True)
-            params.add('trapsize', value=5.0 if testResult else 0.0, min=0.0, max=30.,
-                       vary=True if testResult else False)
-            params.add('scaling', value=0.08, min=0.0, max=1.0,
-                       vary=True if testResult else False)
-            params.add('emissiontime', value=0.35, min=0.1, max=1.0,
-                       vary=True if testResult else False)
+            params.add('trapsize', value=5.0 if testResult else 0.0, min=0.0, max=30., vary=False)
+            params.add('scaling', value=0.08, min=0.0, max=1.0, vary=False)
+            params.add('emissiontime', value=0.35, min=0.1, max=1.0, vary=False)
             params.add('driftscale', value=calib.driftScale[ampName], min=0., max=0.001, vary=False)
             params.add('decaytime', value=calib.decayTime[ampName], min=0.1, max=4.0, vary=False)
 
@@ -522,14 +520,26 @@ class CpCtiSolveTask(pipeBase.PipelineTask):
                                fcn_kws={'start': start, 'stop': stop, 'trap_type': 'linear'})
             result = minner.minimize()
 
+            # If the testResult comes out true and we need to vary more, then
+            # we do that here, using the ctiexp value from the primary fit.
+            if testResult:
+                params['ctiexp'].value = result.params['ctiexp'].value
+                params['trapsize'].vary = True
+                params['scaling'].vary = True
+                params['emissiontime'].vary = True
+
+                minner = Minimizer(model.difference, params,
+                                   fcn_args=(signal, data, self.config.fitError, nCols, amp),
+                                   fcn_kws={'start': start, 'stop': stop, 'trap_type': 'linear'})
+                result = minner.minimize()
+
             # Warn if the global CTI has hit the upper bound of the fit range.
-            if np.isclose(10**result.params["ctiexp"].value, 10**(-5), atol=10**(-5)):
+            if np.isclose(result.params["ctiexp"].value, -5):
                 self.log.warning(f"Global CTI for detector {detector.getId()} ({amp.getName()}) is "
                                  "has hit the fitter's upper bound (10^-5).")
 
-            # Only the global CTI term is retained from this fit.
-            # If the CTI is within 1% of the lower bound.
-            if np.isclose(10**result.params["ctiexp"].value, 1e-12, atol=1e-12):
+            # Log if the global CTI has hit the lower bound of the fit range.
+            if np.isclose(result.params["ctiexp"].value, -12):
                 self.log.info(f"Global CTI for detector {detector.getId()} ({amp.getName()}) has "
                               "hit the fitter's lower bound.")
 
