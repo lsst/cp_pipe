@@ -2499,7 +2499,24 @@ class ElectrostaticFit():
 
         self.params = initialParams
 
-    def fit(self):
+    def fit(self, max_nfev=20000, epsfcn=1.0e-8, ftol=1.0e-8, xtol=1.0e-8, gtol=0.0):
+        """Do the fit.
+
+        Parameters
+        ----------
+        max_nfev : `float`, optional
+            Max number of function evaluations.
+        epsfcn : `float`, optional
+            A variable used in determining a suitable step length for the
+            forward-difference approximation of the Jacobian.
+        ftol : `float`, optional
+            Relative error desired in the sum of squares.
+        xtol : `float`, optional
+            Relative error desired in the approximate solution.
+        gtol : `float`, optional
+            Orthogonality desired between the function vector and the columns
+            of the Jacobian.
+        """
         minner = Minimizer(
             self.computeWeightedResidual,
             self.params,
@@ -2507,11 +2524,11 @@ class ElectrostaticFit():
 
         result = minner.minimize(
             method=self.fitMethod,
-            max_nfev=20000,
-            epsfcn=1.0e-8,
-            ftol=1.0e-8,
-            xtol=1.0e-8,
-            gtol=0.0,
+            max_nfev=max_nfev,
+            epsfcn=epsfcn,
+            ftol=ftol,
+            xtol=xtol,
+            gtol=gtol,
         )
 
         return result
