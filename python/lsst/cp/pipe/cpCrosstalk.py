@@ -221,7 +221,7 @@ class CrosstalkExtractTask(pipeBase.PipelineTask):
             if np.sum(mask) == 0:
                 continue
 
-            newMask = np.where(np.bitwise_and(mask, detected), maskBit, 0)
+            newMask = np.where(mask & detected, maskBit, 0)
             for ampToMask in targetDetector:
                 if ampName == ampToMask.getName():
                     # The amp we're considering already
@@ -463,9 +463,6 @@ class CrosstalkSolveConnections(pipeBase.PipelineTaskConnections,
 
     def __init__(self, *, config=None):
         super().__init__(config=config)
-
-        # if config.fluxOrder == 0 and False:
-        #    self.inputs.discard("inputFluxes")
 
 
 class CrosstalkSolveConfig(pipeBase.PipelineTaskConfig,
@@ -739,18 +736,20 @@ class CrosstalkSolveTask(pipeBase.PipelineTask):
             else:
                 # ratios is ratios[Target][Source]
                 # use tt for Target, use ss for Source, to match ip_isr.
-                values = np.array(ratios[ordering[tt]][ordering[ss]])
+                values = np.asarray(ratios[ordering[tt]][ordering[ss]])
                 good_values = np.abs(values) < 1.0  # Discard unreasonable values
                 values = values[good_values]
 
-                myfluxes = np.array(fluxes[ordering[tt]][ordering[ss]])
+                myfluxes = np.asarray(fluxes[ordering[tt]][ordering[ss]])
                 if len(myfluxes) != 0:
                     myfluxes = myfluxes[good_values]
                 else:
                     myfluxes = np.ones_like(values)
 
                 if len(values) != len(myfluxes):
-                    self.log.warning(f"Flux and ratio length disagree after first filter: {len(values)} {len(myfluxes)}")  # noqa E501
+                    self.log.warning(
+                        f"Flux and ratio length disagree after first filter: {len(values)} {len(myfluxes)}"
+                    )
 
             # Sigma clip using the inter-quartile distance and a
             # normal distribution.
@@ -766,7 +765,9 @@ class CrosstalkSolveTask(pipeBase.PipelineTask):
                     values = values[good]
                     myfluxes = myfluxes[good]
                 if len(values) != len(myfluxes):
-                    self.log.warning(f"Flux and ratio length disagree after second filter: {len(values)} {len(myfluxes)}")  # noqa E501
+                    self.log.warning(
+                        f"Flux and ratio length disagree after second filter: {len(values)} {len(myfluxes)}"
+                    )
 
             # Crosstalk calib is property[Source][Target].
             calib.coeffNum[ss][tt] = len(values)
@@ -1055,10 +1056,10 @@ class CrosstalkFilterTask(pipeBase.PipelineTask):
                 # filter those.
                 pass
 
-        itl_c0 = np.array(itl_c0)
-        itl_c1 = np.array(itl_c1)
-        e2v_c0 = np.array(e2v_c0)
-        e2v_c1 = np.array(e2v_c1)
+        itl_c0 = np.asarray(itl_c0)
+        itl_c1 = np.asarray(itl_c1)
+        e2v_c0 = np.asarray(e2v_c0)
+        e2v_c1 = np.asarray(e2v_c1)
 
         itl_outliers = self.find_outliers(itl_c0, itl_c1)
         e2v_outliers = self.find_outliers(e2v_c0, e2v_c1)
@@ -1109,9 +1110,9 @@ class CrosstalkFilterTask(pipeBase.PipelineTask):
 
         Parameters
         ----------
-        matrix0 : `np.array`, (Ndet, Namp, Namp)
+        matrix0 : `np.ndarray`, (Ndet, Namp, Namp)
             Matrix holding the 0th-order terms.
-        matrix1 : `np.array`, (Ndet, Namp, Namp)
+        matrix1 : `np.ndarray`, (Ndet, Namp, Namp)
             Matrix holding the 1st-order terms.
 
         Returns
@@ -1120,16 +1121,18 @@ class CrosstalkFilterTask(pipeBase.PipelineTask):
             Results struct containing
 
             ``median0``
-                Median in-family value (`np.array` (Namp, Namp)).
+                Median in-family value (`np.ndarray` (Namp, Namp)).
             ``stdev0``
-                MAD effective sigma in-family value (`np.array` (Namp, Namp)).
+                MAD effective sigma in-family value (`np.ndarray`
+                (Namp, Namp)).
             ``median1``
-                Median in-family value (`np.array` (Namp, Namp)).
+                Median in-family value (`np.ndarray` (Namp, Namp)).
             ``stdev1``
-                MAD effective sigma in-family value (`np.array` (Namp, Namp)).
+                MAD effective sigma in-family value (`np.ndarray`
+                (Namp, Namp)).
             ``isBad``
                 Boolean indicator that an element has been replaced
-                (`np.array` (Ndet, Namp, Namp)).
+                (`np.ndarray` (Ndet, Namp, Namp)).
 
         Raises
         ------
@@ -1189,15 +1192,15 @@ class CrosstalkFilterTask(pipeBase.PipelineTask):
 
         Parameters
         ----------
-        matrix0 : `np.array`, (Ndet, Namp, Namp)
+        matrix0 : `np.ndarray`, (Ndet, Namp, Namp)
             Matrix holding the 0th-order terms.
-        matrix1 : `np.array`, (Ndet, Namp, Namp)
+        matrix1 : `np.ndarray`, (Ndet, Namp, Namp)
             Matrix holding the 1st-order terms.
-        isBad : `np.array`, (Ndet, Namp, Namp)
+        isBad : `np.ndarray`, (Ndet, Namp, Namp)
             Matrix holding the boolean "is bad".
-        median0 : `np.array`, (Namp, Namp)
+        median0 : `np.ndarray`, (Namp, Namp)
             Matrix of median 0th-order terms.
-        median1 : `np.array`, (Namp, Namp)
+        median1 : `np.ndarray`, (Namp, Namp)
             Matrix of median 1st-order terms.
 
         Returns
@@ -1207,10 +1210,10 @@ class CrosstalkFilterTask(pipeBase.PipelineTask):
 
             ``new_matrix0``
                 Replacement matrix0, with median substitutions.
-                (`np.array` (Ndet, Namp, Namp)).
+                (`np.ndarray` (Ndet, Namp, Namp)).
             ``new_matrix1``
                 Replacement matrix1, with median substitutions.
-                (`np.array` (Ndet, Namp, Namp)).
+                (`np.ndarray` (Ndet, Namp, Namp)).
 
         Raises
         ------
