@@ -10,6 +10,9 @@ cluster:
   cpDarkIsrByExposure:
     pipetasks: cpDarkIsr
     dimensions: exposure
+  cpDarkByExposure:
+    pipetasks: cpDark
+    dimensions: exposure
 
 payload:
   payloadName: "${INSTRUMENT}_${TICKET}_dark"
