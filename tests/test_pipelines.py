@@ -22,8 +22,6 @@
 #
 """Test cases for cp_pipe pipelines."""
 
-import glob
-import os
 import unittest
 
 # Need to import pyproj to prevent file handle leakage since importing
@@ -33,7 +31,9 @@ import unittest
 import pyproj  # noqa: F401
 
 from lsst.pipe.base import Pipeline, PipelineGraph
+from lsst.resources import ResourcePath
 import lsst.utils
+
 
 try:
     import lsst.obs.lsst
@@ -53,12 +53,11 @@ try:
 except ImportError:
     has_obs_decam = False
 
+PIPELINE_URI = ResourcePath("eups://cp_pipe/pipelines/", forceDirectory=True)
+
 
 class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
     """Test case for building the pipelines."""
-
-    def setUp(self):
-        self.pipeline_path = os.path.join(lsst.utils.getPackageDir("cp_pipe"), "pipelines")
 
     def _get_pipelines(self, exclude=[]):
         pipelines = {
@@ -98,14 +97,14 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
 
         return pipelines
 
-    def _check_pipeline(self, pipeline_file, overrides={}):
+    def _check_pipeline(self, pipeline_file: ResourcePath, overrides={}):
         # Confirm that the file is there.
-        self.assertTrue(os.path.isfile(pipeline_file), msg=f"Could not find {pipeline_file}")
+        self.assertTrue(pipeline_file.exists(), msg=f"Could not find {pipeline_file}")
 
         # The following loads the pipeline and confirms that it can parse all
         # the configs.
         try:
-            pipeline = Pipeline.fromFile(pipeline_file)
+            pipeline = Pipeline.from_uri(pipeline_file)
 
             if overrides:
                 for label, value in overrides.items():
@@ -119,11 +118,13 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
 
     def test_ingredients(self):
         """Check that all pipelines in pipelines/_ingredients are tested."""
-        glob_str = os.path.join(self.pipeline_path, "_ingredients", "*.yaml")
+        ingredient_files = ResourcePath.findFileResources(
+            [PIPELINE_URI.join("_ingredients")], file_filter=r".*\.yaml$"
+        )
         # The *LSST.yaml pipelines are imported by LATISS/LSSTComCam/LSSTCam
         # and are not to be tested on their own.
         ingredients = set(
-            [os.path.basename(pipeline) for pipeline in glob.glob(glob_str) if "LSST.yaml" not in pipeline]
+            [pipeline.basename() for pipeline in ingredient_files if "LSST.yaml" not in pipeline.path]
         )
         # The *Bootstrap* pipelines are used by LATISS/LSSTComCam/LSSTCam
         # but are renamed on import.
@@ -137,10 +138,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
 
     def test_cameras(self):
         """Check that all the cameras in pipelines are tested."""
-        glob_str = os.path.join(self.pipeline_path, "*")
-        paths = set(
-            [os.path.basename(path) for path in glob.glob(glob_str)]
-        )
+        _, paths, _ = next(PIPELINE_URI.walk())
         expected = {
             "DECam",
             "HSC",
@@ -151,12 +149,12 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
             "LSSTComCam",
             "LSSTComCamSim",
             "LSST-TS8",
-            "README.md",
         }
-        self.assertEqual(paths, expected)
+        self.assertEqual(set(paths), expected)
 
     @unittest.skipIf(not has_obs_lsst, reason="Cannot test LATISS pipelines without obs_lsst")
     def test_latiss_pipelines(self):
+        latiss_uri = PIPELINE_URI.join("LATISS", forceDirectory=True)
         for pipeline in self._get_pipelines(exclude=[
                 # The following two tasks are not part of the new pipelines.
                 "cpDarkForDefects.yaml",
@@ -173,10 +171,11 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 # TODO: DM-46426
                 "cpCti.yaml",
         ]):
-            self._check_pipeline(os.path.join(self.pipeline_path, "LATISS", pipeline))
+            self._check_pipeline(latiss_uri.join(pipeline))
 
     @unittest.skipIf(not has_obs_lsst, reason="Cannot test LSSTCam pipelines without obs_lsst")
     def test_lsstcam_pipelines(self):
+        lsstcam_uri = PIPELINE_URI.join("LSSTCam", forceDirectory=True)
         for pipeline in self._get_pipelines(exclude=[
                 "cpFilterScan.yaml",
                 "cpMonochromatorScan.yaml",
@@ -197,12 +196,13 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
             else:
                 overrides = {}
             self._check_pipeline(
-                os.path.join(self.pipeline_path, "LSSTCam", pipeline),
+                lsstcam_uri.join(pipeline),
                 overrides=overrides,
             )
 
     @unittest.skipIf(not has_obs_lsst, reason="Cannot test LSSTCam-imSim pipelines without obs_lsst")
     def test_lsstcam_imsim_pipelines(self):
+        sim_uri = PIPELINE_URI.join("LSSTCam-imSim", forceDirectory=True)
         for pipeline in self._get_pipelines(exclude=[
                 "cpDarkForDefects.yaml",
                 "cpFilterScan.yaml",
@@ -219,10 +219,11 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 "cpQuadNotch.yaml",
                 "cpGainCorrection.yaml",
         ]):
-            self._check_pipeline(os.path.join(self.pipeline_path, "LSSTCam-imSim", pipeline))
+            self._check_pipeline(sim_uri.join(pipeline))
 
     @unittest.skipIf(not has_obs_lsst, reason="Cannot test LSSTComCam pipelines without obs_lsst")
     def test_lsstcomcam_pipelines(self):
+        comcam_uri = PIPELINE_URI.join("LSSTComCam", forceDirectory=True)
         for pipeline in self._get_pipelines(exclude=[
                 # The following tasks are not part of the new pipelines.
                 "cpDarkForDefects.yaml",
@@ -240,10 +241,11 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 # TODO: DM-46426
                 "cpCti.yaml",
         ]):
-            self._check_pipeline(os.path.join(self.pipeline_path, "LSSTComCam", pipeline))
+            self._check_pipeline(comcam_uri.join(pipeline))
 
     @unittest.skipIf(not has_obs_lsst, reason="Cannot test LSSTComCamSim pipelines without obs_lsst")
     def test_lsstcomcamsim_pipelines(self):
+        comcam_sim_uri = PIPELINE_URI.join("LSSTComCamSim", forceDirectory=True)
         for pipeline in self._get_pipelines(exclude=[
                 # The following tasks are not part of the new pipelines.
                 "cpDarkForDefects.yaml",
@@ -264,10 +266,11 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 "cpQuadNotch.yaml",
                 "cpGainCorrection.yaml",
         ]):
-            self._check_pipeline(os.path.join(self.pipeline_path, "LSSTComCamSim", pipeline))
+            self._check_pipeline(comcam_sim_uri.join(pipeline))
 
     @unittest.skipIf(not has_obs_lsst, reason="Cannot test LSST-TS8 pipelines without obs_lsst")
     def test_lsst_ts8_pipelines(self):
+        ts8_uri = PIPELINE_URI.join("LSST-TS8", forceDirectory=True)
         for pipeline in self._get_pipelines(exclude=[
                 "cpFilterScan.yaml",
                 "cpMonochromatorScan.yaml",
@@ -283,10 +286,11 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 "cpQuadNotch.yaml",
                 "cpGainCorrection.yaml",
         ]):
-            self._check_pipeline(os.path.join(self.pipeline_path, "LSST-TS8", pipeline))
+            self._check_pipeline(ts8_uri.join(pipeline))
 
     @unittest.skipIf(not has_obs_decam, reason="Cannot test DECam pipelines without obs_decam")
     def test_decam_pipelines(self):
+        decam_uri = PIPELINE_URI.join("DECam", forceDirectory=True)
         for pipeline in self._get_pipelines(exclude=[
                 "cpDarkForDefects.yaml",
                 "cpFilterScan.yaml",
@@ -303,10 +307,11 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 "cpQuadNotch.yaml",
                 "cpGainCorrection.yaml",
         ]):
-            self._check_pipeline(os.path.join(self.pipeline_path, "DECam", pipeline))
+            self._check_pipeline(decam_uri.join(pipeline))
 
     @unittest.skipIf(not has_obs_subaru, reason="Cannot test HSC pipelines without obs_subaru")
     def test_hsc_pipelines(self):
+        hsc_uri = PIPELINE_URI.join("HSC", forceDirectory=True)
         for pipeline in self._get_pipelines(exclude=[
                 "cpDarkForDefects.yaml",
                 "cpFilterScan.yaml",
@@ -323,7 +328,7 @@ class CalibrationPipelinesTestCase(lsst.utils.tests.TestCase):
                 "cpQuadNotch.yaml",
                 "cpGainCorrection.yaml",
         ]):
-            self._check_pipeline(os.path.join(self.pipeline_path, "HSC", pipeline))
+            self._check_pipeline(hsc_uri.join(pipeline))
 
 
 class TestMemory(lsst.utils.tests.MemoryTestCase):
