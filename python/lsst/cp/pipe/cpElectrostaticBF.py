@@ -39,6 +39,20 @@ from lsst.ip.isr.isrFunctions import symmetrize
 from lsst.ip.isr import ElectrostaticBrighterFatterDistortionMatrix
 from lmfit import Parameters, report_fit
 
+def lookupStaticCalibrations(datasetType, registry, quantumDataId, collections):
+    # For static calibrations, we search with a timespan that has unbounded
+    # begin and end; we'll get an error if there's more than one match (because
+    # then it's not static).
+    timespan = Timespan(begin=None, end=None)
+    result = []
+    # First iterate over all of the data IDs for this dataset type that are
+    # consistent with the quantum data ID.
+    for dataId in registry.queryDataIds(datasetType.dimensions, dataId=quantumDataId):
+        # Find the dataset with this data ID using the unbounded timespan.
+        if ref := registry.findDataset(datasetType, dataId, collections=collections, timespan=timespan):
+            result.append(ref)
+    return result
+
 
 class ElectrostaticBrighterFatterSolveConnections(pipeBase.PipelineTaskConnections,
                                                   dimensions=("instrument", "detector")):
@@ -72,6 +86,16 @@ class ElectrostaticBrighterFatterSolveConnections(pipeBase.PipelineTaskConnectio
         dimensions=("instrument", "detector"),
         isCalibration=True,
     )
+    transmission_filter = connectionTypes.PrerequisiteInput(
+        doc="Filter transmission curve information",
+        name="transmission_filter_detector",
+        storageClass="TransmissionCurve",
+        dimensions=("band", "instrument", "physical_filter", "detector"),
+        lookupFunction=lookupStaticCalibrations,
+        isCalibration=True,
+        deferLoad=True,
+        multiple=True,
+    )
 
     output = cT.Output(
         name="electroBfDistortionMatrix",
@@ -87,6 +111,8 @@ class ElectrostaticBrighterFatterSolveConnections(pipeBase.PipelineTaskConnectio
             del self.dummy
         else:
             del self.inputBfPtc
+        if config.doColorCorrection:
+
 
 
 class ElectrostaticBrighterFatterSolveConfig(pipeBase.PipelineTaskConfig,
@@ -169,6 +195,16 @@ class ElectrostaticBrighterFatterSolveConfig(pipeBase.PipelineTaskConfig,
             'alpha': True,
             'beta': True,
         },
+    )
+    doColorCorrection = pexConfig.Field(
+        dtype=bool,
+        doc="Do you want to include a conversion depth distribution in the "
+            "electrostatic fit and generate an electrostatic distortion "
+            "matrix per filter? If False, will assume all photons convert "
+            "at the surface of the detector. If True, it will assume a flat "
+            "SED incident on a filter to compute the conversion depth "
+            "distribution.",
+        default=True,
     )
 
 
