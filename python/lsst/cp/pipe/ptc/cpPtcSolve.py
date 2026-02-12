@@ -507,8 +507,8 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
             detector = None
         datasetPtc.updateMetadataFromExposures(inputCovariances)
         datasetPtc.updateMetadata(
-            setDate=True, 
-            camera=camera, 
+            setDate=True,
+            camera=camera,
             detector=detector,
             filterName=inputCovariances[0].metadata['FILTER'],
         )
