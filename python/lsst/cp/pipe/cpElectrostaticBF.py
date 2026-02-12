@@ -29,6 +29,7 @@ import numpy as np
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 import lsst.pipe.base.connectionTypes as cT
+from lsst.daf.butler import Timespan
 from lsst.afw.cameraGeom import FOCAL_PLANE
 
 from .utils import (
@@ -40,7 +41,7 @@ from lsst.ip.isr.isrFunctions import symmetrize
 from lsst.ip.isr import ElectrostaticBrighterFatterDistortionMatrix
 from lmfit import Parameters, report_fit
 
-# Physical constants for the 
+# Physical constants for the
 # Following Rajkanan et al. (1979)
 BETA = 7.021e-4  # eV K^-1
 GAMMA = 1108.0  # K
@@ -52,6 +53,7 @@ A = [3.231e2, 7.237e3]  # cm^-1 eV^-2
 A_d = 1.052e6  # cm^-1 eV^-2
 H_BAR = 6.582e-16  # eV s
 K_B = 8.617e-5  # eV K^-1
+
 
 def lookupStaticCalibrations(datasetType, registry, quantumDataId, collections):
     # For static calibrations, we search with a timespan that has unbounded
@@ -85,25 +87,21 @@ class PhotonConversionDepthProbabilityModel():
         """
         self.filter = transmission_filter_detector
         self.detector = detector
-    
+
     def compute(self, depths=None, wavelengths=None, temperature=173.0, flat_sed_weights=True):
         """
         Evaluate the photon conversion depth probability model.
 
-        The probability distribution is computed assuming an incident flat SED 
+        The probability distribution is computed assuming an incident flat SED
         on the filter at the location of the detector in the focal plane.
 
         The probability distribution is computed as:
         p(d) = sum_i w_i * alpha_i * exp(-alpha_i * d)
-        where w_i is the weight of the wavelength, alpha_i is the optical absorption 
-        coefficient, and d is the depth.
+        where w_i is the weight of the wavelength, alpha_i is the optical
+        absorption coefficient, and d is the depth.
 
-        The probability distribution is computed as:
-        p(d) = sum_i w_i * alpha_i * exp(-alpha_i * d)
-        where w_i is the weight of the wavelength, alpha_i is the optical absorption 
-        coefficient, and d is the depth.
-
-        We assume that the photons convert in depth bins of width depths[i+1] - depths[i].
+        We assume that the photons convert in depth bins of width
+        depths[i+1] - depths[i].
 
         Parameters
         ----------
@@ -111,23 +109,23 @@ class PhotonConversionDepthProbabilityModel():
             Depths to evaluate the probability distribution at (units of um).
             If None, will default to [0, 100] um in steps of 1 um.
         wavelengths : `np.ndarray`
-            Wavelengths to evaluate the probability distribution at (units of nm).
-            If None, will default to computing in steps of 1 nm over 
-            transmission_filter_detector.getWavelengthBounds().
+            Wavelengths to evaluate the probability distribution at
+            (units of nm). If None, will default to computing in steps of 1 nm
+            over transmission_filter_detector.getWavelengthBounds().
         temperature : float, optional
-            Temperature in Kelvin of the silicon detector (default is 173.0 K for
-            the LSST Camera).
+            Temperature in Kelvin of the silicon detector (default is 173.0 K
+            for the LSST Camera).
         flat_sed_weights : bool, optional
-            If True (default), weight by throughput * wavelength for a flat F_λ
-            SED (photon count ∝ λ). If False, weight by throughput only.
+            If True (default), weight by throughput * wavelength for a flat
+            F_λ SED (photon count ∝ λ). If False, weight by throughput only.
 
         Returns
         -------
         (d, p) : tuple, (np.ndarray, np.ndarray)
-            Tuple of arrays containing the probability p ([0,1]) of a photon 
-            converting at d (midpoint) between (depths[i], depths[i+1]) and 
-            the depth bin midpoints (units of um), assuming an incident flat 
-            SED incident on the filter at the location of the detector in the 
+            Tuple of arrays containing the probability p ([0,1]) of a photon
+            converting at d (midpoint) between (depths[i], depths[i+1]) and
+            the depth bin midpoints (units of um), assuming an incident flat
+            SED incident on the filter at the location of the detector in the
             focal plane. The model MAY NOT be normalized to 1.
         """
         # Default depths
@@ -141,18 +139,18 @@ class PhotonConversionDepthProbabilityModel():
 
         # Default wavelengths
         if wavelengths is None:
-            lambda_min, lambda_max = self.filter.getWavelengthBounds() # in Angstroms
-            lambda_min = lambda_min / 10.0 # in nm
-            lambda_max = lambda_max / 10.0 # in nm
+            lambda_min, lambda_max = self.filter.getWavelengthBounds()  # in Angstroms
+            lambda_min = lambda_min / 10.0  # convert to nm
+            lambda_max = lambda_max / 10.0  # convert to nm
             n_samples = int(lambda_max-lambda_min+1)
             wavelengths = np.linspace(lambda_min, lambda_max, n_samples)
         else:
             wavelengths = np.asarray(wavelengths)
 
-
-        # The filter transmission is a function of wavelength and position at the location
-        # of thed etector in the focal plane. Get the detector center:
-        detectorCenter = detector.getCenter(FOCAL_PLANE)
+        # The filter transmission is a function of wavelength and
+        # position at the location of the detector in the focal
+        # plane. Get the detector center:
+        detectorCenter = self.detector.getCenter(FOCAL_PLANE)
 
         throughput = self.filter.sampleAt(position=detectorCenter, wavelengths=wavelengths)
         if flat_sed_weights:
@@ -161,36 +159,45 @@ class PhotonConversionDepthProbabilityModel():
             weight = throughput
         weight = weight / np.maximum(weight.sum(), np.finfo(float).tiny)
 
-        # Compute the optical absorption coefficient as a function of wavelength 
-        # and temperature.
-        alpha = rajkanan_1979_alpha(T=temperature, wavelength=wavelengths)  # (n_wavelen,) in um^-1
-        
-        # Optional: 
-        # Compute the PDF(d) = sum_i w_i * alpha_i * exp(-alpha_i * d)
-        # log_alpha = np.where(alpha > 0, np.log(alpha), -np.inf)
-        # log_pdf = log_alpha[:, np.newaxis] - alpha[:, np.newaxis] * depth_um[np.newaxis, :]
-        # pdf = np.exp(np.log(weight[:, np.newaxis]) + log_pdf)
-        # pdf = np.where(alpha[:, np.newaxis] > 0, pdf, 0.0)
+        # Compute the optical absorption coefficient as a function of
+        # wavelength and temperature.
+        alpha = self.rajkanan_1979_alpha(T=temperature, wavelength=wavelengths)  # (n_wavelen,) in um^-1
+
+        # Optional:
+        # Compute the PDF(d) = sum_i w_i * alpha_i *
+        # exp(-alpha_i * d)
+        # log_alpha = np.where(alpha > 0, np.log(alpha),
+        #                       -np.inf)
+        # log_pdf = (log_alpha[:, np.newaxis] -
+        #            alpha[:, np.newaxis] *
+        #            depth_um[np.newaxis, :])
+        # pdf = np.exp(np.log(weight[:, np.newaxis]) +
+        #              log_pdf)
+        # pdf = np.where(alpha[:, np.newaxis] > 0, pdf,
+        #                0.0)
         # p = pdf.sum(axis=0)
         # norm = np.trapezoid(p, depth_um)
         # p = p / np.maximum(norm, np.finfo(float).tiny)
         # result[f] = (p, depth_um)
 
-        # CDF(d) = sum_i w_i * (1 - exp(-alpha_i * d)); p_i = CDF(edge[i+1]) - CDF(edge[i])
-        cdf_at_edges = (weight[:, np.newaxis] * (1.0 - np.exp(-alpha[:, np.newaxis] * depths[np.newaxis, :]))).sum(axis=0)
+        # CDF(d) = sum_i w_i * (1 - exp(-alpha_i * d));
+        # p_i = CDF(edge[i+1]) - CDF(edge[i])
+        cdf_at_edges = (
+            weight[:, np.newaxis]
+            * (1.0 - np.exp(-alpha[:, np.newaxis] * depths[np.newaxis, :]))
+        ).sum(axis=0)
         p = np.diff(cdf_at_edges)
         conversion_weights = (depth_bin_midpoints, p)
 
-        # NOTE: the probability distribution should be normalized to 1.0, 
-        # important for flux conservation, and may not be true at this 
-        # point. However, this is ensured when it is used in 
+        # NOTE: the probability distribution should be normalized to 1.0,
+        # important for flux conservation, and may not be true at this
+        # point. However, this is ensured when it is used in
         # electrostaticFit.computePixelDistortions()
 
         return conversion_weights
 
-
     # Utilities
-    def E_g(idx, T):
+    def E_g(self, idx, T):
         """
         Indirect band gap energy for silicon (Rajkanan et al. (1979), Eq. 3).
 
@@ -208,8 +215,8 @@ class PhotonConversionDepthProbabilityModel():
             Indirect band gap in eV.
         """
         return E_g0[idx] - ((BETA*(T**2)) / (T + GAMMA))
-        
-    def E_gd(T):
+
+    def E_gd(self, T):
         """
         Direct band gap energy for silicon (Rajkanan et al. (1979), Eq. 3).
 
@@ -225,7 +232,7 @@ class PhotonConversionDepthProbabilityModel():
         """
         return E_gd0 - ((BETA*(T**2)) / (T + GAMMA))
 
-    def wavelength_to_frequency(wavelength):
+    def wavelength_to_frequency(self, wavelength):
         """
         Convert photon wavelength to angular frequency.
 
@@ -246,15 +253,14 @@ class PhotonConversionDepthProbabilityModel():
         """
         # Speed of light in nm/s
         c = 2.99792458e17  # nm/s
-        
+
         # Convert wavelength to angular frequency
         # ω = 2π * ν = 2π * c/λ
         omega = 2 * np.pi * c / wavelength
-        
+
         return omega
 
-
-    def rajkanan_1979_alpha(T, wavelength):
+    def rajkanan_1979_alpha(self, T, wavelength):
         """
         Optical absorption coefficient of silicon as a function of wavelength
         and temperature (from Rajkanan et al. (1979), Eq. 4).
@@ -288,24 +294,26 @@ class PhotonConversionDepthProbabilityModel():
             State Electronics, 22(9), 793-795.
         """
         wavelength = np.asarray(wavelength)
-        omega = wavelength_to_frequency(wavelength)
+        omega = self.wavelength_to_frequency(wavelength)
 
         sum_ij = 0.0
         for i in range(2):
             for j in range(2):
                 c1 = C[i]*A[j]
-                # Indirect terms: only when photon energy is above threshold for that process.
-                # Phonon absorption: ℏω ≥ E_g - E_p; phonon emission: ℏω ≥ E_g + E_p.
-                # Otherwise squaring (ℏω - E_g ± E_p) when negative gives unphysical rise at long λ.
+                # Indirect terms: only when photon energy is above
+                # threshold for that process.
+                # Phonon absorption: ℏω ≥ E_g - E_p; phonon emission:
+                # ℏω ≥ E_g + E_p. Otherwise squaring (ℏω - E_g ± E_p)
+                # when negative gives unphysical rise at long λ.
                 hw = H_BAR * omega
-                Eg_j = E_g(j, T)
+                Eg_j = self.E_g(j, T)
                 term_abs = np.maximum(0.0, hw - Eg_j + E_p[i])**2 / (np.exp(E_p[i]/(K_B*T)) - 1)
                 term_em = np.maximum(0.0, hw - Eg_j - E_p[i])**2 / (1 - np.exp(-E_p[i]/(K_B*T)))
                 c2 = term_abs + term_em
                 sum_ij += c1 * c2
 
         # Direct-gap term: only real when photon energy exceeds E_gd
-        excess = H_BAR * omega - E_gd(T)
+        excess = H_BAR * omega - self.E_gd(T)
         c = A_d * (np.maximum(0.0, excess))**(1.0 / 2.0)
 
         alpha = sum_ij + c  # cm^-1
@@ -345,7 +353,7 @@ class ElectrostaticBrighterFatterSolveConnections(pipeBase.PipelineTaskConnectio
         dimensions=("instrument", "detector"),
         isCalibration=True,
     )
-    transmission_filter_detector = connectionTypes.PrerequisiteInput(
+    transmission_filter_detector = cT.PrerequisiteInput(
         doc="Filter transmission curve information",
         name="transmission_filter_detector",
         storageClass="TransmissionCurve",
@@ -370,8 +378,6 @@ class ElectrostaticBrighterFatterSolveConnections(pipeBase.PipelineTaskConnectio
             del self.dummy
         else:
             del self.inputBfPtc
-        if config.doColorCorrection:
-
 
 
 class ElectrostaticBrighterFatterSolveConfig(pipeBase.PipelineTaskConfig,
@@ -463,11 +469,11 @@ class ElectrostaticBrighterFatterSolveConfig(pipeBase.PipelineTaskConfig,
             "at the surface of the detector. If True, it will assume a flat "
             "SED incident on a filter to compute the conversion depth "
             "distribution.",
-        default=True,
+        default=False,
     )
     physicalFiltersToSolve = pexConfig.ListField(
         dtype=str,
-        doc="List of physical filters in which to compute the pixel boundary 
+        doc="List of physical filters in which to compute the pixel boundary "
             "distortions. Only used if doColorCorrection is True.",
         default=["u_24", "g_6", "r_57", "i_39", "z_20", "y_10"],
     )
@@ -572,18 +578,17 @@ class ElectrostaticBrighterFatterSolveTask(pipeBase.PipelineTask):
             )
         if (inputPtc.metadata['FILTER'] is None) and self.config.doColorCorrection:
             # Do not know the filter name of the input flats to the PTC
-            # Check if a dummy exposure is there, which will contain the filter name
+            # Check if a dummy exposure is there, which will contain the
+            # filter name
             if dummy is not None and dummy.metadata['FILTER'] is not None:
                 # Get the transmission for this filter
+                pass
             else:
                 # We don't know what filter is associated with the PTC
                 self.log.warning("No filter name found in the PTC metadata and no dummy exposure. "
                                  "Default is to solve initial electrostatic model assuming all "
                                  "photons convert at the surface of the detector.")
-                
 
-
-        
         # Get transmission curves for the filters to solve
         if self.config.doColorCorrection:
             availableFilters = list(self.config.physicalFiltersToSolve)
@@ -757,10 +762,11 @@ class ElectrostaticBrighterFatterSolveTask(pipeBase.PipelineTask):
             max=10.0,
         )
 
-        # If we want to do color correction, compute the electrostatic fit
-        # assuming the color of incident photons in the filter used to construct the PTC
-        # follow a flat SED. Otherwise, compute the pixel distortions assuming all photons 
-        # convert at the surface of the detector.
+        # If we want to do color correction, compute the electrostatic
+        # fit assuming the color of incident photons in the filter used
+        # to construct the PTC follow a flat SED. Otherwise, compute
+        # the pixel distortions assuming all photons convert at the
+        # surface of the detector.
         if self.config.doColorCorrection:
             # Compute the conversion depth probability distribution
             conversoinModel = PhotonConversionDepthProbabilityModel(
@@ -862,7 +868,7 @@ class ElectrostaticBrighterFatterSolveTask(pipeBase.PipelineTask):
         # Fit result information
         self.log.info(report_fit(result))
 
-        # Compute the pixel distortions assuming all photons 
+        # Compute the pixel distortions assuming all photons
         # convert at the surface of the detector
         pd = electrostaticFit.computePixelDistortions(conversionWeights=None)
 
@@ -912,4 +918,3 @@ class ElectrostaticBrighterFatterSolveTask(pipeBase.PipelineTask):
         return pipeBase.Struct(
             output=electroBfDistortionMatrix,
         )
-
