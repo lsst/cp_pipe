@@ -2465,6 +2465,7 @@ class ElectrostaticFit():
         fitRange,
         doFitNormalizationOffset,
         nImageChargePairs,
+        conversionWeights=None,
     ):
         """
         Initialize the ElectrostaticFit class.
@@ -2485,6 +2486,8 @@ class ElectrostaticFit():
             Whether to fit an offset parameter.
         nImageChargePairs : int
             Number of image charge pairs for electrostatic calculation.
+        conversionWeights : tuple of (np.ndarray, np.ndarray), optional
+            Tuple containing depths and their associated probabilities.
         """
         self.fitRange = fitRange
         self.inputRange = aMatrix.shape[0]
