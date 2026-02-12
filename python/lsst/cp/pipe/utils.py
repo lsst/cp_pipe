@@ -2452,6 +2452,8 @@ class ElectrostaticFit():
         Weights for fitting, inverse of aMatrixSigma.
     params : lmfit.Parameters
         Fit parameters.
+    conversionWeights : tuple, (np.ndarray, np.ndarray), optional
+        Tuple containing depths and their associated probabilities.
     """
 
     def __init__(
@@ -2499,6 +2501,8 @@ class ElectrostaticFit():
 
         self.params = initialParams
 
+        self.conversionWeights = conversionWeights
+
     def fit(self, max_nfev=20000, epsfcn=1.0e-8, ftol=1.0e-8, xtol=1.0e-8, gtol=0.0):
         """Do the fit.
 
@@ -2541,7 +2545,7 @@ class ElectrostaticFit():
 
     def computeWeightedResidual(self, params=None):
         self.params = params
-        m = self.model(params)
+        m = self.model(params, conversionWeights=self.conversionWeights)
         w = self.sqrtWeights[:self.fitRange, :self.fitRange]
         y = self.aMatrix[:self.fitRange, :self.fitRange]
         # Multiply two 2-d arrays term by term:
@@ -2549,13 +2553,13 @@ class ElectrostaticFit():
         # The result has the same size as both of them.
         return weightedResiduals
 
-    def model(self, params):
-        m = self.rawModel(params)
+    def model(self, params, conversionWeights=None):
+        m = self.rawModel(params, conversionWeights=conversionWeights)
         alpha = params['alpha']
         beta = params['beta']
         return alpha * m + beta
 
-    def rawModel(self, params):
+    def rawModel(self, params, conversionWeights):
         # Get all parameters as a dictionary:
         parameterDict = self.getParamsDict()
         del parameterDict['alpha']
@@ -2569,10 +2573,41 @@ class ElectrostaticFit():
         # Compute the observables:
         # If you change the routine called here, also
         # change it in BoundaryShifts.__init__()
-        m = c.evalAreaChangeSidesFast(
-            self.fitRange,
-            nImageChargePairs=self.nImageChargePairs,
-        )
+        zf = parameterDict["thickness"]
+        zsh = parameterDict["zsh"]
+        zsv = parameterDict["zsv"]
+
+        if conversionWeights is None:
+            conversionWeights = (np.array([0.0]), np.array([1.0]))
+
+        m = None
+        (d, p) = conversionWeights
+
+        # Zero depths lower than the end of drift
+        too_low = ((zf - d) < zsh) | ((zf - d) < zsv)
+        p[too_low] = 0
+        p /= p.sum()  # Normalize to 1.
+        for (depth, prob) in zip(d, p):
+            if prob == 0:
+                continue
+            if m is None:
+                m = prob * c.evalAreaChangeSidesFast(
+                    self.fitRange,
+                    nImageChargePairs=self.nImageChargePairs,
+                    zf=zf - depth,
+                )
+            else:
+                m = m + prob * c.evalAreaChangeSidesFast(
+                    self.fitRange,
+                    nImageChargePairs=self.nImageChargePairs,
+                    zf=zf - depth,
+                )
+
+        # Original
+        # m = c.evalAreaChangeSidesFast(
+        #     self.fitRange,
+        #     nImageChargePairs=self.nImageChargePairs,
+        # )
         m = m[:self.fitRange, :self.fitRange]
 
         return m
@@ -2643,12 +2678,12 @@ class ElectrostaticFit():
             if r is None:
                 r = prob * BoundaryShifts(
                     electrostaticFit=self,
-                    zf=zf - depth
+                    zf=zf - depth,
                 )
             else:
                 r = r + prob * BoundaryShifts(
                     electrostaticFit=self,
-                    zf=zf - depth
+                    zf=zf - depth,
                 )
 
         return r
