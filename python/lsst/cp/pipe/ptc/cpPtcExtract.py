@@ -1441,6 +1441,7 @@ class PhotonTransferCurveExtractTask(PhotonTransferCurveExtractTaskBase):
         # Ids of input list of exposure references
         # (deferLoad=True in the input connections)
         inputs['inputDims'] = [expRef.datasetRef.dataId['exposure'] for expRef in inputRefs.inputExp]
+        inputs['physical_filter'] = inputRefs[0].dataId['physical_filter']
 
         # Dictionary, keyed by expTime (or expFlux or expId), with tuples
         # containing flat exposures and their IDs.
@@ -1495,7 +1496,7 @@ class PhotonTransferCurveExtractTask(PhotonTransferCurveExtractTaskBase):
                 newCovariances.append(newPtc)
         return pipeBase.Struct(outputCovariances=newCovariances)
 
-    def run(self, inputExp, inputDims, inputPhotodiodeData=None):
+    def run(self, inputExp, inputDims, inputPhotodiodeData=None, physical_filter=None):
         """Measure covariances from difference of flat pairs
 
         Parameters
@@ -1507,11 +1508,10 @@ class PhotonTransferCurveExtractTask(PhotonTransferCurveExtractTaskBase):
             sequentially by their exposure id.
         inputDims : `list`
             List of exposure IDs.
-        taskMetadata : `list` [`lsst.pipe.base.TaskMetadata`], optional
-            List of exposures metadata from ISR.  This is not used,
-            and will be completely removed on DM-45802.
         inputPhotodiodeData : `dict` [`str`, `lsst.ip.isr.PhotodiodeCalib`]
             Photodiode readings data (optional).
+        physical_filter : `str`
+            Physical filter of the input exposures (optional).
 
         Returns
         -------
@@ -1535,7 +1535,9 @@ class PhotonTransferCurveExtractTask(PhotonTransferCurveExtractTaskBase):
         # dimensions match.
         dummyPtcDataset = PhotonTransferCurveDataset(
             ampNames, 'DUMMY',
-            covMatrixSide=self.config.maximumRangeCovariancesAstier)
+            covMatrixSide=self.config.maximumRangeCovariancesAstier,
+            filterName=physical_filter,
+        )
         for ampName in ampNames:
             dummyPtcDataset.setAmpValuesPartialDataset(ampName)
 
