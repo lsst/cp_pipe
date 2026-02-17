@@ -74,18 +74,19 @@ class PhotonConversionDepthProbabilityModel():
     """
     Class to compute the probability distribution of photon conversion depths.
     """
-    def __init__(self, detector, transmission_filter_detector):
+    def __init__(self, detector, transmissionFilter):
         """
         Initialize the photon conversion depth probability model.
 
         Parameters
         ----------
         detector : `lsst.afw.cameraGeom.Detector`
-            Detector associated with the transmission_filter_detector.
-        transmission_filter_detector : `lsst.ip.isr.TransmissionFilterDetector`
-            Transmission filter detector to use for the probability distribution.
+            Detector associated with the transmissionFilter.
+        transmissionFilter : `lsst.ip.isr.TransmissionFilterDetector`
+            Transmission filter detector to use for the probability
+            distribution.
         """
-        self.filter = transmission_filter_detector
+        self.filter = transmissionFilter
         self.detector = detector
 
     def compute(self, depths=None, wavelengths=None, temperature=173.0, flat_sed_weights=True):
@@ -111,7 +112,7 @@ class PhotonConversionDepthProbabilityModel():
         wavelengths : `np.ndarray`
             Wavelengths to evaluate the probability distribution at
             (units of nm). If None, will default to computing in steps of 1 nm
-            over transmission_filter_detector.getWavelengthBounds().
+            over transmissionFilter.getWavelengthBounds().
         temperature : float, optional
             Temperature in Kelvin of the silicon detector (default is 173.0 K
             for the LSST Camera).
@@ -140,8 +141,8 @@ class PhotonConversionDepthProbabilityModel():
         # Default wavelengths
         if wavelengths is None:
             lambda_min, lambda_max = self.filter.getWavelengthBounds()  # in Angstroms
-            lambda_min = lambda_min / 10.0  # convert to nm
-            lambda_max = lambda_max / 10.0  # convert to nm
+            lambda_min = lambda_min  # in Angstroms
+            lambda_max = lambda_max  # in Angstroms
             n_samples = int(lambda_max-lambda_min+1)
             wavelengths = np.linspace(lambda_min, lambda_max, n_samples)
         else:
@@ -161,6 +162,7 @@ class PhotonConversionDepthProbabilityModel():
 
         # Compute the optical absorption coefficient as a function of
         # wavelength and temperature.
+        wavelengths /= 10.  # Convert to nm
         alpha = self.rajkanan_1979_alpha(T=temperature, wavelength=wavelengths)  # (n_wavelen,) in um^-1
 
         # Optional:
@@ -204,8 +206,8 @@ class PhotonConversionDepthProbabilityModel():
         Parameters
         ----------
         idx : int
-            Band index: 0 for the lower indirect gap (~1.16 eV), 1 for the higher
-            indirect gap (~2.5 eV).
+            Band index: 0 for the lower indirect gap (~1.16 eV), 1 for
+            the higher indirect gap (~2.5 eV).
         T : float
             Temperature in Kelvin.
 
@@ -353,7 +355,7 @@ class ElectrostaticBrighterFatterSolveConnections(pipeBase.PipelineTaskConnectio
         dimensions=("instrument", "detector"),
         isCalibration=True,
     )
-    transmission_filter_detector = cT.PrerequisiteInput(
+    transmissionFilter = cT.PrerequisiteInput(
         doc="Filter transmission curve information",
         name="transmission_filter_detector",
         storageClass="TransmissionCurve",
@@ -426,7 +428,7 @@ class ElectrostaticBrighterFatterSolveConfig(pipeBase.PipelineTaskConfig,
         itemtype=float,
         doc="Initial fit parameters, should contain `thickness`, "
             "`pixelsize`, `zq`, zsh`, `zsv`, `a`, `b`, `alpha`, "
-            " and `BETA`. See the class docstring for descriptions "
+            " and `beta`. See the class docstring for descriptions "
             " and units of each parameter.",
         default={
             'thickness': 100.0,
@@ -437,7 +439,7 @@ class ElectrostaticBrighterFatterSolveConfig(pipeBase.PipelineTaskConfig,
             'a': 2.0,
             'b': 2.0,
             'alpha': 1.0,
-            'BETA': 0.0,
+            'beta': 0.0,
         },
     )
     parametersToVary = pexConfig.DictField(
@@ -446,7 +448,7 @@ class ElectrostaticBrighterFatterSolveConfig(pipeBase.PipelineTaskConfig,
         doc="Dictionary of parameters and booleans which will configure "
             "if the parameter is allowed to vary in the fit, should contain "
             "`thickness`,`pixelsize`, `zq`, zsh`, `zsv`, `a`, `b`, `alpha`, "
-            "and `BETA`. If False, the parameter will be fixed to the initial "
+            "and `beta`. If False, the parameter will be fixed to the initial "
             "value set in initialParameterDict. See the class docstring for "
             "descriptions and units of each parameter.",
         default={
@@ -458,7 +460,7 @@ class ElectrostaticBrighterFatterSolveConfig(pipeBase.PipelineTaskConfig,
             'a': True,
             'b': True,
             'alpha': True,
-            'BETA': True,
+            'beta': True,
         },
     )
     doColorCorrection = pexConfig.Field(
@@ -535,7 +537,7 @@ class ElectrostaticBrighterFatterSolveTask(pipeBase.PipelineTask):
 
         butlerQC.put(outputs, outputRefs)
 
-    def run(self, inputPtc, dummy, camera, inputDims):
+    def run(self, inputPtc, dummy, camera, inputDims, transmissionFilter=[]):
         """Fit the PTC A MATRIX into a vectorized a matrix form
         based on a complete electrostatic solution.
 
@@ -551,6 +553,10 @@ class ElectrostaticBrighterFatterSolveTask(pipeBase.PipelineTask):
             Camera to use for camera geometry information.
         inputDims : `lsst.daf.butler.DataCoordinate` or `dict`
             DataIds to use to populate the output calibration.
+        transmissionFilter : `list` `lsst.afw.image.TransmissionCurve`
+            Transmission curve of a physical filter at the location
+            of the detector, all filters associated with the PTC
+            detector (defined in `lsst_obs_data`).
 
         Returns
         -------
@@ -566,6 +572,10 @@ class ElectrostaticBrighterFatterSolveTask(pipeBase.PipelineTask):
         inputRange = int(inputPtc.covMatrixSideFullCovFit)
         fitRange = int(self.config.fitRange)
 
+        ptcFilter = None
+        ptcFilterName = inputPtc.metadata['FILTER']
+        filtersFound = [_.dataId["physical_filter"] for _ in transmissionFilter]
+
         # Check if the PTC fit type is valid given the configuration
         if not inputPtc.ptcFitType.startswith("FULLCOVARIANCE"):
             raise ValueError(
@@ -576,13 +586,14 @@ class ElectrostaticBrighterFatterSolveTask(pipeBase.PipelineTask):
                 "Cannot compute the electrostatic solution if "
                 "int(inputPtc.covMatrixSide) < fitRange."
             )
-        if (inputPtc.metadata['FILTER'] is None) and self.config.doColorCorrection:
+        if self.config.doColorCorrection and (ptcFilterName is None):
             # Do not know the filter name of the input flats to the PTC
             # Check if a dummy exposure is there, which will contain the
             # filter name
-            if dummy is not None and dummy.metadata['FILTER'] is not None:
-                # Get the transmission for this filter
-                pass
+            if (len(dummy) > 0) and (dummy[0].get().metadata['FILTER'] in filtersFound):
+                ptcFilterName = dummy[0].get().metadata['FILTER']
+                filterIdx = np.argwhere(np.array(filtersFound) == ptcFilterName).item()
+                ptcFilter = transmissionFilter[filterIdx].get()
             else:
                 # We don't know what filter is associated with the PTC
                 self.log.warning("No filter name found in the PTC metadata and no dummy exposure. "
@@ -590,26 +601,28 @@ class ElectrostaticBrighterFatterSolveTask(pipeBase.PipelineTask):
                                  "photons convert at the surface of the detector.")
 
         # Get transmission curves for the filters to solve
+        filters = []
+        availableFilters = []
         if self.config.doColorCorrection:
-            availableFilters = list(self.config.physicalFiltersToSolve)
-
-            for physicalFilter in self.config.physicalFiltersToSolve:
-                try:
-                    transmission_filter_detector = self.get(self.config.transmission_filter_detector)
-                except LookupError:
+            # Get the filters for each one
+            for filterName in self.config.physicalFiltersToSolve:
+                if filterName in filtersFound:
+                    filterIdx = np.argwhere(np.array(filtersFound) == filterName).item()
+                    filter = transmissionFilter[filterIdx].get()
+                    filters.append(filter)
+                    availableFilters.append(filterName)
+                else:
                     self.log.warning(
-                        "No transmission curves found for the filters to solve. "
-                        "Please ensure that the transmission curves are available "
-                        "in the database."
+                        "No transmission curves found for physical filter "
+                        f"{filterName}. Skipping."
                     )
-                    availableFilters.remove(physicalFilter)
 
+            # Check that we have any filters
             if len(availableFilters) == 0:
-                self.log.warning("No transmission curves found for the filters to solve. "
-                                 "Please ensure that the transmission curves are available "
-                                 "in the database.")
-        else:
-            availableFilters = []
+                raise RuntimeError("No work to be done: found no transmission "
+                                   "curves found for the filters to solve. "
+                                   "Please ensure that the transmission "
+                                   "curves are available in `obs_lsst_data`.")
 
         # Initialize the output calibration
         electroBfDistortionMatrix = ElectrostaticBrighterFatterDistortionMatrix(
@@ -679,7 +692,7 @@ class ElectrostaticBrighterFatterSolveTask(pipeBase.PipelineTask):
         a = np.float64(self.config.initialParametersDict['a'])
         b = np.float64(self.config.initialParametersDict['b'])
         alpha = np.float64(self.config.initialParametersDict['alpha'])
-        BETA = np.float64(self.config.initialParametersDict['BETA'])
+        beta = np.float64(self.config.initialParametersDict['beta'])
 
         initialParams = Parameters()
         initialParams.add(
@@ -755,9 +768,9 @@ class ElectrostaticBrighterFatterSolveTask(pipeBase.PipelineTask):
             max=10.0,
         )
         initialParams.add(
-            "BETA",
-            value=BETA,
-            vary=self.config.parametersToVary["BETA"],
+            "beta",
+            value=beta,
+            vary=self.config.parametersToVary["beta"],
             min=-10.0,
             max=10.0,
         )
@@ -767,13 +780,14 @@ class ElectrostaticBrighterFatterSolveTask(pipeBase.PipelineTask):
         # to construct the PTC follow a flat SED. Otherwise, compute
         # the pixel distortions assuming all photons convert at the
         # surface of the detector.
-        if self.config.doColorCorrection:
+        if self.config.doColorCorrection and (ptcFilter is not None):
             # Compute the conversion depth probability distribution
-            conversoinModel = PhotonConversionDepthProbabilityModel(
+            # for the filter associated with the PTC
+            conversionModel = PhotonConversionDepthProbabilityModel(
                 detector=detector,
-                transmission_filter_detector=transmission_filter_detector,
+                transmissionFilter=ptcFilter,
             )
-            conversionWeights = conversoinModel.compute(
+            conversionWeights = conversionModel.compute(
                 temperature=173.0,
                 flat_sed_weights=True,
             )
@@ -854,7 +868,7 @@ class ElectrostaticBrighterFatterSolveTask(pipeBase.PipelineTask):
             modelNormalization = [m, o]
             aMatrixModel = m*aMatrixModel + o
             self.log.info(
-                "Normalization (factor, offset) for amp %s: (%.3f, %.3f)", m, o
+                "Normalization (factor, offset): (%.3f, %.3f)", m, o
             )
 
         # Save the original data and the final model.
@@ -890,25 +904,45 @@ class ElectrostaticBrighterFatterSolveTask(pipeBase.PipelineTask):
         # for each filter
         if self.config.doColorCorrection:
             # Populate the pixel distortions for each filter
-            for physicalFilter in self.config.physicalFiltersToSolve:
+            for filterName, filter in zip(availableFilters, filters):
                 conversionModel = PhotonConversionDepthProbabilityModel(
                     detector=detector,
-                    transmission_filter_detector=physicalFilter,
+                    transmissionFilter=filter,
                 )
                 conversionWeights = conversionModel.compute(
                     temperature=173.0,
                     flat_sed_weights=True,
                 )
+
                 pd = electrostaticFit.computePixelDistortions(conversionWeights=conversionWeights)
                 aN, aS, aE, aW = (pd.aN, pd.aS, pd.aE, pd.aW)
                 ath = pd.ath
                 athMinusBeta = pd.athMinusBeta
-                electroBfDistortionMatrix.aNByFilter[physicalFilter] = aN
-                electroBfDistortionMatrix.aSByFilter[physicalFilter] = aS
-                electroBfDistortionMatrix.aEByFilter[physicalFilter] = aE
-                electroBfDistortionMatrix.aWByFilter[physicalFilter] = aW
-                electroBfDistortionMatrix.athByFilter[physicalFilter] = ath
-                electroBfDistortionMatrix.athMinusBetaByFilter[physicalFilter] = athMinusBeta
+
+                aMatrixModel = electrostaticFit.model(
+                    result.params,
+                    conversionWeights=conversionWeights,
+                )
+
+                # Optional:
+                # Perform the final model normalization
+                modelNormalization = [1.0, 0.0]
+                if self.config.doNormalizeElectrostaticModel:
+                    m, o = electrostaticFit.normalizeModel(aMatrixModel)
+                    modelNormalization = [m, o]
+                    aMatrixModel = m*aMatrixModel + o
+                    self.log.info(
+                        "Normalization (factor, offset) for filter %s: (%.3f, %.3f)",
+                        filterName, m, o,
+                    )
+
+                electroBfDistortionMatrix.aNByFilter[filterName] = aN
+                electroBfDistortionMatrix.aSByFilter[filterName] = aS
+                electroBfDistortionMatrix.aEByFilter[filterName] = aE
+                electroBfDistortionMatrix.aWByFilter[filterName] = aW
+                electroBfDistortionMatrix.athByFilter[filterName] = ath
+                electroBfDistortionMatrix.athMinusBetaByFilter[filterName] = athMinusBeta
+                electroBfDistortionMatrix.aMatrixModelByFilter[filterName] = aMatrixModel
 
         # Optional: Check for validity
         # if self.config.doCheckValidity:
