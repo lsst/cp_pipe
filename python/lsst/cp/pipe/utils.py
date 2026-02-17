@@ -2590,6 +2590,13 @@ class ElectrostaticFit():
         too_low = ((zf - d) < zsh) | ((zf - d) < zsv)
         p[too_low] = 0
         p /= p.sum()  # Normalize to 1.
+
+        # Check if the conversion weights were
+        # computed properly.
+        if np.all(p == 0):
+            # This is bad, and no work to be done.
+            raise RuntimeError("All conversion depth probabilities are zero. "
+                               "Cannot compute electrostatic solution.")
         for (depth, prob) in zip(d, p):
             if prob == 0:
                 continue
