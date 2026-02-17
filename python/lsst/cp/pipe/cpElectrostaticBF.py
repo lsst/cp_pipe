@@ -435,7 +435,24 @@ class ElectrostaticBrighterFatterSolveTask(pipeBase.PipelineTask):
 
         # Check if fit was successful
         if not result.success:
-            raise RuntimeError(f"Fit was not successful: {result.message}")
+            self.log.warning(
+                f"Fit was not successful on first try; loosening tolerances and retrying. {result.message}",
+            )
+            electrostaticFit = ElectrostaticFit(
+                initialParams=initialParams,
+                fitMethod=self.config.fitMethod,
+                aMatrix=aMatrix,
+                aMatrixSigma=aMatrixSigma,
+                fitRange=fitRange,
+                doFitNormalizationOffset=self.config.doFitNormalizationOffset,
+                nImageChargePairs=self.config.nImageChargePairs,
+            )
+
+            # Do the fit
+            result = electrostaticFit.fit(ftol=1e-7)
+
+            if not result.success:
+                raise RuntimeError(f"Re-fit was not successful: {result.message}")
 
         # Save the fit
         finalParams = result.params

@@ -516,6 +516,7 @@ class LinearitySolveTask(pipeBase.PipelineTask):
 
             # Save the input gains
             linearizer.inputGain[ampName] = inputPtc.gain[ampName]
+            linearizer.inputTurnoff[ampName] = inputPtc.ptcTurnoff[ampName]
 
             if ampName in inputPtc.badAmps:
                 linearizer = self.fillBadAmp(linearizer, fitOrder, inputPtc, amp)
@@ -1444,6 +1445,7 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
             ampName = amp.getName()
 
             linearizer.inputGain[ampName] = inputPtc.gain[ampName]
+            linearizer.inputTurnoff[ampName] = inputPtc.ptcTurnoff[ampName]
             linearizer.linearityType[ampName] = "None"
             linearizer.linearityCoeffs[ampName] = np.zeros(1)
             # This is not used; kept for compatibility.
@@ -1778,12 +1780,6 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
                 if np.sum(hi) > 0:
                     pars[fitter.par_indices["values"][hi]] = 10_000.0
 
-            # We adjust the node values according to the slope of the
-            # group with the largest amplitude.  This removes a degeneracy
-            # in the normalization and ensures that the overall linearized
-            # correction is as close to the reference as possible.
-            relValues -= (1.0 - pars[fitter.par_indices["groups"][maxAmplitudeGroup]]) * relNodes
-
             relChisq = fitter.compute_chisq_dof(pars)
 
             # Our reference fit is always 1.0 slope.
@@ -1917,6 +1913,7 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
             max_iter=self.config.absoluteSplineFitMaxIter,
             max_rejection_per_iteration=self.config.absoluteSplineFitMaxRejectionPerIteration,
             n_sigma_clip=self.config.absoluteNSigmaClipLinear,
+            n_outer_iter=2,
         )
 
         # Confirm that the first parameter is 0, and set it to

@@ -1091,8 +1091,8 @@ class AstierSplineLinearityFitter:
         max_frac_correction=0.25,
         max_correction=np.inf,
     ):
-        self._pd = pd
-        self._mu = mu
+        self._pd = np.asarray(pd).copy()
+        self._mu = np.asarray(mu).copy()
         self._grouping_values = grouping_values
         self.log = log if log else logging.getLogger(__name__)
         self._fit_offset = fit_offset
@@ -1218,6 +1218,11 @@ class AstierSplineLinearityFitter:
         """
         p0 = np.zeros(self._npt)
 
+        # We adjust this slightly because it increases the stability
+        # of the initialization of the fit parameters.
+        max_signal_nearly_linear = self._max_signal_nearly_linear
+        self._max_signal_nearly_linear *= 0.8
+
         # Do a simple linear fit for each group.
         for i, indices in enumerate(self.group_indices):
             mask = self.mask[indices]
@@ -1296,6 +1301,9 @@ class AstierSplineLinearityFitter:
         if self._fit_weights:
             p0[self.par_indices["weight_pars"]] = self._weight_pars_start
 
+        # Restore the correct value
+        self._max_signal_nearly_linear = max_signal_nearly_linear
+
         return p0
 
     @staticmethod
@@ -1371,7 +1379,15 @@ class AstierSplineLinearityFitter:
         else:
             return numerator / denominator
 
-    def fit(self, p0, min_iter=3, max_iter=20, max_rejection_per_iteration=5, n_sigma_clip=5.0):
+    def fit(
+        self,
+        p0,
+        min_iter=3,
+        max_iter=20,
+        max_rejection_per_iteration=5,
+        n_sigma_clip=5.0,
+        n_outer_iter=1,
+    ):
         """
         Perform iterative fit for linear + spline model with offsets.
 
@@ -1393,43 +1409,102 @@ class AstierSplineLinearityFitter:
             Maximum number of points to reject per iteration.
         n_sigma_clip : `float`, optional
             Number of sigma to do clipping in each iteration.
+        n_outer_iter : `int`, optional
+            Number of "outer" iterations, where things are reset.
         """
         init_params = p0
-        for k in range(max_iter):
-            params, cov_params, _, msg, ierr = leastsq(
-                self,
-                init_params,
-                full_output=True,
-                ftol=1e-5,
-                maxfev=12000,
-            )
-            init_params = params.copy()
-
-            # We need to cut off the constraints at the end (there are more
-            # residuals than data points.)
-            res = self(params)[: len(self._w)]
-            std_res = median_abs_deviation(res[self.good_points], scale="normal")
-            sample = len(self.good_points)
-
-            # We don't want to reject too many outliers at once.
-            if sample > max_rejection_per_iteration:
-                sres = np.sort(np.abs(res))
-                cut = max(sres[-max_rejection_per_iteration], std_res*n_sigma_clip)
-            else:
-                cut = std_res*n_sigma_clip
-
-            outliers = np.abs(res) > cut
-            self._w[outliers] = 0
-            if outliers.sum() != 0:
-                self.log.info(
-                    "After iteration %d there are %d outliers (of %d).",
-                    k,
-                    outliers.sum(),
-                    sample,
+        for j in range(n_outer_iter):
+            self.log.info("Starting outer iteration %d", j)
+            for k in range(max_iter):
+                params, cov_params, _, msg, ierr = leastsq(
+                    self,
+                    init_params,
+                    full_output=True,
+                    ftol=1e-5,
+                    maxfev=12000,
                 )
-            elif k >= min_iter:
-                self.log.info("After iteration %d there are no more outliers.", k)
-                break
+                init_params = params.copy()
+
+                # We need to cut off the constraints at the end (there are more
+                # residuals than data points.)
+                res = self(params)[: len(self._w)]
+                std_res = median_abs_deviation(res[self.good_points], scale="normal")
+                sample = len(self.good_points)
+
+                # We don't want to reject too many outliers at once.
+                if sample > max_rejection_per_iteration:
+                    sres = np.sort(np.abs(res))
+                    cut = max(sres[-max_rejection_per_iteration], std_res*n_sigma_clip)
+                else:
+                    cut = std_res*n_sigma_clip
+
+                outliers = np.abs(res) > cut
+                self._w[outliers] = 0
+                if outliers.sum() != 0:
+                    self.log.info(
+                        "After iteration %d there are %d outliers (of %d).",
+                        k,
+                        outliers.sum(),
+                        sample,
+                    )
+                elif k >= min_iter:
+                    self.log.info("After iteration %d there are no more outliers.", k)
+                    break
+
+            # Reset for next "outer" iteration, if doing them.
+            if n_outer_iter > 1:
+                if j == 0:
+                    params_accum = params.copy()
+                    mu_orig = self._mu.copy()
+                    pd_orig = self._pd.copy()
+                else:
+                    if self._fit_temperature:
+                        a = params_accum[self.par_indices["temperature_coeff"]]
+                        b = params[self.par_indices["temperature_coeff"]]
+                        params_accum[self.par_indices["temperature_coeff"]] = (a + b + a * b)
+
+                    if self._fit_temporal:
+                        a = params_accum[self.par_indices["temporal_coeff"]]
+                        b = params[self.par_indices["temporal_coeff"]]
+                        params_accum[self.par_indices["temporal_coeff"]] = (a + b + a * b)
+
+                    slope_mean = np.mean(params[self.par_indices["groups"]])
+                    adjustment = params[self.par_indices["groups"]] / slope_mean
+                    params_accum[self.par_indices["groups"]] *= adjustment
+
+                    if self._fit_offset:
+                        params_accum[self.par_indices["offset"]] += params[self.par_indices["offset"]]
+
+                    # The new linearizer values should simply be a replacement
+                    # because these are the better fit parameters we are
+                    # interested in.
+                    params_accum[self.par_indices["values"]] = params[self.par_indices["values"]]
+
+                # Adjust the mu and pd values according to the previous fit.
+                slope_mean = np.mean(params[self.par_indices["groups"]])
+
+                if self._fit_temperature:
+                    self._mu *= (1.0
+                                 + params[self.par_indices["temperature_coeff"]] * self._temperature_scaled)
+                if self._fit_temporal:
+                    self._mu *= (1.0
+                                 + params[self.par_indices["temporal_coeff"]] * self._mjd_scaled)
+                for gi, group_index in enumerate(self.group_indices):
+                    self._pd[group_index] *= (params[self.par_indices["groups"][gi]] / slope_mean)
+                if self._fit_offset:
+                    self._mu -= params[self.par_indices["offset"]]
+
+                # Set parameters for next outer fit iteration.
+                init_params = self.estimate_p0(use_all_for_normalization=True)
+
+        if n_outer_iter > 1:
+            # When doing multiple outer iterations, we want to return the
+            # "accumulated" parameters, and reset the input values.
+            params = params_accum
+
+            # Reset input values
+            self._mu = mu_orig
+            self._pd = pd_orig
 
         return params
 
@@ -2416,7 +2491,6 @@ class ElectrostaticFit():
         self.fitMethod = fitMethod
 
         if self.fitRange != 0 and self.inputRange < self.fitRange:
-            print("INFO : truncating input data at %d" % self.inputRange)
             self.fitRange = self.inputRange
 
         self.aMatrix = aMatrix[0:fitRange, 0:fitRange]
@@ -2425,7 +2499,24 @@ class ElectrostaticFit():
 
         self.params = initialParams
 
-    def fit(self):
+    def fit(self, max_nfev=20000, epsfcn=1.0e-8, ftol=1.0e-8, xtol=1.0e-8, gtol=0.0):
+        """Do the fit.
+
+        Parameters
+        ----------
+        max_nfev : `float`, optional
+            Max number of function evaluations.
+        epsfcn : `float`, optional
+            A variable used in determining a suitable step length for the
+            forward-difference approximation of the Jacobian.
+        ftol : `float`, optional
+            Relative error desired in the sum of squares.
+        xtol : `float`, optional
+            Relative error desired in the approximate solution.
+        gtol : `float`, optional
+            Orthogonality desired between the function vector and the columns
+            of the Jacobian.
+        """
         minner = Minimizer(
             self.computeWeightedResidual,
             self.params,
@@ -2433,11 +2524,11 @@ class ElectrostaticFit():
 
         result = minner.minimize(
             method=self.fitMethod,
-            max_nfev=20000,
-            epsfcn=1.0e-8,
-            ftol=1.0e-8,
-            xtol=1.0e-8,
-            gtol=0.0,
+            max_nfev=max_nfev,
+            epsfcn=epsfcn,
+            ftol=ftol,
+            xtol=xtol,
+            gtol=gtol,
         )
 
         return result
