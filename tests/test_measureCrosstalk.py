@@ -29,6 +29,19 @@ from lsst.cp.pipe import CrosstalkSolveTask, CrosstalkSolveConfig
 import lsst.ip.isr.isrMock as isrMock
 
 
+class PretendRef:
+    "A class to act as a mock butler reference"
+
+    def __init__(self, exposure):
+        self.exp = exposure
+
+    def get(self, component=None):
+        if component:
+            raise RuntimeError("Components not supported in CT PretendRef.")
+        else:
+            return self.exp
+
+
 class MeasureCrosstalkTaskCases(lsst.utils.tests.TestCase):
 
     def setup_measureCrosstalk(self, isTrimmed=False, nSources=8):
@@ -68,7 +81,7 @@ class MeasureCrosstalkTaskCases(lsst.utils.tests.TestCase):
         ctexConfig.threshold = 4000
         ctexConfig.isTrimmed = isTrimmed
         ctex = CrosstalkExtractTask(config=ctexConfig)
-        fullResult = []
+        measuredRatios = []
 
         mockTask.config.isTrimmed = isTrimmed
         # Generate simulated set of exposures.
@@ -84,12 +97,20 @@ class MeasureCrosstalkTaskCases(lsst.utils.tests.TestCase):
 
             exposure = mockTask.run()
             result = ctex.run(exposure)
-            fullResult.append(result.outputRatios)
+            measuredRatios.append(PretendRef(result.outputRatios))
+        camera = mockTask.getCamera()
 
+        # This test needs fixing: CZW:
+        # return [True, True, True]
         # Generate the final measured CT ratios, uncertainties, pixel counts.
+        outputDims = {
+            'detector': list(measuredRatios[0].get().keys())[0],
+            'instrument': camera.getName(),
+        }
+
         ctsConfig = CrosstalkSolveConfig()
         cts = CrosstalkSolveTask(config=ctsConfig)
-        finalResult = cts.run(fullResult)
+        finalResult = cts.run(inputRatios=measuredRatios, camera=camera, outputDims=outputDims)
         calib = finalResult.outputCrosstalk
 
         # Needed because measureCrosstalk cannot find coefficients equal to 0.0

@@ -1,0 +1,17 @@
+description: cp_pipe LSSTCam crosstalk calibration construction
+instrument: lsst.obs.lsst.LsstCam
+imports:
+  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpCrosstalkLSST.yaml
+tasks:
+  cpCrosstalkIsr:
+    class: lsst.ip.isr.IsrTaskLSST
+    config:
+      doDefect: true
+  cpCrosstalkExtract:
+    class: lsst.cp.pipe.CrosstalkExtractTask
+    config:
+      growMaskRadius: 20
+  cpCrosstalkSolve:
+    class: lsst.cp.pipe.CrosstalkSolveTask
+    config:
+      fluxOrder: 1

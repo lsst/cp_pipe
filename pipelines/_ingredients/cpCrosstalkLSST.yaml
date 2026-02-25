@@ -1,0 +1,48 @@
+description: cp_pipe CROSSTALK calibration construction.
+tasks:
+  cpCrosstalkIsr:
+    class: lsst.ip.isr.IsrTaskLSST
+    config:
+      connections.ccdExposure: "raw"
+      connections.outputExposure: "cpCrosstalkIsrExp"
+      python: |
+        from lsst.cp.pipe import configureIsrTaskLSSTForCalibrations
+        configureIsrTaskLSSTForCalibrations(config)
+
+        config.doCrosstalk = False
+        config.doApplyGains = True
+  cpCrosstalkExtract:
+    class: lsst.cp.pipe.CrosstalkExtractTask
+    config:
+      connections.inputExp: "cpCrosstalkIsrExp"
+      connections.outputRatios: "cpCrosstalkRatio"
+  cpCrosstalkSolve:
+    class: lsst.cp.pipe.CrosstalkSolveTask
+    config:
+      connections.inputRatios: "cpCrosstalkRatio"
+      connections.outputCrosstalk: "crosstalkProposal"
+      rejectNegativeSolutions: false
+      unitsAreElectrons: true
+  cpCrosstalkFilter:
+    class: lsst.cp.pipe.CrosstalkFilterTask
+    config:
+      connections.inputCrosstalk: "crosstalkProposal"
+      connections.outputCrosstalk: "crosstalk"
+      unitsAreElectrons: true
+subsets:
+  cpCrosstalk:
+    subset:
+      - cpCrosstalkExtract
+      - cpCrosstalkSolve
+    description: Just the extract and solve.
+  cpCrosstalkProc:
+    subset:
+      - cpCrosstalkIsr
+      - cpCrosstalkExtract
+    description: Handle the per-exposure analysis
+contracts:
+  - cpCrosstalkExtract.connections.inputExp == cpCrosstalkIsr.connections.outputExposure
+  - cpCrosstalkSolve.connections.inputRatios == cpCrosstalkExtract.connections.outputRatios
+  - cpCrosstalkSolve.connections.outputCrosstalk == cpCrosstalkFilter.connections.inputCrosstalk
+  - cpCrosstalkIsr.config.doApplyGains == cpCrosstalkSolve.config.unitsAreElectrons
+  - cpCrosstalkSolve.config.unitsAreElectrons == cpCrosstalkFilter.config.unitsAreElectrons
