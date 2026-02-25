@@ -1441,7 +1441,6 @@ class PhotonTransferCurveExtractTask(PhotonTransferCurveExtractTaskBase):
         # Ids of input list of exposure references
         # (deferLoad=True in the input connections)
         inputs['inputDims'] = [expRef.datasetRef.dataId['exposure'] for expRef in inputRefs.inputExp]
-        inputs['physical_filter'] = inputRefs[0].dataId['physical_filter']
 
         # Dictionary, keyed by expTime (or expFlux or expId), with tuples
         # containing flat exposures and their IDs.
@@ -1496,7 +1495,7 @@ class PhotonTransferCurveExtractTask(PhotonTransferCurveExtractTaskBase):
                 newCovariances.append(newPtc)
         return pipeBase.Struct(outputCovariances=newCovariances)
 
-    def run(self, inputExp, inputDims, inputPhotodiodeData=None, physical_filter=None):
+    def run(self, inputExp, inputDims, inputPhotodiodeData=None):
         """Measure covariances from difference of flat pairs
 
         Parameters
@@ -1510,8 +1509,6 @@ class PhotonTransferCurveExtractTask(PhotonTransferCurveExtractTaskBase):
             List of exposure IDs.
         inputPhotodiodeData : `dict` [`str`, `lsst.ip.isr.PhotodiodeCalib`]
             Photodiode readings data (optional).
-        physical_filter : `str`
-            Physical filter of the input exposures (optional).
 
         Returns
         -------
@@ -1526,6 +1523,7 @@ class PhotonTransferCurveExtractTask(PhotonTransferCurveExtractTaskBase):
         # access the first exposure-ID tuple to get the detector.
         # The first "get()" retrieves the exposure from the exposure reference.
         detector = list(inputExp.values())[0][0][0].get(component='detector')
+        filterName = inputExp.metadata["FILTER"]
         detNum = detector.getId()
         amps = detector.getAmplifiers()
         ampNames = [amp.getName() for amp in amps]
@@ -1536,7 +1534,7 @@ class PhotonTransferCurveExtractTask(PhotonTransferCurveExtractTaskBase):
         dummyPtcDataset = PhotonTransferCurveDataset(
             ampNames, 'DUMMY',
             covMatrixSide=self.config.maximumRangeCovariancesAstier,
-            filterName=physical_filter,
+            filterName=filterName,
         )
         for ampName in ampNames:
             dummyPtcDataset.setAmpValuesPartialDataset(ampName)
