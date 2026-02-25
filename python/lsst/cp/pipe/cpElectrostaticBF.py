@@ -463,7 +463,7 @@ class ElectrostaticBrighterFatterSolveConfig(pipeBase.PipelineTaskConfig,
             'beta': True,
         },
     )
-    doColorCorrection = pexConfig.Field(
+    doFilterCorrection = pexConfig.Field(
         dtype=bool,
         doc="Do you want to include a conversion depth distribution in the "
             "electrostatic fit and generate an electrostatic distortion "
@@ -476,7 +476,7 @@ class ElectrostaticBrighterFatterSolveConfig(pipeBase.PipelineTaskConfig,
     physicalFiltersToSolve = pexConfig.ListField(
         dtype=str,
         doc="List of physical filters in which to compute the pixel boundary "
-            "distortions. Only used if doColorCorrection is True.",
+            "distortions. Only used if doFilterCorrection is True.",
         default=["u_24", "g_6", "r_57", "i_39", "z_20", "y_10"],
     )
 
@@ -586,7 +586,7 @@ class ElectrostaticBrighterFatterSolveTask(pipeBase.PipelineTask):
                 "Cannot compute the electrostatic solution if "
                 "int(inputPtc.covMatrixSide) < fitRange."
             )
-        if self.config.doColorCorrection and (ptcFilterName is None):
+        if self.config.doFilterCorrection and (ptcFilterName is None):
             # Do not know the filter name of the input flats to the PTC
             # Check if a dummy exposure is there, which will contain the
             # filter name
@@ -603,7 +603,7 @@ class ElectrostaticBrighterFatterSolveTask(pipeBase.PipelineTask):
         # Get transmission curves for the filters to solve
         filters = []
         availableFilters = []
-        if self.config.doColorCorrection:
+        if self.config.doFilterCorrection:
             # Get the filters for each one
             for filterName in self.config.physicalFiltersToSolve:
                 if filterName in filtersFound:
@@ -780,7 +780,7 @@ class ElectrostaticBrighterFatterSolveTask(pipeBase.PipelineTask):
         # to construct the PTC follow a flat SED. Otherwise, compute
         # the pixel distortions assuming all photons convert at the
         # surface of the detector.
-        if self.config.doColorCorrection and (ptcFilter is not None):
+        if self.config.doFilterCorrection and (ptcFilter is not None):
             # Compute the conversion depth probability distribution
             # for the filter associated with the PTC
             conversionModel = PhotonConversionDepthProbabilityModel(
@@ -902,7 +902,7 @@ class ElectrostaticBrighterFatterSolveTask(pipeBase.PipelineTask):
 
         # If we want to do color correction, compute the pixel distortions
         # for each filter
-        if self.config.doColorCorrection:
+        if self.config.doFilterCorrection:
             # Populate the pixel distortions for each filter
             for filterName, filter in zip(availableFilters, filters):
                 conversionModel = PhotonConversionDepthProbabilityModel(
