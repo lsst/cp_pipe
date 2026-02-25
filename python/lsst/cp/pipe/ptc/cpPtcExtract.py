@@ -1523,7 +1523,7 @@ class PhotonTransferCurveExtractTask(PhotonTransferCurveExtractTaskBase):
         # access the first exposure-ID tuple to get the detector.
         # The first "get()" retrieves the exposure from the exposure reference.
         detector = list(inputExp.values())[0][0][0].get(component='detector')
-        filterName = inputExp.metadata["FILTER"]
+        filterName = list(inputExp.values())[0][0][0].get().metadata["FILTER"]
         detNum = detector.getId()
         amps = detector.getAmplifiers()
         ampNames = [amp.getName() for amp in amps]
