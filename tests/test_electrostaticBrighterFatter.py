@@ -268,7 +268,7 @@ class ElectrostaticBrighterFatterSolveTaskTestCase(lsst.utils.tests.TestCase):
         """
         config = cpPipe.ElectrostaticBrighterFatterSolveTask().ConfigClass()
         config.fitRange = 5
-        config.doColorCorrection = False
+        config.doFilterCorrection = False
         task = cpPipe.ElectrostaticBrighterFatterSolveTask(config=config)
 
         results = task.run(self.ptc, dummy=["This is a dummy exposure"],
