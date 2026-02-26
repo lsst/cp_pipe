@@ -562,10 +562,11 @@ class ElectrostaticBrighterFatterSolveTask(pipeBase.PipelineTask):
             Camera to use for camera geometry information.
         inputDims : `lsst.daf.butler.DataCoordinate` or `dict`
             DataIds to use to populate the output calibration.
-        transmissionFilter : `list` `lsst.afw.image.TransmissionCurve`
-            Transmission curve of a physical filter at the location
-            of the detector, all filters associated with the PTC
-            detector (defined in `lsst_obs_data`).
+        transmissionFilter : `list` `lsst.daf.butler.DeferredDatasetHandle`
+            Deferred dataset handles to `lsst.afw.image.TransmissionCurve`
+            of a physical filter at the location of the detector, all
+            filters associated with the PTC detector (defined in
+            `lsst_obs_data`).
 
         Returns
         -------
@@ -628,10 +629,12 @@ class ElectrostaticBrighterFatterSolveTask(pipeBase.PipelineTask):
 
             # Check that we have any filters
             if len(availableFilters) == 0:
-                raise RuntimeError("No work to be done: found no transmission "
-                                   "curves found for the filters to solve. "
-                                   "Please ensure that the transmission "
-                                   "curves are available in `obs_lsst_data`.")
+                raise pipeBase.NoWorkFound(
+                    "No work to be done: found no transmission "
+                    "curves found for the filters to solve. "
+                    "Please ensure that the transmission "
+                    "curves are available in `obs_lsst_data`."
+                )
 
         # Initialize the output calibration
         electroBfDistortionMatrix = ElectrostaticBrighterFatterDistortionMatrix(

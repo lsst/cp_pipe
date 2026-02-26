@@ -2613,11 +2613,6 @@ class ElectrostaticFit():
                     zf=zf - depth,
                 )
 
-        # Original
-        # m = c.evalAreaChangeSidesFast(
-        #     self.fitRange,
-        #     nImageChargePairs=self.nImageChargePairs,
-        # )
         m = m[:self.fitRange, :self.fitRange]
 
         return m
