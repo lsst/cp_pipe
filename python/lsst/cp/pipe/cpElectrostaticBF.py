@@ -56,9 +56,8 @@ K_B = 8.617e-5  # eV K^-1
 
 
 def lookupStaticCalibrations(datasetType, registry, quantumDataId, collections):
-    # For static calibrations, we search with a timespan that has unbounded
-    # begin and end; we'll get an error if there's more than one match (because
-    # then it's not static).
+    # This will retrieve all the filter transmissions available
+    # associated with the {instrument, detector} dimensions.
     timespan = Timespan(begin=None, end=None)
     result = []
     # First iterate over all of the data IDs for this dataset type that are
@@ -116,13 +115,13 @@ class PhotonConversionDepthProbabilityModel():
         temperature : float, optional
             Temperature in Kelvin of the silicon detector (default is 173.0 K
             for the LSST Camera).
-        flat_sed_weights : bool, optional
+        flat_sed_weights :  `bool`, optional
             If True (default), weight by throughput * wavelength for a flat
             F_λ SED (photon count ∝ λ). If False, weight by throughput only.
 
         Returns
         -------
-        (d, p) : tuple, (np.ndarray, np.ndarray)
+        (d, p) : `tuple`, (`np.ndarray`, `np.ndarray`)
             Tuple of arrays containing the probability p ([0,1]) of a photon
             converting at d (midpoint) between (depths[i], depths[i+1]) and
             the depth bin midpoints (units of um), assuming an incident flat
@@ -153,7 +152,14 @@ class PhotonConversionDepthProbabilityModel():
         # plane. Get the detector center:
         detectorCenter = self.detector.getCenter(FOCAL_PLANE)
 
+        # Get the throughput
         throughput = self.filter.sampleAt(position=detectorCenter, wavelengths=wavelengths)
+
+        # Trim the probability distribution, because the
+        # throughputs are not quite zero beyond the edges
+        # of the band.
+        throughput[throughput < 1.0e-3] = 0.0
+
         if flat_sed_weights:
             weight = throughput * wavelengths
         else:
@@ -165,8 +171,8 @@ class PhotonConversionDepthProbabilityModel():
         wavelengths /= 10.  # Convert to nm
         alpha = self.rajkanan_1979_alpha(T=temperature, wavelength=wavelengths)  # (n_wavelen,) in um^-1
 
-        # Optional:
-        # Compute the PDF(d) = sum_i w_i * alpha_i *
+        # Optional, Compute the PDF:
+        # PDF(d) = sum_i w_i * alpha_i *
         # exp(-alpha_i * d)
         # log_alpha = np.where(alpha > 0, np.log(alpha),
         #                       -np.inf)
@@ -184,6 +190,7 @@ class PhotonConversionDepthProbabilityModel():
 
         # CDF(d) = sum_i w_i * (1 - exp(-alpha_i * d));
         # p_i = CDF(edge[i+1]) - CDF(edge[i])
+
         cdf_at_edges = (
             weight[:, np.newaxis]
             * (1.0 - np.exp(-alpha[:, np.newaxis] * depths[np.newaxis, :]))
@@ -205,18 +212,19 @@ class PhotonConversionDepthProbabilityModel():
 
         Parameters
         ----------
-        idx : int
+        idx : `int``
             Band index: 0 for the lower indirect gap (~1.16 eV), 1 for
             the higher indirect gap (~2.5 eV).
-        T : float
+        T : `float`
             Temperature in Kelvin.
 
         Returns
         -------
-        float
+        energy : `float`
             Indirect band gap in eV.
         """
-        return E_g0[idx] - ((BETA*(T**2)) / (T + GAMMA))
+        energy = E_g0[idx] - ((BETA*(T**2)) / (T + GAMMA))
+        return energy
 
     def E_gd(self, T):
         """
@@ -224,15 +232,16 @@ class PhotonConversionDepthProbabilityModel():
 
         Parameters
         ----------
-        T : float
+        T : `float`
             Temperature in Kelvin.
 
         Returns
         -------
-        float
+        energy : `float`
             Direct band gap in eV.
         """
-        return E_gd0 - ((BETA*(T**2)) / (T + GAMMA))
+        energy = E_gd0 - ((BETA*(T**2)) / (T + GAMMA))
+        return energy
 
     def wavelength_to_frequency(self, wavelength):
         """
@@ -240,12 +249,12 @@ class PhotonConversionDepthProbabilityModel():
 
         Parameters
         ----------
-        wavelength : float or np.ndarray
+        wavelength : `float` or `np.ndarray`
             Photon wavelength in nanometers.
 
         Returns
         -------
-        float or np.ndarray
+        omega: `float` or `np.ndarray`
             Angular frequency ω in rad/s. Same shape as input.
 
         Notes
@@ -272,14 +281,14 @@ class PhotonConversionDepthProbabilityModel():
 
         Parameters
         ----------
-        T : float
+        T : `float`
             Temperature in Kelvin.
-        wavelength : float or array-like
+        wavelength : `float` or array-like
             Photon wavelength(s) in nanometers.
 
         Returns
         -------
-        np.ndarray
+        alpha_per_um : `np.ndarray`
             Absorption coefficient in um⁻¹. Same shape as wavelength (0-d for
             scalar input).
 
@@ -319,8 +328,8 @@ class PhotonConversionDepthProbabilityModel():
         c = A_d * (np.maximum(0.0, excess))**(1.0 / 2.0)
 
         alpha = sum_ij + c  # cm^-1
-        alpha_per_m = alpha * 1e-4  # um^-1
-        return np.asarray(alpha_per_m)
+        alpha_per_um = alpha * 1e-4  # um^-1
+        return np.asarray(alpha_per_um)
 
 
 class ElectrostaticBrighterFatterSolveConnections(pipeBase.PipelineTaskConnections,
