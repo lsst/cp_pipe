@@ -506,7 +506,12 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
         else:
             detector = None
         datasetPtc.updateMetadataFromExposures(inputCovariances)
-        datasetPtc.updateMetadata(setDate=True, camera=camera, detector=detector)
+        datasetPtc.updateMetadata(
+            setDate=True,
+            camera=camera,
+            detector=detector,
+            filterName=inputCovariances[0].metadata['FILTER'],
+        )
 
         for ampName in ampNames:
             if ampName in datasetPtc.badAmps:

@@ -8,6 +8,7 @@ tasks:
       connections.output: electroBfDistortionMatrix
       python: |
         config.fitRange = 10
+        config.doFilterCorrection = True
         config.initialParametersDict = {
           'thickness': 100.0,
           'pixelsize': 10.0,

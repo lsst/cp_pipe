@@ -268,9 +268,10 @@ class ElectrostaticBrighterFatterSolveTaskTestCase(lsst.utils.tests.TestCase):
         """
         config = cpPipe.ElectrostaticBrighterFatterSolveTask().ConfigClass()
         config.fitRange = 5
+        config.doFilterCorrection = False
         task = cpPipe.ElectrostaticBrighterFatterSolveTask(config=config)
 
-        results = task.run(self.ptc, dummy=['this is a dummy exposure'],
+        results = task.run(self.ptc, dummy=["This is a dummy exposure"],
                            camera=self.camera, inputDims={'detector': 1})
         electroBfDistortionMatrix = results.output
 
