@@ -73,6 +73,15 @@ class QuadNotchExtractConfig(pipeBase.PipelineTaskConfig,
         default=5,
         doc="Minimum area for a detected object.",
     )
+    detectionType = pexConfig.ChoiceField(
+        dtype=str,
+        doc="Which kind of threshold to use for detection.",
+        default="VALUE",
+        allowed={
+            "STDEV": "afwDetect.STDEV",
+            "VALUE": "afwDetect.VALUE, using manual STDEV calculation.",
+        },
+    )
     grow = pexConfig.Field(
         dtype=int,
         default=0,
@@ -191,7 +200,7 @@ class QuadNotchExtractTask(pipeBase.PipelineTask):
 
         row['target_amp'] = target_amp
         row['centered'] = centered
-        row['flags'] = self.FLAG_SUCCESS
+        row['flag'] = self.FLAG_SUCCESS
 
         bbox = detector[target_amp].getBBox()
         # ampImage = inputExp[bbox]   # unused error
@@ -233,11 +242,13 @@ class QuadNotchExtractTask(pipeBase.PipelineTask):
     @staticmethod
     def _returnFailure(flag):
         row = {}
-        row['flux'] = []
-        row['cdf95'] = []
-        row['centroids'] = []
-        row['background'] = []
-        row['flags'] = flag
+        row['flux'] = [np.nan, np.nan, np.nan, np.nan]
+        row['percentiles'] = np.zeros((4, 41))
+        row['centroids'] = [(0, 0), (0, 0), (0, 0), (0, 0)]
+        row['background'] = np.nan
+        row['flag'] = flag
+        row['fwhm'] = [0, 0, 0, 0]
+        row['counts_above_threshold'] = [0, 0, 0, 0]
         # This doesn't return everything it should
         return row
 
@@ -262,7 +273,14 @@ class QuadNotchExtractTask(pipeBase.PipelineTask):
         median = np.nanmedian(exposureCopy.image.array)
         exposureCopy.image -= median
 
-        threshold = afwDetect.Threshold(self.config.nSigma, afwDetect.Threshold.STDEV)
+        if self.config.detectionType == "VALUE":
+            stdev = np.nanstd(exposureCopy.image.array)
+            threshold = afwDetect.Threshold(self.config.nSigma * stdev,
+                                            afwDetect.Threshold.VALUE)
+        else:
+            threshold = afwDetect.Threshold(self.config.nSigma,
+                                            afwDetect.Threshold.STDEV)
+
         footPrintSet = afwDetect.FootprintSet(exposureCopy.getMaskedImage(),
                                               threshold,
                                               "DETECTED",
@@ -380,6 +398,7 @@ class QuadNotchExtractTask(pipeBase.PipelineTask):
             alt_x_vals = np.arange(len(x_data))
 
             x_norm = (x_data - x_data.min())/(x_data.max() - x_data.min())
+
             theta, covariance = curve_fit(self._d_gaussian,
                                           alt_x_vals,
                                           x_norm,
@@ -480,7 +499,7 @@ class QuadNotchMergeConnections(pipeBase.PipelineTaskConnections,
         storageClass="ArrowAstropy",
         dimensions=("instrument", "exposure", "detector"),
         multiple=True,
-        deferLoad=False,
+        deferLoad=True,
     )
     outputData = cT.Output(
         name="quadNotchCombined",
@@ -509,12 +528,14 @@ class QuadNotchMergeTask(pipeBase.PipelineTask):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-    def run(self, inputData, camera):
+    def run(self, inputData):
         """
         """
         rows = []
+
         for dataset in inputData:
-            rows.append(dataset[0])
+            data = dataset.get()
+            rows.append(data[0])
 
         outputTable = Table(rows)
         return pipeBase.Struct(
