@@ -118,7 +118,7 @@ class CrosstalkExtractConfig(pipeBase.PipelineTaskConfig,
     )
     growMaskRadius = Field(
         dtype=int,
-        default=0,
+        default=20,
         doc="Radius to grow CT_TEMP masks prior to background estimation."
     )
 
@@ -229,7 +229,7 @@ class CrosstalkExtractTask(pipeBase.PipelineTask):
 
                 extractedAmp = inputExp[ampToMask.getBBox()]
                 # The mask needs to be flipped to match the target
-                flippedMask = self._flipMask(newMask, amp, ampToMask)
+                flippedMask = self._flipMaskArray(newMask, amp, ampToMask)
 
                 extractedAmp.mask.array[:, :] |= flippedMask
         # Optionally dilate these masks by some amount:
@@ -315,7 +315,7 @@ class CrosstalkExtractTask(pipeBase.PipelineTask):
             outputFluxes=ddict2dict(outputFluxes)
         )
 
-    def _flipMask(self, maskArray, sourceAmp, targetAmp):
+    def _flipMaskArray(self, maskArray, sourceAmp, targetAmp):
         """Flip an array from a sourceAmp to match the readout order of
         targetAmp.
 
@@ -483,7 +483,7 @@ class CrosstalkSolveConfig(pipeBase.PipelineTaskConfig,
     fluxOrder = Field(
         dtype=int,
         default=0,
-        doc="Order of source flux fit to crosstalk. 0=simple linear; 1=first order non-linear.",
+        doc="Order of source flux fit to crosstalk ratios. 0=simple linear; 1=first order non-linear.",
     )
 
     rejectNegativeSolutions = Field(
@@ -722,6 +722,11 @@ class CrosstalkSolveTask(pipeBase.PipelineTask):
         -------
         calib : `lsst.ip.isr.CrosstalkCalib`
             The output crosstalk calibration.
+
+        Raises
+        ------
+        RuntimeError
+            Raised if filtering values and fluxes results in length mismatch.
         """
         calib = CrosstalkCalib(nAmp=len(ratios))
 
@@ -747,7 +752,7 @@ class CrosstalkSolveTask(pipeBase.PipelineTask):
                     myfluxes = np.ones_like(values)
 
                 if len(values) != len(myfluxes):
-                    self.log.warning(
+                    raise RuntimeError(
                         f"Flux and ratio length disagree after first filter: {len(values)} {len(myfluxes)}"
                     )
 
@@ -765,7 +770,7 @@ class CrosstalkSolveTask(pipeBase.PipelineTask):
                     values = values[good]
                     myfluxes = myfluxes[good]
                 if len(values) != len(myfluxes):
-                    self.log.warning(
+                    raise RuntimeError(
                         f"Flux and ratio length disagree after second filter: {len(values)} {len(myfluxes)}"
                     )
 
