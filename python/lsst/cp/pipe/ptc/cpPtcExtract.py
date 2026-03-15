@@ -1507,9 +1507,6 @@ class PhotonTransferCurveExtractTask(PhotonTransferCurveExtractTaskBase):
             sequentially by their exposure id.
         inputDims : `list`
             List of exposure IDs.
-        taskMetadata : `list` [`lsst.pipe.base.TaskMetadata`], optional
-            List of exposures metadata from ISR.  This is not used,
-            and will be completely removed on DM-45802.
         inputPhotodiodeData : `dict` [`str`, `lsst.ip.isr.PhotodiodeCalib`]
             Photodiode readings data (optional).
 
@@ -1526,6 +1523,7 @@ class PhotonTransferCurveExtractTask(PhotonTransferCurveExtractTaskBase):
         # access the first exposure-ID tuple to get the detector.
         # The first "get()" retrieves the exposure from the exposure reference.
         detector = list(inputExp.values())[0][0][0].get(component='detector')
+        filterName = list(inputExp.values())[0][0][0].get().metadata["FILTER"]
         detNum = detector.getId()
         amps = detector.getAmplifiers()
         ampNames = [amp.getName() for amp in amps]
@@ -1535,7 +1533,9 @@ class PhotonTransferCurveExtractTask(PhotonTransferCurveExtractTaskBase):
         # dimensions match.
         dummyPtcDataset = PhotonTransferCurveDataset(
             ampNames, 'DUMMY',
-            covMatrixSide=self.config.maximumRangeCovariancesAstier)
+            covMatrixSide=self.config.maximumRangeCovariancesAstier,
+            filterName=filterName,
+        )
         for ampName in ampNames:
             dummyPtcDataset.setAmpValuesPartialDataset(ampName)
 
