@@ -742,7 +742,12 @@ class CrosstalkSolveTask(pipeBase.PipelineTask):
                 # ratios is ratios[Target][Source]
                 # use tt for Target, use ss for Source, to match ip_isr.
                 values = np.asarray(ratios[ordering[tt]][ordering[ss]])
-                good_values = np.abs(values) < 1.0  # Discard unreasonable values
+                # Discard unreasonable ratios: anything with
+                # abs(value) > 1.0 indicates that the target location
+                # is brighter than the source, so these target pixels
+                # have some additional contaminating flux (another
+                # spot, diffraction spike, etc).
+                good_values = np.abs(values) < 1.0
                 values = values[good_values]
 
                 myfluxes = np.asarray(fluxes[ordering[tt]][ordering[ss]])
