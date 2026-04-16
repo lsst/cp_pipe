@@ -12,3 +12,9 @@ tasks:
       largeScaleBackground.xSize: 61.44  # in mm
       largeScaleBackground.ySize: 61.44  # in mm
       largeScaleBackground.pixelSize: 0.015  # in mm per pixel
+    cpSkyIsr:
+      class: lsst.ip.isr.IsrTask
+      config:
+        doAmpOffset: true
+        ampOffset.doApplyAmpOffset: true
+
