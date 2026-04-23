@@ -24,16 +24,6 @@
 
 import unittest
 
-# Need to import pyproj to prevent file handle leakage since importing
-# pyproj automatically opens proj.db and never closes it. We can not wait
-# for some dependent code to import it whilst the test is running since then
-# the leak checker will think it is a leak.
-# TODO: Remove import after completing DM-54643. Use DM-54656
-try:
-    import pyproj  # noqa: F401
-except ImportError:
-    pass
-
 from lsst.pipe.base import Pipeline, PipelineGraph
 from lsst.resources import ResourcePath
 import lsst.utils
