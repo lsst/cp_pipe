@@ -399,6 +399,7 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
         coldPixelCount = {}
 
         detector = exp.getDetector()
+        detectorType = detector.getPhysicalType()
 
         if self.config.fitAmpGradient:
             # 1. Bin flat.
@@ -480,23 +481,37 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
 
         for amp in exp.getDetector():
             ampName = amp.getName()
-
+            import IPython
+            IPython.embed()
             hotPixelCount[ampName] = 0
             coldPixelCount[ampName] = 0
 
             ampImg = maskedIm[amp.getBBox()].clone()
 
             # crop ampImage depending on where the amp lies in the image
-            if self.config.nPixBorderLeftRight:
+            # and depending on detector type to mask picture frame effect
+            if detectorType == 'E2V':
+                nPixBorderLeftRight = self.config.nPixBorderLeftRightE2V
+            elif detectorType == 'ITL':
+                nPixBorderLeftRight = self.config.nPixBorderLeftRightITL
+
+            if detectorType == 'E2V':
+                nPixBorderUpDown = self.config.nPixBorderUpDownE2V
+            elif detectorType == 'ITL':
+                nPixBorderUpDown = self.config.nPixBorderUpDownITL
+
+            if nPixBorderLeftRight:
                 if ampImg.getX0() == 0:
-                    ampImg = ampImg[self.config.nPixBorderLeftRight:, :, afwImage.LOCAL]
+                    ampImg = ampImg[nPixBorderLeftRight:, :, afwImage.LOCAL]
                 else:
-                    ampImg = ampImg[:-self.config.nPixBorderLeftRight, :, afwImage.LOCAL]
-            if self.config.nPixBorderUpDown:
+                    ampImg = ampImg[:-nPixBorderLeftRight, :, afwImage.LOCAL]
+
+            if nPixBorderUpDown:
                 if ampImg.getY0() == 0:
-                    ampImg = ampImg[:, self.config.nPixBorderUpDown:, afwImage.LOCAL]
+                    ampImg = ampImg[:, nPixBorderUpDown:, afwImage.LOCAL]
                 else:
-                    ampImg = ampImg[:, :-self.config.nPixBorderUpDown, afwImage.LOCAL]
+                    ampImg = ampImg[:, :-nPixBorderUpDown, afwImage.LOCAL]
+
 
             if self._getNumGoodPixels(ampImg) == 0:  # amp contains no usable pixels
                 continue
@@ -646,12 +661,26 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
             raise TypeError(f"Function supports exposure or maskedImage but not {t}")
 
         MASKBIT = mi.mask.getPlaneBitMask(maskplaneToSet)
-        if self.config.nPixBorderLeftRight:
-            mi.mask[: self.config.nPixBorderLeftRight, :, afwImage.LOCAL] |= MASKBIT
-            mi.mask[-self.config.nPixBorderLeftRight:, :, afwImage.LOCAL] |= MASKBIT
-        if self.config.nPixBorderUpDown:
-            mi.mask[:, : self.config.nPixBorderUpDown, afwImage.LOCAL] |= MASKBIT
-            mi.mask[:, -self.config.nPixBorderUpDown:, afwImage.LOCAL] |= MASKBIT
+
+        detector = exposureOrMaskedImage.getDetector()
+        detectorType = detector.getPhysicalType()
+
+        if detectorType == 'E2V':
+            nPixBorderLeftRight = self.config.nPixBorderLeftRightE2V
+        elif detectorType == 'ITL':
+            nPixBorderLeftRight = self.config.nPixBorderLeftRightITL
+
+        if detectorType == 'E2V':
+            nPixBorderUpDown = self.config.nPixBorderUpDownE2V
+        elif detectorType == 'ITL':
+            nPixBorderUpDown = self.config.nPixBorderUpDownITL
+
+        if nPixBorderLeftRight:
+            mi.mask[: nPixBorderLeftRight, :, afwImage.LOCAL] |= MASKBIT
+            mi.mask[-nPixBorderLeftRight:, :, afwImage.LOCAL] |= MASKBIT
+        if nPixBorderUpDown:
+            mi.mask[:, : nPixBorderUpDown, afwImage.LOCAL] |= MASKBIT
+            mi.mask[:, -nPixBorderUpDown:, afwImage.LOCAL] |= MASKBIT
 
     def maskBlocksIfIntermitentBadPixelsInColumn(self, defects):
         """Mask blocks in a column if there are on-and-off bad pixels
@@ -1150,14 +1179,28 @@ class MergeDefectsTaskConfig(pipeBase.PipelineTaskConfig,
         min=0,
         max=1,
     )
-    nPixBorderUpDown = pexConfig.Field(
+    nPixBorderUpDownITL = pexConfig.Field(
         dtype=int,
-        doc="Number of pixels on top & bottom of image to mask as defects if edgesAsDefects is True.",
+        doc=("Width (in pixels) of ITL CCD top and bottom edges set as defects"
+             "if edgesAsDefects is True."),
         default=5,
     )
-    nPixBorderLeftRight = pexConfig.Field(
+    nPixBorderLeftRightITL = pexConfig.Field(
         dtype=int,
-        doc="Number of pixels on left & right of image to mask as defects if edgesAsDefects is True.",
+        doc=("Width (in pixels) of ITL CCD left and right edges set as defects"
+             "if edgesAsDefects is True."),
+        default=5,
+    )
+    nPixBorderUpDownE2V = pexConfig.Field(
+        dtype=int,
+        doc=("Width (in pixels) of E2V CCD top and bottom edges set as defects"
+             "if edgesAsDefects is True."),
+        default=5,
+    )
+    nPixBorderLeftRightE2V = pexConfig.Field(
+        dtype=int,
+        doc=("Width (in pixels) of E2V CCD left and right edges set as defects"
+             "if edgesAsDefects is True."),
         default=5,
     )
     edgesAsDefects = pexConfig.Field(
@@ -1250,16 +1293,27 @@ class MergeDefectsTask(pipeBase.PipelineTask):
 
         if self.config.edgesAsDefects:
             self.log.info("Masking edge pixels as defects.")
+            detectorType = detector.getPhysicalType()
+            if detectorType == 'E2V':
+                nPixBorderLeftRight = self.config.nPixBorderLeftRightE2V
+            elif detectorType == 'ITL':
+                nPixBorderLeftRight = self.config.nPixBorderLeftRightITL
+
+            if detectorType == 'E2V':
+                nPixBorderUpDown = self.config.nPixBorderUpDownE2V
+            elif detectorType == 'ITL':
+                nPixBorderUpDown = self.config.nPixBorderUpDownITL
+
             # This code follows the pattern from isrTask.maskEdges().
-            if self.config.nPixBorderLeftRight > 0:
+            if nPixBorderLeftRight > 0:
                 box = detector.getBBox()
                 subImage = finalImage[box]
-                box.grow(Extent2I(-self.config.nPixBorderLeftRight, 0))
+                box.grow(Extent2I(-nPixBorderLeftRight, 0))
                 SourceDetectionTask.setEdgeBits(subImage, box, BADBIT)
-            if self.config.nPixBorderUpDown > 0:
+            if nPixBorderUpDown > 0:
                 box = detector.getBBox()
                 subImage = finalImage[box]
-                box.grow(Extent2I(0, -self.config.nPixBorderUpDown))
+                box.grow(Extent2I(0, -nPixBorderUpDown))
                 SourceDetectionTask.setEdgeBits(subImage, box, BADBIT)
 
         merged = Defects.fromMask(finalImage, 'BAD')
