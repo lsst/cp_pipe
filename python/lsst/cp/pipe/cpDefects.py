@@ -143,6 +143,16 @@ class MeasureDefectsTaskConfig(pipeBase.PipelineTaskConfig,
              "Unused if thresholdType==``VALUE``"),
         default=-5.0,
     )
+    nPixBorderUpDown = pexConfig.Field(
+        dtype=int,
+        doc="Width (in pixels) of CCD top and bottom edges to mask.",
+        default=0,
+    )
+    nPixBorderLeftRight = pexConfig.Field(
+        dtype=int,
+        doc="Width (in pixels) of CCD left and right edges to mask.",
+        default=0,
+    )
     nPixBorderUpDownITL = pexConfig.Field(
         dtype=int,
         doc="Width (in pixels) of ITL CCD top and bottom edges to mask.",
@@ -481,8 +491,7 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
 
         for amp in exp.getDetector():
             ampName = amp.getName()
-            import IPython
-            IPython.embed()
+
             hotPixelCount[ampName] = 0
             coldPixelCount[ampName] = 0
 
@@ -494,11 +503,15 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
                 nPixBorderLeftRight = self.config.nPixBorderLeftRightE2V
             elif detectorType == 'ITL':
                 nPixBorderLeftRight = self.config.nPixBorderLeftRightITL
+            else:
+                nPixBorderLeftRight = self.config.nPixBorderLeftRight
 
             if detectorType == 'E2V':
                 nPixBorderUpDown = self.config.nPixBorderUpDownE2V
             elif detectorType == 'ITL':
                 nPixBorderUpDown = self.config.nPixBorderUpDownITL
+            else:
+                nPixBorderUpDown = self.config.nPixBorderUpDown
 
             if nPixBorderLeftRight:
                 if ampImg.getX0() == 0:
@@ -660,20 +673,26 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
             t = type(exposureOrMaskedImage)
             raise TypeError(f"Function supports exposure or maskedImage but not {t}")
 
+        import IPython
+        IPython.embed()
         MASKBIT = mi.mask.getPlaneBitMask(maskplaneToSet)
 
-        detector = exposureOrMaskedImage.getDetector()
+        detector = mi.getDetector()
         detectorType = detector.getPhysicalType()
 
         if detectorType == 'E2V':
             nPixBorderLeftRight = self.config.nPixBorderLeftRightE2V
         elif detectorType == 'ITL':
             nPixBorderLeftRight = self.config.nPixBorderLeftRightITL
+        else:
+            nPixBorderLeftRight = self.config.nPixBorderLeftRight
 
         if detectorType == 'E2V':
             nPixBorderUpDown = self.config.nPixBorderUpDownE2V
         elif detectorType == 'ITL':
             nPixBorderUpDown = self.config.nPixBorderUpDownITL
+        else:
+            nPixBorderUpDown = self.config.nPixBorderUpDown
 
         if nPixBorderLeftRight:
             mi.mask[: nPixBorderLeftRight, :, afwImage.LOCAL] |= MASKBIT
@@ -1179,6 +1198,18 @@ class MergeDefectsTaskConfig(pipeBase.PipelineTaskConfig,
         min=0,
         max=1,
     )
+    nPixBorderUpDown = pexConfig.Field(
+        dtype=int,
+        doc=("Width (in pixels) of CCD top and bottom edges set as defects"
+             "if edgesAsDefects is True."),
+        default=5,
+    )
+    nPixBorderLeftRight = pexConfig.Field(
+        dtype=int,
+        doc=("Width (in pixels) of CCD left and right edges set as defects"
+             "if edgesAsDefects is True."),
+        default=5,
+    )
     nPixBorderUpDownITL = pexConfig.Field(
         dtype=int,
         doc=("Width (in pixels) of ITL CCD top and bottom edges set as defects"
@@ -1298,11 +1329,16 @@ class MergeDefectsTask(pipeBase.PipelineTask):
                 nPixBorderLeftRight = self.config.nPixBorderLeftRightE2V
             elif detectorType == 'ITL':
                 nPixBorderLeftRight = self.config.nPixBorderLeftRightITL
+            else:
+                nPixBorderLeftRight = self.config.nPixBorderLeftRight
+
 
             if detectorType == 'E2V':
                 nPixBorderUpDown = self.config.nPixBorderUpDownE2V
             elif detectorType == 'ITL':
                 nPixBorderUpDown = self.config.nPixBorderUpDownITL
+            else:
+                nPixBorderUpDown = self.config.nPixBorderUpDown
 
             # This code follows the pattern from isrTask.maskEdges().
             if nPixBorderLeftRight > 0:
