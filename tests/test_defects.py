@@ -132,6 +132,10 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
         config = copy.copy(self.defaultConfig)
         config.badOnAndOffPixelColumnThreshold = 10
         config.goodPixelColumnGapThreshold = 5
+        config.nPixBorderUpDownE2V = 0
+        config.nPixBorderLeftRightE2V = 0
+        config.nPixBorderUpDownITL = 0
+        config.nPixBorderLeftRightITL = 0
         config.nPixBorderUpDown = 0
         config.nPixBorderLeftRight = 0
 
@@ -773,6 +777,10 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
 
     def test_defectFindingAllSensor(self):
         config = copy.copy(self.defaultConfig)
+        config.nPixBorderLeftRightE2V = 0
+        config.nPixBorderUpDownE2V = 0
+        config.nPixBorderLeftRightITL = 0
+        config.nPixBorderUpDownITL = 0
         config.nPixBorderLeftRight = 0
         config.nPixBorderUpDown = 0
 
@@ -792,7 +800,11 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
 
     def test_defectFindingEdgeIgnore(self):
         config = copy.copy(self.defaultConfig)
+        config.nPixBorderUpDownE2V = 0
+        config.nPixBorderUpDownITL = 0
         config.nPixBorderUpDown = 0
+        config.nPixBorderLeftRightE2V = 7
+        config.nPixBorderLeftRightITL = 7
         config.nPixBorderLeftRight = 7
         task = self.defaultTask
         task.config = config
@@ -831,8 +843,15 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
             if saturateAmpInFlat:
                 exp.maskedImage[regionC00].image.array[:] = 0.0
                 # Amp C:0,0: minimum=(0, 0), maximum=(99, 50)
-                x = self.defaultConfig.nPixBorderUpDown
-                y = self.defaultConfig.nPixBorderLeftRight
+                if exp.getDetector().getPhysicalType() == 'E2V':
+                    x = self.defaultConfig.nPixBorderUpDownE2V
+                    y = self.defaultConfig.nPixBorderLeftRightE2V
+                elif exp.getDetector().getPhysicalType() == 'ITL':
+                    x = self.defaultConfig.nPixBorderUpDownITL
+                    y = self.defaultConfig.nPixBorderLeftRightITL
+                else:
+                    x = self.defaultConfig.nPixBorderUpDown
+                    y = self.defaultConfig.nPixBorderLeftRight
                 width, height = regionC00.getEndX() - x, regionC00.getEndY() - y
                 # Defects code will mark whole saturated amp as defect box.
                 shouldBeFound = [Box2I(corner=Point2I(x, y), dimensions=Extent2I(width, height))]
@@ -861,6 +880,10 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
         """Test that the number of defective pixels identified is as expected.
         """
         config = copy.copy(self.defaultConfig)
+        config.nPixBorderUpDownE2V = 0
+        config.nPixBorderLeftRightE2V = 0
+        config.nPixBorderUpDownITL = 0
+        config.nPixBorderLeftRightITL = 0
         config.nPixBorderUpDown = 0
         config.nPixBorderLeftRight = 0
         task = self.defaultTask
@@ -943,7 +966,11 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
 
         config = copy.copy(self.defaultConfig)
         # Do not exclude any pixels, so the areas match.
+        config.nPixBorderUpDownITL = 0
+        config.nPixBorderUpDownE2V = 0
         config.nPixBorderUpDown = 0
+        config.nPixBorderLeftRightITL = 0
+        config.nPixBorderLeftRightE2V = 0
         config.nPixBorderLeftRight = 0
 
         task = self.defaultTask
