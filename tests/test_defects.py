@@ -132,10 +132,6 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
         config = copy.copy(self.defaultConfig)
         config.badOnAndOffPixelColumnThreshold = 10
         config.goodPixelColumnGapThreshold = 5
-        config.nPixBorderUpDownE2V = 0
-        config.nPixBorderLeftRightE2V = 0
-        config.nPixBorderUpDownITL = 0
-        config.nPixBorderLeftRightITL = 0
         config.nPixBorderUpDown = 0
         config.nPixBorderLeftRight = 0
 
@@ -777,10 +773,6 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
 
     def test_defectFindingAllSensor(self):
         config = copy.copy(self.defaultConfig)
-        config.nPixBorderLeftRightE2V = 0
-        config.nPixBorderUpDownE2V = 0
-        config.nPixBorderLeftRightITL = 0
-        config.nPixBorderUpDownITL = 0
         config.nPixBorderLeftRight = 0
         config.nPixBorderUpDown = 0
 
@@ -800,15 +792,42 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
 
     def test_defectFindingEdgeIgnore(self):
         config = copy.copy(self.defaultConfig)
-        config.nPixBorderUpDownE2V = 0
-        config.nPixBorderUpDownITL = 0
-        config.nPixBorderUpDown = 0
+        config.nPixBorderUpDownE2V = 1
+        config.nPixBorderUpDownITL = 1
         config.nPixBorderLeftRightE2V = 7
         config.nPixBorderLeftRightITL = 7
-        config.nPixBorderLeftRight = 7
         task = self.defaultTask
         task.config = config
-        defects = task._findHotAndColdPixels(self.flatExp)
+
+        expE2V = self.flatExp.clone()
+        expITL = self.flatExp.clone()
+
+        testDetector = expE2V.getDetector()
+        e2vDetector = testDetector.rebuild()
+        e2vDetector.setPhysicalType("E2V")
+        expE2V.setDetector(e2vDetector.finish())
+
+        defects = task._findHotAndColdPixels(expE2V)
+
+        shouldBeFound = self.darkBBoxes[self.noEdges] + self.brightBBoxes[self.noEdges]
+
+        boxesMeasured = []
+        for defect in defects:
+            boxesMeasured.append(defect.getBBox())
+
+        for expectedBBox in shouldBeFound:
+            self.assertIn(expectedBBox, boxesMeasured)
+
+        shouldBeMissed = self.darkBBoxes[self.onlyEdges] + self.brightBBoxes[self.onlyEdges]
+        for boxMissed in shouldBeMissed:
+            self.assertNotIn(boxMissed, boxesMeasured)
+
+        testDetector = expITL.getDetector()
+        itlDetector = testDetector.rebuild()
+        itlDetector.setPhysicalType("ITL")
+        expITL.setDetector(itlDetector.finish())
+
+        defects = task._findHotAndColdPixels(expITL)
 
         shouldBeFound = self.darkBBoxes[self.noEdges] + self.brightBBoxes[self.noEdges]
 
@@ -843,15 +862,8 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
             if saturateAmpInFlat:
                 exp.maskedImage[regionC00].image.array[:] = 0.0
                 # Amp C:0,0: minimum=(0, 0), maximum=(99, 50)
-                if exp.getDetector().getPhysicalType() == 'E2V':
-                    x = self.defaultConfig.nPixBorderUpDownE2V
-                    y = self.defaultConfig.nPixBorderLeftRightE2V
-                elif exp.getDetector().getPhysicalType() == 'ITL':
-                    x = self.defaultConfig.nPixBorderUpDownITL
-                    y = self.defaultConfig.nPixBorderLeftRightITL
-                else:
-                    x = self.defaultConfig.nPixBorderUpDown
-                    y = self.defaultConfig.nPixBorderLeftRight
+                x = self.defaultConfig.nPixBorderUpDown
+                y = self.defaultConfig.nPixBorderLeftRight
                 width, height = regionC00.getEndX() - x, regionC00.getEndY() - y
                 # Defects code will mark whole saturated amp as defect box.
                 shouldBeFound = [Box2I(corner=Point2I(x, y), dimensions=Extent2I(width, height))]
@@ -879,13 +891,14 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
     def test_pixelCounting(self):
         """Test that the number of defective pixels identified is as expected.
         """
+        itlDetector = self.flatExp.getDetector().rebuild()
+        itlDetector.setPhysicalType("ITL")
+        self.flatExp.setDetector(itlDetector.finish())
+
         config = copy.copy(self.defaultConfig)
-        config.nPixBorderUpDownE2V = 0
-        config.nPixBorderLeftRightE2V = 0
         config.nPixBorderUpDownITL = 0
         config.nPixBorderLeftRightITL = 0
-        config.nPixBorderUpDown = 0
-        config.nPixBorderLeftRight = 0
+
         task = self.defaultTask
         task.config = config
         defects = task._findHotAndColdPixels(self.flatExp)
@@ -944,18 +957,64 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
         """Check that the right number of edge pixels are masked by
         _setEdgeBits().
         """
+        config = cpPipe.MeasureDefectsTask.ConfigClass()
+
         testImage = self.flatExp.clone()
+        testDetector = testImage.getDetector()
         mi = testImage.maskedImage
 
         self.assertEqual(countMaskedPixels(mi, 'EDGE'), 0)
-        self.defaultTask._setEdgeBits(mi)
 
-        hEdge = self.defaultConfig.nPixBorderLeftRight
-        vEdge = self.defaultConfig.nPixBorderUpDown
+        # Test for default CCD mock
+        config.nPixBorderLeftRight = 3
+        config.nPixBorderUpDown = 4
+        task = self.defaultTask
+        task.config = config
+        task._setEdgeBits(mi)
+
+        hEdge = config.nPixBorderLeftRight
+        vEdge = config.nPixBorderUpDown
         xSize, ySize = mi.getDimensions()
 
         nEdge = xSize*vEdge*2 + ySize*hEdge*2 - hEdge*vEdge*4
+        self.assertEqual(countMaskedPixels(mi, 'EDGE'), nEdge)
 
+        # Test for E2V CCD (need to reset the test image)
+        testImage = self.flatExp.clone()
+        testDetector = testImage.getDetector()
+
+        e2vDetector = testDetector.rebuild()
+        e2vDetector.setPhysicalType("E2V")
+        testImage.setDetector(e2vDetector.finish())
+        config.nPixBorderLeftRightE2V = 2
+        config.nPixBorderUpDownE2V = 1
+        mi = testImage.maskedImage
+        task._setEdgeBits(mi, detectorType=testImage.getDetector().getPhysicalType())
+
+        hEdge = config.nPixBorderLeftRightE2V
+        vEdge = config.nPixBorderUpDownE2V
+        xSize, ySize = mi.getDimensions()
+
+        nEdge = xSize*vEdge*2 + ySize*hEdge*2 - hEdge*vEdge*4
+        self.assertEqual(countMaskedPixels(mi, 'EDGE'), nEdge)
+
+        # Test for ITL CCD
+        testImage = self.flatExp.clone()
+        testDetector = testImage.getDetector()
+
+        itlDetector = testDetector.rebuild()
+        itlDetector.setPhysicalType("ITL")
+        testImage.setDetector(itlDetector.finish())
+        config.nPixBorderLeftRightITL = 5
+        config.nPixBorderUpDownITL = 6
+        mi = testImage.maskedImage
+        task._setEdgeBits(mi, detectorType=testImage.getDetector().getPhysicalType())
+
+        hEdge = config.nPixBorderLeftRightITL
+        vEdge = config.nPixBorderUpDownITL
+        xSize, ySize = mi.getDimensions()
+
+        nEdge = xSize*vEdge*2 + ySize*hEdge*2 - hEdge*vEdge*4
         self.assertEqual(countMaskedPixels(mi, 'EDGE'), nEdge)
 
     def test_badImage(self):
@@ -966,11 +1025,7 @@ class MeasureDefectsTaskTestCase(lsst.utils.tests.TestCase):
 
         config = copy.copy(self.defaultConfig)
         # Do not exclude any pixels, so the areas match.
-        config.nPixBorderUpDownITL = 0
-        config.nPixBorderUpDownE2V = 0
         config.nPixBorderUpDown = 0
-        config.nPixBorderLeftRightITL = 0
-        config.nPixBorderLeftRightE2V = 0
         config.nPixBorderLeftRight = 0
 
         task = self.defaultTask

@@ -398,7 +398,6 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
         defects : `lsst.ip.isr.Defects`
             The defects found in the image.
         """
-        self._setEdgeBits(exp)
 
         # the detection polarity for afwDetection, True for positive,
         # False for negative, and therefore True for darks as they only have
@@ -410,6 +409,8 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
 
         detector = exp.getDetector()
         detectorType = detector.getPhysicalType()
+
+        self._setEdgeBits(exp, detectorType=detectorType)
 
         if self.config.fitAmpGradient:
             # 1. Bin flat.
@@ -524,7 +525,6 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
                     ampImg = ampImg[:, nPixBorderUpDown:, afwImage.LOCAL]
                 else:
                     ampImg = ampImg[:, :-nPixBorderUpDown, afwImage.LOCAL]
-
 
             if self._getNumGoodPixels(ampImg) == 0:  # amp contains no usable pixels
                 continue
@@ -657,8 +657,18 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
         nBad = countMaskedPixels(maskedIm, badMaskString)
         return nPixels - nBad
 
-    def _setEdgeBits(self, exposureOrMaskedImage, maskplaneToSet='EDGE'):
+    def _setEdgeBits(self, exposureOrMaskedImage, maskplaneToSet='EDGE', detectorType='CCD'):
         """Set edge bits on an exposure or maskedImage.
+
+        Parameters
+        ----------
+        exposureOrMaskedImage : `lsst.afw.image.exposure.Exposure`
+        or `lsst.afw.image.MaskedImage`
+            The exposure or masked image in which to find defects.
+        maskplaneToSet : `str`
+            Name of mask plane the edges are set to.
+        detectorType : `str`
+            Name of the detector type.
 
         Raises
         ------
@@ -673,12 +683,7 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
             t = type(exposureOrMaskedImage)
             raise TypeError(f"Function supports exposure or maskedImage but not {t}")
 
-        import IPython
-        IPython.embed()
         MASKBIT = mi.mask.getPlaneBitMask(maskplaneToSet)
-
-        detector = mi.getDetector()
-        detectorType = detector.getPhysicalType()
 
         if detectorType == 'E2V':
             nPixBorderLeftRight = self.config.nPixBorderLeftRightE2V
@@ -1331,7 +1336,6 @@ class MergeDefectsTask(pipeBase.PipelineTask):
                 nPixBorderLeftRight = self.config.nPixBorderLeftRightITL
             else:
                 nPixBorderLeftRight = self.config.nPixBorderLeftRight
-
 
             if detectorType == 'E2V':
                 nPixBorderUpDown = self.config.nPixBorderUpDownE2V
