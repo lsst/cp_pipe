@@ -145,32 +145,32 @@ class MeasureDefectsTaskConfig(pipeBase.PipelineTaskConfig,
     )
     nPixBorderUpDown = pexConfig.Field(
         dtype=int,
-        doc="Width (in pixels) of CCD top and bottom edges to mask.",
+        doc="Number of pixels to exclude from top & bottom of image when looking for defects.",
         default=0,
     )
     nPixBorderLeftRight = pexConfig.Field(
         dtype=int,
-        doc="Width (in pixels) of CCD left and right edges to mask.",
+        doc="Number of pixels to exclude from left & right of image when looking for defects.",
         default=0,
     )
     nPixBorderUpDownITL = pexConfig.Field(
         dtype=int,
-        doc="Width (in pixels) of ITL CCD top and bottom edges to mask.",
+        doc="Number of pixels to exclude from up & down of image when looking for defects in ITL.",
         default=0,
     )
     nPixBorderLeftRightITL = pexConfig.Field(
         dtype=int,
-        doc="Width (in pixels) of ITL CCD left and right edges to mask.",
+        doc="Number of pixels to exclude from left & right of image when looking for defects in ITL.",
         default=0,
     )
     nPixBorderUpDownE2V = pexConfig.Field(
         dtype=int,
-        doc="Width (in pixels) of e2v CCD top and bottom edges to mask.",
+        doc="Number of pixels to exclude from up & down of image when looking for defects in E2V.",
         default=0,
     )
     nPixBorderLeftRightE2V = pexConfig.Field(
         dtype=int,
-        doc="Width (in pixels) of e2v CCD left and right edges to mask.",
+        doc="Number of pixels to exclude from left & right of image when looking for defects in E2V.",
         default=0,
     )
     badOnAndOffPixelColumnThreshold = pexConfig.Field(
