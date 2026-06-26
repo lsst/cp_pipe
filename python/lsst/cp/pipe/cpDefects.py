@@ -515,15 +515,15 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
                 nPixBorderUpDown = self.config.nPixBorderUpDown
 
             if nPixBorderLeftRight:
-                if ampImg.getX0() == 0:
+                if ampImg.getBBox().getMinX() == 0:
                     ampImg = ampImg[nPixBorderLeftRight:, :, afwImage.LOCAL]
-                else:
+                elif ampImg.getBBox().getMaxX() == exp.getBBox().getMaxX():
                     ampImg = ampImg[:-nPixBorderLeftRight, :, afwImage.LOCAL]
 
             if nPixBorderUpDown:
-                if ampImg.getY0() == 0:
+                if ampImg.getBBox().getMinY() == 0:
                     ampImg = ampImg[:, nPixBorderUpDown:, afwImage.LOCAL]
-                else:
+                elif ampImg.getBBox().getMaxY() == exp.getBBox().getMaxY():
                     ampImg = ampImg[:, :-nPixBorderUpDown, afwImage.LOCAL]
 
             if self._getNumGoodPixels(ampImg) == 0:  # amp contains no usable pixels
