@@ -502,14 +502,14 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
             # and depending on detector type to mask picture frame effect
             if detectorType == 'E2V':
                 nPixBorderLeftRight = self.config.nPixBorderLeftRightE2V
-            elif detectorType == 'ITL':
+            elif 'ITL' in detectorType:
                 nPixBorderLeftRight = self.config.nPixBorderLeftRightITL
             else:
                 nPixBorderLeftRight = self.config.nPixBorderLeftRight
 
             if detectorType == 'E2V':
                 nPixBorderUpDown = self.config.nPixBorderUpDownE2V
-            elif detectorType == 'ITL':
+            elif 'ITL' in detectorType:
                 nPixBorderUpDown = self.config.nPixBorderUpDownITL
             else:
                 nPixBorderUpDown = self.config.nPixBorderUpDown
@@ -687,14 +687,14 @@ class MeasureDefectsTask(pipeBase.PipelineTask):
 
         if detectorType == 'E2V':
             nPixBorderLeftRight = self.config.nPixBorderLeftRightE2V
-        elif detectorType == 'ITL':
+        elif 'ITL' in detectorType:
             nPixBorderLeftRight = self.config.nPixBorderLeftRightITL
         else:
             nPixBorderLeftRight = self.config.nPixBorderLeftRight
 
         if detectorType == 'E2V':
             nPixBorderUpDown = self.config.nPixBorderUpDownE2V
-        elif detectorType == 'ITL':
+        elif 'ITL' in detectorType:
             nPixBorderUpDown = self.config.nPixBorderUpDownITL
         else:
             nPixBorderUpDown = self.config.nPixBorderUpDown
@@ -1332,14 +1332,14 @@ class MergeDefectsTask(pipeBase.PipelineTask):
             detectorType = detector.getPhysicalType()
             if detectorType == 'E2V':
                 nPixBorderLeftRight = self.config.nPixBorderLeftRightE2V
-            elif detectorType == 'ITL':
+            elif 'ITL' in detectorType:
                 nPixBorderLeftRight = self.config.nPixBorderLeftRightITL
             else:
                 nPixBorderLeftRight = self.config.nPixBorderLeftRight
 
             if detectorType == 'E2V':
                 nPixBorderUpDown = self.config.nPixBorderUpDownE2V
-            elif detectorType == 'ITL':
+            elif 'ITL' in detectorType:
                 nPixBorderUpDown = self.config.nPixBorderUpDownITL
             else:
                 nPixBorderUpDown = self.config.nPixBorderUpDown
