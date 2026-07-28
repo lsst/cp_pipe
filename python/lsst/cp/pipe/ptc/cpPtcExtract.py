@@ -1215,6 +1215,13 @@ class PhotonTransferCurveExtractTaskBase(pipeBase.PipelineTask):
             im1Area = exposure1.maskedImage
             im2Area = exposure2.maskedImage
 
+        # Make the two share a bad mask...
+        badMask1 = im1Area.mask.array & im1Area.mask.getPlaneBitMask("BAD")
+        badMask2 = im2Area.mask.array & im2Area.mask.getPlaneBitMask("BAD")
+        badMask = badMask1 | badMask2
+        im1Area.mask.array[:, :] = badMask
+        im2Area.mask.array[:, :] = badMask
+
         # Get mask planes and construct statistics control object from one
         # of the exposures
         imMaskVal = exposure1.getMask().getPlaneBitMask(self.config.maskNameList)
