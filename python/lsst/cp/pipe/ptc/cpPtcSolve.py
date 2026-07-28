@@ -404,6 +404,11 @@ class PhotonTransferCurveSolveTask(pipeBase.PipelineTask):
 
             # Apply min/max masking to the partial PTC.
             for ampName in ampNames:
+                if datasetPtc.nPixelCovariances[ampName] >= 0:
+                    if partialPtcDataset.nPixelCovariances[ampName] != datasetPtc.nPixelCovariances[ampName]:
+                        self.log.warning(f"PTC {partialPtcDataset.inputExpIdPairs[ampName][0]} has mismatched number of pixels.")
+                        datasetPtc.nPixelCovariances[ampName] = partialPtcDataset.nPixelCovariances[ampName]
+
                 rawMean = partialPtcDataset.rawMeans[ampName][0]
                 rawVar = partialPtcDataset.rawVars[ampName][0]
                 if (rawMean <= minMeanSignalDict[ampName]) or (rawMean >= maxMeanSignalDict[ampName]) \
