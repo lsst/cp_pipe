@@ -25,6 +25,9 @@ import lsst.cp.pipe.cpCombine as cpCombine
 import lsst.meas.algorithms as measAlg
 import lsst.afw.detection as afwDet
 
+import numpy as np
+from scipy.ndimage import gaussian_filter
+
 
 __all__ = ["CpFringeTask", "CpFringeTaskConfig"]
 
@@ -48,9 +51,10 @@ class CpFringeConnections(pipeBase.PipelineTaskConnections,
 
 class CpFringeTaskConfig(pipeBase.PipelineTaskConfig,
                          pipelineConnections=CpFringeConnections):
-    stats = pexConfig.ConfigurableField(
-        target=cpCombine.CalibStatsTask,
-        doc="Statistics task to use.",
+    convolutionSigma = pexConfig.Field(
+        dtype=float,
+        default=2.0,
+        doc="Convolution psf Gaussian sigma.",
     )
     subtractBackground = pexConfig.ConfigurableField(
         target=measAlg.SubtractBackgroundTask,
@@ -63,10 +67,17 @@ class CpFringeTaskConfig(pipeBase.PipelineTaskConfig,
     detectSigma = pexConfig.Field(
         dtype=float,
         default=1.0,
-        doc="Detection psf gaussian sigma.",
+        doc="Detection psf Gaussian sigma.",
+    )
+    stats = pexConfig.ConfigurableField(
+        target=cpCombine.CalibStatsTask,
+        doc="Statistics task to use.",
     )
 
     def setDefaults(self):
+        self.subtractBackground.useApprox = False
+        self.subtractBackground.binSize = 200  # Based on ps1
+
         self.detection.reEstimateBackground = False
 
 
@@ -79,16 +90,16 @@ class CpFringeTask(pipeBase.PipelineTask):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.makeSubtask("stats")
         self.makeSubtask("subtractBackground")
         self.makeSubtask("detection")
+        self.makeSubtask("stats")
 
     def run(self, inputExp):
         """Preprocess input exposures prior to FRINGE combination.
 
-        This task scales and renormalizes the input frame based on the
-        image background, and then masks all pixels above the
-        detection threshold.
+        This task subtracts a background level, masks potential
+        sources on the image, and convolves with a Gaussian kernel to
+        reduce the noise in the remaining fringe signal.
 
         Parameters
         ----------
@@ -103,11 +114,11 @@ class CpFringeTask(pipeBase.PipelineTask):
             ``outputExp``
                 Fringe pre-processed frame (`lsst.afw.image.Exposure`).
         """
-        bg = self.stats.run(inputExp)
+        # Background subtract
         self.subtractBackground.run(inputExp)
         mi = inputExp.getMaskedImage()
-        mi /= bg
 
+        # Identify sources.
         fpSets = self.detection.detectFootprints(inputExp, sigma=self.config.detectSigma)
         mask = mi.getMask()
         detected = 1 << mask.addMaskPlane("DETECTED")
@@ -115,6 +126,50 @@ class CpFringeTask(pipeBase.PipelineTask):
             if fpSet is not None:
                 afwDet.setMaskFromFootprintList(mask, fpSet.getFootprints(), detected)
 
+        # Convolve with smoothing kernel
+        # Switch to an afw version?
+        mi.image.array = gaussian_filter(mi.image.array, self.config.convolutionSigma)
+
+        # Estimate a DC offset level to potentially use during
+        # combination.  Using PS name to avoid confusion with various
+        # "backgrounds".  Yes, this is likely equally confusing.
+        zero = self.stats.run(inputExp)
+        inputExp.metadata["LSST CP FRINGE ZERO"] = zero
+
+        # Debugging log info for me.
+        imin, i25, imedian, i75, imax = np.percentile(inputExp.image.array, [0, 25, 50, 75, 100])
+        self.log.info(f"Zero level: {zero} P: {imin} {i25} {imedian} {i75} {imax}")
+
         return pipeBase.Struct(
             outputExp=inputExp,
         )
+
+
+class CpFringeCombineConnections(cpCombine.CalibCombineByFilterConnections,
+                                 dimensions=("instrument", "detector", "physical_filter")):
+    outputFringeTable = cT.Output(
+        name="cpFringeTable",
+        doc="Output fringe samples table.",
+        storageClass="ArrowAstropy",  # Should this be an IsrCalib?
+        dimensions=["instrument", "detector", "physical_filter"],
+        isCalibration=True,
+    )
+
+    def __init__(self, *, config=None):
+        super().__init__(config=config)
+
+
+class CpFringeCombineConfig(cpCombine.CalibCombineByFilterConfig,
+                            pipelineConnections=CpFringeCombineConnections):
+    # This should subtask the fringe task from ip_isr.
+    def setDefaults(self):
+        self.exposureScaling = "Unity"
+
+
+class CpFringeCombineTask(cpCombine.CalibCombineTask):
+    """Subclass the default cpCombine to add fringe specific options."""
+
+    def run(self, inputExpHandles, inputScales=None, inputDims=None):
+        """Add-on to the default run task to measure fringe samples."""
+        pass
+        # results = super().run(inputExpHandles, inputScales, inputDims)
