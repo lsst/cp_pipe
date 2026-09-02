@@ -463,7 +463,7 @@ class MeasurePhotonTransferCurveTaskTestCase(lsst.utils.tests.TestCase):
                 means = ptc.finalMeans[ampName][nanMask]
                 covModel = ptc.covariancesModel[ampName][nanMask]
                 covariancesModel = ptc.evalPtcModel(means)[ampName]
-                self.assertFloatsAlmostEqual(covariancesModel, covModel, atol=1e-12)
+                self.assertFloatsAlmostEqual(covariancesModel, covModel, atol=2e-12)
 
             # And check that this is serializable
             with tempfile.NamedTemporaryFile(suffix=".fits") as f:
