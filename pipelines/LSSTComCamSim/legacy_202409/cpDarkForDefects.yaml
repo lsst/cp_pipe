@@ -3,7 +3,7 @@
 description:  dark calibration construction for defects.
 instrument: lsst.obs.lsst.LsstComCamSim
 imports:
-  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpDarkForDefects.yaml
+  - location: resource://lsst.cp.pipe/resources/pipelines/_ingredients/cpDarkForDefects.yaml
 tasks:
   cpDarkForDefectsIsr:
     class: lsst.ip.isr.IsrTask

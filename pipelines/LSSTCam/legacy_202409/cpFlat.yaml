@@ -1,7 +1,7 @@
 description: cp_pipe FLAT calibration construction optimized for single-CCD cameras
 instrument: lsst.obs.lsst.LsstCam
 imports:
-  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpFlat.yaml
+  - location: resource://lsst.cp.pipe/resources/pipelines/_ingredients/cpFlat.yaml
 tasks:
   cpFlatIsr:
     class: lsst.ip.isr.IsrTask

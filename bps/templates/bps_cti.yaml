@@ -1,4 +1,4 @@
-pipelineYaml: "${CP_PIPE_DIR}/pipelines/${INSTRUMENT}/cpCti.yaml"
+pipelineYaml: "resource://lsst.cp.pipe/resources/pipelines/${INSTRUMENT}/cpCti.yaml"
 
 project: "${TICKET}"
 campaign: "${TICKET}"
