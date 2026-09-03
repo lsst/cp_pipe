@@ -1,4 +1,4 @@
-pipelineYaml: "${CP_PIPE_DIR}/pipelines/${INSTRUMENT}/cpFlatAnaglyph.yaml"
+pipelineYaml: "resource://lsst.cp.pipe/resources/pipelines/${INSTRUMENT}/cpFlatAnaglyph.yaml"
 
 project: "${TICKET}"
 campaign: "${TICKET}"

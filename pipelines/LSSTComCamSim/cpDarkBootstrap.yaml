@@ -1,7 +1,7 @@
 description: LSSTComCam bootstrap dark calibration construction
 instrument: lsst.obs.lsst.LsstComCamSim
 imports:
-  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpDarkBootstrapLSST.yaml
+  - location: resource://lsst.cp.pipe/resources/pipelines/_ingredients/cpDarkBootstrapLSST.yaml
 tasks:
   cpDarkBootstrapIsr:
     class: lsst.ip.isr.IsrTaskLSST

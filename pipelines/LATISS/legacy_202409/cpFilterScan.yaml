@@ -1,7 +1,7 @@
 description: Latiss filter scan construction
 instrument: lsst.obs.lsst.Latiss
 imports:
-  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpFilterScan.yaml
+  - location: resource://lsst.cp.pipe/resources/pipelines/_ingredients/cpFilterScan.yaml
 tasks:
   cpFilterScanIsr:
     class: lsst.ip.isr.IsrTask
