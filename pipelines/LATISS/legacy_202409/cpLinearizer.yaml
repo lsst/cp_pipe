@@ -1,7 +1,7 @@
 description: cp_pipe linearity calibration construction.
 instrument: lsst.obs.lsst.Latiss
 imports:
-  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpLinearizer.yaml
+  - location: resource://lsst.cp.pipe/resources/pipelines/_ingredients/cpLinearizer.yaml
 tasks:
   cpLinearizerSolve:
     class: lsst.cp.pipe.LinearitySolveTask

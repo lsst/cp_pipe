@@ -1,7 +1,7 @@
 description: LSSTCam Photon-Transfer Curve calibration construction.
 instrument: lsst.obs.lsst.LsstTS8
 imports:
-  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpPtc.yaml
+  - location: resource://lsst.cp.pipe/resources/pipelines/_ingredients/cpPtc.yaml
 tasks:
   cpPtcExtractPair:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractPairTask
