@@ -1,7 +1,7 @@
 description: LSSTComCamSim bootstrap flat construction
 instrument: lsst.obs.lsst.LsstComCamSim
 imports:
-  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpFlatBootstrapSingleChipLSST.yaml
+  - location: resource://lsst.cp.pipe/resources/pipelines/_ingredients/cpFlatBootstrapSingleChipLSST.yaml
 tasks:
   cpFlatBootstrapIsr:
     class: lsst.ip.isr.IsrTaskLSST

@@ -1,6 +1,6 @@
 description: cp_pipe flat gradient reference calibration construction.
 imports:
-  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpFlatLSST.yaml
+  - location: resource://lsst.cp.pipe/resources/pipelines/_ingredients/cpFlatLSST.yaml
 tasks:
   cpFlatFitGradientsReference:
     class: lsst.cp.pipe.CpFlatFitGradientsTask

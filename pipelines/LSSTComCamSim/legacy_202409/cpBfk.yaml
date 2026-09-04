@@ -1,4 +1,4 @@
 description: cp_pipe brighter-fatter kernel calibration construction.
 instrument: lsst.obs.lsst.LsstComCamSim
 imports:
-  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpBfk.yaml
+  - location: resource://lsst.cp.pipe/resources/pipelines/_ingredients/cpBfk.yaml

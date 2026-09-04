@@ -1,7 +1,7 @@
 description: cp_pipe LSSTCam flat gradient reference calibration construction.
 instrument: lsst.obs.lsst.LsstCam
 imports:
-  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpFlatGradientReferenceLSST.yaml
+  - location: resource://lsst.cp.pipe/resources/pipelines/_ingredients/cpFlatGradientReferenceLSST.yaml
 tasks:
   cpFlatCombine:
     class: lsst.cp.pipe.CalibCombineByFilterTask
