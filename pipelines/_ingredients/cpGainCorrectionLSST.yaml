@@ -1,6 +1,6 @@
 description: cp_pipe GainCorrection calibration for LSST isr task
 imports:
-  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpFlatCorrectedLSST.yaml
+  - location: resource://lsst.cp.pipe/resources/pipelines/_ingredients/cpFlatCorrectedLSST.yaml
     exclude:
       - cpFlatBin8
       - cpFlatBin64

@@ -1,7 +1,7 @@
 description: LATISS Brighter-Fatter kernel calibration construction.
 instrument: lsst.obs.lsst.Latiss
 imports:
-  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpBfkLSST.yaml
+  - location: resource://lsst.cp.pipe/resources/pipelines/_ingredients/cpBfkLSST.yaml
 tasks:
   cpBfkPtcExtractPair:
     class: lsst.cp.pipe.ptc.PhotonTransferCurveExtractPairTask

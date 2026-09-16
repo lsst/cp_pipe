@@ -1,7 +1,7 @@
 description: LSSTComCam bias calibration construction
 instrument: lsst.obs.lsst.LsstComCam
 imports:
-  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpBiasLSST.yaml
+  - location: resource://lsst.cp.pipe/resources/pipelines/_ingredients/cpBiasLSST.yaml
 tasks:
   cpBiasIsr:
     class: lsst.ip.isr.IsrTaskLSST

@@ -1,4 +1,4 @@
-pipelineYaml: "${CP_PIPE_DIR}/pipelines/${INSTRUMENT}/cpIlluminationCorrection.yaml"
+pipelineYaml: "resource://lsst.cp.pipe/resources/pipelines/${INSTRUMENT}/cpIlluminationCorrection.yaml"
 
 project: "${TICKET}"
 campaign: "${TICKET}"

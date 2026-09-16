@@ -40,7 +40,7 @@ tasks:
   cpIlluminationCorrectionTransformPreSourceTable:
     class: lsst.pipe.tasks.postprocess.TransformSourceTableTask
     config:
-      functorFile: "$CP_PIPE_DIR/schemas/PreSourceIlluminationCorrection.yaml"
+      functorFile: "resource://lsst.cp.pipe/resources/schemas/PreSourceIlluminationCorrection.yaml"
       connections.inputCatalog: "single_visit_star_unstandardized"
       connections.outputCatalog: "single_visit_star_detector"
   cpIlluminationCorrectionConsolidatePreSourceTable:
