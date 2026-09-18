@@ -11,6 +11,7 @@ tasks:
       connections.crosstalkSources: "overscanRaw"
       connections.bias: "bias"
       doDark: false
+      doCameraSpecificMasking: false
   cpFlatMeasure:
     class: lsst.cp.pipe.CpFlatMeasureTask
     config:

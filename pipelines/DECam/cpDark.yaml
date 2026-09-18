@@ -3,6 +3,10 @@ instrument: lsst.obs.decam.DarkEnergyCamera
 imports:
   - location: $CP_PIPE_DIR/pipelines/_ingredients/cpDark.yaml
 tasks:
+  cpDarkIsr:
+    class: lsst.ip.isr.IsrTask
+    config:
+    - doCameraSpecificMasking: false
   cpDarkCombine:
     class: lsst.cp.pipe.CalibCombineTask
     config:
