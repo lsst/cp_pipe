@@ -2,3 +2,8 @@ description: cp_pipe FLAT calibration construction
 instrument: lsst.obs.decam.DarkEnergyCamera
 imports:
   - location: $CP_PIPE_DIR/pipelines/_ingredients/cpFlatSingleChip.yaml
+tasks:
+  cpFlatIsr:
+    class: lsst.ip.isr.IsrTask
+    config:
+      doCameraSpecificMasking: false

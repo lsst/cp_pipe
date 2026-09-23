@@ -2,3 +2,8 @@ description: cp_pipe CTI calibration construction
 instrument: lsst.obs.decam.DarkEnergyCamera
 imports:
   - location: $CP_PIPE_DIR/pipelines/_ingredients/cpCti.yaml
+tasks:
+  cpCtiIsr:
+    class: lsst.ip.isr.IsrTask
+    config:
+    - doCameraSpecificMasking: false
