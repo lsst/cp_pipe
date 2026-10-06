@@ -1,4 +1,4 @@
-pipelineYaml: "${CP_PIPE_DIR}/pipelines/${INSTRUMENT}/cpDarkBootstrap.yaml"
+pipelineYaml: "resource://lsst.cp.pipe/resources/pipelines/${INSTRUMENT}/cpDarkBootstrap.yaml"
 
 project: "${TICKET}"
 campaign: "${TICKET}"

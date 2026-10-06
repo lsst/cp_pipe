@@ -1,7 +1,7 @@
 description: cp_pipe LSSTCam DEFECT calibration construction from combined images.
 instrument: lsst.obs.lsst.LsstCam
 imports:
-  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpDefectsLSST.yaml
+  - location: resource://lsst.cp.pipe/resources/pipelines/_ingredients/cpDefectsLSST.yaml
 tasks:
   cpMeasureBiasDefects:
     class: lsst.cp.pipe.MeasureDefectsCombinedTask

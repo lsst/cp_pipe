@@ -1,7 +1,7 @@
 description: Sky frame generation pipeline definition.
 instrument: lsst.obs.lsst.LsstComCamSim
 imports:
-  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpSky.yaml
+  - location: resource://lsst.cp.pipe/resources/pipelines/_ingredients/cpSky.yaml
 tasks:
   cpSkyImage:
     class: lsst.cp.pipe.CpSkyImageTask

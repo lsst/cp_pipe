@@ -1,7 +1,7 @@
 description: LSSTComCamSim flat calibration construction
 instrument: lsst.obs.lsst.LsstComCamSim
 imports:
-  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpFlatLSST.yaml
+  - location: resource://lsst.cp.pipe/resources/pipelines/_ingredients/cpFlatLSST.yaml
 tasks:
   cpFlatIsr:
     class: lsst.ip.isr.IsrTaskLSST

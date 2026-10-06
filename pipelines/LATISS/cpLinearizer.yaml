@@ -1,7 +1,7 @@
 description: cp_pipe LATISS linearizer calibration construction.
 instrument: lsst.obs.lsst.Latiss
 imports:
-  - location: $CP_PIPE_DIR/pipelines/_ingredients/cpLinearizerLSST.yaml
+  - location: resource://lsst.cp.pipe/resources/pipelines/_ingredients/cpLinearizerLSST.yaml
     exclude:
       - cpLinearizerUnnormalizedSolve2
       - cpLinearizerNormalize2
