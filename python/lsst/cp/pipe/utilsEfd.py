@@ -26,10 +26,12 @@ import logging
 import numpy as np
 import re
 import requests
+import os
+from pathlib import Path
+import json
 
 from astropy.table import Table
 from astropy.time import Time
-from urllib.parse import urljoin
 
 
 class CpEfdClient():
@@ -49,8 +51,8 @@ class CpEfdClient():
 
         authDict = self._getAuth(efdInstance)
         self._auth = (authDict["username"], authDict["password"])
-        self._databaseName = "efd"
-        self._databaseUrl = urljoin(f"https://{authDict['host']}", authDict["path"])
+        self._databaseName = authDict["database"]
+        self._databaseUrl = authDict["url"]
 
         self.checkConnection()
 
@@ -72,24 +74,24 @@ class CpEfdClient():
                 Login username.
             ``"password"``
                 Login passwords.
-            ``"host"``
-                Host to connect to.
-            ``"path"``
-                Directory path for EFD instance.
+            ``"url"``
+                URL to connect to.
 
         Raises
         ------
         RuntimeError :
             Raised if the HTTPS request fails.
         """
-        serviceEndpoint = "https://roundtable.lsst.codes/segwarides/"
-        url = urljoin(serviceEndpoint, f"creds/{instanceAlias}")
-        response = requests.get(url)
+        if os.getenv("EFDAUTH"):
+            auth_path = Path(os.environ["EFDAUTH"])
+            auth_data = json.loads(auth_path.read_text())
 
-        if response.status_code == 200:
-            return response.json()
+            if instanceAlias not in auth_data:
+                raise RuntimeError(f"Could not find {instanceAlias} in {auth_path}")
+
+            return auth_data[instanceAlias]
         else:
-            raise RuntimeError(f"Could not connect to {url}")
+            raise RuntimeError("Could not find EFDAUTH environment variable.")
 
     def checkConnection(self):
         """Check the connection to the EFD.
