@@ -1071,6 +1071,14 @@ class AstierSplineLinearityFitter:
         Maximum fractional correction.
     max_correction : `float`, optional
         Maximum correction (unscaled).
+    ptc_mean : `np.ndarray` (N,), optional
+        Array of PTC mean values.  Required if ptc_degree > 0.
+    ptc_var : `np.ndarray` (N,), optional
+        Array of PTC variance values.  Required if ptc_degree > 0.
+    ptc_sigma_var : `np.ndarray` (N,), optional
+        Array of PTC sigma_variance values.  Requird if ptc_degree > 0.
+    ptc_degree : `int`, optional
+        Degree of variance (PTC) polynomial.
     """
     def __init__(
         self,
@@ -1090,6 +1098,10 @@ class AstierSplineLinearityFitter:
         mjd_scaled=None,
         max_frac_correction=0.25,
         max_correction=np.inf,
+        ptc_mean=None,
+        ptc_var=None,
+        ptc_sigma_var=None,
+        ptc_degree=0,
     ):
         self._pd = np.asarray(pd).copy()
         self._mu = np.asarray(mu).copy()
@@ -1102,12 +1114,25 @@ class AstierSplineLinearityFitter:
         self._fit_temporal = fit_temporal
         self._max_frac_correction = max_frac_correction
         self._max_correction = max_correction
+        self._ptc_mean = np.asarray(ptc_mean).copy()
+        self._ptc_var = np.asarray(ptc_var).copy()
+        self._ptc_sigma_var = np.asarray(ptc_sigma_var).copy()
+        self._ptc_degree = ptc_degree
 
         self._nodes = nodes
         if nodes[0] != 0.0:
             raise ValueError("First node must be 0.0")
         if not np.all(np.diff(nodes) > 0):
             raise ValueError("Nodes must be sorted with no repeats.")
+
+        if ptc_degree > 0 and (ptc_mean is None or ptc_var is None or ptc_sigma_var is None):
+            raise ValueError("Must set ptc_mean/ptc_var/ptc_sigma_var arrays if ptc_degree > 0.")
+        elif ptc_degree <= 0:
+            # Filler arrays; length is arbitrary.
+            self._ptc_mean = np.zeros_like(self._mu)
+            self._ptc_var = np.zeros_like(self._mu)
+            self._ptc_sigma_var = np.zeros_like(self._mu)
+        self._fit_ptc_coeff = ptc_degree > 0
 
         # Find the group indices.
         u_group_values = np.unique(self._grouping_values)
@@ -1152,6 +1177,7 @@ class AstierSplineLinearityFitter:
             "weight_pars": np.zeros(0, dtype=np.int64),
             "temperature_coeff": np.zeros(0, dtype=np.int64),
             "temporal_coeff": np.zeros(0, dtype=np.int64),
+            "ptc_coeff": np.zeros(0, dtype=np.int64),
         }
         if self._fit_offset:
             self.par_indices["offset"] = np.arange(1) + (
@@ -1179,6 +1205,15 @@ class AstierSplineLinearityFitter:
                 + len(self.par_indices["weight_pars"])
                 + len(self.par_indices["temperature_coeff"])
             )
+        if self._fit_ptc_coeff:
+            self.par_indices["ptc_coeff"] = np.arange(self._ptc_degree + 1) + (
+                len(self.par_indices["values"])
+                + len(self.par_indices["groups"])
+                + len(self.par_indices["offset"])
+                + len(self.par_indices["weight_pars"])
+                + len(self.par_indices["temperature_coeff"])
+                + len(self.par_indices["temporal_coeff"])
+            )
 
         self._npt = (
             len(self.par_indices["values"])
@@ -1187,7 +1222,20 @@ class AstierSplineLinearityFitter:
             + len(self.par_indices["weight_pars"])
             + len(self.par_indices["temperature_coeff"])
             + len(self.par_indices["temporal_coeff"])
+            + len(self.par_indices["ptc_coeff"])
         )
+
+        if self._fit_ptc_coeff:
+            self._ptc_use = np.isfinite(self._ptc_mean)
+
+            # coeffs = np.polyfit(
+            #     self._ptc_mean[self._ptc_use],
+            #     self._ptc_var[self._ptc_use],
+            #     len(self.par_indices["ptc_coeff"]) - 1,
+            # )
+
+            # self._ptc_constraint_mean = np.max(self._ptc_mean[self._ptc_use])
+            # self._ptc_constraint_var = np.polyval(coeffs, self._ptc_constraint_mean)
 
     @staticmethod
     def compute_weights(weight_pars, mu, mask):
@@ -1261,6 +1309,8 @@ class AstierSplineLinearityFitter:
             p0,
             self._pd,
             self._mu,
+            self._ptc_mean,
+            self._ptc_var,
             self._temperature_scaled,
             self._mjd_scaled,
         )
@@ -1279,6 +1329,8 @@ class AstierSplineLinearityFitter:
             p0,
             self._pd,
             self._mu,
+            self._ptc_mean,
+            self._ptc_var,
             self._temperature_scaled,
             self._mjd_scaled,
         )
@@ -1304,6 +1356,16 @@ class AstierSplineLinearityFitter:
         # Restore the correct value
         self._max_signal_nearly_linear = max_signal_nearly_linear
 
+        # Compute variance/PTC terms if required.
+        if self._fit_ptc_coeff:
+            coeffs = np.polyfit(
+                self._ptc_mean[self._ptc_use],
+                self._ptc_var[self._ptc_use],
+                len(self.par_indices["ptc_coeff"]) - 1,
+            )
+
+            p0[self.par_indices["ptc_coeff"]] = coeffs
+
         return p0
 
     @staticmethod
@@ -1314,9 +1376,12 @@ class AstierSplineLinearityFitter:
         pars,
         pd,
         mu,
+        ptc_mean,
+        ptc_var,
         temperature_scaled,
         mjd_scaled,
         return_spline=False,
+        return_ptc_values=False,
     ):
         """Compute the ratio model values.
 
@@ -1340,12 +1405,18 @@ class AstierSplineLinearityFitter:
             Array of photodiode measurements.
         mu : `np.ndarray` (N,)
             Array of flat means.
+        ptc_mean : `np.ndarray`, (P,)
+            Array of PTC means.
+        ptc_var : `np.ndarray`, (P,)
+            Array of PTC variances.
         temperature_scaled : `np.ndarray` (N,)
             Array of scaled temperature values.
         mjd_scaled : `np.ndarray` (N,)
             Array of scaled mjd values.
         return_spline : `bool`, optional
             Return the spline interpolation as well as the model ratios?
+        return_ptc_values : `bool`, optional
+            Return PTC variance values?
 
         Returns
         -------
@@ -1365,6 +1436,21 @@ class AstierSplineLinearityFitter:
         if len(par_indices["temporal_coeff"]) == 1:
             mu_corr = mu_corr*(1. + pars[par_indices["temporal_coeff"]]*mjd_scaled)
 
+        if return_ptc_values and len(par_indices["ptc_coeff"] > 0):
+            ptc_mean_corr = spl(np.clip(ptc_mean, nodes[0], nodes[-1])) + ptc_mean
+            spl_deriv = spl.derivative(nu=1)
+            # Compute the derivative at the original mu value.
+            ptc_mean_corr_deriv = spl_deriv(ptc_mean)
+            # Evaluate the polynomial at the corrected mu values.
+            r = np.polyval(pars[par_indices["ptc_coeff"]], ptc_mean_corr)
+            r -= ptc_var * (1. + ptc_mean_corr_deriv)**2.
+
+            # Append the additional constraint value that is the derivative at
+            # the max value.
+            r = np.append(r, spl_deriv(np.max(ptc_mean[np.isfinite(ptc_mean)])))
+        else:
+            r = np.zeros_like(mu)
+
         numerator = mu_corr - spl(np.clip(mu_corr, nodes[0], nodes[-1]))
         if len(par_indices["offset"]) == 1:
             numerator -= pars[par_indices["offset"][0]]
@@ -1374,8 +1460,12 @@ class AstierSplineLinearityFitter:
         for j in range(ngroup):
             denominator[group_indices[j]] *= kj[j]
 
-        if return_spline:
+        if return_spline and return_ptc_values:
+            return numerator / denominator, r, spl
+        elif return_spline:
             return numerator / denominator, spl
+        elif return_ptc_values:
+            return numerator / denominator, r
         else:
             return numerator / denominator
 
@@ -1540,21 +1630,26 @@ class AstierSplineLinearityFitter:
             dof -= 1
         if self._fit_weights:
             dof -= 2
+        if self._fit_ptc_coeff:
+            dof -= (self._ptc_degree + 1)
 
         return chisq/dof
 
     def __call__(self, pars):
 
-        ratio_model, spl = self.compute_ratio_model(
+        ratio_model, ptc_r, spl = self.compute_ratio_model(
             self._nodes,
             self.group_indices,
             self.par_indices,
             pars,
             self._pd,
             self._mu,
+            self._ptc_mean,
+            self._ptc_var,
             self._temperature_scaled,
             self._mjd_scaled,
             return_spline=True,
+            return_ptc_values=True,
         )
 
         _mask = self.mask
@@ -1566,7 +1661,15 @@ class AstierSplineLinearityFitter:
         # Ensure masked points have 0 residual.
         resid[~_mask] = 0.0
 
-        constraint = [1e3 * np.mean(spl(np.clip(self._x_regularize, self._nodes[0], self._nodes[-1])))]
+        if self._fit_ptc_coeff:
+            # Ensure we mask the out-of-PTC values.
+            ptc_r[0: -1][~self._ptc_use] = 0.0
+            # Scale by the variance error.
+            ptc_r[0: -1][self._ptc_use] /= self._ptc_sigma_var[self._ptc_use]
+
+            ptc_r[-1] *= 1e50
+
+        constraint = [1e10 * np.mean(spl(np.clip(self._x_regularize, self._nodes[0], self._nodes[-1])))]
         # 0 should transform to 0
         constraint.append(spl(0)*1e10)
         # Use a Jeffreys prior on the weight if we are fitting it.
@@ -1585,7 +1688,7 @@ class AstierSplineLinearityFitter:
         else:
             extra_constraint = 0
 
-        return np.hstack([resid, constraint, extra_constraint])
+        return np.hstack([resid, ptc_r, constraint, extra_constraint])
 
     def _group_minfunc(self, group_pars):
         """Minimization function for initial group parameters.
@@ -1605,6 +1708,8 @@ class AstierSplineLinearityFitter:
             full_pars,
             self._pd,
             self._mu,
+            self._ptc_mean,
+            self._ptc_var,
             self._temperature_scaled,
             self._mjd_scaled,
             return_spline=False,

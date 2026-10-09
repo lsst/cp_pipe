@@ -214,6 +214,11 @@ class LinearitySolveConfig(pipeBase.PipelineTaskConfig,
         doc="Maximum deviation from linear solution for Poissonian noise.",
         default=5.0,
     )
+    ptcDegree = pexConfig.Field(
+        dtype=int,
+        doc="Degree of additional constraint on variance (PTC) when fitting spline.",
+        default=3,
+    )
     ignorePtcMask = pexConfig.Field(
         dtype=bool,
         doc="Ignore the expIdMask set by the PTC solver?",
@@ -1209,6 +1214,12 @@ class LinearityDoubleSplineSolveConfig(
         doc="Sigma-clipping for absolute spline solution.",
         default=5.0,
     )
+    absolutePtcDegree = pexConfig.Field(
+        dtype=int,
+        doc="Degree of additional constrain on variance (PTC) when fitting absolute spline. "
+            "Turn off by setting to <= 0.",
+        default=3,
+    )
     doAbsoluteSplineFitOffset = pexConfig.Field(
         dtype=bool,
         doc="Fit a scattered light offset in the spline fit.",
@@ -1307,6 +1318,12 @@ class LinearityDoubleSplineSolveConfig(
         dtype=float,
         doc="Sigma-clipping for relative spline solution.",
         default=5.0,
+    )
+    relativePtcDegree = pexConfig.Field(
+        dtype=int,
+        doc="Degree of additional constrain on variance (PTC) when fitting relative spline. "
+            "Turn off by setting to <= 0.",
+        default=3,
     )
 
     def validate(self):
@@ -1477,6 +1494,10 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
                 ("photocharge", "f8"),
                 ("mjd", "f8"),
                 ("raw_mean", ("f8", nAmp)),
+                # The ptc values will be masked with nans and have different length.
+                ("ptc_mean", ("f8", nAmp)),
+                ("ptc_var", ("f8", nAmp)),
+                ("ptc_sigma_var", ("f8", nAmp)),
                 ("abscissa", "f8"),
                 ("grouping", "i4"),
                 # The following are computed in the relative scaling
@@ -1500,6 +1521,20 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
             data["raw_mean"][:, i] = np.repeat(inputPtc.rawMeans[ampName], 2)
             data["raw_mean"][::2, i] -= inputPtc.rawDeltas[ampName] / 2.
             data["raw_mean"][1::2, i] += inputPtc.rawDeltas[ampName] / 2.
+
+            ptc_mask = inputPtc.expIdMask[ampName]
+            data["ptc_mean"][:, i] = np.nan
+            data["ptc_var"][:, i] = np.nan
+            data["ptc_sigma_var"][:, i] = np.nan
+            data["ptc_mean"][0: len(ptc_mask), i] = inputPtc.rawMeans[ampName]
+            data["ptc_var"][0: len(ptc_mask), i] = inputPtc.rawVars[ampName]
+            sigma_var = np.sqrt(2) * inputPtc.rawVars[ampName] / np.sqrt(
+                inputPtc.nPixelCovariances[ampName]
+            )
+            data["ptc_sigma_var"][0: len(ptc_mask), i] = sigma_var
+            data["ptc_mean"][0: len(ptc_mask), i][~ptc_mask] = np.nan
+            data["ptc_var"][0: len(ptc_mask), i][~ptc_mask] = np.nan
+            data["ptc_sigma_var"][0: len(ptc_mask), i][~ptc_mask] = np.nan
 
         if self.config.usePhotodiode:
             data["abscissa"][:] = data["photocharge"]
@@ -1753,6 +1788,10 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
                 # Put a cap on the maximum correction in absolute value.
                 max_frac_correction=np.inf,
                 max_correction=10_000.0,
+                ptc_mean=data["ptc_mean"][:, i].copy(),
+                ptc_var=data["ptc_var"][:, i].copy(),
+                ptc_sigma_var=data["ptc_sigma_var"][:, i].copy(),
+                ptc_degree=self.config.relativePtcDegree,
             )
             p0 = fitter.estimate_p0()
             pars = fitter.fit(
@@ -1762,6 +1801,32 @@ class LinearityDoubleSplineSolveTask(pipeBase.PipelineTask):
                 max_rejection_per_iteration=self.config.relativeSplineFitMaxRejectionPerIteration,
                 n_sigma_clip=self.config.relativeNSigmaClipLinear,
             )
+
+            print("hmmm")
+            import matplotlib.pyplot as plt
+            import IPython
+            IPython.embed()
+
+            if False:
+                spl = Akima1DInterpolator(fitter._nodes, pars[fitter.par_indices["values"]], method="akima")
+                ptc_mean_corr = spl(np.clip(data["ptc_mean"][:, i], fitter._nodes[0], fitter._nodes[-1])) + data["ptc_mean"][:, i]
+                spl_deriv = spl.derivative(nu=1)
+                ptc_mean_corr_deriv = spl_deriv(fitter._ptc_mean)
+
+                plt.plot(fitter._ptc_mean, fitter._ptc_var, "r.")
+                plt.plot(ptc_mean_corr, fitter._ptc_var * (1. + ptc_mean_corr_deriv)**2., "b+")
+                plt.show()
+
+                plt.plot(ptc_mean_corr, (fitter._ptc_var * (1. + ptc_mean_corr_deriv)**2. - fitter._ptc_var) / fitter._ptc_var, "r.")
+                plt.show()
+
+                plt.plot(data["ptc_mean"][:, i], spl(np.clip(data["ptc_mean"][:, i], fitter._nodes[0], fitter._nodes[-1])), "r.")
+                plt.plot(data["ptc_mean"][:, i], spl2(np.clip(data["ptc_mean"][:, i], fitter._nodes[0], fitter._nodes[-1])), "b+")
+                plt.show()
+
+
+
+            asdlkfhljlk
 
             # Confirm that the first parameter is 0, and set it to
             # exactly zero.
