@@ -9,79 +9,7 @@ interactions:
       Connection:
       - keep-alive
       User-Agent:
-      - python-requests/2.32.3
-    method: GET
-    uri: https://sdfproxy.sdf.slac.stanford.edu:3128/segwarides/creds/usdf_efd
-  response:
-    body:
-      string: '{"host": "usdf-rsp.slac.stanford.edu", "username": "efdreader", "password":
-        "9Wkosj2m1d+NeqaNTyPNBA==", "schema_registry": "http://sasquatch-schema-registry.sasquatch:8081",
-        "port": "443", "path": "/influxdb-enterprise-data/"}'
-    headers:
-      Connection:
-      - keep-alive
-      Content-Length:
-      - '226'
-      Content-Type:
-      - application/json; charset=utf-8
-      Date:
-      - Wed, 07 May 2025 03:01:38 GMT
-      Strict-Transport-Security:
-      - max-age=31536000; includeSubDomains
-    status:
-      code: 200
-      message: OK
-- request:
-    body: null
-    headers:
-      Accept:
-      - '*/*'
-      Accept-Encoding:
-      - gzip, deflate, br, zstd
-      Authorization:
-      - Basic ZWZkcmVhZGVyOjlXa29zajJtMWQrTmVxYU5UeVBOQkE9PQ==
-      Connection:
-      - keep-alive
-      User-Agent:
-      - python-requests/2.32.3
-    method: GET
-    uri: https://usdf-rsp.slac.stanford.edu/influxdb-enterprise-data//ping?wait_for_leader=5s
-  response:
-    body:
-      string: ''
-    headers:
-      Connection:
-      - keep-alive
-      Content-Type:
-      - application/json
-      Date:
-      - Wed, 07 May 2025 03:01:38 GMT
-      Request-Id:
-      - 3b0a15e84b5794822c00af470f04c37d
-      Strict-Transport-Security:
-      - max-age=16070400
-      X-Influxdb-Build:
-      - ENT
-      X-Influxdb-Version:
-      - v1.11.8
-      X-Request-Id:
-      - 3b0a15e84b5794822c00af470f04c37d
-    status:
-      code: 204
-      message: No Content
-- request:
-    body: null
-    headers:
-      Accept:
-      - '*/*'
-      Accept-Encoding:
-      - gzip, deflate, br, zstd
-      Authorization:
-      - Basic ZWZkcmVhZGVyOjlXa29zajJtMWQrTmVxYU5UeVBOQkE9PQ==
-      Connection:
-      - keep-alive
-      User-Agent:
-      - python-requests/2.32.3
+      - python-requests/2.34.2
     method: GET
     uri: https://usdf-rsp.slac.stanford.edu/influxdb-enterprise-data//query?db=efd&q=SELECT+%2A+FROM+%22lsst.sal.Electrometer.logevent_logMessage%22+WHERE+time+%3E%3D+%272024-07-26T16%3A29%3A23.000Z%27+AND+time+%3C%3D+%272024-07-26T16%3A44%3A23.000Z%27
   response:
@@ -138,14 +66,12 @@ interactions:
     headers:
       Connection:
       - keep-alive
-      Content-Encoding:
-      - gzip
       Content-Type:
       - application/json
       Date:
-      - Wed, 07 May 2025 03:01:38 GMT
+      - Fri, 09 Oct 2026 21:56:30 GMT
       Request-Id:
-      - 6f467b173bc3103cea0dacac0e4f1e70
+      - f1a56147e2162633d653ec0d1859f508
       Strict-Transport-Security:
       - max-age=16070400
       Transfer-Encoding:
@@ -153,9 +79,11 @@ interactions:
       X-Influxdb-Build:
       - ENT
       X-Influxdb-Version:
-      - v1.11.8
+      - v1.12.4
       X-Request-Id:
-      - 6f467b173bc3103cea0dacac0e4f1e70
+      - f1a56147e2162633d653ec0d1859f508
+      content-length:
+      - '10735'
     status:
       code: 200
       message: OK
@@ -166,12 +94,10 @@ interactions:
       - '*/*'
       Accept-Encoding:
       - gzip, deflate, br, zstd
-      Authorization:
-      - Basic ZWZkcmVhZGVyOjlXa29zajJtMWQrTmVxYU5UeVBOQkE9PQ==
       Connection:
       - keep-alive
       User-Agent:
-      - python-requests/2.32.3
+      - python-requests/2.34.2
     method: GET
     uri: https://usdf-rsp.slac.stanford.edu/influxdb-enterprise-data//query?db=efd&q=SHOW+FIELD+KEYS+FROM+%22lsst.sal.Electrometer.logevent_logMessage%22
   response:
@@ -182,14 +108,12 @@ interactions:
     headers:
       Connection:
       - keep-alive
-      Content-Encoding:
-      - gzip
       Content-Type:
       - application/json
       Date:
-      - Wed, 07 May 2025 03:01:38 GMT
+      - Fri, 09 Oct 2026 21:56:30 GMT
       Request-Id:
-      - f3d03732e28499f0e0e853605e23df60
+      - 18711a80a4b2ac596bb0ef8c924ef7d1
       Strict-Transport-Security:
       - max-age=16070400
       Transfer-Encoding:
@@ -197,9 +121,11 @@ interactions:
       X-Influxdb-Build:
       - ENT
       X-Influxdb-Version:
-      - v1.11.8
+      - v1.12.4
       X-Request-Id:
-      - f3d03732e28499f0e0e853605e23df60
+      - 18711a80a4b2ac596bb0ef8c924ef7d1
+      content-length:
+      - '652'
     status:
       code: 200
       message: OK

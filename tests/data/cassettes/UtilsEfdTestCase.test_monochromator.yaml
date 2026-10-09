@@ -9,79 +9,7 @@ interactions:
       Connection:
       - keep-alive
       User-Agent:
-      - python-requests/2.32.3
-    method: GET
-    uri: https://sdfproxy.sdf.slac.stanford.edu:3128/segwarides/creds/usdf_efd
-  response:
-    body:
-      string: '{"host": "usdf-rsp.slac.stanford.edu", "username": "efdreader", "password":
-        "9Wkosj2m1d+NeqaNTyPNBA==", "schema_registry": "http://sasquatch-schema-registry.sasquatch:8081",
-        "port": "443", "path": "/influxdb-enterprise-data/"}'
-    headers:
-      Connection:
-      - keep-alive
-      Content-Length:
-      - '226'
-      Content-Type:
-      - application/json; charset=utf-8
-      Date:
-      - Wed, 07 May 2025 03:01:41 GMT
-      Strict-Transport-Security:
-      - max-age=31536000; includeSubDomains
-    status:
-      code: 200
-      message: OK
-- request:
-    body: null
-    headers:
-      Accept:
-      - '*/*'
-      Accept-Encoding:
-      - gzip, deflate, br, zstd
-      Authorization:
-      - Basic ZWZkcmVhZGVyOjlXa29zajJtMWQrTmVxYU5UeVBOQkE9PQ==
-      Connection:
-      - keep-alive
-      User-Agent:
-      - python-requests/2.32.3
-    method: GET
-    uri: https://usdf-rsp.slac.stanford.edu/influxdb-enterprise-data//ping?wait_for_leader=5s
-  response:
-    body:
-      string: ''
-    headers:
-      Connection:
-      - keep-alive
-      Content-Type:
-      - application/json
-      Date:
-      - Wed, 07 May 2025 03:01:41 GMT
-      Request-Id:
-      - 74261ce4887b565ace0e15b88457e047
-      Strict-Transport-Security:
-      - max-age=16070400
-      X-Influxdb-Build:
-      - ENT
-      X-Influxdb-Version:
-      - v1.11.8
-      X-Request-Id:
-      - 74261ce4887b565ace0e15b88457e047
-    status:
-      code: 204
-      message: No Content
-- request:
-    body: null
-    headers:
-      Accept:
-      - '*/*'
-      Accept-Encoding:
-      - gzip, deflate, br, zstd
-      Authorization:
-      - Basic ZWZkcmVhZGVyOjlXa29zajJtMWQrTmVxYU5UeVBOQkE9PQ==
-      Connection:
-      - keep-alive
-      User-Agent:
-      - python-requests/2.32.3
+      - python-requests/2.34.2
     method: GET
     uri: https://usdf-rsp.slac.stanford.edu/influxdb-enterprise-data//query?db=efd&q=SELECT+wavelength%2Cprivate_sndStamp+FROM+%22lsst.sal.ATMonochromator.logevent_wavelength%22+WHERE+time+%3E%3D+%272023-12-18T23%3A59%3A23.000Z%27+AND+time+%3C%3D+%272023-12-19T23%3A59%3A22.000Z%27
   response:
@@ -92,14 +20,12 @@ interactions:
     headers:
       Connection:
       - keep-alive
-      Content-Encoding:
-      - gzip
       Content-Type:
       - application/json
       Date:
-      - Wed, 07 May 2025 03:01:41 GMT
+      - Fri, 09 Oct 2026 21:56:33 GMT
       Request-Id:
-      - 0ddfdab6d7554ed617caaff5fa59f9a0
+      - a06db99cc1e158b5fdb906436d31c757
       Strict-Transport-Security:
       - max-age=16070400
       Transfer-Encoding:
@@ -107,9 +33,11 @@ interactions:
       X-Influxdb-Build:
       - ENT
       X-Influxdb-Version:
-      - v1.11.8
+      - v1.12.4
       X-Request-Id:
-      - 0ddfdab6d7554ed617caaff5fa59f9a0
+      - a06db99cc1e158b5fdb906436d31c757
+      content-length:
+      - '4377'
     status:
       code: 200
       message: OK
@@ -120,12 +48,10 @@ interactions:
       - '*/*'
       Accept-Encoding:
       - gzip, deflate, br, zstd
-      Authorization:
-      - Basic ZWZkcmVhZGVyOjlXa29zajJtMWQrTmVxYU5UeVBOQkE9PQ==
       Connection:
       - keep-alive
       User-Agent:
-      - python-requests/2.32.3
+      - python-requests/2.34.2
     method: GET
     uri: https://usdf-rsp.slac.stanford.edu/influxdb-enterprise-data//query?db=efd&q=SHOW+FIELD+KEYS+FROM+%22lsst.sal.ATMonochromator.logevent_wavelength%22
   response:
@@ -136,14 +62,12 @@ interactions:
     headers:
       Connection:
       - keep-alive
-      Content-Encoding:
-      - gzip
       Content-Type:
       - application/json
       Date:
-      - Wed, 07 May 2025 03:01:41 GMT
+      - Fri, 09 Oct 2026 21:56:33 GMT
       Request-Id:
-      - 3b0526f47145be3b443df8bd867720b8
+      - f1d9bbc505e3bc411848e10927321fa9
       Strict-Transport-Security:
       - max-age=16070400
       Transfer-Encoding:
@@ -151,9 +75,11 @@ interactions:
       X-Influxdb-Build:
       - ENT
       X-Influxdb-Version:
-      - v1.11.8
+      - v1.12.4
       X-Request-Id:
-      - 3b0526f47145be3b443df8bd867720b8
+      - f1d9bbc505e3bc411848e10927321fa9
+      content-length:
+      - '426'
     status:
       code: 200
       message: OK
