@@ -1,0 +1,1 @@
+{"usdf_efd":{"url":"https://usdf-rsp.slac.stanford.edu/influxdb-enterprise-data/","database":"efd","schema_registry":"http://sasquatch-schema-registry.sasquatch:8081/","local":true,"username":"sasquatch","password":"*********"}}
