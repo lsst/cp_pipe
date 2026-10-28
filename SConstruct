@@ -1,3 +1,3 @@
 # -*- python -*-
 from lsst.sconsUtils import scripts
-scripts.BasicSConstruct("cp_pipe", disableCc=True)
+scripts.BasicSConstruct("cp_pipe", disableCc=True, noCfgFile=True)
