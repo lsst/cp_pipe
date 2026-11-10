@@ -1109,7 +1109,7 @@ class AstierSplineLinearityFitter:
         self.log = log if log else logging.getLogger(__name__)
         self._fit_offset = fit_offset
         self._fit_weights = fit_weights
-        self._weight_pars_start = weight_pars_start
+        self._weight_pars = weight_pars_start
         self._fit_temperature = fit_temperature
         self._fit_temporal = fit_temporal
         self._max_frac_correction = max_frac_correction
@@ -1147,7 +1147,7 @@ class AstierSplineLinearityFitter:
             _mask = np.ones(len(mu), dtype=np.bool_)
         else:
             _mask = mask
-        self._w = self.compute_weights(self._weight_pars_start, self._mu, _mask)
+        self._w = self.compute_weights(self._weight_pars, self._mu, _mask)
 
         if temperature_scaled is None:
             temperature_scaled = np.zeros(len(self._mu))
@@ -1183,12 +1183,6 @@ class AstierSplineLinearityFitter:
             self.par_indices["offset"] = np.arange(1) + (
                 len(self.par_indices["values"])
                 + len(self.par_indices["groups"])
-            )
-        if self._fit_weights:
-            self.par_indices["weight_pars"] = np.arange(2) + (
-                len(self.par_indices["values"])
-                + len(self.par_indices["groups"])
-                + len(self.par_indices["offset"])
             )
         if self._fit_temperature:
             self.par_indices["temperature_coeff"] = np.arange(1) + (
@@ -1232,10 +1226,30 @@ class AstierSplineLinearityFitter:
 
     @staticmethod
     def compute_weights(weight_pars, mu, mask):
-        w = 1./np.sqrt(weight_pars[0]**2. + weight_pars[1]**2./mu)
+        if len(weight_pars) == 1:
+            w = 1./np.sqrt(weight_pars[0]**2./mu)
+        else:
+            w = 1./np.sqrt(weight_pars[0]**2. + weight_pars[1]**2./mu)
+
         w[~mask] = 0.0
 
         return w
+
+    def update_noise(self, r, mu, weight_pars):
+        """ML estimate of (a, b) in sigma^2 = a^2 + b^2/mu from residuals r."""
+        mu = np.clip(mu, 1.0, None)
+        lp0 = np.log(np.clip(np.abs(weight_pars), 1e-12, None))
+
+        def nll(lp):
+            s2 = np.exp(2*lp[0]) + np.exp(2*lp[1]) / mu
+            return np.sum(r**2 / s2 + np.log(s2))
+
+        # Return linear a, b
+        return np.exp(minimize(nll, lp0, method="Nelder-Mead").x)
+
+    @property
+    def weight_pars(self):
+        return self._weight_pars
 
     def estimate_p0(self, use_all_for_normalization=False):
         """Estimate initial fit parameters.
@@ -1342,9 +1356,6 @@ class AstierSplineLinearityFitter:
 
         if self._fit_offset:
             p0[self.par_indices["offset"]] = 0.0
-
-        if self._fit_weights:
-            p0[self.par_indices["weight_pars"]] = self._weight_pars_start
 
         # Restore the correct value
         self._max_signal_nearly_linear = max_signal_nearly_linear
@@ -1528,6 +1539,24 @@ class AstierSplineLinearityFitter:
                     self.log.info("After iteration %d there are no more outliers.", k)
                     break
 
+                if self._fit_weights:
+                    # If we are fitting the weights, update them here.
+                    ratio_model = self.compute_ratio_model(
+                        self._nodes,
+                        self.group_indices,
+                        self.par_indices,
+                        params,
+                        self._pd,
+                        self._mu,
+                        self._ptc_mean,
+                        self._ptc_var,
+                        self._temperature_scaled,
+                        self._mjd_scaled,
+                    )
+                    r = (ratio_model - 1.0)[self.mask]
+                    self._weight_pars = self.update_noise(r, self._mu[self.mask], self._weight_pars)
+                    self._w = self.compute_weights(self._weight_pars, self._mu, self.mask)
+
             # Reset for next "outer" iteration, if doing them.
             if n_outer_iter > 1:
                 if j == 0:
@@ -1615,8 +1644,6 @@ class AstierSplineLinearityFitter:
             dof -= 1
         if self._fit_offset:
             dof -= 1
-        if self._fit_weights:
-            dof -= 2
         if self._fit_ptc_coeff:
             dof -= (self._ptc_degree + 1)
 
@@ -1640,9 +1667,6 @@ class AstierSplineLinearityFitter:
         )
 
         _mask = self.mask
-        # Update the weights if we are fitting them.
-        if self._fit_weights:
-            self._w = self.compute_weights(pars[self.par_indices["weight_pars"]], self._mu, _mask)
         resid = self._w*(ratio_model - 1.0)
 
         # Ensure masked points have 0 residual.
@@ -1656,13 +1680,6 @@ class AstierSplineLinearityFitter:
         constraint = [1e10 * np.mean(spl(np.clip(self._x_regularize, self._nodes[0], self._nodes[-1])))]
         # 0 should transform to 0
         constraint.append(spl(0)*1e10)
-        # Use a Jeffreys prior on the weight if we are fitting it.
-        if self._fit_weights:
-            # This factor ensures that log(fact * w) is negative.
-            fact = 1e-3 / self._w.max()
-            # We only add non-zero weights to the constraint array.
-            log_w = np.sqrt(-2.*np.log(fact*self._w[self._w > 0]))
-            constraint = np.hstack([constraint, log_w])
 
         # Don't let it get to >5% correction.
         values = pars[self.par_indices["values"]]
