@@ -1226,16 +1226,9 @@ class AstierSplineLinearityFitter:
         )
 
         if self._fit_ptc_coeff:
-            self._ptc_use = np.isfinite(self._ptc_mean)
-
-            # coeffs = np.polyfit(
-            #     self._ptc_mean[self._ptc_use],
-            #     self._ptc_var[self._ptc_use],
-            #     len(self.par_indices["ptc_coeff"]) - 1,
-            # )
-
-            # self._ptc_constraint_mean = np.max(self._ptc_mean[self._ptc_use])
-            # self._ptc_constraint_var = np.polyval(coeffs, self._ptc_constraint_mean)
+            self._ptc_use = np.isfinite(self._ptc_mean) & (self._ptc_mean < self._max_signal_nearly_linear)
+        else:
+            self._ptc_use = np.zeros([], dtype=np.bool_)
 
     @staticmethod
     def compute_weights(weight_pars, mu, mask):
@@ -1436,18 +1429,12 @@ class AstierSplineLinearityFitter:
         if len(par_indices["temporal_coeff"]) == 1:
             mu_corr = mu_corr*(1. + pars[par_indices["temporal_coeff"]]*mjd_scaled)
 
-        if return_ptc_values and len(par_indices["ptc_coeff"] > 0):
-            ptc_mean_corr = spl(np.clip(ptc_mean, nodes[0], nodes[-1])) + ptc_mean
+        if return_ptc_values and len(par_indices["ptc_coeff"]) > 0:
+            ptc_mean_c = np.clip(ptc_mean, nodes[0], nodes[-1])
             spl_deriv = spl.derivative(nu=1)
-            # Compute the derivative at the original mu value.
-            ptc_mean_corr_deriv = spl_deriv(ptc_mean)
-            # Evaluate the polynomial at the corrected mu values.
-            r = np.polyval(pars[par_indices["ptc_coeff"]], ptc_mean_corr)
-            r -= ptc_var * (1. + ptc_mean_corr_deriv)**2.
-
-            # Append the additional constraint value that is the derivative at
-            # the max value.
-            r = np.append(r, spl_deriv(np.max(ptc_mean[np.isfinite(ptc_mean)])))
+            dfdmu = 1.0 - spl_deriv(ptc_mean_c)
+            ptc_mean_corr = ptc_mean - spl(ptc_mean_c)
+            r = np.polyval(pars[par_indices["ptc_coeff"]], ptc_mean_corr) - ptc_var * dfdmu**2
         else:
             r = np.zeros_like(mu)
 
@@ -1663,11 +1650,8 @@ class AstierSplineLinearityFitter:
 
         if self._fit_ptc_coeff:
             # Ensure we mask the out-of-PTC values.
-            ptc_r[0: -1][~self._ptc_use] = 0.0
-            # Scale by the variance error.
-            ptc_r[0: -1][self._ptc_use] /= self._ptc_sigma_var[self._ptc_use]
-
-            ptc_r[-1] *= 1e50
+            ptc_r[~self._ptc_use] = 0.0
+            ptc_r[self._ptc_use] /= self._ptc_sigma_var[self._ptc_use]
 
         constraint = [1e10 * np.mean(spl(np.clip(self._x_regularize, self._nodes[0], self._nodes[-1])))]
         # 0 should transform to 0
